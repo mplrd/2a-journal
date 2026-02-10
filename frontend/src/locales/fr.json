@@ -1,0 +1,62 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "create": "Créer",
+    "back": "Retour",
+    "confirm": "Confirmer",
+    "yes": "Oui",
+    "no": "Non",
+    "error": "Erreur",
+    "success": "Succès"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "accounts": "Comptes",
+    "positions": "Positions",
+    "trades": "Trades",
+    "orders": "Ordres",
+    "stats": "Statistiques",
+    "logout": "Déconnexion"
+  },
+  "auth": {
+    "login": "Connexion",
+    "register": "Inscription",
+    "email": "Email",
+    "password": "Mot de passe",
+    "first_name": "Prénom",
+    "last_name": "Nom",
+    "login_button": "Se connecter",
+    "register_button": "S'inscrire",
+    "no_account": "Pas encore de compte ?",
+    "has_account": "Déjà un compte ?",
+    "error": {
+      "field_required": "Ce champ est requis",
+      "invalid_email": "Email invalide",
+      "password_too_weak": "Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre",
+      "email_taken": "Cet email est déjà utilisé",
+      "invalid_credentials": "Email ou mot de passe incorrect",
+      "token_missing": "Authentification requise",
+      "token_expired": "Session expirée, veuillez vous reconnecter",
+      "token_invalid": "Session invalide",
+      "refresh_token_invalid": "Session expirée, veuillez vous reconnecter"
+    },
+    "success": {
+      "registered": "Compte créé avec succès",
+      "logged_in": "Connexion réussie",
+      "logged_out": "Déconnexion réussie"
+    }
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "welcome": "Bienvenue, {name}"
+  },
+  "error": {
+    "internal": "Erreur interne du serveur",
+    "not_found": "Page non trouvée",
+    "network": "Erreur de connexion au serveur"
+  }
+}

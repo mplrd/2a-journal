@@ -1,0 +1,62 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "back": "Back",
+    "confirm": "Confirm",
+    "yes": "Yes",
+    "no": "No",
+    "error": "Error",
+    "success": "Success"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "accounts": "Accounts",
+    "positions": "Positions",
+    "trades": "Trades",
+    "orders": "Orders",
+    "stats": "Statistics",
+    "logout": "Logout"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password",
+    "first_name": "First name",
+    "last_name": "Last name",
+    "login_button": "Sign in",
+    "register_button": "Sign up",
+    "no_account": "Don't have an account?",
+    "has_account": "Already have an account?",
+    "error": {
+      "field_required": "This field is required",
+      "invalid_email": "Invalid email",
+      "password_too_weak": "Password must contain at least 8 characters, one uppercase, one lowercase and one digit",
+      "email_taken": "This email is already taken",
+      "invalid_credentials": "Invalid email or password",
+      "token_missing": "Authentication required",
+      "token_expired": "Session expired, please sign in again",
+      "token_invalid": "Invalid session",
+      "refresh_token_invalid": "Session expired, please sign in again"
+    },
+    "success": {
+      "registered": "Account created successfully",
+      "logged_in": "Signed in successfully",
+      "logged_out": "Signed out successfully"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome, {name}"
+  },
+  "error": {
+    "internal": "Internal server error",
+    "not_found": "Page not found",
+    "network": "Server connection error"
+  }
+}
