@@ -2,16 +2,20 @@
 
 use App\Controllers\AccountController;
 use App\Controllers\AuthController;
+use App\Controllers\PositionController;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
+use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
 use App\Repositories\RefreshTokenRepository;
+use App\Repositories\StatusHistoryRepository;
 use App\Repositories\UserRepository;
 use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\PositionService;
 
 /** @var Router $router */
 
@@ -71,3 +75,16 @@ $router->post('/accounts', [$accountController, 'store'], [$authMiddleware]);
 $router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware]);
 $router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware]);
 $router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware]);
+
+// ── Positions ──────────────────────────────────────────────────
+$positionRepo = new PositionRepository($pdo);
+$historyRepo = new StatusHistoryRepository($pdo);
+$positionService = new PositionService($positionRepo, $accountRepo, $historyRepo);
+$positionController = new PositionController($positionService);
+
+$router->get('/positions', [$positionController, 'index'], [$authMiddleware]);
+$router->get('/positions/{id}', [$positionController, 'show'], [$authMiddleware]);
+$router->put('/positions/{id}', [$positionController, 'update'], [$authMiddleware]);
+$router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddleware]);
+$router->post('/positions/{id}/transfer', [$positionController, 'transfer'], [$authMiddleware]);
+$router->get('/positions/{id}/history', [$positionController, 'history'], [$authMiddleware]);

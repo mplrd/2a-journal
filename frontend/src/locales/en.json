@@ -101,6 +101,69 @@
       "deleted": "Account deleted successfully"
     }
   },
+  "positions": {
+    "title": "Positions",
+    "edit": "Edit position",
+    "empty": "No positions. Create an order or trade to get started.",
+    "symbol": "Symbol",
+    "direction": "Direction",
+    "entry_price": "Entry price",
+    "size": "Size",
+    "setup": "Setup",
+    "sl_points": "SL (points)",
+    "sl_price": "SL price",
+    "be_points": "BE (points)",
+    "be_price": "BE price",
+    "be_size": "BE size",
+    "notes": "Notes",
+    "type": "Type",
+    "created_at": "Created at",
+    "targets": "Targets",
+    "add_target": "Add target",
+    "target_label": "Label",
+    "target_points": "Points",
+    "target_size": "Size",
+    "transfer": "Transfer",
+    "transfer_description": "Select the target account to transfer this position to.",
+    "target_account": "Target account",
+    "select_account": "Select an account",
+    "filter_account": "Filter by account",
+    "filter_type": "Filter by type",
+    "all_accounts": "All accounts",
+    "all_types": "All types",
+    "confirm_delete": "Are you sure you want to delete this position?",
+    "directions": {
+      "BUY": "Buy",
+      "SELL": "Sell"
+    },
+    "types": {
+      "ORDER": "Order",
+      "TRADE": "Trade"
+    },
+    "error": {
+      "not_found": "Position not found",
+      "forbidden": "Unauthorized access to this position",
+      "transfer_forbidden": "Target account does not belong to you",
+      "field_required": "This field is required",
+      "invalid_price": "Price must be positive",
+      "invalid_size": "Size must be positive",
+      "invalid_sl_points": "SL points must be positive",
+      "invalid_be_points": "BE points must be positive",
+      "invalid_be_size": "BE size must be positive",
+      "invalid_direction": "Invalid direction",
+      "invalid_symbol": "Invalid symbol",
+      "invalid_setup": "Invalid setup",
+      "notes_too_long": "Notes are too long (10000 characters max)",
+      "invalid_targets": "Invalid targets format",
+      "invalid_target_points": "Target points must be positive",
+      "invalid_target_size": "Target size must be positive"
+    },
+    "success": {
+      "updated": "Position updated successfully",
+      "deleted": "Position deleted successfully",
+      "transferred": "Position transferred successfully"
+    }
+  },
   "error": {
     "internal": "Internal server error",
     "not_found": "Page not found",

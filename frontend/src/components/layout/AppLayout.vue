@@ -31,6 +31,9 @@ async function handleLogout() {
           <RouterLink to="/accounts" class="text-sm text-gray-600 hover:text-gray-900">
             {{ t('nav.accounts') }}
           </RouterLink>
+          <RouterLink to="/positions" class="text-sm text-gray-600 hover:text-gray-900">
+            {{ t('nav.positions') }}
+          </RouterLink>
           <span v-if="authStore.fullName" class="text-sm text-gray-500">{{ authStore.fullName }}</span>
           <Button :label="t('nav.logout')" severity="secondary" size="small" @click="handleLogout" />
         </nav>

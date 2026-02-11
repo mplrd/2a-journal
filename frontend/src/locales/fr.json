@@ -101,6 +101,69 @@
       "deleted": "Compte supprimé avec succès"
     }
   },
+  "positions": {
+    "title": "Positions",
+    "edit": "Modifier la position",
+    "empty": "Aucune position. Créez un ordre ou un trade pour commencer.",
+    "symbol": "Symbole",
+    "direction": "Direction",
+    "entry_price": "Prix d'entrée",
+    "size": "Taille",
+    "setup": "Setup",
+    "sl_points": "SL (points)",
+    "sl_price": "Prix SL",
+    "be_points": "BE (points)",
+    "be_price": "Prix BE",
+    "be_size": "Taille BE",
+    "notes": "Notes",
+    "type": "Type",
+    "created_at": "Créée le",
+    "targets": "Objectifs",
+    "add_target": "Ajouter un objectif",
+    "target_label": "Label",
+    "target_points": "Points",
+    "target_size": "Taille",
+    "transfer": "Transférer",
+    "transfer_description": "Sélectionnez le compte cible pour transférer cette position.",
+    "target_account": "Compte cible",
+    "select_account": "Sélectionner un compte",
+    "filter_account": "Filtrer par compte",
+    "filter_type": "Filtrer par type",
+    "all_accounts": "Tous les comptes",
+    "all_types": "Tous les types",
+    "confirm_delete": "Êtes-vous sûr de vouloir supprimer cette position ?",
+    "directions": {
+      "BUY": "Achat",
+      "SELL": "Vente"
+    },
+    "types": {
+      "ORDER": "Ordre",
+      "TRADE": "Trade"
+    },
+    "error": {
+      "not_found": "Position non trouvée",
+      "forbidden": "Accès non autorisé à cette position",
+      "transfer_forbidden": "Le compte cible ne vous appartient pas",
+      "field_required": "Ce champ est requis",
+      "invalid_price": "Le prix doit être positif",
+      "invalid_size": "La taille doit être positive",
+      "invalid_sl_points": "Le SL en points doit être positif",
+      "invalid_be_points": "Le BE en points doit être positif",
+      "invalid_be_size": "La taille BE doit être positive",
+      "invalid_direction": "Direction invalide",
+      "invalid_symbol": "Symbole invalide",
+      "invalid_setup": "Setup invalide",
+      "notes_too_long": "Les notes sont trop longues (10000 caractères max)",
+      "invalid_targets": "Format des objectifs invalide",
+      "invalid_target_points": "Les points de l'objectif doivent être positifs",
+      "invalid_target_size": "La taille de l'objectif doit être positive"
+    },
+    "success": {
+      "updated": "Position modifiée avec succès",
+      "deleted": "Position supprimée avec succès",
+      "transferred": "Position transférée avec succès"
+    }
+  },
   "error": {
     "internal": "Erreur interne du serveur",
     "not_found": "Page non trouvée",

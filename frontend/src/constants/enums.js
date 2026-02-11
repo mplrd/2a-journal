@@ -10,3 +10,13 @@ export const AccountMode = {
   VERIFICATION: 'VERIFICATION',
   FUNDED: 'FUNDED',
 }
+
+export const Direction = {
+  BUY: 'BUY',
+  SELL: 'SELL',
+}
+
+export const PositionType = {
+  ORDER: 'ORDER',
+  TRADE: 'TRADE',
+}
