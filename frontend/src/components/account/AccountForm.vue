@@ -6,6 +6,7 @@ import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
+import { AccountType, AccountMode } from '@/constants/enums'
 
 const { t } = useI18n()
 
@@ -19,24 +20,21 @@ const emit = defineEmits(['update:visible', 'save'])
 
 const form = ref(getDefaultForm())
 
-const accountTypeOptions = [
-  { label: t('accounts.types.BROKER'), value: 'BROKER' },
-  { label: t('accounts.types.PROPFIRM'), value: 'PROPFIRM' },
-]
+const accountTypeOptions = Object.values(AccountType).map((value) => ({
+  label: t(`accounts.types.${value}`),
+  value,
+}))
 
-const modeOptions = [
-  { label: t('accounts.modes.DEMO'), value: 'DEMO' },
-  { label: t('accounts.modes.LIVE'), value: 'LIVE' },
-  { label: t('accounts.modes.CHALLENGE'), value: 'CHALLENGE' },
-  { label: t('accounts.modes.VERIFICATION'), value: 'VERIFICATION' },
-  { label: t('accounts.modes.FUNDED'), value: 'FUNDED' },
-]
+const modeOptions = Object.values(AccountMode).map((value) => ({
+  label: t(`accounts.modes.${value}`),
+  value,
+}))
 
 function getDefaultForm() {
   return {
     name: '',
-    account_type: 'BROKER',
-    mode: 'DEMO',
+    account_type: AccountType.BROKER,
+    mode: AccountMode.DEMO,
     currency: 'EUR',
     initial_capital: 0,
     broker: '',

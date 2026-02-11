@@ -7,6 +7,7 @@ import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import AccountForm from '@/components/account/AccountForm.vue'
+import { AccountMode } from '@/constants/enums'
 
 const { t } = useI18n()
 const store = useAccountsStore()
@@ -48,7 +49,13 @@ async function handleDelete(account) {
 }
 
 function modeSeverity(mode) {
-  const map = { DEMO: 'info', LIVE: 'success', CHALLENGE: 'warn', VERIFICATION: 'warn', FUNDED: 'success' }
+  const map = {
+    [AccountMode.DEMO]: 'info',
+    [AccountMode.LIVE]: 'success',
+    [AccountMode.CHALLENGE]: 'warn',
+    [AccountMode.VERIFICATION]: 'warn',
+    [AccountMode.FUNDED]: 'success',
+  }
   return map[mode] || 'secondary'
 }
 </script>
