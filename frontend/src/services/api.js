@@ -68,6 +68,14 @@ async function request(method, path, body = null, { auth = true, retry = true } 
         window.location.href = '/login'
         throw new Error('Session expired')
       }
+    } else {
+      // Body already consumed — throw directly with parsed data
+      const error = new Error(errorData?.error?.message_key || 'error.internal')
+      error.status = response.status
+      error.code = errorData?.error?.code
+      error.field = errorData?.error?.field
+      error.messageKey = errorData?.error?.message_key
+      throw error
     }
   }
 

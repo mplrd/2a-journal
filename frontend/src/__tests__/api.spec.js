@@ -101,4 +101,25 @@ describe('api service', () => {
       expect(err.messageKey).toBe('auth.error.invalid_credentials')
     }
   })
+
+  it('handles 401 TOKEN_MISSING without double body read', async () => {
+    api.setTokens('bad-token', 'refresh')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({
+        success: false,
+        error: { code: 'TOKEN_MISSING', message_key: 'auth.error.token_missing' },
+      }),
+    })
+
+    try {
+      await api.get('/accounts')
+      expect.unreachable('Should have thrown')
+    } catch (err) {
+      expect(err.status).toBe(401)
+      expect(err.code).toBe('TOKEN_MISSING')
+      expect(err.messageKey).toBe('auth.error.token_missing')
+    }
+  })
 })
