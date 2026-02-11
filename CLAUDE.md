@@ -64,7 +64,7 @@ journal/
 
 ## Skills
 - If the user requests something that should be a reusable skill, propose creating one
-- Available: /tdd-feature, /new-endpoint, /new-component, /run-tests, /doc-feature, /check-quality
+- Available: /tdd-feature, /new-endpoint, /new-component, /run-tests, /doc-feature, /check-quality, /audit-security, /audit-privacy
 
 ## Apache Config
 - VHost: journal.2ai-tools.local -> E:/2A-tools/journal
