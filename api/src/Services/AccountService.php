@@ -33,6 +33,7 @@ class AccountService
 
     public function get(int $userId, int $accountId): array
     {
+        $this->validateId($accountId);
         $account = $this->repo->findById($accountId);
 
         if (!$account) {
@@ -114,6 +115,13 @@ class AccountService
 
         if (isset($data['profit_split']) && ((float)$data['profit_split'] < 0 || (float)$data['profit_split'] > 100)) {
             throw new ValidationException('accounts.error.invalid_capital', 'profit_split');
+        }
+    }
+
+    private function validateId(int $id): void
+    {
+        if ($id <= 0) {
+            throw new ValidationException('error.invalid_id', 'id');
         }
     }
 }

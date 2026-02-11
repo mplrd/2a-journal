@@ -25,6 +25,7 @@ class AuthServiceTest extends TestCase
             'access_token_ttl' => 900,
             'refresh_token_ttl' => 604800,
             'password_min_length' => 8,
+            'bcrypt_cost' => 12,
         ];
 
         $this->userRepo = $this->createMock(UserRepository::class);
@@ -325,5 +326,68 @@ class AuthServiceTest extends TestCase
 
         // Refresh token should be a hex string (64 chars = 32 bytes)
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $result['refresh_token']);
+    }
+
+    // ── Bcrypt cost ─────────────────────────────────────────────
+
+    public function testRegisterUsesBcryptCostFromConfig(): void
+    {
+        $capturedPassword = null;
+        $this->userRepo->method('existsByEmail')->willReturn(false);
+        $this->userRepo->method('create')->willReturnCallback(function (array $data) use (&$capturedPassword) {
+            $capturedPassword = $data['password'];
+            return ['id' => 1, 'email' => $data['email']];
+        });
+
+        $this->service->register(['email' => 'cost@test.com', 'password' => 'Test1234']);
+
+        $this->assertNotNull($capturedPassword);
+        $info = password_get_info($capturedPassword);
+        $this->assertSame('bcrypt', $info['algoName']);
+        $this->assertSame(12, $info['options']['cost']);
+    }
+
+    // ── Length validations ───────────────────────────────────────
+
+    public function testRegisterThrowsWhenEmailTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.email_too_long');
+
+        $longEmail = str_repeat('a', 247) . '@test.com'; // 256 chars
+        $this->service->register(['email' => $longEmail, 'password' => 'Test1234']);
+    }
+
+    public function testRegisterThrowsWhenFirstNameTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_too_long');
+
+        $this->service->register([
+            'email' => 'long@test.com',
+            'password' => 'Test1234',
+            'first_name' => str_repeat('a', 101),
+        ]);
+    }
+
+    public function testRegisterThrowsWhenLastNameTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_too_long');
+
+        $this->service->register([
+            'email' => 'long@test.com',
+            'password' => 'Test1234',
+            'last_name' => str_repeat('a', 101),
+        ]);
+    }
+
+    public function testRegisterThrowsWhenPasswordTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.password_too_long');
+
+        $longPassword = 'Aa1' . str_repeat('x', 70); // 73 bytes > 72
+        $this->service->register(['email' => 'long@test.com', 'password' => $longPassword]);
     }
 }

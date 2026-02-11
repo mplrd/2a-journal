@@ -32,7 +32,7 @@ class AuthService
 
         $user = $this->userRepo->create([
             'email' => $data['email'],
-            'password' => password_hash($data['password'], PASSWORD_BCRYPT),
+            'password' => password_hash($data['password'], PASSWORD_BCRYPT, ['cost' => $this->config['bcrypt_cost']]),
             'first_name' => $data['first_name'] ?? null,
             'last_name' => $data['last_name'] ?? null,
         ]);
@@ -149,14 +149,26 @@ class AuthService
         if (empty($data['password'])) {
             throw new ValidationException('auth.error.field_required', 'password');
         }
+        if (mb_strlen($data['email']) > 255) {
+            throw new ValidationException('auth.error.email_too_long', 'email');
+        }
         if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
             throw new ValidationException('auth.error.invalid_email', 'email');
+        }
+        if (isset($data['first_name']) && mb_strlen($data['first_name']) > 100) {
+            throw new ValidationException('auth.error.field_too_long', 'first_name');
+        }
+        if (isset($data['last_name']) && mb_strlen($data['last_name']) > 100) {
+            throw new ValidationException('auth.error.field_too_long', 'last_name');
         }
         $this->validatePassword($data['password']);
     }
 
     private function validatePassword(string $password): void
     {
+        if (strlen($password) > 72) {
+            throw new ValidationException('auth.error.password_too_long', 'password');
+        }
         if (
             strlen($password) < $this->config['password_min_length']
             || !preg_match('/[A-Z]/', $password)

@@ -30,7 +30,9 @@ class UserRepository
 
     public function findByEmail(string $email): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM users WHERE email = :email AND deleted_at IS NULL');
+        $stmt = $this->pdo->prepare(
+            'SELECT id, email, password, first_name, last_name, timezone, default_currency, locale, theme, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
+        );
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch();
 

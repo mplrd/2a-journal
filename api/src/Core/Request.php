@@ -11,8 +11,9 @@ class Request
     private array $headers;
     private array $routeParams;
     private array $attributes;
+    private string $clientIp;
 
-    private function __construct(string $method, string $uri, array $body, array $query, array $headers)
+    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1')
     {
         $this->method = $method;
         $this->uri = $uri;
@@ -21,6 +22,7 @@ class Request
         $this->headers = $headers;
         $this->routeParams = [];
         $this->attributes = [];
+        $this->clientIp = $clientIp;
     }
 
     public static function capture(): self
@@ -64,7 +66,9 @@ class Request
             $headers['AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
         }
 
-        return new self($method, $uri, $body, $_GET, $headers);
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+        return new self($method, $uri, $body, $_GET, $headers, $clientIp);
     }
 
     public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = []): self
@@ -132,5 +136,10 @@ class Request
     public function getAttribute(string $name, mixed $default = null): mixed
     {
         return $this->attributes[$name] ?? $default;
+    }
+
+    public function getClientIp(): string
+    {
+        return $this->clientIp;
     }
 }

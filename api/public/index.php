@@ -46,6 +46,12 @@ if (in_array($origin, $corsConfig['origins'], true)) {
     header("Access-Control-Max-Age: {$corsConfig['max_age']}");
 }
 
+// ── Security headers ────────────────────────────────────────
+$securityConfig = require __DIR__ . '/../config/security.php';
+foreach ($securityConfig['headers'] as $name => $value) {
+    header("$name: $value");
+}
+
 // Handle preflight
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     http_response_code(204);

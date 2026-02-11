@@ -204,4 +204,30 @@ class AccountServiceTest extends TestCase
 
         $this->service->delete(1, 1);
     }
+
+    // ── Validate ID > 0 ─────────────────────────────────────────
+
+    public function testGetThrowsWhenIdIsZero(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('error.invalid_id');
+
+        $this->service->get(1, 0);
+    }
+
+    public function testUpdateThrowsWhenIdIsZero(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('error.invalid_id');
+
+        $this->service->update(1, 0, $this->validData());
+    }
+
+    public function testDeleteThrowsWhenIdIsZero(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('error.invalid_id');
+
+        $this->service->delete(1, 0);
+    }
 }

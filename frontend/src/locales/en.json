@@ -45,7 +45,10 @@
       "token_missing": "Authentication required",
       "token_expired": "Session expired, please sign in again",
       "token_invalid": "Invalid session",
-      "refresh_token_invalid": "Session expired, please sign in again"
+      "refresh_token_invalid": "Session expired, please sign in again",
+      "email_too_long": "Email is too long (255 characters maximum)",
+      "field_too_long": "This field is too long",
+      "password_too_long": "Password is too long (72 characters maximum)"
     },
     "success": {
       "registered": "Account created successfully",
@@ -101,6 +104,8 @@
   "error": {
     "internal": "Internal server error",
     "not_found": "Page not found",
-    "network": "Server connection error"
+    "network": "Server connection error",
+    "invalid_id": "Invalid identifier",
+    "rate_limit_exceeded": "Too many attempts, please try again later"
   }
 }

@@ -41,6 +41,7 @@ class AccountFlowTest extends TestCase
         $this->pdo = Database::getConnection();
 
         // Clean tables
+        $this->pdo->exec('DELETE FROM rate_limits');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
@@ -67,6 +68,7 @@ class AccountFlowTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->pdo->exec('DELETE FROM rate_limits');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');

@@ -226,6 +226,19 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
         REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================================
+-- 11. RATE_LIMITS (brute-force protection)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS rate_limits (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    ip VARCHAR(45) NOT NULL,
+    endpoint VARCHAR(100) NOT NULL,
+    attempts INT UNSIGNED NOT NULL DEFAULT 1,
+    window_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_rate_limits_ip_endpoint (ip, endpoint)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ============================================================================

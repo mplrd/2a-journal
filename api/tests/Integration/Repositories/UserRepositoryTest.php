@@ -79,6 +79,24 @@ class UserRepositoryTest extends TestCase
         $this->assertArrayHasKey('password', $user);
     }
 
+    public function testFindByEmailReturnsExplicitColumnsOnly(): void
+    {
+        $this->repo->create([
+            'email' => 'cols@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+        ]);
+
+        $user = $this->repo->findByEmail('cols@example.com');
+
+        $expectedKeys = ['id', 'email', 'password', 'first_name', 'last_name', 'timezone', 'default_currency', 'locale', 'theme', 'created_at', 'updated_at'];
+        foreach ($expectedKeys as $key) {
+            $this->assertArrayHasKey($key, $user);
+        }
+        $this->assertArrayNotHasKey('deleted_at', $user);
+    }
+
     public function testFindByEmailReturnsNullWhenNotFound(): void
     {
         $user = $this->repo->findByEmail('nobody@example.com');
