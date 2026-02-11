@@ -59,6 +59,10 @@ class Request
         if (isset($_SERVER['CONTENT_TYPE'])) {
             $headers['CONTENT-TYPE'] = $_SERVER['CONTENT_TYPE'];
         }
+        // Apache may strip Authorization and expose it via REDIRECT_ prefix after rewrite
+        if (!isset($headers['AUTHORIZATION']) && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $headers['AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
 
         return new self($method, $uri, $body, $_GET, $headers);
     }

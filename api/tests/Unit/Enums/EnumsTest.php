@@ -92,10 +92,11 @@ class EnumsTest extends TestCase
     public function testAccountModeCases(): void
     {
         $cases = AccountMode::cases();
-        $this->assertCount(4, $cases);
+        $this->assertCount(5, $cases);
         $this->assertSame('DEMO', AccountMode::DEMO->value);
         $this->assertSame('LIVE', AccountMode::LIVE->value);
         $this->assertSame('CHALLENGE', AccountMode::CHALLENGE->value);
+        $this->assertSame('VERIFICATION', AccountMode::VERIFICATION->value);
         $this->assertSame('FUNDED', AccountMode::FUNDED->value);
     }
 

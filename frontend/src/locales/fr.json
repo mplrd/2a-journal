@@ -1,4 +1,7 @@
 {
+  "app": {
+    "title": "Journal de Trading"
+  },
   "common": {
     "loading": "Chargement...",
     "save": "Enregistrer",
@@ -53,6 +56,47 @@
   "dashboard": {
     "title": "Tableau de bord",
     "welcome": "Bienvenue, {name}"
+  },
+  "accounts": {
+    "title": "Comptes",
+    "create": "Nouveau compte",
+    "edit": "Modifier le compte",
+    "empty": "Aucun compte. Créez votre premier compte pour commencer.",
+    "name": "Nom du compte",
+    "account_type": "Type de compte",
+    "mode": "Mode",
+    "currency": "Devise",
+    "initial_capital": "Capital initial",
+    "broker": "Courtier",
+    "max_drawdown": "Drawdown max",
+    "daily_drawdown": "Drawdown journalier",
+    "profit_target": "Objectif de profit",
+    "profit_split": "Partage des profits (%)",
+    "types": {
+      "BROKER": "Broker",
+      "PROPFIRM": "Prop Firm"
+    },
+    "modes": {
+      "DEMO": "Démo",
+      "LIVE": "Live",
+      "CHALLENGE": "Challenge",
+      "VERIFICATION": "Vérification",
+      "FUNDED": "Funded"
+    },
+    "confirm_delete": "Êtes-vous sûr de vouloir supprimer ce compte ?",
+    "error": {
+      "field_required": "Ce champ est requis",
+      "invalid_type": "Type de compte invalide",
+      "invalid_mode": "Mode invalide",
+      "invalid_capital": "La valeur doit être positive",
+      "not_found": "Compte non trouvé",
+      "forbidden": "Accès non autorisé à ce compte"
+    },
+    "success": {
+      "created": "Compte créé avec succès",
+      "updated": "Compte modifié avec succès",
+      "deleted": "Compte supprimé avec succès"
+    }
   },
   "error": {
     "internal": "Erreur interne du serveur",
