@@ -4,6 +4,7 @@ namespace Tests\Integration\Auth;
 
 use App\Core\Database;
 use App\Core\Request;
+use App\Core\Response;
 use App\Core\Router;
 use App\Exceptions\HttpException;
 use PDO;
@@ -57,6 +58,15 @@ class AuthFlowTest extends TestCase
         $this->pdo->exec('DELETE FROM users');
     }
 
+    private function extractRefreshToken(Response $response): string
+    {
+        $cookie = $response->getHeader('Set-Cookie');
+        $this->assertNotNull($cookie, 'Expected Set-Cookie header');
+        preg_match('/refresh_token=([^;]+)/', $cookie, $matches);
+        $this->assertNotEmpty($matches[1], 'Expected refresh token value in cookie');
+        return $matches[1];
+    }
+
     // ── Register ─────────────────────────────────────────────────
 
     public function testRegisterSuccess(): void
@@ -73,8 +83,14 @@ class AuthFlowTest extends TestCase
         $this->assertSame(201, $response->getStatusCode());
         $this->assertTrue($body['success']);
         $this->assertArrayHasKey('access_token', $body['data']);
-        $this->assertArrayHasKey('refresh_token', $body['data']);
+        $this->assertArrayNotHasKey('refresh_token', $body['data']);
         $this->assertSame('new@test.com', $body['data']['user']['email']);
+
+        // Refresh token is in Set-Cookie header
+        $cookie = $response->getHeader('Set-Cookie');
+        $this->assertNotNull($cookie);
+        $this->assertStringContainsString('HttpOnly', $cookie);
+        $this->assertStringContainsString('Path=/api/auth', $cookie);
     }
 
     public function testRegisterMissingEmail(): void
@@ -171,8 +187,11 @@ class AuthFlowTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertTrue($body['success']);
         $this->assertArrayHasKey('access_token', $body['data']);
-        $this->assertArrayHasKey('refresh_token', $body['data']);
+        $this->assertArrayNotHasKey('refresh_token', $body['data']);
         $this->assertSame('login@test.com', $body['data']['user']['email']);
+
+        // Refresh token in cookie
+        $this->assertNotNull($response->getHeader('Set-Cookie'));
     }
 
     public function testLoginWrongPassword(): void
@@ -229,7 +248,7 @@ class AuthFlowTest extends TestCase
 
     // ── Refresh ──────────────────────────────────────────────────
 
-    public function testRefreshSuccess(): void
+    public function testRefreshSuccessViaCookie(): void
     {
         // Register to get tokens
         $request = Request::create('POST', '/auth/register', [
@@ -237,28 +256,46 @@ class AuthFlowTest extends TestCase
             'password' => 'Test1234',
         ]);
         $response = $this->router->dispatch($request);
-        $refreshToken = $response->getBody()['data']['refresh_token'];
+        $refreshToken = $this->extractRefreshToken($response);
 
-        // Refresh
-        $request = Request::create('POST', '/auth/refresh', [
-            'refresh_token' => $refreshToken,
-        ]);
+        // Refresh via cookie
+        $request = Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $refreshToken]);
         $response = $this->router->dispatch($request);
         $body = $response->getBody();
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertTrue($body['success']);
         $this->assertArrayHasKey('access_token', $body['data']);
-        $this->assertArrayHasKey('refresh_token', $body['data']);
-        // New refresh token should be different (rotation)
-        $this->assertNotSame($refreshToken, $body['data']['refresh_token']);
+        $this->assertArrayNotHasKey('refresh_token', $body['data']);
+
+        // New cookie set with rotated token
+        $newToken = $this->extractRefreshToken($response);
+        $this->assertNotSame($refreshToken, $newToken);
+    }
+
+    public function testRefreshSuccessViaBodyFallback(): void
+    {
+        // Register to get tokens
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'refreshbody@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $refreshToken = $this->extractRefreshToken($response);
+
+        // Refresh via body (fallback)
+        $request = Request::create('POST', '/auth/refresh', ['refresh_token' => $refreshToken]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertArrayHasKey('access_token', $body['data']);
     }
 
     public function testRefreshInvalidToken(): void
     {
-        $request = Request::create('POST', '/auth/refresh', [
-            'refresh_token' => 'bad-token',
-        ]);
+        $request = Request::create('POST', '/auth/refresh', ['refresh_token' => 'bad-token']);
 
         try {
             $this->router->dispatch($request);
@@ -289,18 +326,14 @@ class AuthFlowTest extends TestCase
             'password' => 'Test1234',
         ]);
         $response = $this->router->dispatch($request);
-        $oldToken = $response->getBody()['data']['refresh_token'];
+        $oldToken = $this->extractRefreshToken($response);
 
         // Refresh to get new token
-        $request = Request::create('POST', '/auth/refresh', [
-            'refresh_token' => $oldToken,
-        ]);
+        $request = Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $oldToken]);
         $this->router->dispatch($request);
 
-        // Try old token again → should fail
-        $request = Request::create('POST', '/auth/refresh', [
-            'refresh_token' => $oldToken,
-        ]);
+        // Try old token again -> should fail
+        $request = Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $oldToken]);
 
         try {
             $this->router->dispatch($request);
@@ -376,6 +409,7 @@ class AuthFlowTest extends TestCase
         ]);
         $response = $this->router->dispatch($request);
         $data = $response->getBody()['data'];
+        $refreshToken = $this->extractRefreshToken($response);
 
         // Logout
         $request = Request::create('POST', '/auth/logout', [], [], [
@@ -386,10 +420,13 @@ class AuthFlowTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertTrue($response->getBody()['success']);
 
+        // Clear cookie should be set
+        $cookie = $response->getHeader('Set-Cookie');
+        $this->assertNotNull($cookie);
+        $this->assertStringContainsString('Max-Age=0', $cookie);
+
         // Refresh token should no longer work
-        $request = Request::create('POST', '/auth/refresh', [
-            'refresh_token' => $data['refresh_token'],
-        ]);
+        $request = Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $refreshToken]);
 
         try {
             $this->router->dispatch($request);

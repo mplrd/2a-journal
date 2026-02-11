@@ -51,16 +51,26 @@ class AccountRepository
         return $row ?: null;
     }
 
-    public function findAllByUserId(int $userId): array
+    public function findAllByUserId(int $userId, int $limit = 50, int $offset = 0): array
     {
+        $countStmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM accounts WHERE user_id = :user_id AND deleted_at IS NULL'
+        );
+        $countStmt->execute(['user_id' => $userId]);
+        $total = (int) $countStmt->fetchColumn();
+
         $stmt = $this->pdo->prepare(
             'SELECT id, user_id, name, account_type, broker, mode, currency, initial_capital, current_capital,
                     max_drawdown, daily_drawdown, profit_target, profit_split, is_active, created_at, updated_at
-             FROM accounts WHERE user_id = :user_id AND deleted_at IS NULL ORDER BY created_at DESC'
+             FROM accounts WHERE user_id = :user_id AND deleted_at IS NULL ORDER BY created_at DESC
+             LIMIT :limit OFFSET :offset'
         );
-        $stmt->execute(['user_id' => $userId]);
+        $stmt->bindValue('user_id', $userId, PDO::PARAM_INT);
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue('offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
 
-        return $stmt->fetchAll();
+        return ['items' => $stmt->fetchAll(), 'total' => $total];
     }
 
     public function update(int $id, array $data): ?array

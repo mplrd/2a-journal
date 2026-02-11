@@ -7,6 +7,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const loading = ref(false)
   const error = ref(null)
+  const initialized = ref(false)
 
   const isAuthenticated = computed(() => !!api.getAccessToken())
   const fullName = computed(() => {
@@ -15,7 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   function setAuthData(data) {
-    api.setTokens(data.access_token, data.refresh_token)
+    api.setTokens(data.access_token)
     if (data.user) {
       user.value = data.user
     }
@@ -72,9 +73,18 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function initFromStorage() {
-    if (api.getAccessToken()) {
-      fetchProfile()
+  async function initSession() {
+    try {
+      const response = await api.refreshAccessToken()
+      if (response) {
+        await fetchProfile()
+      }
+    } catch {
+      // No valid session — user stays unauthenticated
+      user.value = null
+      api.clearTokens()
+    } finally {
+      initialized.value = true
     }
   }
 
@@ -82,12 +92,13 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     error,
+    initialized,
     isAuthenticated,
     fullName,
     register,
     login,
     logout,
     fetchProfile,
-    initFromStorage,
+    initSession,
   }
 })

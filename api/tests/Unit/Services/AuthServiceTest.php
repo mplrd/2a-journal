@@ -26,6 +26,11 @@ class AuthServiceTest extends TestCase
             'refresh_token_ttl' => 604800,
             'password_min_length' => 8,
             'bcrypt_cost' => 12,
+            'cookie_name' => 'refresh_token',
+            'cookie_path' => '/api/auth',
+            'cookie_httponly' => true,
+            'cookie_samesite' => 'Lax',
+            'cookie_secure' => false,
         ];
 
         $this->userRepo = $this->createMock(UserRepository::class);
@@ -127,9 +132,13 @@ class AuthServiceTest extends TestCase
         ]);
 
         $this->assertArrayHasKey('access_token', $result);
-        $this->assertArrayHasKey('refresh_token', $result);
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertArrayNotHasKey('refresh_token', $result);
         $this->assertArrayHasKey('user', $result);
         $this->assertSame('new@test.com', $result['user']['email']);
+        $this->assertStringContainsString('refresh_token=', $result['refresh_cookie']);
+        $this->assertStringContainsString('HttpOnly', $result['refresh_cookie']);
+        $this->assertStringContainsString('Path=/api/auth', $result['refresh_cookie']);
     }
 
     // ── Login ────────────────────────────────────────────────────
@@ -194,7 +203,8 @@ class AuthServiceTest extends TestCase
         $result = $this->service->login(['email' => 'test@test.com', 'password' => 'Test1234']);
 
         $this->assertArrayHasKey('access_token', $result);
-        $this->assertArrayHasKey('refresh_token', $result);
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertArrayNotHasKey('refresh_token', $result);
         $this->assertArrayHasKey('user', $result);
     }
 
@@ -251,19 +261,25 @@ class AuthServiceTest extends TestCase
         $result = $this->service->refresh(['refresh_token' => 'valid-token']);
 
         $this->assertArrayHasKey('access_token', $result);
-        $this->assertArrayHasKey('refresh_token', $result);
-        $this->assertNotSame('valid-token', $result['refresh_token']);
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertArrayNotHasKey('refresh_token', $result);
+        $this->assertStringContainsString('refresh_token=', $result['refresh_cookie']);
+        $this->assertStringNotContainsString('refresh_token=valid-token', $result['refresh_cookie']);
     }
 
     // ── Logout ───────────────────────────────────────────────────
 
-    public function testLogoutDeletesAllTokens(): void
+    public function testLogoutDeletesAllTokensAndReturnsClearCookie(): void
     {
         $this->tokenRepo->expects($this->once())
             ->method('deleteAllByUserId')
             ->with(42);
 
-        $this->service->logout(42);
+        $result = $this->service->logout(42);
+
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertStringContainsString('refresh_token=;', $result['refresh_cookie']);
+        $this->assertStringContainsString('Max-Age=0', $result['refresh_cookie']);
     }
 
     // ── Profile ──────────────────────────────────────────────────
@@ -314,7 +330,7 @@ class AuthServiceTest extends TestCase
         $this->assertArrayHasKey('iat', $payload);
     }
 
-    public function testRefreshTokenIsOpaque(): void
+    public function testRefreshTokenInCookieIsOpaque(): void
     {
         $this->userRepo->method('existsByEmail')->willReturn(false);
         $this->userRepo->method('create')->willReturn([
@@ -324,8 +340,32 @@ class AuthServiceTest extends TestCase
 
         $result = $this->service->register(['email' => 'tok@test.com', 'password' => 'Test1234']);
 
+        // Extract token value from Set-Cookie string
+        preg_match('/refresh_token=([^;]+)/', $result['refresh_cookie'], $matches);
+        $this->assertNotEmpty($matches[1]);
         // Refresh token should be a hex string (64 chars = 32 bytes)
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $result['refresh_token']);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $matches[1]);
+    }
+
+    // ── Cookie format ────────────────────────────────────────────
+
+    public function testRefreshCookieContainsSecurityAttributes(): void
+    {
+        $this->userRepo->method('existsByEmail')->willReturn(false);
+        $this->userRepo->method('create')->willReturn([
+            'id' => 1,
+            'email' => 'cookie@test.com',
+        ]);
+
+        $result = $this->service->register(['email' => 'cookie@test.com', 'password' => 'Test1234']);
+
+        $cookie = $result['refresh_cookie'];
+        $this->assertStringContainsString('HttpOnly', $cookie);
+        $this->assertStringContainsString('SameSite=Lax', $cookie);
+        $this->assertStringContainsString('Path=/api/auth', $cookie);
+        $this->assertStringContainsString('Max-Age=604800', $cookie);
+        // Secure flag should NOT be present in dev (cookie_secure=false)
+        $this->assertStringNotContainsString('Secure', $cookie);
     }
 
     // ── Bcrypt cost ─────────────────────────────────────────────

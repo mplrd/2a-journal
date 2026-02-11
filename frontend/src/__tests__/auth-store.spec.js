@@ -19,7 +19,7 @@ describe('auth store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     store = useAuthStore()
-    localStorage.clear()
+    api.clearTokens()
     vi.restoreAllMocks()
   })
 
@@ -28,17 +28,15 @@ describe('auth store', () => {
   })
 
   it('isAuthenticated returns true when token exists', () => {
-    api.setTokens('token', 'refresh')
-    // Need to re-evaluate computed
+    api.setTokens('token')
     expect(store.isAuthenticated).toBe(true)
   })
 
-  it('login stores tokens and user', async () => {
+  it('login stores access token and user', async () => {
     authService.login.mockResolvedValue({
       success: true,
       data: {
         access_token: 'access-123',
-        refresh_token: 'refresh-456',
         user: { id: 1, email: 'test@test.com', first_name: 'John', last_name: 'Doe' },
       },
     })
@@ -62,12 +60,11 @@ describe('auth store', () => {
     expect(store.user).toBeNull()
   })
 
-  it('register stores tokens and user', async () => {
+  it('register stores access token and user', async () => {
     authService.register.mockResolvedValue({
       success: true,
       data: {
         access_token: 'access-789',
-        refresh_token: 'refresh-012',
         user: { id: 2, email: 'new@test.com', first_name: 'Jane' },
       },
     })
@@ -80,7 +77,7 @@ describe('auth store', () => {
 
   it('logout clears user and tokens', async () => {
     // Setup authenticated state
-    api.setTokens('token', 'refresh')
+    api.setTokens('token')
     store.user = { id: 1, email: 'test@test.com' }
     authService.logout.mockResolvedValue({ success: true })
 
@@ -92,7 +89,7 @@ describe('auth store', () => {
   })
 
   it('logout clears state even if API call fails', async () => {
-    api.setTokens('token', 'refresh')
+    api.setTokens('token')
     store.user = { id: 1, email: 'test@test.com' }
     authService.logout.mockRejectedValue(new Error('Network error'))
 
@@ -114,7 +111,7 @@ describe('auth store', () => {
   })
 
   it('fetchProfile sets user from API', async () => {
-    api.setTokens('token', 'refresh')
+    api.setTokens('token')
     authService.me.mockResolvedValue({
       success: true,
       data: { id: 1, email: 'test@test.com', first_name: 'John' },
@@ -132,5 +129,28 @@ describe('auth store', () => {
     await store.fetchProfile()
 
     expect(store.user).toBeNull()
+  })
+
+  it('initSession sets initialized flag on success', async () => {
+    vi.spyOn(api, 'refreshAccessToken').mockResolvedValue('new-token')
+    authService.me.mockResolvedValue({
+      success: true,
+      data: { id: 1, email: 'test@test.com' },
+    })
+
+    await store.initSession()
+
+    expect(store.initialized).toBe(true)
+    expect(store.user.email).toBe('test@test.com')
+  })
+
+  it('initSession sets initialized flag even on failure', async () => {
+    vi.spyOn(api, 'refreshAccessToken').mockRejectedValue(new Error('No session'))
+
+    await store.initSession()
+
+    expect(store.initialized).toBe(true)
+    expect(store.user).toBeNull()
+    expect(api.getAccessToken()).toBeNull()
   })
 })

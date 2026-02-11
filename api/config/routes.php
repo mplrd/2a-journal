@@ -2,12 +2,14 @@
 
 use App\Controllers\AccountController;
 use App\Controllers\AuthController;
+use App\Controllers\OrderController;
 use App\Controllers\PositionController;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
+use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
 use App\Repositories\RefreshTokenRepository;
@@ -15,6 +17,7 @@ use App\Repositories\StatusHistoryRepository;
 use App\Repositories\UserRepository;
 use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\OrderService;
 use App\Services\PositionService;
 
 /** @var Router $router */
@@ -88,3 +91,15 @@ $router->put('/positions/{id}', [$positionController, 'update'], [$authMiddlewar
 $router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddleware]);
 $router->post('/positions/{id}/transfer', [$positionController, 'transfer'], [$authMiddleware]);
 $router->get('/positions/{id}/history', [$positionController, 'history'], [$authMiddleware]);
+
+// ── Orders ────────────────────────────────────────────────────
+$orderRepo = new OrderRepository($pdo);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo);
+$orderController = new OrderController($orderService);
+
+$router->get('/orders', [$orderController, 'index'], [$authMiddleware]);
+$router->post('/orders', [$orderController, 'store'], [$authMiddleware]);
+$router->get('/orders/{id}', [$orderController, 'show'], [$authMiddleware]);
+$router->delete('/orders/{id}', [$orderController, 'destroy'], [$authMiddleware]);
+$router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddleware]);
+$router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware]);

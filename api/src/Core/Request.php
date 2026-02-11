@@ -12,8 +12,9 @@ class Request
     private array $routeParams;
     private array $attributes;
     private string $clientIp;
+    private array $cookies;
 
-    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1')
+    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [])
     {
         $this->method = $method;
         $this->uri = $uri;
@@ -23,6 +24,7 @@ class Request
         $this->routeParams = [];
         $this->attributes = [];
         $this->clientIp = $clientIp;
+        $this->cookies = $cookies;
     }
 
     public static function capture(): self
@@ -68,17 +70,17 @@ class Request
 
         $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
-        return new self($method, $uri, $body, $_GET, $headers, $clientIp);
+        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE);
     }
 
-    public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = []): self
+    public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = [], array $cookies = []): self
     {
         // Normalize header keys to uppercase
         $normalized = [];
         foreach ($headers as $key => $value) {
             $normalized[strtoupper(str_replace('_', '-', $key))] = $value;
         }
-        return new self($method, $uri, $body, $query, $normalized);
+        return new self($method, $uri, $body, $query, $normalized, '127.0.0.1', $cookies);
     }
 
     public function getMethod(): string
@@ -111,6 +113,11 @@ class Request
     {
         $name = strtoupper(str_replace('_', '-', $name));
         return $this->headers[$name] ?? null;
+    }
+
+    public function getCookie(string $name): ?string
+    {
+        return $this->cookies[$name] ?? null;
     }
 
     public function getRouteParams(): array

@@ -2,16 +2,11 @@
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { onMounted } from 'vue'
 import Button from 'primevue/button'
 
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
-
-onMounted(() => {
-  authStore.initFromStorage()
-})
 
 async function handleLogout() {
   await authStore.logout()
@@ -33,6 +28,9 @@ async function handleLogout() {
           </RouterLink>
           <RouterLink to="/positions" class="text-sm text-gray-600 hover:text-gray-900">
             {{ t('nav.positions') }}
+          </RouterLink>
+          <RouterLink to="/orders" class="text-sm text-gray-600 hover:text-gray-900">
+            {{ t('nav.orders') }}
           </RouterLink>
           <span v-if="authStore.fullName" class="text-sm text-gray-500">{{ authStore.fullName }}</span>
           <Button :label="t('nav.logout')" severity="secondary" size="small" @click="handleLogout" />

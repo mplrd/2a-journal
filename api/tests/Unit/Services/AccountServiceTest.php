@@ -132,11 +132,15 @@ class AccountServiceTest extends TestCase
     public function testListReturnsUserAccounts(): void
     {
         $accounts = [['id' => 1, 'name' => 'A'], ['id' => 2, 'name' => 'B']];
-        $this->repo->method('findAllByUserId')->with(1)->willReturn($accounts);
+        $this->repo->method('findAllByUserId')->willReturn(['items' => $accounts, 'total' => 2]);
 
         $result = $this->service->list(1);
 
-        $this->assertCount(2, $result);
+        $this->assertCount(2, $result['data']);
+        $this->assertSame(1, $result['meta']['page']);
+        $this->assertSame(50, $result['meta']['per_page']);
+        $this->assertSame(2, $result['meta']['total']);
+        $this->assertSame(1, $result['meta']['total_pages']);
     }
 
     public function testGetReturnsAccountForOwner(): void

@@ -9,10 +9,6 @@ export const authService = {
     return api.post('/auth/login', data, { auth: false })
   },
 
-  async refresh(refreshToken) {
-    return api.post('/auth/refresh', { refresh_token: refreshToken }, { auth: false })
-  },
-
   async logout() {
     return api.post('/auth/logout')
   },

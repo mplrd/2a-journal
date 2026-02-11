@@ -125,10 +125,11 @@ class AccountRepositoryTest extends TestCase
         $otherUserId = (int)$this->pdo->lastInsertId();
         $this->repo->create($this->validData(['user_id' => $otherUserId, 'name' => 'Other Account']));
 
-        $accounts = $this->repo->findAllByUserId($this->userId);
+        $result = $this->repo->findAllByUserId($this->userId);
 
-        $this->assertCount(2, $accounts);
-        $names = array_column($accounts, 'name');
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(2, $result['total']);
+        $names = array_column($result['items'], 'name');
         $this->assertContains('Account 1', $names);
         $this->assertContains('Account 2', $names);
         $this->assertNotContains('Other Account', $names);
@@ -168,7 +169,8 @@ class AccountRepositoryTest extends TestCase
         $created = $this->repo->create($this->validData());
         $this->repo->softDelete((int)$created['id']);
 
-        $accounts = $this->repo->findAllByUserId($this->userId);
-        $this->assertCount(0, $accounts);
+        $result = $this->repo->findAllByUserId($this->userId);
+        $this->assertCount(0, $result['items']);
+        $this->assertSame(0, $result['total']);
     }
 }

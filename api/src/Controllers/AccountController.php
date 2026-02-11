@@ -19,9 +19,17 @@ class AccountController extends Controller
     public function index(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $accounts = $this->accountService->list($userId);
+        $params = [];
+        foreach (['page', 'per_page'] as $key) {
+            $value = $request->getQuery($key);
+            if ($value !== null && $value !== '') {
+                $params[$key] = $value;
+            }
+        }
 
-        return $this->jsonSuccess($accounts);
+        $result = $this->accountService->list($userId, $params);
+
+        return $this->jsonSuccess($result['data'], $result['meta']);
     }
 
     public function store(Request $request): Response

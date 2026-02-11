@@ -21,16 +21,16 @@ class PositionController extends Controller
         $userId = $request->getAttribute('user_id');
         $filters = [];
 
-        foreach (['account_id', 'position_type', 'symbol', 'direction'] as $key) {
+        foreach (['account_id', 'position_type', 'symbol', 'direction', 'page', 'per_page'] as $key) {
             $value = $request->getQuery($key);
             if ($value !== null && $value !== '') {
                 $filters[$key] = $value;
             }
         }
 
-        $positions = $this->positionService->list($userId, $filters);
+        $result = $this->positionService->list($userId, $filters);
 
-        return $this->jsonSuccess($positions);
+        return $this->jsonSuccess($result['data'], $result['meta']);
     }
 
     public function show(Request $request): Response

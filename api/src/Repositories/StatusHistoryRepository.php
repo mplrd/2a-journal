@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\TriggerType;
 use PDO;
 
 class StatusHistoryRepository
@@ -25,7 +26,7 @@ class StatusHistoryRepository
             'previous_status' => $data['previous_status'] ?? null,
             'new_status' => $data['new_status'],
             'user_id' => $data['user_id'] ?? null,
-            'trigger_type' => $data['trigger_type'] ?? 'MANUAL',
+            'trigger_type' => $data['trigger_type'] ?? TriggerType::MANUAL->value,
             'details' => $data['details'] ?? null,
         ]);
 

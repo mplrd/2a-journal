@@ -6,6 +6,7 @@ class Response
 {
     private int $statusCode;
     private array $body;
+    private array $headers = [];
 
     private function __construct(int $statusCode, array $body)
     {
@@ -34,6 +35,12 @@ class Response
         return new self($status, ['success' => false, 'error' => $error]);
     }
 
+    public function withHeader(string $name, string $value): self
+    {
+        $this->headers[$name] = $value;
+        return $this;
+    }
+
     public function getStatusCode(): int
     {
         return $this->statusCode;
@@ -44,10 +51,23 @@ class Response
         return $this->body;
     }
 
+    public function getHeaders(): array
+    {
+        return $this->headers;
+    }
+
+    public function getHeader(string $name): ?string
+    {
+        return $this->headers[$name] ?? null;
+    }
+
     public function send(): void
     {
         http_response_code($this->statusCode);
         header('Content-Type: application/json; charset=utf-8');
+        foreach ($this->headers as $name => $value) {
+            header("$name: $value");
+        }
         echo json_encode($this->body, JSON_UNESCAPED_UNICODE);
     }
 }

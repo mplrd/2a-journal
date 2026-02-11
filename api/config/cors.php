@@ -7,4 +7,5 @@ return [
     'methods' => 'GET, POST, PUT, DELETE, OPTIONS',
     'headers' => 'Content-Type, Authorization',
     'max_age' => 86400,
+    'credentials' => true,
 ];

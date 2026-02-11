@@ -49,7 +49,23 @@ class PositionService
             $validFilters['symbol'] = $filters['symbol'];
         }
 
-        return $this->positionRepo->findAllByUserId($userId, $validFilters);
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($filters['per_page'] ?? 50)));
+        $offset = ($page - 1) * $perPage;
+
+        $result = $this->positionRepo->findAllByUserId($userId, $validFilters, $perPage, $offset);
+        $total = $result['total'];
+        $totalPages = (int) ceil($total / $perPage);
+
+        return [
+            'data' => $result['items'],
+            'meta' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'total_pages' => $totalPages,
+            ],
+        ];
     }
 
     public function get(int $userId, int $positionId): array

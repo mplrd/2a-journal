@@ -1,31 +1,24 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
 
+let accessToken = null
+
 function getAccessToken() {
-  return localStorage.getItem('access_token')
+  return accessToken
 }
 
-function setTokens(accessToken, refreshToken) {
-  localStorage.setItem('access_token', accessToken)
-  if (refreshToken) {
-    localStorage.setItem('refresh_token', refreshToken)
-  }
+function setTokens(at) {
+  accessToken = at
 }
 
 function clearTokens() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
+  accessToken = null
 }
 
 async function refreshAccessToken() {
-  const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) {
-    throw new Error('No refresh token')
-  }
-
   const response = await fetch(`${BASE_URL}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    credentials: 'include',
   })
 
   if (!response.ok) {
@@ -34,7 +27,7 @@ async function refreshAccessToken() {
   }
 
   const data = await response.json()
-  setTokens(data.data.access_token, data.data.refresh_token)
+  setTokens(data.data.access_token)
   return data.data.access_token
 }
 
@@ -48,7 +41,7 @@ async function request(method, path, body = null, { auth = true, retry = true } 
     }
   }
 
-  const options = { method, headers }
+  const options = { method, headers, credentials: 'include' }
   if (body !== null) {
     options.body = JSON.stringify(body)
   }
@@ -62,7 +55,7 @@ async function request(method, path, body = null, { auth = true, retry = true } 
       try {
         const newToken = await refreshAccessToken()
         headers['Authorization'] = `Bearer ${newToken}`
-        response = await fetch(`${BASE_URL}${path}`, { method, headers, body: options.body })
+        response = await fetch(`${BASE_URL}${path}`, { method, headers, body: options.body, credentials: 'include' })
       } catch {
         clearTokens()
         window.location.href = '/login'
@@ -101,4 +94,5 @@ export const api = {
   setTokens,
   clearTokens,
   getAccessToken,
+  refreshAccessToken,
 }

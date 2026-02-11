@@ -44,6 +44,9 @@ if (in_array($origin, $corsConfig['origins'], true)) {
     header("Access-Control-Allow-Methods: {$corsConfig['methods']}");
     header("Access-Control-Allow-Headers: {$corsConfig['headers']}");
     header("Access-Control-Max-Age: {$corsConfig['max_age']}");
+    if (!empty($corsConfig['credentials'])) {
+        header('Access-Control-Allow-Credentials: true');
+    }
 }
 
 // ── Security headers ────────────────────────────────────────

@@ -164,6 +164,56 @@
       "transferred": "Position transférée avec succès"
     }
   },
+  "orders": {
+    "title": "Ordres",
+    "create": "Nouvel ordre",
+    "empty": "Aucun ordre. Créez votre premier ordre pour commencer.",
+    "account": "Compte",
+    "select_account": "Sélectionner un compte",
+    "status": "Statut",
+    "expires_at": "Expiration",
+    "execute": "Exécuter",
+    "cancel_action": "Annuler",
+    "filter_account": "Filtrer par compte",
+    "filter_status": "Filtrer par statut",
+    "all_accounts": "Tous les comptes",
+    "all_statuses": "Tous les statuts",
+    "confirm_cancel": "Êtes-vous sûr de vouloir annuler cet ordre ?",
+    "confirm_execute": "Êtes-vous sûr de vouloir exécuter cet ordre ?",
+    "confirm_delete": "Êtes-vous sûr de vouloir supprimer cet ordre ?",
+    "statuses": {
+      "PENDING": "En attente",
+      "EXECUTED": "Exécuté",
+      "CANCELLED": "Annulé",
+      "EXPIRED": "Expiré"
+    },
+    "error": {
+      "not_found": "Ordre non trouvé",
+      "forbidden": "Accès non autorisé à cet ordre",
+      "account_forbidden": "Ce compte ne vous appartient pas",
+      "field_required": "Ce champ est requis",
+      "invalid_direction": "Direction invalide",
+      "invalid_symbol": "Symbole invalide",
+      "invalid_price": "Le prix doit être positif",
+      "invalid_size": "La taille doit être positive",
+      "invalid_setup": "Setup invalide",
+      "invalid_sl_points": "Le SL en points doit être positif",
+      "invalid_be_points": "Le BE en points doit être positif",
+      "invalid_be_size": "La taille BE doit être positive",
+      "notes_too_long": "Les notes sont trop longues (10000 caractères max)",
+      "invalid_targets": "Format des objectifs invalide",
+      "invalid_target_points": "Les points de l'objectif doivent être positifs",
+      "invalid_target_size": "La taille de l'objectif doit être positive",
+      "invalid_expires_at": "La date d'expiration doit être dans le futur",
+      "not_pending": "L'ordre n'est plus en attente"
+    },
+    "success": {
+      "created": "Ordre créé avec succès",
+      "cancelled": "Ordre annulé avec succès",
+      "executed": "Ordre exécuté avec succès",
+      "deleted": "Ordre supprimé avec succès"
+    }
+  },
   "error": {
     "internal": "Erreur interne du serveur",
     "not_found": "Page non trouvée",

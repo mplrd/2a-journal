@@ -3,22 +3,27 @@ import { api } from '@/services/api'
 
 describe('api service', () => {
   beforeEach(() => {
-    localStorage.clear()
+    api.clearTokens()
     vi.restoreAllMocks()
   })
 
-  it('sets and retrieves tokens from localStorage', () => {
-    api.setTokens('access-123', 'refresh-456')
+  it('sets and retrieves access token in memory', () => {
+    api.setTokens('access-123')
 
     expect(api.getAccessToken()).toBe('access-123')
-    expect(localStorage.getItem('refresh_token')).toBe('refresh-456')
   })
 
-  it('clears tokens from localStorage', () => {
-    api.setTokens('access-123', 'refresh-456')
+  it('clears access token from memory', () => {
+    api.setTokens('access-123')
     api.clearTokens()
 
     expect(api.getAccessToken()).toBeNull()
+  })
+
+  it('does not use localStorage for tokens', () => {
+    api.setTokens('access-123')
+
+    expect(localStorage.getItem('access_token')).toBeNull()
     expect(localStorage.getItem('refresh_token')).toBeNull()
   })
 
@@ -54,8 +59,21 @@ describe('api service', () => {
     expect(JSON.parse(options.body)).toEqual({ email: 'test@test.com', password: 'Test1234' })
   })
 
+  it('includes credentials in all requests', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: {} }),
+    })
+
+    await api.get('/health', { auth: false })
+
+    const [, options] = fetch.mock.calls[0]
+    expect(options.credentials).toBe('include')
+  })
+
   it('includes Authorization header when authenticated', async () => {
-    api.setTokens('my-token', 'refresh')
+    api.setTokens('my-token')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
@@ -69,7 +87,7 @@ describe('api service', () => {
   })
 
   it('does not include Authorization header for guest requests', async () => {
-    api.setTokens('my-token', 'refresh')
+    api.setTokens('my-token')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
@@ -103,7 +121,7 @@ describe('api service', () => {
   })
 
   it('handles 401 TOKEN_MISSING without double body read', async () => {
-    api.setTokens('bad-token', 'refresh')
+    api.setTokens('bad-token')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 401,

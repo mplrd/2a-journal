@@ -42,7 +42,7 @@ class AuthService
 
         return [
             'access_token' => $accessToken,
-            'refresh_token' => $refreshToken,
+            'refresh_cookie' => $this->buildRefreshCookie($refreshToken, $this->config['refresh_token_ttl']),
             'user' => $user,
         ];
     }
@@ -70,7 +70,7 @@ class AuthService
 
         return [
             'access_token' => $accessToken,
-            'refresh_token' => $refreshToken,
+            'refresh_cookie' => $this->buildRefreshCookie($refreshToken, $this->config['refresh_token_ttl']),
             'user' => $profile,
         ];
     }
@@ -99,13 +99,17 @@ class AuthService
 
         return [
             'access_token' => $accessToken,
-            'refresh_token' => $refreshToken,
+            'refresh_cookie' => $this->buildRefreshCookie($refreshToken, $this->config['refresh_token_ttl']),
         ];
     }
 
-    public function logout(int $userId): void
+    public function logout(int $userId): array
     {
         $this->tokenRepo->deleteAllByUserId($userId);
+
+        return [
+            'refresh_cookie' => $this->buildClearCookie(),
+        ];
     }
 
     public function getProfile(int $userId): array
@@ -117,6 +121,42 @@ class AuthService
         }
 
         return $user;
+    }
+
+    private function buildRefreshCookie(string $token, int $ttl): string
+    {
+        $parts = [
+            "{$this->config['cookie_name']}=$token",
+            "Path={$this->config['cookie_path']}",
+            "Max-Age=$ttl",
+            "SameSite={$this->config['cookie_samesite']}",
+        ];
+        if ($this->config['cookie_httponly']) {
+            $parts[] = 'HttpOnly';
+        }
+        if ($this->config['cookie_secure']) {
+            $parts[] = 'Secure';
+        }
+
+        return implode('; ', $parts);
+    }
+
+    private function buildClearCookie(): string
+    {
+        $parts = [
+            "{$this->config['cookie_name']}=",
+            "Path={$this->config['cookie_path']}",
+            'Max-Age=0',
+            "SameSite={$this->config['cookie_samesite']}",
+        ];
+        if ($this->config['cookie_httponly']) {
+            $parts[] = 'HttpOnly';
+        }
+        if ($this->config['cookie_secure']) {
+            $parts[] = 'Secure';
+        }
+
+        return implode('; ', $parts);
     }
 
     private function generateAccessToken(int $userId): string

@@ -107,6 +107,33 @@ class PositionRepositoryTest extends TestCase
         return $this->repo->findById((int) $this->pdo->lastInsertId());
     }
 
+    public function testCreateInsertsAndReturnsPosition(): void
+    {
+        $position = $this->repo->create([
+            'user_id' => $this->userId,
+            'account_id' => $this->accountId,
+            'direction' => 'BUY',
+            'symbol' => 'NASDAQ',
+            'entry_price' => '18500.00000',
+            'size' => '1.0000',
+            'setup' => 'Breakout',
+            'sl_points' => '50.00',
+            'sl_price' => '18450.00000',
+            'position_type' => 'ORDER',
+        ]);
+
+        $this->assertNotNull($position);
+        $this->assertArrayHasKey('id', $position);
+        $this->assertSame('NASDAQ', $position['symbol']);
+        $this->assertSame('BUY', $position['direction']);
+        $this->assertSame('ORDER', $position['position_type']);
+
+        // Verify it's persisted
+        $found = $this->repo->findById((int) $position['id']);
+        $this->assertNotNull($found);
+        $this->assertSame('NASDAQ', $found['symbol']);
+    }
+
     public function testFindByIdReturnsPosition(): void
     {
         $created = $this->insertPosition();
@@ -129,9 +156,10 @@ class PositionRepositoryTest extends TestCase
         $this->insertPosition(['symbol' => 'NASDAQ']);
         $this->insertPosition(['symbol' => 'DAX']);
 
-        $positions = $this->repo->findAllByUserId($this->userId);
+        $result = $this->repo->findAllByUserId($this->userId);
 
-        $this->assertCount(2, $positions);
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(2, $result['total']);
     }
 
     public function testFindAllByUserIdWithFilters(): void
@@ -142,15 +170,15 @@ class PositionRepositoryTest extends TestCase
 
         // Filter by position_type
         $trades = $this->repo->findAllByUserId($this->userId, ['position_type' => 'TRADE']);
-        $this->assertCount(1, $trades);
+        $this->assertCount(1, $trades['items']);
 
         // Filter by symbol
         $nasdaq = $this->repo->findAllByUserId($this->userId, ['symbol' => 'NASDAQ']);
-        $this->assertCount(2, $nasdaq);
+        $this->assertCount(2, $nasdaq['items']);
 
         // Filter by both
         $nasdaqOrders = $this->repo->findAllByUserId($this->userId, ['symbol' => 'NASDAQ', 'position_type' => 'ORDER']);
-        $this->assertCount(1, $nasdaqOrders);
+        $this->assertCount(1, $nasdaqOrders['items']);
     }
 
     public function testUpdateModifiesFields(): void

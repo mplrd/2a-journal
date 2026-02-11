@@ -18,9 +18,25 @@ class AccountService
         $this->repo = $repo;
     }
 
-    public function list(int $userId): array
+    public function list(int $userId, array $params = []): array
     {
-        return $this->repo->findAllByUserId($userId);
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($params['per_page'] ?? 50)));
+        $offset = ($page - 1) * $perPage;
+
+        $result = $this->repo->findAllByUserId($userId, $perPage, $offset);
+        $total = $result['total'];
+        $totalPages = (int) ceil($total / $perPage);
+
+        return [
+            'data' => $result['items'],
+            'meta' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'total_pages' => $totalPages,
+            ],
+        ];
     }
 
     public function create(int $userId, array $data): array

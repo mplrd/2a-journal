@@ -499,10 +499,12 @@ class PositionServiceTest extends TestCase
     public function testListReturnsPositions(): void
     {
         $positions = [$this->fakePosition(), $this->fakePosition(['id' => 2])];
-        $this->positionRepo->method('findAllByUserId')->willReturn($positions);
+        $this->positionRepo->method('findAllByUserId')->willReturn(['items' => $positions, 'total' => 2]);
 
         $result = $this->service->list(1);
 
-        $this->assertCount(2, $result);
+        $this->assertCount(2, $result['data']);
+        $this->assertSame(2, $result['meta']['total']);
+        $this->assertSame(1, $result['meta']['page']);
     }
 }
