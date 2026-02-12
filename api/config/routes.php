@@ -4,6 +4,7 @@ use App\Controllers\AccountController;
 use App\Controllers\AuthController;
 use App\Controllers\OrderController;
 use App\Controllers\PositionController;
+use App\Controllers\SymbolController;
 use App\Controllers\TradeController;
 use App\Core\Database;
 use App\Core\Router;
@@ -12,6 +13,7 @@ use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PartialExitRepository;
+use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
 use App\Repositories\RefreshTokenRepository;
@@ -22,6 +24,7 @@ use App\Services\AccountService;
 use App\Services\AuthService;
 use App\Services\OrderService;
 use App\Services\PositionService;
+use App\Services\SymbolService;
 use App\Services\TradeService;
 
 /** @var Router $router */
@@ -71,6 +74,13 @@ $router->post('/auth/login', [$authController, 'login'], [$loginRateLimit]);
 $router->post('/auth/refresh', [$authController, 'refresh'], [$refreshRateLimit]);
 $router->post('/auth/logout', [$authController, 'logout'], [$authMiddleware]);
 $router->get('/auth/me', [$authController, 'me'], [$authMiddleware]);
+
+// ── Symbols ─────────────────────────────────────────────────────
+$symbolRepo = new SymbolRepository($pdo);
+$symbolService = new SymbolService($symbolRepo);
+$symbolController = new SymbolController($symbolService);
+
+$router->get('/symbols', [$symbolController, 'index'], [$authMiddleware]);
 
 // ── Accounts ────────────────────────────────────────────────────
 $accountRepo = new AccountRepository($pdo);

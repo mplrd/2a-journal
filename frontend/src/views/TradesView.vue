@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import { useTradesStore } from '@/stores/trades'
 import { useAccountsStore } from '@/stores/accounts'
+import { useSymbolsStore } from '@/stores/symbols'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -17,6 +18,7 @@ const { t } = useI18n()
 const toast = useToast()
 const store = useTradesStore()
 const accountsStore = useAccountsStore()
+const symbolsStore = useSymbolsStore()
 
 const showForm = ref(false)
 const showCloseDialog = ref(false)
@@ -34,7 +36,7 @@ const statusOptions = [
 ]
 
 onMounted(async () => {
-  await accountsStore.fetchAccounts()
+  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols()])
   await store.fetchTrades()
 })
 
@@ -196,6 +198,7 @@ function pnlClass(pnl) {
     <TradeForm
       v-model:visible="showForm"
       :accounts="accountsStore.accounts"
+      :symbols="symbolsStore.symbolOptions"
       :loading="store.loading"
       @save="handleCreate"
     />

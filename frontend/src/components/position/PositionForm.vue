@@ -14,6 +14,7 @@ const { t } = useI18n()
 const props = defineProps({
   visible: Boolean,
   position: { type: Object, default: null },
+  symbols: { type: Array, default: () => [] },
   loading: Boolean,
 })
 
@@ -134,7 +135,15 @@ function handleClose() {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.symbol') }} *</label>
-          <InputText v-model="form.symbol" class="w-full" :maxlength="50" />
+          <Select
+            v-model="form.symbol"
+            :options="symbols"
+            optionLabel="label"
+            optionValue="value"
+            :placeholder="t('positions.symbol')"
+            :emptyMessage="t('common.no_options')"
+            class="w-full"
+          />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.direction') }} *</label>

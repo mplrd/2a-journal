@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import { usePositionsStore } from '@/stores/positions'
 import { useAccountsStore } from '@/stores/accounts'
+import { useSymbolsStore } from '@/stores/symbols'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -17,6 +18,7 @@ const { t } = useI18n()
 const toast = useToast()
 const store = usePositionsStore()
 const accountsStore = useAccountsStore()
+const symbolsStore = useSymbolsStore()
 
 const showForm = ref(false)
 const editingPosition = ref(null)
@@ -35,7 +37,7 @@ const typeOptions = [
 ]
 
 onMounted(async () => {
-  await accountsStore.fetchAccounts()
+  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols()])
   await store.fetchPositions()
 })
 
@@ -177,6 +179,7 @@ function typeSeverity(type) {
     <PositionForm
       v-model:visible="showForm"
       :position="editingPosition"
+      :symbols="symbolsStore.symbolOptions"
       :loading="store.loading"
       @save="handleSave"
     />
