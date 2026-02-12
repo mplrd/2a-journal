@@ -77,6 +77,13 @@ export const usePositionsStore = defineStore('positions', () => {
     filters.value = { ...newFilters }
   }
 
+  function $reset() {
+    positions.value = []
+    loading.value = false
+    error.value = null
+    filters.value = {}
+  }
+
   return {
     positions,
     loading,
@@ -87,5 +94,6 @@ export const usePositionsStore = defineStore('positions', () => {
     deletePosition,
     transferPosition,
     setFilters,
+    $reset,
   }
 })

@@ -23,6 +23,7 @@
     "positions": "Positions",
     "trades": "Trades",
     "orders": "Orders",
+    "symbols": "My Assets",
     "stats": "Statistics",
     "logout": "Logout",
     "language": "Language"
@@ -282,7 +283,42 @@
       "deleted": "Trade deleted successfully"
     }
   },
+  "symbols": {
+    "title": "My Assets",
+    "create": "New asset",
+    "edit": "Edit asset",
+    "empty": "No assets yet. Create your first asset to get started.",
+    "ticker": "Ticker",
+    "name": "Name",
+    "type": "Type",
+    "point_value": "Point value",
+    "currency": "Currency",
+    "confirm_delete": "Are you sure you want to delete this asset?",
+    "add_symbol": "New asset",
+    "types": {
+      "INDEX": "Index",
+      "FOREX": "Forex",
+      "CRYPTO": "Crypto",
+      "STOCK": "Stock",
+      "COMMODITY": "Commodity"
+    },
+    "error": {
+      "field_required": "This field is required",
+      "invalid_type": "Invalid asset type",
+      "invalid_point_value": "Point value must be positive",
+      "invalid_currency": "Currency must be exactly 3 characters",
+      "duplicate_code": "An asset with this ticker already exists",
+      "not_found": "Asset not found",
+      "forbidden": "Unauthorized access to this asset"
+    },
+    "success": {
+      "created": "Asset created successfully",
+      "updated": "Asset updated successfully",
+      "deleted": "Asset deleted successfully"
+    }
+  },
   "error": {
+    "field_too_long": "This field is too long",
     "internal": "Internal server error",
     "not_found": "Page not found",
     "network": "Server connection error",

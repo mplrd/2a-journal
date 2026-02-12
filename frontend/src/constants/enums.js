@@ -34,6 +34,14 @@ export const TradeStatus = {
   CLOSED: 'CLOSED',
 }
 
+export const SymbolType = {
+  INDEX: 'INDEX',
+  FOREX: 'FOREX',
+  CRYPTO: 'CRYPTO',
+  STOCK: 'STOCK',
+  COMMODITY: 'COMMODITY',
+}
+
 export const ExitType = {
   BE: 'BE',
   TP: 'TP',

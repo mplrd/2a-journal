@@ -8,6 +8,7 @@ use App\Enums\Direction;
 use App\Enums\ExitType;
 use App\Enums\OrderStatus;
 use App\Enums\TradeStatus;
+use App\Enums\SymbolType;
 use App\Enums\TriggerType;
 use PHPUnit\Framework\TestCase;
 
@@ -120,5 +121,23 @@ class EnumsTest extends TestCase
     {
         $this->assertSame(TriggerType::WEBHOOK, TriggerType::from('WEBHOOK'));
         $this->assertNull(TriggerType::tryFrom('INVALID'));
+    }
+
+    public function testSymbolTypeCases(): void
+    {
+        $cases = SymbolType::cases();
+        $this->assertCount(5, $cases);
+        $this->assertSame('INDEX', SymbolType::INDEX->value);
+        $this->assertSame('FOREX', SymbolType::FOREX->value);
+        $this->assertSame('CRYPTO', SymbolType::CRYPTO->value);
+        $this->assertSame('STOCK', SymbolType::STOCK->value);
+        $this->assertSame('COMMODITY', SymbolType::COMMODITY->value);
+    }
+
+    public function testSymbolTypeFromAndTryFrom(): void
+    {
+        $this->assertSame(SymbolType::INDEX, SymbolType::from('INDEX'));
+        $this->assertSame(SymbolType::FOREX, SymbolType::tryFrom('FOREX'));
+        $this->assertNull(SymbolType::tryFrom('INVALID'));
     }
 }

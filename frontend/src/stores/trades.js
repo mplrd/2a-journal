@@ -74,6 +74,13 @@ export const useTradesStore = defineStore('trades', () => {
     filters.value = { ...newFilters }
   }
 
+  function $reset() {
+    trades.value = []
+    loading.value = false
+    error.value = null
+    filters.value = {}
+  }
+
   return {
     trades,
     loading,
@@ -84,5 +91,6 @@ export const useTradesStore = defineStore('trades', () => {
     closeTrade,
     deleteTrade,
     setFilters,
+    $reset,
   }
 })

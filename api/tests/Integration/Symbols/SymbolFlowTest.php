@@ -14,6 +14,7 @@ class SymbolFlowTest extends TestCase
     private Router $router;
     private PDO $pdo;
     private string $accessToken;
+    private int $userId;
 
     protected function setUp(): void
     {
@@ -40,13 +41,8 @@ class SymbolFlowTest extends TestCase
         $this->pdo = Database::getConnection();
 
         // Clean tables
-        $this->pdo->exec('DELETE FROM partial_exits');
-        $this->pdo->exec('DELETE FROM status_history');
-        $this->pdo->exec('DELETE FROM trades');
-        $this->pdo->exec('DELETE FROM orders');
-        $this->pdo->exec('DELETE FROM positions');
+        $this->pdo->exec('DELETE FROM symbols');
         $this->pdo->exec('DELETE FROM rate_limits');
-        $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
 
@@ -61,26 +57,119 @@ class SymbolFlowTest extends TestCase
             'password' => 'Test1234',
         ]);
         $response = $this->router->dispatch($request);
-        $this->accessToken = $response->getBody()['data']['access_token'];
+        $data = $response->getBody()['data'];
+        $this->accessToken = $data['access_token'];
+
+        // Get user ID
+        $stmt = $this->pdo->prepare('SELECT id FROM users WHERE email = :email');
+        $stmt->execute(['email' => 'symbol@test.com']);
+        $this->userId = (int)$stmt->fetchColumn();
     }
 
     protected function tearDown(): void
     {
+        $this->pdo->exec('DELETE FROM symbols');
         $this->pdo->exec('DELETE FROM rate_limits');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
     }
 
-    private function authRequest(string $method, string $uri): Request
+    private function authRequest(string $method, string $uri, array $body = [], array $query = []): Request
     {
-        return Request::create($method, $uri, [], [], [
+        return Request::create($method, $uri, $body, $query, [
             'Authorization' => "Bearer {$this->accessToken}",
         ]);
     }
 
-    public function testListSymbolsRequiresAuth(): void
+    // ── Registration seeds symbols ───────────────────────────────
+
+    public function testRegistrationSeedsDefaultSymbols(): void
     {
-        $request = Request::create('GET', '/symbols');
+        $request = $this->authRequest('GET', '/symbols');
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertCount(6, $body['data']);
+
+        $codes = array_column($body['data'], 'code');
+        $this->assertContains('US100.CASH', $codes);
+        $this->assertContains('DE40.CASH', $codes);
+        $this->assertContains('US500.CASH', $codes);
+        $this->assertContains('FRA40.CASH', $codes);
+        $this->assertContains('EURUSD', $codes);
+        $this->assertContains('BTCUSD', $codes);
+    }
+
+    // ── Create ───────────────────────────────────────────────────
+
+    public function testCreateSymbolSuccess(): void
+    {
+        $request = $this->authRequest('POST', '/symbols', [
+            'code' => 'GOLD',
+            'name' => 'Gold',
+            'type' => 'COMMODITY',
+            'point_value' => 100.0,
+            'currency' => 'USD',
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(201, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame('GOLD', $body['data']['code']);
+        $this->assertSame('Gold', $body['data']['name']);
+        $this->assertSame('COMMODITY', $body['data']['type']);
+        $this->assertEquals(100.0, $body['data']['point_value']);
+        $this->assertSame('USD', $body['data']['currency']);
+    }
+
+    public function testCreateSymbolValidationError(): void
+    {
+        $request = $this->authRequest('POST', '/symbols', [
+            'code' => '',
+            'name' => 'Missing Code',
+            'type' => 'INDEX',
+            'point_value' => 1.0,
+            'currency' => 'USD',
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('code', $e->getField());
+        }
+    }
+
+    public function testCreateSymbolDuplicateCode(): void
+    {
+        $request = $this->authRequest('POST', '/symbols', [
+            'code' => 'US100.CASH',
+            'name' => 'Duplicate',
+            'type' => 'INDEX',
+            'point_value' => 1.0,
+            'currency' => 'USD',
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('symbols.error.duplicate_code', $e->getMessageKey());
+        }
+    }
+
+    public function testCreateSymbolRequiresAuth(): void
+    {
+        $request = Request::create('POST', '/symbols', [
+            'code' => 'GOLD',
+            'name' => 'Gold',
+            'type' => 'COMMODITY',
+        ]);
 
         try {
             $this->router->dispatch($request);
@@ -90,46 +179,117 @@ class SymbolFlowTest extends TestCase
         }
     }
 
-    public function testListSymbolsReturnsActiveSymbols(): void
+    // ── List ─────────────────────────────────────────────────────
+
+    public function testListSymbolsReturnsPagination(): void
     {
-        $response = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        $request = $this->authRequest('GET', '/symbols', [], ['per_page' => '2']);
+        $response = $this->router->dispatch($request);
         $body = $response->getBody();
 
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertTrue($body['success']);
-        $this->assertIsArray($body['data']);
-        $this->assertGreaterThanOrEqual(6, count($body['data']));
-
-        $codes = array_column($body['data'], 'code');
-        $this->assertContains('NASDAQ', $codes);
-        $this->assertContains('EURUSD', $codes);
+        $this->assertCount(2, $body['data']);
+        $this->assertSame(6, $body['meta']['total']);
+        $this->assertSame(3, $body['meta']['total_pages']);
     }
 
-    public function testListSymbolsReturnsExpectedFields(): void
+    // ── Show ─────────────────────────────────────────────────────
+
+    public function testShowSymbolSuccess(): void
     {
-        $response = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        $symbolId = $listResponse->getBody()['data'][0]['id'];
+
+        $request = $this->authRequest('GET', "/symbols/{$symbolId}");
+        $response = $this->router->dispatch($request);
         $body = $response->getBody();
 
-        $first = $body['data'][0];
-        $this->assertArrayHasKey('id', $first);
-        $this->assertArrayHasKey('code', $first);
-        $this->assertArrayHasKey('name', $first);
-        $this->assertArrayHasKey('type', $first);
-        $this->assertArrayHasKey('point_value', $first);
-        $this->assertArrayHasKey('currency', $first);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertNotEmpty($body['data']['code']);
     }
 
-    public function testListSymbolsExcludesInactive(): void
+    public function testShowSymbolNotFound(): void
     {
-        $this->pdo->exec("UPDATE symbols SET is_active = 0 WHERE code = 'BTCUSD'");
+        $request = $this->authRequest('GET', '/symbols/99999');
 
-        $response = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(404, $e->getStatusCode());
+            $this->assertSame('symbols.error.not_found', $e->getMessageKey());
+        }
+    }
+
+    // ── Update ───────────────────────────────────────────────────
+
+    public function testUpdateSymbolSuccess(): void
+    {
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        $symbol = $listResponse->getBody()['data'][0];
+        $symbolId = $symbol['id'];
+
+        $request = $this->authRequest('PUT', "/symbols/{$symbolId}", [
+            'code' => $symbol['code'],
+            'name' => 'Updated Name',
+            'type' => $symbol['type'],
+            'point_value' => 99.0,
+            'currency' => $symbol['currency'],
+        ]);
+        $response = $this->router->dispatch($request);
         $body = $response->getBody();
 
-        $codes = array_column($body['data'], 'code');
-        $this->assertNotContains('BTCUSD', $codes);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('Updated Name', $body['data']['name']);
+        $this->assertEquals(99.0, $body['data']['point_value']);
+    }
 
-        // Restore
-        $this->pdo->exec("UPDATE symbols SET is_active = 1 WHERE code = 'BTCUSD'");
+    // ── Delete ───────────────────────────────────────────────────
+
+    public function testDeleteSymbolSuccess(): void
+    {
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        $symbolId = $listResponse->getBody()['data'][0]['id'];
+
+        $request = $this->authRequest('DELETE', "/symbols/{$symbolId}");
+        $response = $this->router->dispatch($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($response->getBody()['success']);
+
+        try {
+            $this->router->dispatch($this->authRequest('GET', "/symbols/{$symbolId}"));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(404, $e->getStatusCode());
+        }
+    }
+
+    // ── Ownership ────────────────────────────────────────────────
+
+    public function testCannotAccessOtherUsersSymbol(): void
+    {
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/symbols'));
+        $symbolId = $listResponse->getBody()['data'][0]['id'];
+
+        // Register another user
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'other@test.com',
+            'password' => 'Test1234',
+        ]);
+        $otherResponse = $this->router->dispatch($request);
+        $otherToken = $otherResponse->getBody()['data']['access_token'];
+
+        $request = Request::create('GET', "/symbols/{$symbolId}", [], [], [
+            'Authorization' => "Bearer {$otherToken}",
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+            $this->assertSame('FORBIDDEN', $e->getErrorCode());
+        }
     }
 }

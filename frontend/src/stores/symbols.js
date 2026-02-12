@@ -9,7 +9,7 @@ export const useSymbolsStore = defineStore('symbols', () => {
   const error = ref(null)
 
   const symbolOptions = computed(() =>
-    symbols.value.map((s) => ({ label: s.code, value: s.code })),
+    symbols.value.map((s) => ({ label: s.name, value: s.code })),
   )
 
   async function fetchSymbols(force = false) {
@@ -28,6 +28,60 @@ export const useSymbolsStore = defineStore('symbols', () => {
     }
   }
 
+  async function createSymbol(data) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await symbolsService.create(data)
+      symbols.value.push(response.data)
+      return response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function updateSymbol(id, data) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await symbolsService.update(id, data)
+      const index = symbols.value.findIndex((s) => s.id === id)
+      if (index !== -1) {
+        symbols.value[index] = response.data
+      }
+      return response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteSymbol(id) {
+    loading.value = true
+    error.value = null
+    try {
+      await symbolsService.remove(id)
+      symbols.value = symbols.value.filter((s) => s.id !== id)
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function $reset() {
+    symbols.value = []
+    loading.value = false
+    loaded.value = false
+    error.value = null
+  }
+
   return {
     symbols,
     loading,
@@ -35,5 +89,9 @@ export const useSymbolsStore = defineStore('symbols', () => {
     error,
     symbolOptions,
     fetchSymbols,
+    createSymbol,
+    updateSymbol,
+    deleteSymbol,
+    $reset,
   }
 })

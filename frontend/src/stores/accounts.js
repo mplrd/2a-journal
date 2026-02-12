@@ -69,6 +69,12 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
   }
 
+  function $reset() {
+    accounts.value = []
+    loading.value = false
+    error.value = null
+  }
+
   return {
     accounts,
     loading,
@@ -77,5 +83,6 @@ export const useAccountsStore = defineStore('accounts', () => {
     createAccount,
     updateAccount,
     deleteAccount,
+    $reset,
   }
 })

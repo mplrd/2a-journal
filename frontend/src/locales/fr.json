@@ -23,6 +23,7 @@
     "positions": "Positions",
     "trades": "Trades",
     "orders": "Ordres",
+    "symbols": "Mes actifs",
     "stats": "Statistiques",
     "logout": "Déconnexion",
     "language": "Langue"
@@ -282,7 +283,42 @@
       "deleted": "Trade supprimé avec succès"
     }
   },
+  "symbols": {
+    "title": "Mes actifs",
+    "create": "Nouvel actif",
+    "edit": "Modifier l'actif",
+    "empty": "Aucun actif. Créez votre premier actif pour commencer.",
+    "ticker": "Ticker",
+    "name": "Nom",
+    "type": "Type",
+    "point_value": "Valeur du point",
+    "currency": "Devise",
+    "confirm_delete": "Êtes-vous sûr de vouloir supprimer cet actif ?",
+    "add_symbol": "Nouvel actif",
+    "types": {
+      "INDEX": "Indice",
+      "FOREX": "Forex",
+      "CRYPTO": "Crypto",
+      "STOCK": "Action",
+      "COMMODITY": "Matière première"
+    },
+    "error": {
+      "field_required": "Ce champ est requis",
+      "invalid_type": "Type d'actif invalide",
+      "invalid_point_value": "La valeur du point doit être positive",
+      "invalid_currency": "La devise doit contenir exactement 3 caractères",
+      "duplicate_code": "Un actif avec ce ticker existe déjà",
+      "not_found": "Actif non trouvé",
+      "forbidden": "Accès non autorisé à cet actif"
+    },
+    "success": {
+      "created": "Actif créé avec succès",
+      "updated": "Actif modifié avec succès",
+      "deleted": "Actif supprimé avec succès"
+    }
+  },
   "error": {
+    "field_too_long": "Ce champ est trop long",
     "internal": "Erreur interne du serveur",
     "not_found": "Page non trouvée",
     "network": "Erreur de connexion au serveur",

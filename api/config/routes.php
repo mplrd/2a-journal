@@ -43,7 +43,8 @@ $authConfig = require __DIR__ . '/auth.php';
 $pdo = Database::getConnection();
 $userRepo = new UserRepository($pdo);
 $tokenRepo = new RefreshTokenRepository($pdo);
-$authService = new AuthService($userRepo, $tokenRepo, $authConfig);
+$symbolRepo = new SymbolRepository($pdo);
+$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $authConfig);
 $authController = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authConfig['jwt_secret']);
 
@@ -76,11 +77,14 @@ $router->post('/auth/logout', [$authController, 'logout'], [$authMiddleware]);
 $router->get('/auth/me', [$authController, 'me'], [$authMiddleware]);
 
 // ── Symbols ─────────────────────────────────────────────────────
-$symbolRepo = new SymbolRepository($pdo);
 $symbolService = new SymbolService($symbolRepo);
 $symbolController = new SymbolController($symbolService);
 
 $router->get('/symbols', [$symbolController, 'index'], [$authMiddleware]);
+$router->post('/symbols', [$symbolController, 'store'], [$authMiddleware]);
+$router->get('/symbols/{id}', [$symbolController, 'show'], [$authMiddleware]);
+$router->put('/symbols/{id}', [$symbolController, 'update'], [$authMiddleware]);
+$router->delete('/symbols/{id}', [$symbolController, 'destroy'], [$authMiddleware]);
 
 // ── Accounts ────────────────────────────────────────────────────
 $accountRepo = new AccountRepository($pdo);

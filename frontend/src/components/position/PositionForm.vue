@@ -8,8 +8,13 @@ import Textarea from 'primevue/textarea'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import { Direction } from '@/constants/enums'
+import { useSymbolsStore } from '@/stores/symbols'
+import { useToast } from 'primevue/usetoast'
+import SymbolForm from '@/components/symbol/SymbolForm.vue'
 
 const { t } = useI18n()
+const symbolsStore = useSymbolsStore()
+const toast = useToast()
 
 const props = defineProps({
   visible: Boolean,
@@ -19,6 +24,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:visible', 'save'])
+
+const showSymbolForm = ref(false)
 
 const form = ref(getDefaultForm())
 
@@ -120,6 +127,17 @@ function handleSave() {
 function handleClose() {
   emit('update:visible', false)
 }
+
+async function handleSymbolCreate(data) {
+  try {
+    const created = await symbolsStore.createSymbol(data)
+    form.value.symbol = created.code
+    showSymbolForm.value = false
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('symbols.success.created'), life: 3000 })
+  } catch {
+    // error in store
+  }
+}
 </script>
 
 <template>
@@ -135,15 +153,18 @@ function handleClose() {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.symbol') }} *</label>
-          <Select
-            v-model="form.symbol"
-            :options="symbols"
-            optionLabel="label"
-            optionValue="value"
-            :placeholder="t('positions.symbol')"
-            :emptyMessage="t('common.no_options')"
-            class="w-full"
-          />
+          <div class="flex gap-1">
+            <Select
+              v-model="form.symbol"
+              :options="symbols"
+              optionLabel="label"
+              optionValue="value"
+              :placeholder="t('positions.symbol')"
+              :emptyMessage="t('common.no_options')"
+              class="w-full"
+            />
+            <Button icon="pi pi-plus" severity="secondary" size="small" v-tooltip.top="t('symbols.add_symbol')" @click="showSymbolForm = true" />
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.direction') }} *</label>
@@ -223,5 +244,11 @@ function handleClose() {
       <Button :label="t('common.cancel')" severity="secondary" @click="handleClose" />
       <Button :label="t('common.save')" :loading="loading" @click="handleSave" />
     </template>
+
+    <SymbolForm
+      v-model:visible="showSymbolForm"
+      :loading="symbolsStore.loading"
+      @save="handleSymbolCreate"
+    />
   </Dialog>
 </template>

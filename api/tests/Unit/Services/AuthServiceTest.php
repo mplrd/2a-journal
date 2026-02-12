@@ -36,7 +36,7 @@ class AuthServiceTest extends TestCase
         $this->userRepo = $this->createMock(UserRepository::class);
         $this->tokenRepo = $this->createMock(RefreshTokenRepository::class);
 
-        $this->service = new AuthService($this->userRepo, $this->tokenRepo, $this->config);
+        $this->service = new AuthService($this->userRepo, $this->tokenRepo, null, $this->config);
     }
 
     // ── Register validation ──────────────────────────────────────

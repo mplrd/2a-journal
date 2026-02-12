@@ -56,18 +56,25 @@ CREATE TABLE IF NOT EXISTS accounts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 3. SYMBOLS (reference data)
+-- 3. SYMBOLS (per-user assets)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS symbols (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
     code VARCHAR(20) NOT NULL,
     name VARCHAR(100) NOT NULL,
     type ENUM('INDEX','FOREX','CRYPTO','STOCK','COMMODITY') NOT NULL,
     point_value DECIMAL(10,5) NOT NULL DEFAULT 1.00000,
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
 
-    UNIQUE KEY uk_symbols_code (code)
+    KEY idx_symbols_user_id (user_id),
+    UNIQUE KEY uk_symbols_user_code (user_id, code),
+    CONSTRAINT fk_symbols_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -240,14 +247,3 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
-
--- ============================================================================
--- SEED DATA: Symbols
--- ============================================================================
-INSERT INTO symbols (code, name, type, point_value, currency) VALUES
-    ('NASDAQ', 'NASDAQ 100', 'INDEX', 20.00000, 'USD'),
-    ('DAX', 'DAX 40', 'INDEX', 25.00000, 'EUR'),
-    ('SP500', 'S&P 500', 'INDEX', 50.00000, 'USD'),
-    ('CAC40', 'CAC 40', 'INDEX', 10.00000, 'EUR'),
-    ('EURUSD', 'EUR/USD', 'FOREX', 10.00000, 'USD'),
-    ('BTCUSD', 'Bitcoin/USD', 'CRYPTO', 1.00000, 'USD');

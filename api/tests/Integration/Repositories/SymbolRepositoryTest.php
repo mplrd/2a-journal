@@ -11,6 +11,7 @@ class SymbolRepositoryTest extends TestCase
 {
     private SymbolRepository $repo;
     private PDO $pdo;
+    private int $userId;
 
     protected function setUp(): void
     {
@@ -37,69 +38,166 @@ class SymbolRepositoryTest extends TestCase
         $this->pdo = Database::getConnection();
         $this->repo = new SymbolRepository($this->pdo);
 
-        // Ensure all symbols are active before each test
-        $this->pdo->exec('UPDATE symbols SET is_active = 1');
+        // Clean tables
+        $this->pdo->exec('DELETE FROM symbols');
+        $this->pdo->exec('DELETE FROM users');
+
+        // Create a test user
+        $this->pdo->exec("INSERT INTO users (email, password) VALUES ('test@test.com', 'hashed')");
+        $this->userId = (int)$this->pdo->lastInsertId();
     }
 
-    public function testFindAllActiveReturnsSeededSymbols(): void
+    protected function tearDown(): void
     {
-        $symbols = $this->repo->findAllActive();
+        $this->pdo->exec('DELETE FROM symbols');
+        $this->pdo->exec('DELETE FROM users');
+    }
 
-        $this->assertIsArray($symbols);
-        $this->assertGreaterThanOrEqual(6, count($symbols));
+    private function validData(array $overrides = []): array
+    {
+        return array_merge([
+            'user_id' => $this->userId,
+            'code' => 'US100.CASH',
+            'name' => 'NASDAQ 100',
+            'type' => 'INDEX',
+            'point_value' => 20.0,
+            'currency' => 'USD',
+        ], $overrides);
+    }
 
-        $codes = array_column($symbols, 'code');
-        $this->assertContains('NASDAQ', $codes);
-        $this->assertContains('DAX', $codes);
-        $this->assertContains('SP500', $codes);
-        $this->assertContains('CAC40', $codes);
+    public function testCreateReturnsSymbol(): void
+    {
+        $symbol = $this->repo->create($this->validData());
+
+        $this->assertIsArray($symbol);
+        $this->assertSame('US100.CASH', $symbol['code']);
+        $this->assertSame('NASDAQ 100', $symbol['name']);
+        $this->assertSame('INDEX', $symbol['type']);
+        $this->assertEquals(20.0, $symbol['point_value']);
+        $this->assertSame('USD', $symbol['currency']);
+        $this->assertEquals($this->userId, $symbol['user_id']);
+    }
+
+    public function testFindByIdReturnsSymbol(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $found = $this->repo->findById((int)$created['id']);
+
+        $this->assertNotNull($found);
+        $this->assertSame($created['id'], $found['id']);
+        $this->assertSame('US100.CASH', $found['code']);
+    }
+
+    public function testFindByIdReturnsNullWhenNotFound(): void
+    {
+        $found = $this->repo->findById(99999);
+        $this->assertNull($found);
+    }
+
+    public function testFindAllByUserIdReturnsUserSymbols(): void
+    {
+        $this->repo->create($this->validData(['code' => 'US100.CASH', 'name' => 'NASDAQ 100']));
+        $this->repo->create($this->validData(['code' => 'DE40.CASH', 'name' => 'DAX 40']));
+
+        // Create another user's symbol
+        $this->pdo->exec("INSERT INTO users (email, password) VALUES ('other@test.com', 'hashed')");
+        $otherUserId = (int)$this->pdo->lastInsertId();
+        $this->repo->create($this->validData(['user_id' => $otherUserId, 'code' => 'US500.CASH', 'name' => 'S&P 500']));
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(2, $result['total']);
+        $codes = array_column($result['items'], 'code');
+        $this->assertContains('US100.CASH', $codes);
+        $this->assertContains('DE40.CASH', $codes);
+        $this->assertNotContains('US500.CASH', $codes);
+    }
+
+    public function testFindByUserAndCodeReturnsSymbol(): void
+    {
+        $this->repo->create($this->validData());
+
+        $found = $this->repo->findByUserAndCode($this->userId, 'US100.CASH');
+        $this->assertNotNull($found);
+        $this->assertSame('US100.CASH', $found['code']);
+    }
+
+    public function testFindByUserAndCodeReturnsNullWhenNotFound(): void
+    {
+        $found = $this->repo->findByUserAndCode($this->userId, 'NONEXISTENT');
+        $this->assertNull($found);
+    }
+
+    public function testUpdateModifiesFields(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $updated = $this->repo->update((int)$created['id'], [
+            'name' => 'Updated Name',
+            'point_value' => 25.0,
+        ]);
+
+        $this->assertNotNull($updated);
+        $this->assertSame('Updated Name', $updated['name']);
+        $this->assertEquals(25.0, $updated['point_value']);
+        $this->assertSame('US100.CASH', $updated['code']);
+    }
+
+    public function testSoftDeleteMarksAsDeleted(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $result = $this->repo->softDelete((int)$created['id']);
+
+        $this->assertTrue($result);
+
+        $found = $this->repo->findById((int)$created['id']);
+        $this->assertNull($found);
+    }
+
+    public function testSoftDeletedSymbolNotInList(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $this->repo->softDelete((int)$created['id']);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+        $this->assertCount(0, $result['items']);
+        $this->assertSame(0, $result['total']);
+    }
+
+    public function testSoftDeletedSymbolNotFoundByCode(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $this->repo->softDelete((int)$created['id']);
+
+        $found = $this->repo->findByUserAndCode($this->userId, 'US100.CASH');
+        $this->assertNull($found);
+    }
+
+    public function testSeedForUserCreatesDefaultSymbols(): void
+    {
+        $this->repo->seedForUser($this->userId);
+
+        $result = $this->repo->findAllByUserId($this->userId, 50, 0);
+        $this->assertSame(6, $result['total']);
+
+        $codes = array_column($result['items'], 'code');
+        $this->assertContains('US100.CASH', $codes);
+        $this->assertContains('DE40.CASH', $codes);
+        $this->assertContains('US500.CASH', $codes);
+        $this->assertContains('FRA40.CASH', $codes);
         $this->assertContains('EURUSD', $codes);
         $this->assertContains('BTCUSD', $codes);
     }
 
-    public function testFindAllActiveReturnsExpectedFields(): void
+    public function testPaginationWorksCorrectly(): void
     {
-        $symbols = $this->repo->findAllActive();
+        $this->repo->seedForUser($this->userId);
 
-        $first = $symbols[0];
-        $this->assertArrayHasKey('id', $first);
-        $this->assertArrayHasKey('code', $first);
-        $this->assertArrayHasKey('name', $first);
-        $this->assertArrayHasKey('type', $first);
-        $this->assertArrayHasKey('point_value', $first);
-        $this->assertArrayHasKey('currency', $first);
-    }
+        $result = $this->repo->findAllByUserId($this->userId, 2, 0);
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(6, $result['total']);
 
-    public function testFindAllActiveExcludesInactive(): void
-    {
-        // Deactivate one symbol
-        $this->pdo->exec("UPDATE symbols SET is_active = 0 WHERE code = 'BTCUSD'");
-
-        $symbols = $this->repo->findAllActive();
-        $codes = array_column($symbols, 'code');
-
-        $this->assertNotContains('BTCUSD', $codes);
-        $this->assertContains('NASDAQ', $codes);
-
-        // Restore
-        $this->pdo->exec("UPDATE symbols SET is_active = 1 WHERE code = 'BTCUSD'");
-    }
-
-    public function testFindByCodeReturnsSymbol(): void
-    {
-        $symbol = $this->repo->findByCode('NASDAQ');
-
-        $this->assertNotNull($symbol);
-        $this->assertSame('NASDAQ', $symbol['code']);
-        $this->assertSame('INDEX', $symbol['type']);
-        $this->assertArrayHasKey('point_value', $symbol);
-        $this->assertArrayHasKey('currency', $symbol);
-    }
-
-    public function testFindByCodeReturnsNullWhenNotFound(): void
-    {
-        $symbol = $this->repo->findByCode('NONEXISTENT');
-
-        $this->assertNull($symbol);
+        $result2 = $this->repo->findAllByUserId($this->userId, 2, 2);
+        $this->assertCount(2, $result2['items']);
     }
 }

@@ -39,12 +39,23 @@ Retours et améliorations à intégrer après l'implémentation initiale.
   - Ou autre approche à définir
 - Impacte : schema BDD, enums, AccountService, AccountForm, i18n
 
-### 7. Symboles : dropdown/autocomplete au lieu de texte libre
-- La table `symbols` contient 6 instruments de référence (NASDAQ, DAX, SP500, CAC40, EURUSD, BTCUSD)
-- Actuellement le champ symbol dans OrderForm/PositionForm est un input texte libre
-- Devrait être un dropdown ou autocomplete alimenté par la table `symbols`
-- Point value et devise du symbole nécessaires pour les calculs de R/R (cf. spec)
-- Endpoint GET /symbols (public ou auth) à créer pour alimenter le frontend
+### ~~7. Symboles : dropdown/autocomplete au lieu de texte libre~~ ✅
+- ~~La table `symbols` contient 6 instruments de référence (NASDAQ, DAX, SP500, CAC40, EURUSD, BTCUSD)~~
+- ~~Actuellement le champ symbol dans OrderForm/PositionForm est un input texte libre~~
+- ~~Devrait être un dropdown ou autocomplete alimenté par la table `symbols`~~
+- ~~Point value et devise du symbole nécessaires pour les calculs de R/R (cf. spec)~~
+- ~~Endpoint GET /symbols (public ou auth) à créer pour alimenter le frontend~~
+- **Résolu** : table `symbols` convertie en per-user ("Mes actifs") avec CRUD complet, seeding à l'inscription (6 symboles par défaut), page dédiée SymbolsView, bouton '+' inline dans OrderForm/TradeForm/PositionForm. Voir `docs/09-symbols-user.md`
+
+## Bugs / Fixes
+
+### 8. Synchroniser la locale avec le profil utilisateur en BDD
+- Le sélecteur de langue (évol #4) persiste le choix en `localStorage` uniquement
+- Le champ `locale` de la table `users` n'est jamais mis à jour lors du changement de langue
+- Conséquence : le choix ne suit pas l'utilisateur sur un autre navigateur/device
+- Fix : appeler `PUT /auth/profile` (ou endpoint dédié) au changement de locale pour sauvegarder en BDD
+- Au login/refresh, lire `user.locale` et l'appliquer si pas de valeur en localStorage
+- Impacte : AppLayout (ou composable), AuthService/UserRepository (update locale), auth store
 
 ## Traductions
 

@@ -92,6 +92,13 @@ export const useOrdersStore = defineStore('orders', () => {
     filters.value = { ...newFilters }
   }
 
+  function $reset() {
+    orders.value = []
+    loading.value = false
+    error.value = null
+    filters.value = {}
+  }
+
   return {
     orders,
     loading,
@@ -103,5 +110,6 @@ export const useOrdersStore = defineStore('orders', () => {
     executeOrder,
     deleteOrder,
     setFilters,
+    $reset,
   }
 })

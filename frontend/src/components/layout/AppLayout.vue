@@ -49,6 +49,9 @@ async function handleLogout() {
           <RouterLink to="/trades" class="text-sm text-gray-600 hover:text-gray-900">
             {{ t('nav.trades') }}
           </RouterLink>
+          <RouterLink to="/symbols" class="text-sm text-gray-600 hover:text-gray-900">
+            {{ t('nav.symbols') }}
+          </RouterLink>
           <div class="relative">
             <button
               data-testid="language-selector"

@@ -2,6 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth'
 import { api } from '@/services/api'
+import { useAccountsStore } from '@/stores/accounts'
+import { useSymbolsStore } from '@/stores/symbols'
+import { usePositionsStore } from '@/stores/positions'
+import { useOrdersStore } from '@/stores/orders'
+import { useTradesStore } from '@/stores/trades'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -70,6 +75,11 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       user.value = null
       api.clearTokens()
+      useAccountsStore().$reset()
+      useSymbolsStore().$reset()
+      usePositionsStore().$reset()
+      useOrdersStore().$reset()
+      useTradesStore().$reset()
     }
   }
 

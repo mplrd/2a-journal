@@ -18,8 +18,52 @@ class SymbolController extends Controller
 
     public function index(Request $request): Response
     {
-        $symbols = $this->symbolService->list();
+        $userId = $request->getAttribute('user_id');
+        $params = [];
+        foreach (['page', 'per_page'] as $key) {
+            $value = $request->getQuery($key);
+            if ($value !== null && $value !== '') {
+                $params[$key] = $value;
+            }
+        }
 
-        return $this->jsonSuccess($symbols);
+        $result = $this->symbolService->list($userId, $params);
+
+        return $this->jsonSuccess($result['data'], $result['meta']);
+    }
+
+    public function store(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $symbol = $this->symbolService->create($userId, $request->getBody());
+
+        return $this->jsonSuccess($symbol, null, 201);
+    }
+
+    public function show(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $symbolId = (int)$request->getRouteParam('id');
+        $symbol = $this->symbolService->get($userId, $symbolId);
+
+        return $this->jsonSuccess($symbol);
+    }
+
+    public function update(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $symbolId = (int)$request->getRouteParam('id');
+        $symbol = $this->symbolService->update($userId, $symbolId, $request->getBody());
+
+        return $this->jsonSuccess($symbol);
+    }
+
+    public function destroy(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $symbolId = (int)$request->getRouteParam('id');
+        $this->symbolService->delete($userId, $symbolId);
+
+        return $this->jsonSuccess(['message_key' => 'symbols.success.deleted']);
     }
 }

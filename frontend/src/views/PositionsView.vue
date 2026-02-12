@@ -21,6 +21,11 @@ const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 
 const showForm = ref(false)
+
+function symbolName(code) {
+  const s = symbolsStore.symbols.find((sym) => sym.code === code)
+  return s ? s.name : code
+}
 const editingPosition = ref(null)
 const showTransfer = ref(false)
 const transferringPosition = ref(null)
@@ -137,7 +142,9 @@ function typeSeverity(type) {
       stripedRows
       class="mt-2"
     >
-      <Column field="symbol" :header="t('positions.symbol')" />
+      <Column field="symbol" :header="t('positions.symbol')">
+        <template #body="{ data }">{{ symbolName(data.symbol) }}</template>
+      </Column>
       <Column field="direction" :header="t('positions.direction')">
         <template #body="{ data }">
           <Tag :value="t(`positions.directions.${data.direction}`)" :severity="directionSeverity(data.direction)" />
