@@ -215,6 +215,72 @@
       "deleted": "Order deleted successfully"
     }
   },
+  "trades": {
+    "title": "Trades",
+    "create": "New trade",
+    "empty": "No trades yet. Create your first trade to get started.",
+    "account": "Account",
+    "select_account": "Select an account",
+    "status": "Status",
+    "opened_at": "Opened at",
+    "closed_at": "Closed at",
+    "remaining_size": "Remaining size",
+    "pnl": "PnL",
+    "pnl_percent": "PnL %",
+    "risk_reward": "Risk/Reward",
+    "duration": "Duration",
+    "close_trade": "Close trade",
+    "close_full": "Close in full",
+    "exit_price": "Exit price",
+    "exit_size": "Exit size",
+    "exit_type": "Exit type",
+    "partial_exits": "Partial exits",
+    "pnl_preview": "Estimated PnL",
+    "filter_account": "Filter by account",
+    "filter_status": "Filter by status",
+    "all_accounts": "All accounts",
+    "all_statuses": "All statuses",
+    "confirm_close": "Are you sure you want to close this trade?",
+    "confirm_delete": "Are you sure you want to delete this trade?",
+    "statuses": {
+      "OPEN": "Open",
+      "SECURED": "Secured",
+      "CLOSED": "Closed"
+    },
+    "exit_types": {
+      "BE": "Breakeven",
+      "TP": "Take Profit",
+      "SL": "Stop Loss",
+      "MANUAL": "Manual"
+    },
+    "error": {
+      "not_found": "Trade not found",
+      "forbidden": "Unauthorized access to this trade",
+      "account_forbidden": "This account does not belong to you",
+      "already_closed": "This trade is already closed",
+      "invalid_exit_size": "Exit size is invalid",
+      "invalid_exit_price": "Exit price must be positive",
+      "invalid_exit_type": "Invalid exit type",
+      "field_required": "This field is required",
+      "invalid_direction": "Invalid direction",
+      "invalid_symbol": "Invalid symbol",
+      "invalid_price": "Price must be positive",
+      "invalid_size": "Size must be positive",
+      "invalid_setup": "Invalid setup",
+      "invalid_sl_points": "SL points must be positive",
+      "invalid_be_points": "BE points must be positive",
+      "invalid_be_size": "BE size must be positive",
+      "notes_too_long": "Notes are too long (10000 characters max)",
+      "invalid_targets": "Invalid targets format",
+      "invalid_target_points": "Target points must be positive",
+      "invalid_target_size": "Target size must be positive"
+    },
+    "success": {
+      "created": "Trade created successfully",
+      "closed": "Trade closed successfully",
+      "deleted": "Trade deleted successfully"
+    }
+  },
   "error": {
     "internal": "Internal server error",
     "not_found": "Page not found",

@@ -43,6 +43,11 @@ const router = createRouter({
           name: 'orders',
           component: () => import('@/views/OrdersView.vue'),
         },
+        {
+          path: 'trades',
+          name: 'trades',
+          component: () => import('@/views/TradesView.vue'),
+        },
       ],
     },
   ],

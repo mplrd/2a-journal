@@ -27,3 +27,16 @@ export const OrderStatus = {
   CANCELLED: 'CANCELLED',
   EXPIRED: 'EXPIRED',
 }
+
+export const TradeStatus = {
+  OPEN: 'OPEN',
+  SECURED: 'SECURED',
+  CLOSED: 'CLOSED',
+}
+
+export const ExitType = {
+  BE: 'BE',
+  TP: 'TP',
+  SL: 'SL',
+  MANUAL: 'MANUAL',
+}

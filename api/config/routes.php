@@ -4,21 +4,25 @@ use App\Controllers\AccountController;
 use App\Controllers\AuthController;
 use App\Controllers\OrderController;
 use App\Controllers\PositionController;
+use App\Controllers\TradeController;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
+use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\StatusHistoryRepository;
+use App\Repositories\TradeRepository;
 use App\Repositories\UserRepository;
 use App\Services\AccountService;
 use App\Services\AuthService;
 use App\Services\OrderService;
 use App\Services\PositionService;
+use App\Services\TradeService;
 
 /** @var Router $router */
 
@@ -103,3 +107,15 @@ $router->get('/orders/{id}', [$orderController, 'show'], [$authMiddleware]);
 $router->delete('/orders/{id}', [$orderController, 'destroy'], [$authMiddleware]);
 $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddleware]);
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware]);
+
+// ── Trades ─────────────────────────────────────────────────────
+$tradeRepo = new TradeRepository($pdo);
+$partialExitRepo = new PartialExitRepository($pdo);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo);
+$tradeController = new TradeController($tradeService);
+
+$router->get('/trades', [$tradeController, 'index'], [$authMiddleware]);
+$router->post('/trades', [$tradeController, 'store'], [$authMiddleware]);
+$router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware]);
+$router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware]);
+$router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware]);
