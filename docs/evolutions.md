@@ -49,13 +49,10 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 
 ## Bugs / Fixes
 
-### 8. Synchroniser la locale avec le profil utilisateur en BDD
-- Le sélecteur de langue (évol #4) persiste le choix en `localStorage` uniquement
-- Le champ `locale` de la table `users` n'est jamais mis à jour lors du changement de langue
-- Conséquence : le choix ne suit pas l'utilisateur sur un autre navigateur/device
-- Fix : appeler `PUT /auth/profile` (ou endpoint dédié) au changement de locale pour sauvegarder en BDD
-- Au login/refresh, lire `user.locale` et l'appliquer si pas de valeur en localStorage
-- Impacte : AppLayout (ou composable), AuthService/UserRepository (update locale), auth store
+### ~~8. Synchroniser la locale avec le profil utilisateur en BDD~~ ✅
+- ~~Le sélecteur de langue (évol #4) persiste le choix en `localStorage` uniquement~~
+- ~~Le champ `locale` de la table `users` n'est jamais mis à jour lors du changement de langue~~
+- **Résolu** : endpoint `PATCH /auth/locale`, détection langue navigateur à l'init (fallback `en`), locale envoyée à l'inscription, watcher AppLayout applique la locale du profil au login. 412 backend + 78 frontend tests verts
 
 ## Traductions
 
