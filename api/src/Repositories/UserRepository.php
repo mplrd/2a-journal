@@ -16,13 +16,14 @@ class UserRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO users (email, password, first_name, last_name) VALUES (:email, :password, :first_name, :last_name)'
+            'INSERT INTO users (email, password, first_name, last_name, locale) VALUES (:email, :password, :first_name, :last_name, :locale)'
         );
         $stmt->execute([
             'email' => $data['email'],
             'password' => $data['password'],
             'first_name' => $data['first_name'] ?? null,
             'last_name' => $data['last_name'] ?? null,
+            'locale' => $data['locale'] ?? 'en',
         ]);
 
         return $this->findById((int)$this->pdo->lastInsertId());
@@ -56,5 +57,13 @@ class UserRepository
         $stmt->execute(['email' => $email]);
 
         return (int)$stmt->fetchColumn() > 0;
+    }
+
+    public function updateLocale(int $id, string $locale): array
+    {
+        $stmt = $this->pdo->prepare('UPDATE users SET locale = :locale WHERE id = :id AND deleted_at IS NULL');
+        $stmt->execute(['id' => $id, 'locale' => $locale]);
+
+        return $this->findById($id);
     }
 }

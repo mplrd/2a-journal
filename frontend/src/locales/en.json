@@ -51,6 +51,7 @@
       "refresh_token_invalid": "Session expired, please sign in again",
       "email_too_long": "Email is too long (255 characters maximum)",
       "field_too_long": "This field is too long",
+      "invalid_locale": "Unsupported language",
       "password_too_long": "Password is too long (72 characters maximum)"
     },
     "success": {

@@ -447,4 +447,127 @@ class AuthFlowTest extends TestCase
             $this->assertSame(401, $e->getStatusCode());
         }
     }
+
+    // ── Update locale ─────────────────────────────────────────────
+
+    public function testRegisterWithLocale(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'localed@test.com',
+            'password' => 'Test1234',
+            'locale' => 'en',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $this->assertSame('en', $response->getBody()['data']['locale']);
+    }
+
+    public function testRegisterWithInvalidLocaleFallsBackToEn(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'badlang@test.com',
+            'password' => 'Test1234',
+            'locale' => 'de',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $this->assertSame('en', $response->getBody()['data']['locale']);
+    }
+
+    public function testRegisterWithoutLocaleFallsBackToEn(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'nolang@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $this->assertSame('en', $response->getBody()['data']['locale']);
+    }
+
+    public function testUpdateLocaleSuccess(): void
+    {
+        // Register with default locale
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'locale@test.com',
+            'password' => 'Test1234',
+            'locale' => 'fr',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        // Verify initial locale
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $this->assertSame('fr', $response->getBody()['data']['locale']);
+
+        // Update locale to 'en'
+        $request = Request::create('PATCH', '/auth/locale', ['locale' => 'en'], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame('en', $body['data']['locale']);
+
+        // Verify persistence via /me
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $this->assertSame('en', $response->getBody()['data']['locale']);
+    }
+
+    public function testUpdateLocaleInvalidValue(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'badlocale@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('PATCH', '/auth/locale', ['locale' => 'de'], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.invalid_locale', $e->getMessageKey());
+        }
+    }
+
+    public function testUpdateLocaleWithoutAuth(): void
+    {
+        $request = Request::create('PATCH', '/auth/locale', ['locale' => 'en']);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
 }

@@ -430,4 +430,35 @@ class AuthServiceTest extends TestCase
         $longPassword = 'Aa1' . str_repeat('x', 70); // 73 bytes > 72
         $this->service->register(['email' => 'long@test.com', 'password' => $longPassword]);
     }
+
+    // ── Update locale ───────────────────────────────────────────
+
+    public function testUpdateLocaleSuccess(): void
+    {
+        $this->userRepo->method('updateLocale')->willReturn([
+            'id' => 1,
+            'email' => 'test@test.com',
+            'locale' => 'en',
+        ]);
+
+        $result = $this->service->updateLocale(1, 'en');
+
+        $this->assertSame('en', $result['locale']);
+    }
+
+    public function testUpdateLocaleThrowsWhenEmpty(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_required');
+
+        $this->service->updateLocale(1, '');
+    }
+
+    public function testUpdateLocaleThrowsWhenInvalid(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_locale');
+
+        $this->service->updateLocale(1, 'de');
+    }
 }

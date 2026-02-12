@@ -75,6 +75,7 @@ $router->post('/auth/login', [$authController, 'login'], [$loginRateLimit]);
 $router->post('/auth/refresh', [$authController, 'refresh'], [$refreshRateLimit]);
 $router->post('/auth/logout', [$authController, 'logout'], [$authMiddleware]);
 $router->get('/auth/me', [$authController, 'me'], [$authMiddleware]);
+$router->patch('/auth/locale', [$authController, 'updateLocale'], [$authMiddleware]);
 
 // ── Symbols ─────────────────────────────────────────────────────
 $symbolService = new SymbolService($symbolRepo);

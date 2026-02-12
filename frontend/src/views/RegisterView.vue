@@ -7,7 +7,7 @@ import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Button from 'primevue/button'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -17,7 +17,7 @@ const errorKey = ref(null)
 async function handleRegister() {
   errorKey.value = null
   try {
-    await authStore.register(form.value)
+    await authStore.register({ ...form.value, locale: locale.value })
     router.push({ name: 'dashboard' })
   } catch (err) {
     errorKey.value = err.messageKey || 'error.internal'

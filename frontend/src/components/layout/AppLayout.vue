@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -16,10 +16,25 @@ const languages = [
   { code: 'en', label: 'EN' },
 ]
 
+// Apply locale from user profile when it loads
+watch(
+  () => authStore.user?.locale,
+  (userLocale) => {
+    if (userLocale && userLocale !== locale.value) {
+      locale.value = userLocale
+      localStorage.setItem('locale', userLocale)
+    }
+  },
+  { immediate: true },
+)
+
 function switchLocale(code) {
   locale.value = code
   localStorage.setItem('locale', code)
   showLangMenu.value = false
+  if (authStore.isAuthenticated) {
+    authStore.updateLocale(code)
+  }
 }
 
 async function handleLogout() {

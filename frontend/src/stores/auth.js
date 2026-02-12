@@ -83,6 +83,15 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function updateLocale(locale) {
+    try {
+      const response = await authService.updateLocale(locale)
+      user.value = response.data
+    } catch {
+      // Non-blocking — locale is still applied client-side
+    }
+  }
+
   async function initSession() {
     try {
       const response = await api.refreshAccessToken()
@@ -109,6 +118,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     fetchProfile,
+    updateLocale,
     initSession,
   }
 })

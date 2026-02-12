@@ -16,4 +16,8 @@ export const authService = {
   async me() {
     return api.get('/auth/me')
   },
+
+  async updateLocale(locale) {
+    return api.patch('/auth/locale', { locale })
+  },
 }

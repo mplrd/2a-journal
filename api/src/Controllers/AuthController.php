@@ -60,6 +60,15 @@ class AuthController extends Controller
         return $this->jsonSuccess($user);
     }
 
+    public function updateLocale(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $locale = $request->getBody('locale') ?? '';
+        $user = $this->authService->updateLocale($userId, $locale);
+
+        return $this->jsonSuccess($user);
+    }
+
     private function respondWithCookie(array $result, int $status = 200): Response
     {
         $cookie = $result['refresh_cookie'] ?? null;

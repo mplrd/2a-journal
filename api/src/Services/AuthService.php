@@ -33,11 +33,16 @@ class AuthService
             throw new HttpException('EMAIL_TAKEN', 'auth.error.email_taken', 'email', 409);
         }
 
+        $locale = isset($data['locale']) && in_array($data['locale'], self::SUPPORTED_LOCALES, true)
+            ? $data['locale']
+            : 'en';
+
         $user = $this->userRepo->create([
             'email' => $data['email'],
             'password' => password_hash($data['password'], PASSWORD_BCRYPT, ['cost' => $this->config['bcrypt_cost']]),
             'first_name' => $data['first_name'] ?? null,
             'last_name' => $data['last_name'] ?? null,
+            'locale' => $locale,
         ]);
 
         // Seed default symbols for new user
@@ -129,6 +134,20 @@ class AuthService
         }
 
         return $user;
+    }
+
+    private const SUPPORTED_LOCALES = ['fr', 'en'];
+
+    public function updateLocale(int $userId, string $locale): array
+    {
+        if (empty($locale)) {
+            throw new ValidationException('auth.error.field_required', 'locale');
+        }
+        if (!in_array($locale, self::SUPPORTED_LOCALES, true)) {
+            throw new ValidationException('auth.error.invalid_locale', 'locale');
+        }
+
+        return $this->userRepo->updateLocale($userId, $locale);
     }
 
     private function buildRefreshCookie(string $token, int $ttl): string
