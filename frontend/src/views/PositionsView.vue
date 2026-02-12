@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from 'primevue/usetoast'
 import { usePositionsStore } from '@/stores/positions'
 import { useAccountsStore } from '@/stores/accounts'
 import DataTable from 'primevue/datatable'
@@ -13,6 +14,7 @@ import TransferDialog from '@/components/position/TransferDialog.vue'
 import { Direction, PositionType } from '@/constants/enums'
 
 const { t } = useI18n()
+const toast = useToast()
 const store = usePositionsStore()
 const accountsStore = useAccountsStore()
 
@@ -53,6 +55,7 @@ function openEdit(position) {
 async function handleSave(data) {
   try {
     await store.updatePosition(editingPosition.value.id, data)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.updated'), life: 3000 })
     showForm.value = false
   } catch {
     // error is set in the store
@@ -67,6 +70,7 @@ function openTransfer(position) {
 async function handleTransfer(accountId) {
   try {
     await store.transferPosition(transferringPosition.value.id, accountId)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.transferred'), life: 3000 })
     showTransfer.value = false
   } catch {
     // error is set in the store
@@ -75,7 +79,12 @@ async function handleTransfer(accountId) {
 
 async function handleDelete(position) {
   if (confirm(t('positions.confirm_delete'))) {
-    await store.deletePosition(position.id)
+    try {
+      await store.deletePosition(position.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.deleted'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
   }
 }
 

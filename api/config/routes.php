@@ -96,9 +96,13 @@ $router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddl
 $router->post('/positions/{id}/transfer', [$positionController, 'transfer'], [$authMiddleware]);
 $router->get('/positions/{id}/history', [$positionController, 'history'], [$authMiddleware]);
 
+// ── Shared repos for Orders & Trades ──────────────────────────
+$tradeRepo = new TradeRepository($pdo);
+$partialExitRepo = new PartialExitRepository($pdo);
+
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware]);
@@ -109,8 +113,6 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware]);
 
 // ── Trades ─────────────────────────────────────────────────────
-$tradeRepo = new TradeRepository($pdo);
-$partialExitRepo = new PartialExitRepository($pdo);
 $tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo);
 $tradeController = new TradeController($tradeService);
 

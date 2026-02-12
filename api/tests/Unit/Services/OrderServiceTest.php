@@ -9,6 +9,7 @@ use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\StatusHistoryRepository;
+use App\Repositories\TradeRepository;
 use App\Services\OrderService;
 use PHPUnit\Framework\TestCase;
 
@@ -19,6 +20,7 @@ class OrderServiceTest extends TestCase
     private PositionRepository $positionRepo;
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
+    private TradeRepository $tradeRepo;
 
     protected function setUp(): void
     {
@@ -26,11 +28,13 @@ class OrderServiceTest extends TestCase
         $this->positionRepo = $this->createMock(PositionRepository::class);
         $this->accountRepo = $this->createMock(AccountRepository::class);
         $this->historyRepo = $this->createMock(StatusHistoryRepository::class);
+        $this->tradeRepo = $this->createMock(TradeRepository::class);
         $this->service = new OrderService(
             $this->orderRepo,
             $this->positionRepo,
             $this->accountRepo,
-            $this->historyRepo
+            $this->historyRepo,
+            $this->tradeRepo
         );
     }
 
@@ -358,11 +362,21 @@ class OrderServiceTest extends TestCase
     {
         $this->orderRepo->method('findById')->willReturn($this->fakeOrder());
         $this->orderRepo->method('updateStatus')->willReturn($this->fakeOrder(['status' => 'EXECUTED']));
-        $this->historyRepo->expects($this->once())->method('create');
+        $this->positionRepo->expects($this->once())->method('update')->with(10, $this->callback(function ($data) {
+            return $data['position_type'] === 'TRADE';
+        }));
+        $this->tradeRepo->expects($this->once())->method('create')->with($this->callback(function ($data) {
+            return $data['position_id'] === 10
+                && $data['source_order_id'] === 1
+                && $data['status'] === 'OPEN'
+                && (float) $data['remaining_size'] === 1.0;
+        }))->willReturn(['id' => 50, 'position_id' => 10, 'status' => 'OPEN']);
+        $this->historyRepo->expects($this->exactly(2))->method('create');
 
         $result = $this->service->execute(1, 1);
 
         $this->assertSame('EXECUTED', $result['status']);
+        $this->assertSame(50, $result['trade_id']);
     }
 
     public function testExecuteThrowsWhenNotPending(): void

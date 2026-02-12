@@ -106,7 +106,7 @@ class PositionRepository
         $allowedFields = [
             'direction', 'symbol', 'entry_price', 'size', 'setup',
             'sl_points', 'sl_price', 'be_points', 'be_price', 'be_size',
-            'targets', 'notes',
+            'targets', 'notes', 'position_type',
         ];
 
         foreach ($allowedFields as $field) {

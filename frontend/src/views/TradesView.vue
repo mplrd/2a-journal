@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from 'primevue/usetoast'
 import { useTradesStore } from '@/stores/trades'
 import { useAccountsStore } from '@/stores/accounts'
 import DataTable from 'primevue/datatable'
@@ -13,6 +14,7 @@ import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import { Direction, TradeStatus } from '@/constants/enums'
 
 const { t } = useI18n()
+const toast = useToast()
 const store = useTradesStore()
 const accountsStore = useAccountsStore()
 
@@ -47,6 +49,7 @@ async function applyFilters() {
 async function handleCreate(data) {
   try {
     await store.createTrade(data)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.created'), life: 3000 })
     showForm.value = false
   } catch {
     // error is set in the store
@@ -61,6 +64,7 @@ function openCloseDialog(trade) {
 async function handleClose(data) {
   try {
     await store.closeTrade(selectedTrade.value.id, data)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.closed'), life: 3000 })
     showCloseDialog.value = false
     selectedTrade.value = null
   } catch {
@@ -70,7 +74,12 @@ async function handleClose(data) {
 
 async function handleDelete(trade) {
   if (confirm(t('trades.confirm_delete'))) {
-    await store.deleteTrade(trade.id)
+    try {
+      await store.deleteTrade(trade.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.deleted'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
   }
 }
 

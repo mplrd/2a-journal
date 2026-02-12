@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from 'primevue/usetoast'
 import { useOrdersStore } from '@/stores/orders'
 import { useAccountsStore } from '@/stores/accounts'
 import DataTable from 'primevue/datatable'
@@ -12,6 +13,7 @@ import OrderForm from '@/components/order/OrderForm.vue'
 import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
+const toast = useToast()
 const store = useOrdersStore()
 const accountsStore = useAccountsStore()
 
@@ -44,6 +46,7 @@ async function applyFilters() {
 async function handleCreate(data) {
   try {
     await store.createOrder(data)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.created'), life: 3000 })
     showForm.value = false
   } catch {
     // error is set in the store
@@ -52,19 +55,34 @@ async function handleCreate(data) {
 
 async function handleCancel(order) {
   if (confirm(t('orders.confirm_cancel'))) {
-    await store.cancelOrder(order.id)
+    try {
+      await store.cancelOrder(order.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.cancelled'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
   }
 }
 
 async function handleExecute(order) {
   if (confirm(t('orders.confirm_execute'))) {
-    await store.executeOrder(order.id)
+    try {
+      await store.executeOrder(order.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.executed'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
   }
 }
 
 async function handleDelete(order) {
   if (confirm(t('orders.confirm_delete'))) {
-    await store.deleteOrder(order.id)
+    try {
+      await store.deleteOrder(order.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.deleted'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
   }
 }
 

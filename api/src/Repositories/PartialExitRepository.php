@@ -30,7 +30,10 @@ class PartialExitRepository
         ]);
 
         $id = (int) $this->pdo->lastInsertId();
-        $stmt = $this->pdo->prepare('SELECT * FROM partial_exits WHERE id = :id');
+        $stmt = $this->pdo->prepare(
+            'SELECT id, trade_id, exited_at, exit_price, size, exit_type, target_id, pnl, created_at
+             FROM partial_exits WHERE id = :id'
+        );
         $stmt->execute(['id' => $id]);
 
         return $stmt->fetch();
@@ -39,7 +42,8 @@ class PartialExitRepository
     public function findByTradeId(int $tradeId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM partial_exits WHERE trade_id = :trade_id ORDER BY exited_at ASC'
+            'SELECT id, trade_id, exited_at, exit_price, size, exit_type, target_id, pnl, created_at
+             FROM partial_exits WHERE trade_id = :trade_id ORDER BY exited_at ASC'
         );
         $stmt->execute(['trade_id' => $tradeId]);
 

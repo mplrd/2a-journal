@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from 'primevue/usetoast'
 import { useAccountsStore } from '@/stores/accounts'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -10,6 +11,7 @@ import AccountForm from '@/components/account/AccountForm.vue'
 import { AccountMode } from '@/constants/enums'
 
 const { t } = useI18n()
+const toast = useToast()
 const store = useAccountsStore()
 
 const showForm = ref(false)
@@ -33,8 +35,10 @@ async function handleSave(data) {
   try {
     if (editingAccount.value) {
       await store.updateAccount(editingAccount.value.id, data)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.updated'), life: 3000 })
     } else {
       await store.createAccount(data)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.created'), life: 3000 })
     }
     showForm.value = false
   } catch {
@@ -44,7 +48,12 @@ async function handleSave(data) {
 
 async function handleDelete(account) {
   if (confirm(t('accounts.confirm_delete'))) {
-    await store.deleteAccount(account.id)
+    try {
+      await store.deleteAccount(account.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.deleted'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
   }
 }
 

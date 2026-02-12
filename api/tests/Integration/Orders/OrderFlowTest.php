@@ -43,6 +43,8 @@ class OrderFlowTest extends TestCase
 
         // Clean tables
         $this->pdo->exec('DELETE FROM status_history');
+        $this->pdo->exec('DELETE FROM partial_exits');
+        $this->pdo->exec('DELETE FROM trades');
         $this->pdo->exec('DELETE FROM orders');
         $this->pdo->exec('DELETE FROM positions');
         $this->pdo->exec('DELETE FROM rate_limits');
@@ -81,6 +83,8 @@ class OrderFlowTest extends TestCase
     protected function tearDown(): void
     {
         $this->pdo->exec('DELETE FROM status_history');
+        $this->pdo->exec('DELETE FROM partial_exits');
+        $this->pdo->exec('DELETE FROM trades');
         $this->pdo->exec('DELETE FROM orders');
         $this->pdo->exec('DELETE FROM positions');
         $this->pdo->exec('DELETE FROM rate_limits');
@@ -332,6 +336,32 @@ class OrderFlowTest extends TestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('EXECUTED', $body['data']['status']);
+        $this->assertArrayHasKey('trade_id', $body['data']);
+
+        // Verify trade was created
+        $tradeId = $body['data']['trade_id'];
+        $stmt = $this->pdo->prepare('SELECT * FROM trades WHERE id = :id');
+        $stmt->execute(['id' => $tradeId]);
+        $trade = $stmt->fetch();
+        $this->assertNotFalse($trade);
+        $this->assertSame('OPEN', $trade['status']);
+        $this->assertSame((int) $order['position_id'], (int) $trade['position_id']);
+        $this->assertSame((int) $order['id'], (int) $trade['source_order_id']);
+        $this->assertEquals((float) $order['size'], (float) $trade['remaining_size']);
+
+        // Verify position type changed to TRADE
+        $stmt = $this->pdo->prepare('SELECT position_type FROM positions WHERE id = :id');
+        $stmt->execute(['id' => $order['position_id']]);
+        $this->assertSame('TRADE', $stmt->fetchColumn());
+
+        // Verify status history has both ORDER→EXECUTED and TRADE→OPEN
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM status_history WHERE entity_type = 'TRADE' AND entity_id = :id"
+        );
+        $stmt->execute(['id' => $tradeId]);
+        $tradeHistory = $stmt->fetch();
+        $this->assertNotFalse($tradeHistory);
+        $this->assertSame('OPEN', $tradeHistory['new_status']);
     }
 
     public function testExecuteOrderAlreadyExecuted(): void

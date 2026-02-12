@@ -6,6 +6,7 @@ use App\Enums\Direction;
 use App\Enums\EntityType;
 use App\Enums\OrderStatus;
 use App\Enums\PositionType;
+use App\Enums\TradeStatus;
 use App\Enums\TriggerType;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
@@ -14,6 +15,7 @@ use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\StatusHistoryRepository;
+use App\Repositories\TradeRepository;
 
 class OrderService
 {
@@ -21,17 +23,20 @@ class OrderService
     private PositionRepository $positionRepo;
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
+    private TradeRepository $tradeRepo;
 
     public function __construct(
         OrderRepository $orderRepo,
         PositionRepository $positionRepo,
         AccountRepository $accountRepo,
-        StatusHistoryRepository $historyRepo
+        StatusHistoryRepository $historyRepo,
+        TradeRepository $tradeRepo
     ) {
         $this->orderRepo = $orderRepo;
         $this->positionRepo = $positionRepo;
         $this->accountRepo = $accountRepo;
         $this->historyRepo = $historyRepo;
+        $this->tradeRepo = $tradeRepo;
     }
 
     public function create(int $userId, array $data): array
@@ -205,6 +210,7 @@ class OrderService
             throw new ValidationException('orders.error.not_pending', 'status');
         }
 
+        // 1. Update order status to EXECUTED
         $result = $this->orderRepo->updateStatus($orderId, OrderStatus::EXECUTED->value);
 
         $this->historyRepo->create([
@@ -215,6 +221,34 @@ class OrderService
             'user_id' => $userId,
             'trigger_type' => TriggerType::MANUAL->value,
         ]);
+
+        // 2. Change position type from ORDER to TRADE
+        $positionId = (int) $order['position_id'];
+        $this->positionRepo->update($positionId, [
+            'position_type' => PositionType::TRADE->value,
+        ]);
+
+        // 3. Create Trade OPEN linked to this order's position
+        $trade = $this->tradeRepo->create([
+            'position_id' => $positionId,
+            'source_order_id' => $orderId,
+            'opened_at' => date('Y-m-d H:i:s'),
+            'remaining_size' => (float) $order['size'],
+            'status' => TradeStatus::OPEN->value,
+        ]);
+
+        // 4. Log trade creation in status history
+        $this->historyRepo->create([
+            'entity_type' => EntityType::TRADE->value,
+            'entity_id' => (int) $trade['id'],
+            'previous_status' => null,
+            'new_status' => TradeStatus::OPEN->value,
+            'user_id' => $userId,
+            'trigger_type' => TriggerType::MANUAL->value,
+        ]);
+
+        // Return order with trade info
+        $result['trade_id'] = (int) $trade['id'];
 
         return $result;
     }
