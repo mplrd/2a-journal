@@ -187,7 +187,7 @@ function pnlClass(pnl) {
               v-tooltip.top="t('trades.close_trade')"
               @click="openCloseDialog(data)"
             />
-            <Button icon="pi pi-trash" severity="danger" size="small" text @click="handleDelete(data)" />
+            <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
         </template>
       </Column>

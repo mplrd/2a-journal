@@ -166,9 +166,9 @@ function typeSeverity(type) {
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">
-            <Button icon="pi pi-pencil" severity="secondary" size="small" text @click="openEdit(data)" />
-            <Button icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text @click="openTransfer(data)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text @click="handleDelete(data)" />
+            <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
+            <Button icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
+            <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
         </template>
       </Column>
