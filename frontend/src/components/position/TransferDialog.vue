@@ -66,6 +66,7 @@ function handleClose() {
           optionLabel="label"
           optionValue="value"
           :placeholder="t('positions.select_account')"
+          :emptyMessage="t('common.no_options')"
           class="w-full"
         />
       </div>

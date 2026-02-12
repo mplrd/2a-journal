@@ -13,6 +13,7 @@
     "confirm": "Confirmer",
     "yes": "Oui",
     "no": "Non",
+    "no_options": "Aucune option disponible",
     "error": "Erreur",
     "success": "Succès"
   },
