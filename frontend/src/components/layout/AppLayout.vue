@@ -1,12 +1,26 @@
 <script setup>
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import Button from 'primevue/button'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const showLangMenu = ref(false)
+
+const languages = [
+  { code: 'fr', label: 'FR' },
+  { code: 'en', label: 'EN' },
+]
+
+function switchLocale(code) {
+  locale.value = code
+  localStorage.setItem('locale', code)
+  showLangMenu.value = false
+}
 
 async function handleLogout() {
   await authStore.logout()
@@ -35,6 +49,30 @@ async function handleLogout() {
           <RouterLink to="/trades" class="text-sm text-gray-600 hover:text-gray-900">
             {{ t('nav.trades') }}
           </RouterLink>
+          <div class="relative">
+            <button
+              data-testid="language-selector"
+              class="text-sm text-gray-600 hover:text-gray-900 font-medium px-2 py-1 rounded border border-gray-300 cursor-pointer"
+              @click="showLangMenu = !showLangMenu"
+            >
+              {{ locale.toUpperCase() }}
+            </button>
+            <div
+              v-if="showLangMenu"
+              class="absolute right-0 mt-1 bg-white border border-gray-200 rounded shadow-md z-10"
+            >
+              <button
+                v-for="lang in languages"
+                :key="lang.code"
+                :data-testid="`lang-option-${lang.code}`"
+                class="block w-full text-left px-3 py-1 text-sm hover:bg-gray-100 cursor-pointer"
+                :class="{ 'font-bold': locale === lang.code }"
+                @click="switchLocale(lang.code)"
+              >
+                {{ lang.label }}
+              </button>
+            </div>
+          </div>
           <span v-if="authStore.fullName" class="text-sm text-gray-500">{{ authStore.fullName }}</span>
           <Button :label="t('nav.logout')" severity="secondary" size="small" @click="handleLogout" />
         </nav>

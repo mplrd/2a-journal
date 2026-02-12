@@ -24,7 +24,8 @@
     "trades": "Trades",
     "orders": "Orders",
     "stats": "Statistics",
-    "logout": "Logout"
+    "logout": "Logout",
+    "language": "Language"
   },
   "auth": {
     "login": "Login",
