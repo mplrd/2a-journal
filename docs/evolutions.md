@@ -9,9 +9,10 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Non implémenté lors de l'étape 7
 - Cf. `docs/specs/trading-journal-specs-v5.md` pour le détail
 
-### 2. Tooltips sur les boutons des grids
-- Les boutons d'action dans les DataTable (edit, delete, cancel, execute, transfer...) doivent avoir des tooltips
-- Applicable à : AccountsView, PositionsView, OrdersView
+### ~~2. Tooltips sur les boutons des grids~~ ✅
+- ~~Les boutons d'action dans les DataTable (edit, delete, cancel, execute, transfer...) doivent avoir des tooltips~~
+- ~~Applicable à : AccountsView, PositionsView, OrdersView~~
+- **Résolu** : `v-tooltip.top` ajouté sur tous les boutons d'action des 4 vues (AccountsView, PositionsView, OrdersView, TradesView)
 
 ### 3. Setup en badges multi-sélection
 - Le champ "setup" ne doit pas être un simple texte libre
