@@ -21,10 +21,11 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Nécessite : table `setups` (ou stockage JSON), composant chips/tags avec autocomplete
 - Impacte : OrderForm, PositionForm, schema BDD potentiellement
 
-### 4. Sélecteur de langue dans le header
-- Actuellement la locale est fixée par `VITE_DEFAULT_LOCALE` (défaut `fr`)
-- Ajouter un sélecteur fr/en dans le AppLayout header
-- Persister le choix (localStorage ou préférence user en BDD)
+### ~~4. Sélecteur de langue dans le header~~ ✅
+- ~~Actuellement la locale est fixée par `VITE_DEFAULT_LOCALE` (défaut `fr`)~~
+- ~~Ajouter un sélecteur fr/en dans le AppLayout header~~
+- ~~Persister le choix (localStorage ou préférence user en BDD)~~
+- **Résolu** : dropdown FR/EN dans AppLayout, persistance localStorage, chargement au démarrage via `locales/index.js`, 5 tests Vitest
 
 ## Modèle de données
 
