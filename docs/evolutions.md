@@ -4,10 +4,10 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 
 ## UX / Frontend
 
-### 1. Partage d'ordre (modale de création)
-- La spec prévoit une section de partage dans la modale de création d'ordre
-- Non implémenté lors de l'étape 7
-- Cf. `docs/specs/trading-journal-specs-v5.md` pour le détail
+### ~~1. Partage de position (copie texte)~~ ✅
+- ~~La spec prévoit une section de partage dans la modale de création d'ordre~~
+- ~~Non implémenté lors de l'étape 7~~
+- **Résolu** : ShareService backend (2 endpoints GET text/text-plain sur positions), ShareDialog frontend (emojis/sans emojis, clipboard), bouton partage sur OrdersView et TradesView. Format adapté selon type (ordre vs trade) et statut (open vs closed). 436 backend + 84 frontend tests verts. Voir `docs/10-share-position.md`
 
 ### ~~2. Tooltips sur les boutons des grids~~ ✅
 - ~~Les boutons d'action dans les DataTable (edit, delete, cancel, execute, transfer...) doivent avoir des tooltips~~

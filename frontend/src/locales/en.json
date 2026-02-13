@@ -318,6 +318,14 @@
       "deleted": "Asset deleted successfully"
     }
   },
+  "share": {
+    "title": "Share",
+    "share": "Share",
+    "copy": "Copy",
+    "copied": "Copied to clipboard",
+    "with_emojis": "With emojis",
+    "without_emojis": "Without emojis"
+  },
   "error": {
     "field_too_long": "This field is too long",
     "internal": "Internal server error",

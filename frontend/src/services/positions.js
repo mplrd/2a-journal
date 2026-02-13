@@ -29,4 +29,12 @@ export const positionsService = {
   async getHistory(id) {
     return api.get(`/positions/${id}/history`)
   },
+
+  async shareText(id) {
+    return api.get(`/positions/${id}/share/text`)
+  },
+
+  async shareTextPlain(id) {
+    return api.get(`/positions/${id}/share/text-plain`)
+  },
 }

@@ -24,6 +24,7 @@ use App\Services\AccountService;
 use App\Services\AuthService;
 use App\Services\OrderService;
 use App\Services\PositionService;
+use App\Services\ShareService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
 
@@ -98,11 +99,16 @@ $router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware]);
 $router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware]);
 $router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware]);
 
+// ── Shared repos for Orders, Trades & Share ──────────────────
+$tradeRepo = new TradeRepository($pdo);
+$partialExitRepo = new PartialExitRepository($pdo);
+
 // ── Positions ──────────────────────────────────────────────────
 $positionRepo = new PositionRepository($pdo);
 $historyRepo = new StatusHistoryRepository($pdo);
 $positionService = new PositionService($positionRepo, $accountRepo, $historyRepo);
-$positionController = new PositionController($positionService);
+$shareService = new ShareService($positionRepo, $tradeRepo);
+$positionController = new PositionController($positionService, $shareService);
 
 $router->get('/positions', [$positionController, 'index'], [$authMiddleware]);
 $router->get('/positions/{id}', [$positionController, 'show'], [$authMiddleware]);
@@ -110,10 +116,8 @@ $router->put('/positions/{id}', [$positionController, 'update'], [$authMiddlewar
 $router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddleware]);
 $router->post('/positions/{id}/transfer', [$positionController, 'transfer'], [$authMiddleware]);
 $router->get('/positions/{id}/history', [$positionController, 'history'], [$authMiddleware]);
-
-// ── Shared repos for Orders & Trades ──────────────────────────
-$tradeRepo = new TradeRepository($pdo);
-$partialExitRepo = new PartialExitRepository($pdo);
+$router->get('/positions/{id}/share/text', [$positionController, 'shareText'], [$authMiddleware]);
+$router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTextPlain'], [$authMiddleware]);
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);

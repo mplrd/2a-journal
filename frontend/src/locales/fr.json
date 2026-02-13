@@ -318,6 +318,14 @@
       "deleted": "Actif supprimé avec succès"
     }
   },
+  "share": {
+    "title": "Partager",
+    "share": "Partager",
+    "copy": "Copier",
+    "copied": "Copié dans le presse-papiers",
+    "with_emojis": "Avec emojis",
+    "without_emojis": "Sans emojis"
+  },
   "error": {
     "field_too_long": "Ce champ est trop long",
     "internal": "Erreur interne du serveur",

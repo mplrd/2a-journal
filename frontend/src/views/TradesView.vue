@@ -12,6 +12,7 @@ import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
+import ShareDialog from '@/components/common/ShareDialog.vue'
 import { Direction, TradeStatus } from '@/constants/enums'
 
 const { t } = useI18n()
@@ -28,6 +29,8 @@ function symbolName(code) {
 }
 const showCloseDialog = ref(false)
 const selectedTrade = ref(null)
+const showShare = ref(false)
+const sharePositionId = ref(null)
 
 const filterAccountId = ref(null)
 const filterStatus = ref(null)
@@ -88,6 +91,11 @@ async function handleDelete(trade) {
       // error is set in the store
     }
   }
+}
+
+function openShare(trade) {
+  sharePositionId.value = Number(trade.position_id)
+  showShare.value = true
 }
 
 function directionSeverity(direction) {
@@ -196,6 +204,7 @@ function pnlClass(pnl) {
               v-tooltip.top="t('trades.close_trade')"
               @click="openCloseDialog(data)"
             />
+            <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
         </template>
@@ -216,5 +225,7 @@ function pnlClass(pnl) {
       :loading="store.loading"
       @close="handleClose"
     />
+
+    <ShareDialog v-model:visible="showShare" :positionId="sharePositionId" />
   </div>
 </template>

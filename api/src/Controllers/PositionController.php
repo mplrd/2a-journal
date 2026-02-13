@@ -6,14 +6,17 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Services\PositionService;
+use App\Services\ShareService;
 
 class PositionController extends Controller
 {
     private PositionService $positionService;
+    private ShareService $shareService;
 
-    public function __construct(PositionService $positionService)
+    public function __construct(PositionService $positionService, ShareService $shareService)
     {
         $this->positionService = $positionService;
+        $this->shareService = $shareService;
     }
 
     public function index(Request $request): Response
@@ -76,5 +79,23 @@ class PositionController extends Controller
         $history = $this->positionService->getHistory($userId, $positionId);
 
         return $this->jsonSuccess($history);
+    }
+
+    public function shareText(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $positionId = (int) $request->getRouteParam('id');
+        $text = $this->shareService->generateText($userId, $positionId);
+
+        return $this->jsonSuccess(['text' => $text]);
+    }
+
+    public function shareTextPlain(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $positionId = (int) $request->getRouteParam('id');
+        $text = $this->shareService->generateTextPlain($userId, $positionId);
+
+        return $this->jsonSuccess(['text' => $text]);
     }
 }

@@ -11,6 +11,7 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import OrderForm from '@/components/order/OrderForm.vue'
+import ShareDialog from '@/components/common/ShareDialog.vue'
 import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
@@ -20,6 +21,8 @@ const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 
 const showForm = ref(false)
+const showShare = ref(false)
+const sharePositionId = ref(null)
 
 function symbolName(code) {
   const s = symbolsStore.symbols.find((sym) => sym.code === code)
@@ -91,6 +94,11 @@ async function handleDelete(order) {
       // error is set in the store
     }
   }
+}
+
+function openShare(order) {
+  sharePositionId.value = Number(order.position_id)
+  showShare.value = true
 }
 
 function directionSeverity(direction) {
@@ -208,6 +216,7 @@ function statusSeverity(status) {
               v-tooltip.top="t('orders.cancel_action')"
               @click="handleCancel(data)"
             />
+            <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
         </template>
@@ -221,5 +230,7 @@ function statusSeverity(status) {
       :loading="store.loading"
       @save="handleCreate"
     />
+
+    <ShareDialog v-model:visible="showShare" :positionId="sharePositionId" />
   </div>
 </template>

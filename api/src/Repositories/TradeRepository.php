@@ -50,6 +50,21 @@ class TradeRepository
         return $row ?: null;
     }
 
+    public function findByPositionId(int $positionId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT t.id, t.position_id, t.source_order_id, t.opened_at, t.closed_at,
+                    t.remaining_size, t.be_reached, t.avg_exit_price, t.pnl, t.pnl_percent,
+                    t.risk_reward, t.duration_minutes, t.status, t.exit_type
+             FROM trades t
+             WHERE t.position_id = :position_id'
+        );
+        $stmt->execute(['position_id' => $positionId]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
     public function findAllByUserId(int $userId, array $filters = [], int $limit = 50, int $offset = 0): array
     {
         $where = 'WHERE p.user_id = :user_id';
