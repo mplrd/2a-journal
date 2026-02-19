@@ -10,8 +10,8 @@ Specs completes dans `docs/specs/trading-journal-specs-v5.md`.
 - **Database**: MariaDB `2ai_tools_journal` (utf8mb4_unicode_ci), root/no password (dev)
 - **Tests**: PHPUnit (backend), Vitest (frontend) - TDD obligatoire
 - **Methodology**: TDD - tests first, then code, then refactor, then doc
-- **Domain**: journal.2ai-tools.local
-- **API URL**: http://journal.2ai-tools.local/api
+- **Domain**: 2a.journal.local
+- **API URL**: http://2a.journal.local/api
 - **Frontend dev**: http://localhost:5173
 
 ## Conventions
@@ -67,5 +67,5 @@ journal/
 - Available: /tdd-feature, /new-endpoint, /new-component, /run-tests, /doc-feature, /check-quality, /audit-security, /audit-privacy
 
 ## Apache Config
-- VHost: journal.2ai-tools.local -> E:/2A-tools/journal
+- VHost: 2a.journal.local -> E:/2A-tools/journal
 - Alias /api -> api/public/ (PHP router strips /api prefix from REQUEST_URI)

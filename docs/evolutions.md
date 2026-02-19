@@ -14,6 +14,12 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - ~~Applicable à : AccountsView, PositionsView, OrdersView~~
 - **Résolu** : `v-tooltip.top` ajouté sur tous les boutons d'action des 4 vues (AccountsView, PositionsView, OrdersView, TradesView)
 
+### 13. Refonte header : menu burger + menu compte utilisateur
+- Le header devient surchargé avec l'accumulation des liens et actions
+- Menu burger (hamburger) pour les entrées de navigation principales (Positions, Orders, Trades, Symbols...)
+- Menu "compte" sur l'avatar/nom utilisateur : logout, sélecteur de langue, préférences...
+- Responsive friendly
+
 ### 3. Setup en badges multi-sélection
 - Le champ "setup" ne doit pas être un simple texte libre
 - Un trade peut être pris sur plusieurs setups en convergence → multi-tags/badges
@@ -53,6 +59,28 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - ~~Le sélecteur de langue (évol #4) persiste le choix en `localStorage` uniquement~~
 - ~~Le champ `locale` de la table `users` n'est jamais mis à jour lors du changement de langue~~
 - **Résolu** : endpoint `PATCH /auth/locale`, détection langue navigateur à l'init (fallback `en`), locale envoyée à l'inscription, watcher AppLayout applique la locale du profil au login. 412 backend + 78 frontend tests verts
+
+## Partage (suite de l'évol #1)
+
+### 9. Générer une image de partage (card visuelle PNG)
+- La spec prévoit une card visuelle du trade exportable en PNG (priorité P2)
+- Endpoint : `GET /positions/{id}/share/image`
+- Impacte : backend (génération image), frontend (bouton dans ShareDialog)
+
+### 10. Lien de partage public
+- URL temporaire ou permanente pour partager un trade sans authentification (priorité P3)
+- Endpoints : `POST /positions/{id}/share/link`, `GET /share/{token}`
+- Nécessite : table `share_links` (token, expiration, position_id)
+
+### 11. Partage direct vers messageries/réseaux
+- Boutons de partage rapide : WhatsApp, Telegram, Twitter/X, Discord...
+- Utilise le texte déjà généré par ShareService (avec/sans emojis selon la plateforme)
+- Via liens deep-link natifs de chaque plateforme (web share API ou URLs d'intent)
+
+### 12. Personnalisation du partage
+- Choix des infos à inclure/masquer (SL, taille...)
+- Templates de format adaptés par plateforme
+- Branding personnel (nom/pseudo, logo)
 
 ## Traductions
 
