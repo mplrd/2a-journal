@@ -86,7 +86,7 @@ class AccountService
         }
 
         if (mb_strlen($data['name']) > 100) {
-            throw new ValidationException('accounts.error.field_required', 'name');
+            throw new ValidationException('error.field_too_long', 'name');
         }
 
         if (empty($data['account_type'])) {
