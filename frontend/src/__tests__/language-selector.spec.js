@@ -20,6 +20,10 @@ function createWrapper(locale = 'fr') {
       stubs: {
         RouterView: true,
         RouterLink: true,
+        Popover: {
+          template: '<div><slot /></div>',
+          methods: { toggle() {} },
+        },
       },
     },
   })
@@ -30,27 +34,22 @@ describe('Language selector', () => {
     localStorage.clear()
   })
 
-  it('renders the language selector with current locale', () => {
+  it('renders language options', () => {
     const wrapper = createWrapper('fr')
-    const selector = wrapper.find('[data-testid="language-selector"]')
-    expect(selector.exists()).toBe(true)
-    expect(selector.text()).toContain('FR')
+    const frOption = wrapper.find('[data-testid="lang-option-fr"]')
+    const enOption = wrapper.find('[data-testid="lang-option-en"]')
+    expect(frOption.exists()).toBe(true)
+    expect(enOption.exists()).toBe(true)
   })
 
-  it('shows available languages when clicked', async () => {
+  it('highlights current locale', () => {
     const wrapper = createWrapper('fr')
-    const selector = wrapper.find('[data-testid="language-selector"]')
-    await selector.trigger('click')
-
-    const options = wrapper.findAll('[data-testid^="lang-option-"]')
-    expect(options.length).toBe(2)
+    const frOption = wrapper.find('[data-testid="lang-option-fr"]')
+    expect(frOption.classes()).toContain('font-bold')
   })
 
   it('switches locale to English', async () => {
     const wrapper = createWrapper('fr')
-    const selector = wrapper.find('[data-testid="language-selector"]')
-    await selector.trigger('click')
-
     const enOption = wrapper.find('[data-testid="lang-option-en"]')
     await enOption.trigger('click')
 
@@ -59,9 +58,6 @@ describe('Language selector', () => {
 
   it('persists locale choice in localStorage', async () => {
     const wrapper = createWrapper('fr')
-    const selector = wrapper.find('[data-testid="language-selector"]')
-    await selector.trigger('click')
-
     const enOption = wrapper.find('[data-testid="lang-option-en"]')
     await enOption.trigger('click')
 
@@ -71,7 +67,7 @@ describe('Language selector', () => {
   it('loads saved locale from localStorage on mount', () => {
     localStorage.setItem('locale', 'en')
     const wrapper = createWrapper('en')
-    const selector = wrapper.find('[data-testid="language-selector"]')
-    expect(selector.text()).toContain('EN')
+    const enOption = wrapper.find('[data-testid="lang-option-en"]')
+    expect(enOption.classes()).toContain('font-bold')
   })
 })

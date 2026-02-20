@@ -29,6 +29,11 @@ function symbolName(code) {
   return s ? s.name : code
 }
 
+function accountName(accountId) {
+  const a = accountsStore.accounts.find((acc) => acc.id === accountId)
+  return a ? a.name : '-'
+}
+
 const filterAccountId = ref(null)
 const filterStatus = ref(null)
 
@@ -160,6 +165,9 @@ function statusSeverity(status) {
       stripedRows
       class="mt-2"
     >
+      <Column field="account_id" :header="t('orders.account')">
+        <template #body="{ data }">{{ accountName(data.account_id) }}</template>
+      </Column>
       <Column field="symbol" :header="t('positions.symbol')">
         <template #body="{ data }">{{ symbolName(data.symbol) }}</template>
       </Column>

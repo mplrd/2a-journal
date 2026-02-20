@@ -26,6 +26,11 @@ function symbolName(code) {
   const s = symbolsStore.symbols.find((sym) => sym.code === code)
   return s ? s.name : code
 }
+
+function accountName(accountId) {
+  const a = accountsStore.accounts.find((acc) => acc.id === accountId)
+  return a ? a.name : '-'
+}
 const editingPosition = ref(null)
 const showTransfer = ref(false)
 const transferringPosition = ref(null)
@@ -142,6 +147,9 @@ function typeSeverity(type) {
       stripedRows
       class="mt-2"
     >
+      <Column field="account_id" :header="t('positions.account')">
+        <template #body="{ data }">{{ accountName(data.account_id) }}</template>
+      </Column>
       <Column field="symbol" :header="t('positions.symbol')">
         <template #body="{ data }">{{ symbolName(data.symbol) }}</template>
       </Column>

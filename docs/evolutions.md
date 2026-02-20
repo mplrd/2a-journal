@@ -12,13 +12,14 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 ### ~~2. Tooltips sur les boutons des grids~~ ✅
 - ~~Les boutons d'action dans les DataTable (edit, delete, cancel, execute, transfer...) doivent avoir des tooltips~~
 - ~~Applicable à : AccountsView, PositionsView, OrdersView~~
-- **Résolu** : `v-tooltip.top` ajouté sur tous les boutons d'action des 4 vues (AccountsView, PositionsView, OrdersView, TradesView)
+- **Résolu** : `v-tooltip.top` ajouté sur tous les boutons d'action des 4 vues (AccountsView, PositionsView, OrdersView, TradesView). Directive `Tooltip` enregistrée dans `main.js` (manquait initialement).
 
-### 13. Refonte header : menu burger + menu compte utilisateur
-- Le header devient surchargé avec l'accumulation des liens et actions
-- Menu burger (hamburger) pour les entrées de navigation principales (Positions, Orders, Trades, Symbols...)
-- Menu "compte" sur l'avatar/nom utilisateur : logout, sélecteur de langue, préférences...
-- Responsive friendly
+### ~~13. Refonte header : menu burger + menu compte utilisateur~~ ✅
+- ~~Le header devient surchargé avec l'accumulation des liens et actions~~
+- ~~Menu burger (hamburger) pour les entrées de navigation principales (Positions, Orders, Trades, Symbols...)~~
+- ~~Menu "compte" sur l'avatar/nom utilisateur : logout, sélecteur de langue, préférences...~~
+- ~~Responsive friendly~~
+- **Résolu** : Layout refactorisé — header full-width en haut, sidebar CSS persistant en dessous (ouvert par défaut sur desktop, overlay sur mobile, état persisté en localStorage). Popover utilisateur (avatar initiales, logout), sélecteur FR/EN dans le header. Colonne "Compte" ajoutée dans les grids Positions/Ordres/Trades. Directive Tooltip enregistrée dans main.js. 91 frontend tests verts. Voir `docs/13-nav.md`
 
 ### 3. Setup en badges multi-sélection
 - Le champ "setup" ne doit pas être un simple texte libre
@@ -67,10 +68,11 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Endpoints : `POST /positions/{id}/share/link`, `GET /share/{token}`
 - Nécessite : table `share_links` (token, expiration, position_id)
 
-### 11. Partage direct vers messageries/réseaux
-- Boutons de partage rapide : WhatsApp, Telegram, Twitter/X, Discord...
-- Utilise le texte déjà généré par ShareService (avec/sans emojis selon la plateforme)
-- Via liens deep-link natifs de chaque plateforme (web share API ou URLs d'intent)
+### ~~11. Partage direct vers messageries/réseaux~~ ✅
+- ~~Boutons de partage rapide : WhatsApp, Telegram, Twitter/X, Discord...~~
+- ~~Utilise le texte déjà généré par ShareService (avec/sans emojis selon la plateforme)~~
+- ~~Via liens deep-link natifs de chaque plateforme (web share API ou URLs d'intent)~~
+- **Résolu** : 5 boutons de partage dans ShareDialog (WhatsApp, Telegram, X/Twitter, Discord, Email). Deep links natifs, troncature Twitter à 280 chars, Discord via clipboard, Email via mailto. Preview live du texte de partage dans OrderForm et TradeForm (composable `useSharePreview`, bouton copier). 7 tests dédiés, 91 frontend tests verts. Voir `docs/11-share-platforms.md`
 
 ### 12. Personnalisation du partage
 - Choix des infos à inclure/masquer (SL, taille...)

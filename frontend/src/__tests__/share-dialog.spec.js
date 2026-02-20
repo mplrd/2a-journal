@@ -44,8 +44,9 @@ function createWrapper(props = {}) {
           props: ['visible', 'header', 'modal', 'closable', 'style'],
         },
         Button: {
-          template: '<button @click="$emit(\'click\')"><slot />{{ label }}</button>',
-          props: ['label', 'icon', 'severity', 'size'],
+          template: '<button v-bind="$attrs" @click="$emit(\'click\')"><slot />{{ label }}</button>',
+          props: ['label', 'icon', 'severity', 'size', 'outlined'],
+          inheritAttrs: false,
         },
         Textarea: {
           template: '<textarea :value="modelValue" readonly></textarea>',
@@ -149,5 +150,86 @@ describe('ShareDialog', () => {
   it('positionsService has share methods', () => {
     expect(typeof positionsService.shareText).toBe('function')
     expect(typeof positionsService.shareTextPlain).toBe('function')
+  })
+
+  describe('Share platforms', () => {
+    async function createVisibleWrapper(emojiText = '📈 BUY NASDAQ', plainText = 'BUY NASDAQ') {
+      positionsService.shareText.mockResolvedValue({ data: { text: emojiText } })
+      positionsService.shareTextPlain.mockResolvedValue({ data: { text: plainText } })
+
+      const wrapper = createWrapper({ positionId: 10 })
+      await wrapper.setProps({ visible: true })
+      await vi.waitFor(() => expect(positionsService.shareText).toHaveBeenCalled())
+      await new Promise((r) => setTimeout(r, 10))
+      await wrapper.vm.$nextTick()
+      return wrapper
+    }
+
+    it('renders share platform buttons', async () => {
+      const wrapper = await createVisibleWrapper()
+      expect(wrapper.find('[data-testid="share-whatsapp"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="share-telegram"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="share-twitter"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="share-discord"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="share-email"]').exists()).toBe(true)
+    })
+
+    it('opens WhatsApp with encoded text', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const wrapper = await createVisibleWrapper('📈 BUY NASDAQ')
+      await wrapper.find('[data-testid="share-whatsapp"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith(
+        `https://wa.me/?text=${encodeURIComponent('📈 BUY NASDAQ')}`,
+        '_blank',
+      )
+    })
+
+    it('opens Telegram with encoded text', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const wrapper = await createVisibleWrapper('📈 BUY NASDAQ')
+      await wrapper.find('[data-testid="share-telegram"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith(
+        `https://t.me/share/url?text=${encodeURIComponent('📈 BUY NASDAQ')}`,
+        '_blank',
+      )
+    })
+
+    it('opens Twitter with encoded text', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const wrapper = await createVisibleWrapper('📈 BUY NASDAQ')
+      await wrapper.find('[data-testid="share-twitter"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith(
+        `https://twitter.com/intent/tweet?text=${encodeURIComponent('📈 BUY NASDAQ')}`,
+        '_blank',
+      )
+    })
+
+    it('truncates Twitter text to 280 chars', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const longText = 'A'.repeat(300)
+      const wrapper = await createVisibleWrapper(longText)
+      await wrapper.find('[data-testid="share-twitter"]').trigger('click')
+      const expectedText = 'A'.repeat(277) + '...'
+      expect(openSpy).toHaveBeenCalledWith(
+        `https://twitter.com/intent/tweet?text=${encodeURIComponent(expectedText)}`,
+        '_blank',
+      )
+    })
+
+    it('copies to clipboard for Discord', async () => {
+      const clipboardSpy = vi.fn().mockResolvedValue(undefined)
+      Object.assign(navigator, { clipboard: { writeText: clipboardSpy } })
+      const wrapper = await createVisibleWrapper('📈 BUY NASDAQ')
+      await wrapper.find('[data-testid="share-discord"]').trigger('click')
+      expect(clipboardSpy).toHaveBeenCalledWith('📈 BUY NASDAQ')
+    })
+
+    it('opens email with mailto link', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const wrapper = await createVisibleWrapper('📈 BUY NASDAQ')
+      await wrapper.find('[data-testid="share-email"]').trigger('click')
+      const expectedUrl = `mailto:?subject=${encodeURIComponent('Position de trading')}&body=${encodeURIComponent('📈 BUY NASDAQ')}`
+      expect(openSpy).toHaveBeenCalledWith(expectedUrl, '_self')
+    })
   })
 })

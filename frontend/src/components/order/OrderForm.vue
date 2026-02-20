@@ -12,6 +12,7 @@ import { Direction } from '@/constants/enums'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useToast } from 'primevue/usetoast'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
+import { useSharePreview } from '@/composables/useSharePreview'
 
 const { t } = useI18n()
 const symbolsStore = useSymbolsStore()
@@ -87,6 +88,17 @@ const calculatedTargets = computed(() => {
         : form.value.entry_price - (target.points || 0),
   }))
 })
+
+const { sharePreviewText } = useSharePreview(form, calculatedTargets, calculatedSlPrice, calculatedBePrice)
+
+async function copyPreview() {
+  try {
+    await navigator.clipboard.writeText(sharePreviewText.value)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('share.copied'), life: 2000 })
+  } catch {
+    // silent fail
+  }
+}
 
 function addTarget() {
   form.value.targets.push({
@@ -250,6 +262,14 @@ async function handleSymbolCreate(data) {
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.notes') }}</label>
         <Textarea v-model="form.notes" class="w-full" rows="3" :maxlength="10000" />
+      </div>
+
+      <div v-if="sharePreviewText" class="border border-gray-200 rounded-md p-3 bg-gray-50">
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-sm font-medium text-gray-500">{{ t('share.preview') }}</label>
+          <Button icon="pi pi-copy" :label="t('share.copy')" severity="secondary" size="small" text @click="copyPreview" />
+        </div>
+        <pre class="text-sm font-mono whitespace-pre-wrap text-gray-700" data-testid="share-preview">{{ sharePreviewText }}</pre>
       </div>
     </div>
 

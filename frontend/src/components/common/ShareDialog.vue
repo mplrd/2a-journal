@@ -48,6 +48,32 @@ function currentText() {
   return activeTab.value === 'emoji' ? text.value : textPlain.value
 }
 
+function shareWhatsApp() {
+  window.open(`https://wa.me/?text=${encodeURIComponent(currentText())}`, '_blank')
+}
+
+function shareTelegram() {
+  window.open(`https://t.me/share/url?text=${encodeURIComponent(currentText())}`, '_blank')
+}
+
+function shareTwitter() {
+  let shareText = currentText()
+  if (shareText.length > 280) {
+    shareText = shareText.substring(0, 277) + '...'
+  }
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`, '_blank')
+}
+
+function shareDiscord() {
+  copyToClipboard()
+}
+
+function shareEmail() {
+  const subject = encodeURIComponent(t('share.email_subject'))
+  const body = encodeURIComponent(currentText())
+  window.open(`mailto:?subject=${subject}&body=${body}`, '_self')
+}
+
 async function copyToClipboard() {
   try {
     await navigator.clipboard.writeText(currentText())
@@ -114,6 +140,55 @@ function close() {
         rows="8"
         class="w-full font-mono text-sm"
       />
+
+      <div class="flex flex-wrap gap-2 mt-3">
+        <p class="w-full text-sm text-gray-500">{{ t('share.share_via') }}</p>
+        <Button
+          :label="t('share.whatsapp')"
+          icon="pi pi-whatsapp"
+          severity="success"
+          outlined
+          size="small"
+          data-testid="share-whatsapp"
+          @click="shareWhatsApp"
+        />
+        <Button
+          :label="t('share.telegram')"
+          icon="pi pi-telegram"
+          severity="info"
+          outlined
+          size="small"
+          data-testid="share-telegram"
+          @click="shareTelegram"
+        />
+        <Button
+          :label="t('share.twitter')"
+          icon="pi pi-twitter"
+          severity="secondary"
+          outlined
+          size="small"
+          data-testid="share-twitter"
+          @click="shareTwitter"
+        />
+        <Button
+          :label="t('share.discord')"
+          icon="pi pi-discord"
+          severity="info"
+          outlined
+          size="small"
+          data-testid="share-discord"
+          @click="shareDiscord"
+        />
+        <Button
+          :label="t('share.email')"
+          icon="pi pi-envelope"
+          severity="secondary"
+          outlined
+          size="small"
+          data-testid="share-email"
+          @click="shareEmail"
+        />
+      </div>
 
       <div class="flex justify-end gap-2 mt-4">
         <Button
