@@ -8,7 +8,7 @@ import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import AccountForm from '@/components/account/AccountForm.vue'
-import { AccountMode } from '@/constants/enums'
+import { AccountType, AccountStage } from '@/constants/enums'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -57,15 +57,22 @@ async function handleDelete(account) {
   }
 }
 
-function modeSeverity(mode) {
+function typeSeverity(accountType) {
   const map = {
-    [AccountMode.DEMO]: 'info',
-    [AccountMode.LIVE]: 'success',
-    [AccountMode.CHALLENGE]: 'warn',
-    [AccountMode.VERIFICATION]: 'warn',
-    [AccountMode.FUNDED]: 'success',
+    [AccountType.BROKER_DEMO]: 'info',
+    [AccountType.BROKER_LIVE]: 'success',
+    [AccountType.PROP_FIRM]: 'warn',
   }
-  return map[mode] || 'secondary'
+  return map[accountType] || 'secondary'
+}
+
+function stageSeverity(stage) {
+  const map = {
+    [AccountStage.CHALLENGE]: 'warn',
+    [AccountStage.VERIFICATION]: 'warn',
+    [AccountStage.FUNDED]: 'success',
+  }
+  return map[stage] || 'secondary'
 }
 </script>
 
@@ -90,12 +97,13 @@ function modeSeverity(mode) {
       <Column field="name" :header="t('accounts.name')" />
       <Column field="account_type" :header="t('accounts.account_type')">
         <template #body="{ data }">
-          {{ t(`accounts.types.${data.account_type}`) }}
+          <Tag :value="t(`accounts.types.${data.account_type}`)" :severity="typeSeverity(data.account_type)" />
         </template>
       </Column>
-      <Column field="mode" :header="t('accounts.mode')">
+      <Column field="stage" :header="t('accounts.stage')">
         <template #body="{ data }">
-          <Tag :value="t(`accounts.modes.${data.mode}`)" :severity="modeSeverity(data.mode)" />
+          <Tag v-if="data.stage" :value="t(`accounts.stages.${data.stage}`)" :severity="stageSeverity(data.stage)" />
+          <span v-else>-</span>
         </template>
       </Column>
       <Column field="currency" :header="t('accounts.currency')" />

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAccountsStore } from '@/stores/accounts'
 import { accountsService } from '@/services/accounts'
-import { AccountType, AccountMode } from '@/constants/enums'
+import { AccountType, AccountStage } from '@/constants/enums'
 
 vi.mock('@/services/accounts', () => ({
   accountsService: {
@@ -31,8 +31,8 @@ describe('accounts store', () => {
 
   it('fetchAccounts loads accounts', async () => {
     const mockAccounts = [
-      { id: 1, name: 'Account 1', account_type: AccountType.BROKER, mode: AccountMode.DEMO },
-      { id: 2, name: 'Account 2', account_type: AccountType.PROPFIRM, mode: AccountMode.FUNDED },
+      { id: 1, name: 'Account 1', account_type: AccountType.BROKER_DEMO, stage: null },
+      { id: 2, name: 'Account 2', account_type: AccountType.PROP_FIRM, stage: AccountStage.FUNDED },
     ]
     accountsService.list.mockResolvedValue({ success: true, data: mockAccounts })
 
@@ -55,10 +55,10 @@ describe('accounts store', () => {
   })
 
   it('createAccount adds to list', async () => {
-    const newAccount = { id: 1, name: 'New', account_type: AccountType.BROKER, mode: AccountMode.DEMO }
+    const newAccount = { id: 1, name: 'New', account_type: AccountType.BROKER_DEMO, stage: null }
     accountsService.create.mockResolvedValue({ success: true, data: newAccount })
 
-    await store.createAccount({ name: 'New', account_type: AccountType.BROKER, mode: AccountMode.DEMO })
+    await store.createAccount({ name: 'New', account_type: AccountType.BROKER_DEMO })
 
     expect(store.accounts).toHaveLength(1)
     expect(store.accounts[0].name).toBe('New')
@@ -76,15 +76,15 @@ describe('accounts store', () => {
 
   it('updateAccount replaces in list', async () => {
     store.accounts = [
-      { id: 1, name: 'Old Name', account_type: AccountType.BROKER, mode: AccountMode.DEMO },
+      { id: 1, name: 'Old Name', account_type: AccountType.BROKER_DEMO, stage: null },
     ]
-    const updated = { id: 1, name: 'New Name', account_type: AccountType.BROKER, mode: AccountMode.LIVE }
+    const updated = { id: 1, name: 'New Name', account_type: AccountType.BROKER_LIVE, stage: null }
     accountsService.update.mockResolvedValue({ success: true, data: updated })
 
-    await store.updateAccount(1, { name: 'New Name', account_type: AccountType.BROKER, mode: AccountMode.LIVE })
+    await store.updateAccount(1, { name: 'New Name', account_type: AccountType.BROKER_LIVE })
 
     expect(store.accounts[0].name).toBe('New Name')
-    expect(store.accounts[0].mode).toBe(AccountMode.LIVE)
+    expect(store.accounts[0].account_type).toBe(AccountType.BROKER_LIVE)
   })
 
   it('deleteAccount removes from list', async () => {

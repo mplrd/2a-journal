@@ -31,19 +31,14 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - ~~Actuellement la locale est fixée par `VITE_DEFAULT_LOCALE` (défaut `fr`)~~
 - ~~Ajouter un sélecteur fr/en dans le AppLayout header~~
 - ~~Persister le choix (localStorage ou préférence user en BDD)~~
-- **Résolu** : dropdown FR/EN dans AppLayout, persistance localStorage, chargement au démarrage via `locales/index.js`, 5 tests Vitest
+- **Résolu** : dropdown FR/EN dans AppLayout, persistance localStorage, chargement au démarrage via `locales/index.js`, 5 tests Vitest. Voir `docs/03-auth-jwt.md` § Préférences utilisateur
 
 ## Modèle de données
 
-### 5. Repenser le "mode" des comptes
-- Actuellement : `mode` = DEMO | LIVE | CHALLENGE | VERIFICATION | FUNDED
-- Problème : "DEMO" est un **type de compte**, pas un mode/étape
-- Le concept d'étapes (CHALLENGE → VERIFICATION → FUNDED) ne concerne que les comptes propfirm
-- Proposition :
-  - `account_type` : BROKER_DEMO | BROKER_LIVE | PROP_FIRM
-  - `stage` (nullable, propfirm uniquement) : CHALLENGE | VERIFICATION | FUNDED
-  - Ou autre approche à définir
-- Impacte : schema BDD, enums, AccountService, AccountForm, i18n
+### ~~5. Repenser le "mode" des comptes~~ ✅
+- ~~Actuellement : `mode` = DEMO | LIVE | CHALLENGE | VERIFICATION | FUNDED~~
+- ~~Problème : "DEMO" est un **type de compte**, pas un mode/étape~~
+- **Résolu** : `account_type` (BROKER_DEMO, BROKER_LIVE, PROP_FIRM) + `stage` nullable (CHALLENGE, VERIFICATION, FUNDED). Validation conditionnelle : stage requis pour PROP_FIRM, interdit pour les autres. 441 backend + 84 frontend tests verts. Voir `docs/05-crud-accounts.md`
 
 ### ~~7. Symboles : dropdown/autocomplete au lieu de texte libre~~ ✅
 - ~~La table `symbols` contient 6 instruments de référence (NASDAQ, DAX, SP500, CAC40, EURUSD, BTCUSD)~~
@@ -58,7 +53,7 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 ### ~~8. Synchroniser la locale avec le profil utilisateur en BDD~~ ✅
 - ~~Le sélecteur de langue (évol #4) persiste le choix en `localStorage` uniquement~~
 - ~~Le champ `locale` de la table `users` n'est jamais mis à jour lors du changement de langue~~
-- **Résolu** : endpoint `PATCH /auth/locale`, détection langue navigateur à l'init (fallback `en`), locale envoyée à l'inscription, watcher AppLayout applique la locale du profil au login. 412 backend + 78 frontend tests verts
+- **Résolu** : endpoint `PATCH /auth/locale`, détection langue navigateur à l'init (fallback `en`), locale envoyée à l'inscription, watcher AppLayout applique la locale du profil au login. 412 backend + 78 frontend tests verts. Voir `docs/03-auth-jwt.md` § Préférences utilisateur
 
 ## Partage (suite de l'évol #1)
 

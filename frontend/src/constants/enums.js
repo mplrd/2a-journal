@@ -1,11 +1,10 @@
 export const AccountType = {
-  BROKER: 'BROKER',
-  PROPFIRM: 'PROPFIRM',
+  BROKER_DEMO: 'BROKER_DEMO',
+  BROKER_LIVE: 'BROKER_LIVE',
+  PROP_FIRM: 'PROP_FIRM',
 }
 
-export const AccountMode = {
-  DEMO: 'DEMO',
-  LIVE: 'LIVE',
+export const AccountStage = {
   CHALLENGE: 'CHALLENGE',
   VERIFICATION: 'VERIFICATION',
   FUNDED: 'FUNDED',

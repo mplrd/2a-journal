@@ -16,15 +16,15 @@ class AccountRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO accounts (user_id, name, account_type, mode, currency, initial_capital, current_capital, broker, max_drawdown, daily_drawdown, profit_target, profit_split)
-             VALUES (:user_id, :name, :account_type, :mode, :currency, :initial_capital, :current_capital, :broker, :max_drawdown, :daily_drawdown, :profit_target, :profit_split)'
+            'INSERT INTO accounts (user_id, name, account_type, stage, currency, initial_capital, current_capital, broker, max_drawdown, daily_drawdown, profit_target, profit_split)
+             VALUES (:user_id, :name, :account_type, :stage, :currency, :initial_capital, :current_capital, :broker, :max_drawdown, :daily_drawdown, :profit_target, :profit_split)'
         );
         $initialCapital = $data['initial_capital'] ?? 0;
         $stmt->execute([
             'user_id' => $data['user_id'],
             'name' => $data['name'],
             'account_type' => $data['account_type'],
-            'mode' => $data['mode'],
+            'stage' => $data['stage'] ?? null,
             'currency' => $data['currency'] ?? 'EUR',
             'initial_capital' => $initialCapital,
             'current_capital' => $initialCapital,
@@ -41,7 +41,7 @@ class AccountRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, name, account_type, broker, mode, currency, initial_capital, current_capital,
+            'SELECT id, user_id, name, account_type, stage, broker, currency, initial_capital, current_capital,
                     max_drawdown, daily_drawdown, profit_target, profit_split, is_active, created_at, updated_at
              FROM accounts WHERE id = :id AND deleted_at IS NULL'
         );
@@ -60,7 +60,7 @@ class AccountRepository
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, name, account_type, broker, mode, currency, initial_capital, current_capital,
+            'SELECT id, user_id, name, account_type, stage, broker, currency, initial_capital, current_capital,
                     max_drawdown, daily_drawdown, profit_target, profit_split, is_active, created_at, updated_at
              FROM accounts WHERE user_id = :user_id AND deleted_at IS NULL ORDER BY created_at DESC
              LIMIT :limit OFFSET :offset'
@@ -78,7 +78,7 @@ class AccountRepository
         $fields = [];
         $params = ['id' => $id];
 
-        $allowedFields = ['name', 'account_type', 'mode', 'currency', 'initial_capital', 'broker',
+        $allowedFields = ['name', 'account_type', 'stage', 'currency', 'initial_capital', 'broker',
                           'max_drawdown', 'daily_drawdown', 'profit_target', 'profit_split'];
 
         foreach ($allowedFields as $field) {

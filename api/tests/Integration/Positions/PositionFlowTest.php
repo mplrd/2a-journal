@@ -71,8 +71,7 @@ class PositionFlowTest extends TestCase
         // Create an account
         $response = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'Test Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]));
         $this->accountId = (int) $response->getBody()['data']['id'];
     }
@@ -270,8 +269,7 @@ class PositionFlowTest extends TestCase
         // Create second account
         $response = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'Second Account',
-            'account_type' => 'BROKER',
-            'mode' => 'LIVE',
+            'account_type' => 'BROKER_LIVE',
         ]));
         $newAccountId = (int) $response->getBody()['data']['id'];
 
@@ -295,7 +293,7 @@ class PositionFlowTest extends TestCase
         $otherToken = $response->getBody()['data']['access_token'];
 
         $otherResponse = $this->router->dispatch(
-            Request::create('POST', '/accounts', ['name' => 'Other', 'account_type' => 'BROKER', 'mode' => 'DEMO'], [], [
+            Request::create('POST', '/accounts', ['name' => 'Other', 'account_type' => 'BROKER_DEMO'], [], [
                 'Authorization' => "Bearer {$otherToken}",
             ])
         );
@@ -334,8 +332,7 @@ class PositionFlowTest extends TestCase
         // Create second account and transfer
         $response = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'Transfer Target',
-            'account_type' => 'BROKER',
-            'mode' => 'LIVE',
+            'account_type' => 'BROKER_LIVE',
         ]));
         $newAccountId = (int) $response->getBody()['data']['id'];
 

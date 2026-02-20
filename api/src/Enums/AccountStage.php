@@ -2,10 +2,8 @@
 
 namespace App\Enums;
 
-enum AccountMode: string
+enum AccountStage: string
 {
-    case DEMO = 'DEMO';
-    case LIVE = 'LIVE';
     case CHALLENGE = 'CHALLENGE';
     case VERIFICATION = 'VERIFICATION';
     case FUNDED = 'FUNDED';

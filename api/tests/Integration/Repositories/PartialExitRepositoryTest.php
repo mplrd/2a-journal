@@ -63,8 +63,7 @@ class PartialExitRepositoryTest extends TestCase
         $account = $accountRepo->create([
             'user_id' => $this->userId,
             'name' => 'Test Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]);
         $this->accountId = (int) $account['id'];
     }

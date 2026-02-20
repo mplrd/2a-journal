@@ -2,7 +2,7 @@
 
 namespace Tests\Unit\Enums;
 
-use App\Enums\AccountMode;
+use App\Enums\AccountStage;
 use App\Enums\AccountType;
 use App\Enums\Direction;
 use App\Enums\ExitType;
@@ -79,32 +79,32 @@ class EnumsTest extends TestCase
     public function testAccountTypeCases(): void
     {
         $cases = AccountType::cases();
-        $this->assertCount(2, $cases);
-        $this->assertSame('BROKER', AccountType::BROKER->value);
-        $this->assertSame('PROPFIRM', AccountType::PROPFIRM->value);
+        $this->assertCount(3, $cases);
+        $this->assertSame('BROKER_DEMO', AccountType::BROKER_DEMO->value);
+        $this->assertSame('BROKER_LIVE', AccountType::BROKER_LIVE->value);
+        $this->assertSame('PROP_FIRM', AccountType::PROP_FIRM->value);
     }
 
     public function testAccountTypeFromAndTryFrom(): void
     {
-        $this->assertSame(AccountType::BROKER, AccountType::from('BROKER'));
+        $this->assertSame(AccountType::BROKER_DEMO, AccountType::from('BROKER_DEMO'));
+        $this->assertSame(AccountType::PROP_FIRM, AccountType::tryFrom('PROP_FIRM'));
         $this->assertNull(AccountType::tryFrom('INVALID'));
     }
 
-    public function testAccountModeCases(): void
+    public function testAccountStageCases(): void
     {
-        $cases = AccountMode::cases();
-        $this->assertCount(5, $cases);
-        $this->assertSame('DEMO', AccountMode::DEMO->value);
-        $this->assertSame('LIVE', AccountMode::LIVE->value);
-        $this->assertSame('CHALLENGE', AccountMode::CHALLENGE->value);
-        $this->assertSame('VERIFICATION', AccountMode::VERIFICATION->value);
-        $this->assertSame('FUNDED', AccountMode::FUNDED->value);
+        $cases = AccountStage::cases();
+        $this->assertCount(3, $cases);
+        $this->assertSame('CHALLENGE', AccountStage::CHALLENGE->value);
+        $this->assertSame('VERIFICATION', AccountStage::VERIFICATION->value);
+        $this->assertSame('FUNDED', AccountStage::FUNDED->value);
     }
 
-    public function testAccountModeFromAndTryFrom(): void
+    public function testAccountStageFromAndTryFrom(): void
     {
-        $this->assertSame(AccountMode::LIVE, AccountMode::from('LIVE'));
-        $this->assertNull(AccountMode::tryFrom('INVALID'));
+        $this->assertSame(AccountStage::CHALLENGE, AccountStage::from('CHALLENGE'));
+        $this->assertNull(AccountStage::tryFrom('INVALID'));
     }
 
     public function testTriggerTypeCases(): void

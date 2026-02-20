@@ -41,8 +41,8 @@ Logique métier et validation. Méthodes :
 | Champ | Règle |
 |-------|-------|
 | name | Requis, max 100 caractères |
-| account_type | Requis, enum BROKER/PROPFIRM |
-| mode | Requis, enum DEMO/LIVE/CHALLENGE/VERIFICATION/FUNDED |
+| account_type | Requis, enum BROKER_DEMO/BROKER_LIVE/PROP_FIRM |
+| stage | Conditionnel, enum CHALLENGE/VERIFICATION/FUNDED (voir règles ci-dessous) |
 | currency | Optionnel, exactement 3 caractères, défaut EUR |
 | initial_capital | Optionnel, >= 0, défaut 0 |
 | broker | Optionnel, max 100 caractères |
@@ -51,13 +51,28 @@ Logique métier et validation. Méthodes :
 | profit_target | Optionnel, >= 0 |
 | profit_split | Optionnel, 0-100 |
 
+#### Règles conditionnelles sur `stage`
+
+Le champ `stage` ne concerne que les comptes Prop Firm :
+
+| account_type | stage | Comportement |
+|-------------|-------|--------------|
+| BROKER_DEMO | absent/null | OK |
+| BROKER_LIVE | absent/null | OK |
+| BROKER_DEMO / BROKER_LIVE | présent | Erreur `stage_not_allowed` |
+| PROP_FIRM | absent | Erreur `stage_required` |
+| PROP_FIRM | valide (CHALLENGE/VERIFICATION/FUNDED) | OK |
+| PROP_FIRM | invalide | Erreur `invalid_stage` |
+
 ### Codes d'erreur
 
 | Scénario | HTTP | Code | message_key |
 |----------|------|------|-------------|
 | Champ manquant | 422 | VALIDATION_ERROR | accounts.error.field_required |
 | Type invalide | 422 | VALIDATION_ERROR | accounts.error.invalid_type |
-| Mode invalide | 422 | VALIDATION_ERROR | accounts.error.invalid_mode |
+| Stage requis (PROP_FIRM) | 422 | VALIDATION_ERROR | accounts.error.stage_required |
+| Stage interdit (BROKER) | 422 | VALIDATION_ERROR | accounts.error.stage_not_allowed |
+| Stage invalide | 422 | VALIDATION_ERROR | accounts.error.invalid_stage |
 | Capital négatif | 422 | VALIDATION_ERROR | accounts.error.invalid_capital |
 | Compte non trouvé | 404 | NOT_FOUND | accounts.error.not_found |
 | Pas propriétaire | 403 | FORBIDDEN | accounts.error.forbidden |
@@ -91,7 +106,10 @@ Actions : `fetchAccounts`, `createAccount`, `updateAccount`, `deleteAccount`.
 
 ### Vue (`frontend/src/views/AccountsView.vue`)
 
-- DataTable PrimeVue avec colonnes : nom, type, mode (Tag coloré), devise, capital, courtier, actions
+- DataTable PrimeVue avec colonnes : nom, type (Tag coloré), stage (Tag conditionnel ou "-"), devise, capital, courtier, actions
+- Sévérités des Tags :
+  - Type : BROKER_DEMO=info, BROKER_LIVE=success, PROP_FIRM=warn
+  - Stage : CHALLENGE/VERIFICATION=warn, FUNDED=success
 - Bouton "Nouveau compte" en header
 - Message vide quand aucun compte
 - Actions par ligne : modifier (crayon) et supprimer (corbeille avec confirmation)
@@ -99,14 +117,15 @@ Actions : `fetchAccounts`, `createAccount`, `updateAccount`, `deleteAccount`.
 ### Composant (`frontend/src/components/account/AccountForm.vue`)
 
 Dialog PrimeVue modale (500px) pour création et édition :
-- Champs : nom, type (Select), mode (Select), devise, capital initial (InputNumber), courtier, drawdown max/journalier, objectif profit, partage profits
+- Champs : nom, type (Select), stage (Select conditionnel si PROP_FIRM), devise, capital initial (InputNumber), courtier, drawdown max/journalier, objectif profit, partage profits
+- Watcher sur `account_type` : si PROP_FIRM → affiche stage (défaut CHALLENGE), sinon → masque et reset stage à null
 - Pré-rempli en mode édition
 - Boutons Annuler / Enregistrer
 
 ### i18n
 
 Clés ajoutées dans `fr.json` et `en.json` sous la section `accounts` :
-- Labels de formulaire, types, modes, messages d'erreur et de succès
+- Labels de formulaire, types (Démo, Compte propre, Prop Firm), stages (Challenge, Vérification, Funded), messages d'erreur (`stage_required`, `stage_not_allowed`, `invalid_stage`) et de succès
 
 ### Router
 

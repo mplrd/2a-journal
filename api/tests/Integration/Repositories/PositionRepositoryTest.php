@@ -54,8 +54,7 @@ class PositionRepositoryTest extends TestCase
         $account = $accountRepo->create([
             'user_id' => $this->userId,
             'name' => 'Test Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]);
         $this->accountId = (int) $account['id'];
     }
@@ -220,8 +219,7 @@ class PositionRepositoryTest extends TestCase
         $newAccount = $accountRepo->create([
             'user_id' => $this->userId,
             'name' => 'New Account',
-            'account_type' => 'BROKER',
-            'mode' => 'LIVE',
+            'account_type' => 'BROKER_LIVE',
         ]);
 
         $transferred = $this->repo->transfer((int) $created['id'], (int) $newAccount['id']);

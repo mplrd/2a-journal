@@ -58,8 +58,7 @@ class AccountRepositoryTest extends TestCase
         return array_merge([
             'user_id' => $this->userId,
             'name' => 'Test Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ], $overrides);
     }
 
@@ -69,8 +68,8 @@ class AccountRepositoryTest extends TestCase
 
         $this->assertIsArray($account);
         $this->assertSame('Test Account', $account['name']);
-        $this->assertSame('BROKER', $account['account_type']);
-        $this->assertSame('DEMO', $account['mode']);
+        $this->assertSame('BROKER_DEMO', $account['account_type']);
+        $this->assertNull($account['stage']);
         $this->assertSame('EUR', $account['currency']);
         $this->assertEquals(0, $account['initial_capital']);
         $this->assertEquals(0, $account['current_capital']);
@@ -140,16 +139,14 @@ class AccountRepositoryTest extends TestCase
         $created = $this->repo->create($this->validData());
         $updated = $this->repo->update((int)$created['id'], [
             'name' => 'Updated Name',
-            'mode' => 'LIVE',
+            'account_type' => 'BROKER_LIVE',
             'broker' => 'IC Markets',
         ]);
 
         $this->assertNotNull($updated);
         $this->assertSame('Updated Name', $updated['name']);
-        $this->assertSame('LIVE', $updated['mode']);
+        $this->assertSame('BROKER_LIVE', $updated['account_type']);
         $this->assertSame('IC Markets', $updated['broker']);
-        // Unchanged fields remain
-        $this->assertSame('BROKER', $updated['account_type']);
     }
 
     public function testSoftDeleteMarksAsDeleted(): void

@@ -74,8 +74,7 @@ class ShareFlowTest extends TestCase
         // Create an account
         $response = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'Test Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]));
         $this->accountId = (int) $response->getBody()['data']['id'];
     }

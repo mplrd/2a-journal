@@ -13,6 +13,7 @@ Implémentation complète du système d'authentification JWT avec register, logi
 | POST    | /auth/refresh    | Non  | Rotation du refresh_token                |
 | POST    | /auth/logout     | Oui  | Supprime tous les refresh tokens du user |
 | GET     | /auth/me         | Oui  | Retourne le profil de l'utilisateur      |
+| PATCH   | /auth/locale     | Oui  | Met à jour la langue préférée            |
 
 ## Architecture
 
@@ -22,7 +23,7 @@ Routes → AuthMiddleware (routes protégées) → AuthController → AuthServic
 
 - **AuthController** : contrôleur mince, délègue tout à AuthService
 - **AuthService** : logique métier (validation, hashing, génération de tokens)
-- **UserRepository** : accès aux données utilisateur (create, findByEmail, findById, existsByEmail)
+- **UserRepository** : accès aux données utilisateur (create, findByEmail, findById, existsByEmail, updateLocale)
 - **RefreshTokenRepository** : gestion des refresh tokens (create, findByToken, deleteByToken, deleteAllByUserId)
 - **AuthMiddleware** : extrait le Bearer token, décode le JWT, attache `user_id` à la Request
 
@@ -70,6 +71,42 @@ Routes → AuthMiddleware (routes protégées) → AuthController → AuthServic
 | Token expiré         | 401  | TOKEN_EXPIRED          | auth.error.token_expired         | —            |
 | Token invalide       | 401  | TOKEN_INVALID          | auth.error.token_invalid         | —            |
 | Refresh token invalide | 401 | REFRESH_TOKEN_INVALID | auth.error.refresh_token_invalid | —            |
+| Locale invalide      | 422  | VALIDATION_ERROR       | auth.error.invalid_locale        | locale       |
+
+## Préférences utilisateur — Locale
+
+### Sélecteur de langue (frontend)
+
+Dropdown FR/EN dans le header (AppLayout) :
+- Bouton affichant la locale courante en majuscule
+- Clic → dropdown avec les langues disponibles
+- Changement immédiat côté client + persistance localStorage
+
+### Détection automatique
+
+Au démarrage de l'app (`locales/index.js`), la locale est détectée dans cet ordre :
+1. `localStorage.getItem('locale')`
+2. `navigator.language` (2 premiers caractères)
+3. Fallback `'en'`
+
+Seules les locales supportées (`fr`, `en`) sont acceptées.
+
+### Synchronisation BDD
+
+La locale est persistée dans la colonne `users.locale` :
+- **Inscription** : la locale courante du navigateur est envoyée dans le formulaire, validée côté backend (fallback `'en'` si invalide)
+- **Login** : un watcher sur `authStore.user.locale` applique la langue sauvegardée au profil (sync i18n + localStorage)
+- **Changement de langue** : si l'utilisateur est connecté, `PATCH /auth/locale` est appelé en non-bloquant pour persister le choix en BDD
+
+### Endpoint PATCH /auth/locale
+
+- **Body** : `{ "locale": "fr" }` — valeurs supportées : `fr`, `en`
+- **Réponse 200** : profil utilisateur complet mis à jour
+- **Erreur 422** : locale vide (`auth.error.field_required`) ou non supportée (`auth.error.invalid_locale`)
+
+### Constante backend
+
+`AuthService::SUPPORTED_LOCALES = ['fr', 'en']`
 
 ## Fichiers créés/modifiés
 

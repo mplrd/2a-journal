@@ -24,8 +24,7 @@ class AccountServiceTest extends TestCase
     {
         return array_merge([
             'name' => 'My Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ], $overrides);
     }
 
@@ -64,22 +63,53 @@ class AccountServiceTest extends TestCase
         $this->service->create(1, $this->validData(['account_type' => 'INVALID']));
     }
 
-    // ── Validation: mode ─────────────────────────────────────────
+    // ── Validation: stage ──────────────────────────────────────────
 
-    public function testCreateThrowsWhenModeMissing(): void
+    public function testCreateThrowsWhenStageRequiredForPropFirm(): void
     {
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('accounts.error.field_required');
+        $this->expectExceptionMessage('accounts.error.stage_required');
 
-        $this->service->create(1, $this->validData(['mode' => '']));
+        $this->service->create(1, $this->validData(['account_type' => 'PROP_FIRM']));
     }
 
-    public function testCreateThrowsWhenModeInvalid(): void
+    public function testCreateThrowsWhenStageNotAllowedForBroker(): void
     {
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('accounts.error.invalid_mode');
+        $this->expectExceptionMessage('accounts.error.stage_not_allowed');
 
-        $this->service->create(1, $this->validData(['mode' => 'INVALID']));
+        $this->service->create(1, $this->validData(['account_type' => 'BROKER_DEMO', 'stage' => 'CHALLENGE']));
+    }
+
+    public function testCreateThrowsWhenStageInvalid(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('accounts.error.invalid_stage');
+
+        $this->service->create(1, $this->validData(['account_type' => 'PROP_FIRM', 'stage' => 'INVALID']));
+    }
+
+    public function testCreateSuccessPropFirmWithStage(): void
+    {
+        $expected = ['id' => 1, 'name' => 'FTMO', 'user_id' => 1];
+        $this->repo->method('create')->willReturn($expected);
+
+        $result = $this->service->create(1, $this->validData([
+            'account_type' => 'PROP_FIRM',
+            'stage' => 'CHALLENGE',
+        ]));
+
+        $this->assertSame($expected, $result);
+    }
+
+    public function testCreateSuccessBrokerDemoWithoutStage(): void
+    {
+        $expected = ['id' => 1, 'name' => 'My Account', 'user_id' => 1];
+        $this->repo->method('create')->willReturn($expected);
+
+        $result = $this->service->create(1, $this->validData());
+
+        $this->assertSame($expected, $result);
     }
 
     // ── Validation: currency ─────────────────────────────────────

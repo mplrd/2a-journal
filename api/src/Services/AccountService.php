@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Enums\AccountMode;
+use App\Enums\AccountStage;
 use App\Enums\AccountType;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
@@ -93,16 +93,22 @@ class AccountService
             throw new ValidationException('accounts.error.field_required', 'account_type');
         }
 
-        if (!AccountType::tryFrom($data['account_type'])) {
+        $accountType = AccountType::tryFrom($data['account_type']);
+        if (!$accountType) {
             throw new ValidationException('accounts.error.invalid_type', 'account_type');
         }
 
-        if (empty($data['mode'])) {
-            throw new ValidationException('accounts.error.field_required', 'mode');
-        }
-
-        if (!AccountMode::tryFrom($data['mode'])) {
-            throw new ValidationException('accounts.error.invalid_mode', 'mode');
+        if ($accountType === AccountType::PROP_FIRM) {
+            if (empty($data['stage'])) {
+                throw new ValidationException('accounts.error.stage_required', 'stage');
+            }
+            if (!AccountStage::tryFrom($data['stage'])) {
+                throw new ValidationException('accounts.error.invalid_stage', 'stage');
+            }
+        } else {
+            if (!empty($data['stage'])) {
+                throw new ValidationException('accounts.error.stage_not_allowed', 'stage');
+            }
         }
 
         if (isset($data['currency']) && strlen($data['currency']) !== 3) {

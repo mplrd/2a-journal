@@ -83,12 +83,12 @@ class AccountFlowTest extends TestCase
 
     // ── Create ───────────────────────────────────────────────────
 
-    public function testCreateAccountSuccess(): void
+    public function testCreateAccountPropFirmSuccess(): void
     {
         $request = $this->authRequest('POST', '/accounts', [
             'name' => 'FTMO Challenge',
-            'account_type' => 'PROPFIRM',
-            'mode' => 'CHALLENGE',
+            'account_type' => 'PROP_FIRM',
+            'stage' => 'CHALLENGE',
             'currency' => 'USD',
             'initial_capital' => 100000,
             'broker' => 'FTMO',
@@ -103,24 +103,25 @@ class AccountFlowTest extends TestCase
         $this->assertSame(201, $response->getStatusCode());
         $this->assertTrue($body['success']);
         $this->assertSame('FTMO Challenge', $body['data']['name']);
-        $this->assertSame('PROPFIRM', $body['data']['account_type']);
-        $this->assertSame('CHALLENGE', $body['data']['mode']);
+        $this->assertSame('PROP_FIRM', $body['data']['account_type']);
+        $this->assertSame('CHALLENGE', $body['data']['stage']);
         $this->assertSame('USD', $body['data']['currency']);
         $this->assertEquals(100000, $body['data']['initial_capital']);
         $this->assertSame('FTMO', $body['data']['broker']);
     }
 
-    public function testCreateAccountMinimalFields(): void
+    public function testCreateAccountBrokerDemoMinimalFields(): void
     {
         $request = $this->authRequest('POST', '/accounts', [
             'name' => 'Demo Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]);
         $response = $this->router->dispatch($request);
         $body = $response->getBody();
 
         $this->assertSame(201, $response->getStatusCode());
+        $this->assertSame('BROKER_DEMO', $body['data']['account_type']);
+        $this->assertNull($body['data']['stage']);
         $this->assertSame('EUR', $body['data']['currency']);
         $this->assertEquals(0, $body['data']['initial_capital']);
     }
@@ -129,8 +130,7 @@ class AccountFlowTest extends TestCase
     {
         $request = $this->authRequest('POST', '/accounts', [
             'name' => '',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]);
 
         try {
@@ -148,7 +148,6 @@ class AccountFlowTest extends TestCase
         $request = $this->authRequest('POST', '/accounts', [
             'name' => 'Bad Type',
             'account_type' => 'INVALID',
-            'mode' => 'DEMO',
         ]);
 
         try {
@@ -160,12 +159,44 @@ class AccountFlowTest extends TestCase
         }
     }
 
+    public function testCreateAccountStageRequiredForPropFirm(): void
+    {
+        $request = $this->authRequest('POST', '/accounts', [
+            'name' => 'Missing Stage',
+            'account_type' => 'PROP_FIRM',
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('accounts.error.stage_required', $e->getMessageKey());
+        }
+    }
+
+    public function testCreateAccountStageNotAllowedForBroker(): void
+    {
+        $request = $this->authRequest('POST', '/accounts', [
+            'name' => 'Bad Stage',
+            'account_type' => 'BROKER_DEMO',
+            'stage' => 'CHALLENGE',
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('accounts.error.stage_not_allowed', $e->getMessageKey());
+        }
+    }
+
     public function testCreateAccountRequiresAuth(): void
     {
         $request = Request::create('POST', '/accounts', [
             'name' => 'No Auth',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]);
 
         try {
@@ -192,9 +223,9 @@ class AccountFlowTest extends TestCase
     public function testListAccountsReturnsOnlyOwnAccounts(): void
     {
         // Create two accounts for current user
-        $this->authRequest('POST', '/accounts', ['name' => 'A1', 'account_type' => 'BROKER', 'mode' => 'DEMO']);
-        $this->router->dispatch($this->authRequest('POST', '/accounts', ['name' => 'A1', 'account_type' => 'BROKER', 'mode' => 'DEMO']));
-        $this->router->dispatch($this->authRequest('POST', '/accounts', ['name' => 'A2', 'account_type' => 'BROKER', 'mode' => 'LIVE']));
+        $this->authRequest('POST', '/accounts', ['name' => 'A1', 'account_type' => 'BROKER_DEMO']);
+        $this->router->dispatch($this->authRequest('POST', '/accounts', ['name' => 'A1', 'account_type' => 'BROKER_DEMO']));
+        $this->router->dispatch($this->authRequest('POST', '/accounts', ['name' => 'A2', 'account_type' => 'BROKER_LIVE']));
 
         $request = $this->authRequest('GET', '/accounts');
         $response = $this->router->dispatch($request);
@@ -211,8 +242,7 @@ class AccountFlowTest extends TestCase
         // Create an account
         $createResponse = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'Show Me',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]));
         $accountId = $createResponse->getBody()['data']['id'];
 
@@ -243,23 +273,22 @@ class AccountFlowTest extends TestCase
     {
         $createResponse = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'Before Update',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]));
         $accountId = $createResponse->getBody()['data']['id'];
 
         $request = $this->authRequest('PUT', "/accounts/{$accountId}", [
             'name' => 'After Update',
-            'account_type' => 'PROPFIRM',
-            'mode' => 'FUNDED',
+            'account_type' => 'PROP_FIRM',
+            'stage' => 'FUNDED',
         ]);
         $response = $this->router->dispatch($request);
         $body = $response->getBody();
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('After Update', $body['data']['name']);
-        $this->assertSame('PROPFIRM', $body['data']['account_type']);
-        $this->assertSame('FUNDED', $body['data']['mode']);
+        $this->assertSame('PROP_FIRM', $body['data']['account_type']);
+        $this->assertSame('FUNDED', $body['data']['stage']);
     }
 
     // ── Delete ───────────────────────────────────────────────────
@@ -268,8 +297,7 @@ class AccountFlowTest extends TestCase
     {
         $createResponse = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'To Delete',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]));
         $accountId = $createResponse->getBody()['data']['id'];
 
@@ -295,8 +323,7 @@ class AccountFlowTest extends TestCase
         // Create an account for current user
         $createResponse = $this->router->dispatch($this->authRequest('POST', '/accounts', [
             'name' => 'My Account',
-            'account_type' => 'BROKER',
-            'mode' => 'DEMO',
+            'account_type' => 'BROKER_DEMO',
         ]));
         $accountId = $createResponse->getBody()['data']['id'];
 

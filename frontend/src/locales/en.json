@@ -71,7 +71,7 @@
     "empty": "No accounts yet. Create your first account to get started.",
     "name": "Account name",
     "account_type": "Account type",
-    "mode": "Mode",
+    "stage": "Stage",
     "currency": "Currency",
     "initial_capital": "Initial capital",
     "broker": "Broker",
@@ -80,12 +80,11 @@
     "profit_target": "Profit target",
     "profit_split": "Profit split (%)",
     "types": {
-      "BROKER": "Broker",
-      "PROPFIRM": "Prop Firm"
+      "BROKER_DEMO": "Demo",
+      "BROKER_LIVE": "Personal",
+      "PROP_FIRM": "Prop Firm"
     },
-    "modes": {
-      "DEMO": "Demo",
-      "LIVE": "Live",
+    "stages": {
       "CHALLENGE": "Challenge",
       "VERIFICATION": "Verification",
       "FUNDED": "Funded"
@@ -94,7 +93,9 @@
     "error": {
       "field_required": "This field is required",
       "invalid_type": "Invalid account type",
-      "invalid_mode": "Invalid mode",
+      "stage_required": "Stage is required for Prop Firm accounts",
+      "stage_not_allowed": "Stage is not allowed for this account type",
+      "invalid_stage": "Invalid stage",
       "invalid_capital": "Value must be positive",
       "not_found": "Account not found",
       "forbidden": "Unauthorized access to this account"

@@ -71,7 +71,7 @@
     "empty": "Aucun compte. Créez votre premier compte pour commencer.",
     "name": "Nom du compte",
     "account_type": "Type de compte",
-    "mode": "Mode",
+    "stage": "Phase",
     "currency": "Devise",
     "initial_capital": "Capital initial",
     "broker": "Courtier",
@@ -80,12 +80,11 @@
     "profit_target": "Objectif de profit",
     "profit_split": "Partage des profits (%)",
     "types": {
-      "BROKER": "Broker",
-      "PROPFIRM": "Prop Firm"
+      "BROKER_DEMO": "Démo",
+      "BROKER_LIVE": "Compte propre",
+      "PROP_FIRM": "Prop Firm"
     },
-    "modes": {
-      "DEMO": "Démo",
-      "LIVE": "Live",
+    "stages": {
       "CHALLENGE": "Challenge",
       "VERIFICATION": "Vérification",
       "FUNDED": "Funded"
@@ -94,7 +93,9 @@
     "error": {
       "field_required": "Ce champ est requis",
       "invalid_type": "Type de compte invalide",
-      "invalid_mode": "Mode invalide",
+      "stage_required": "La phase est requise pour les comptes Prop Firm",
+      "stage_not_allowed": "La phase n'est pas autorisée pour ce type de compte",
+      "invalid_stage": "Phase invalide",
       "invalid_capital": "La valeur doit être positive",
       "not_found": "Compte non trouvé",
       "forbidden": "Accès non autorisé à ce compte"

@@ -1,12 +1,12 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
-import { AccountType, AccountMode } from '@/constants/enums'
+import { AccountType, AccountStage } from '@/constants/enums'
 
 const { t } = useI18n()
 
@@ -20,21 +20,27 @@ const emit = defineEmits(['update:visible', 'save'])
 
 const form = ref(getDefaultForm())
 
-const accountTypeOptions = Object.values(AccountType).map((value) => ({
-  label: t(`accounts.types.${value}`),
-  value,
-}))
+const accountTypeOptions = computed(() =>
+  Object.values(AccountType).map((value) => ({
+    label: t(`accounts.types.${value}`),
+    value,
+  })),
+)
 
-const modeOptions = Object.values(AccountMode).map((value) => ({
-  label: t(`accounts.modes.${value}`),
-  value,
-}))
+const stageOptions = computed(() =>
+  Object.values(AccountStage).map((value) => ({
+    label: t(`accounts.stages.${value}`),
+    value,
+  })),
+)
+
+const isPropFirm = computed(() => form.value.account_type === AccountType.PROP_FIRM)
 
 function getDefaultForm() {
   return {
     name: '',
-    account_type: AccountType.BROKER,
-    mode: AccountMode.DEMO,
+    account_type: AccountType.BROKER_DEMO,
+    stage: null,
     currency: 'EUR',
     initial_capital: 0,
     broker: '',
@@ -52,6 +58,19 @@ watch(
       form.value = props.account
         ? { ...props.account, broker: props.account.broker || '' }
         : getDefaultForm()
+    }
+  },
+)
+
+watch(
+  () => form.value.account_type,
+  (newType) => {
+    if (newType === AccountType.PROP_FIRM) {
+      if (!form.value.stage) {
+        form.value.stage = AccountStage.CHALLENGE
+      }
+    } else {
+      form.value.stage = null
     }
   },
 )
@@ -85,9 +104,9 @@ function handleClose() {
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.account_type') }} *</label>
           <Select v-model="form.account_type" :options="accountTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.mode') }} *</label>
-          <Select v-model="form.mode" :options="modeOptions" optionLabel="label" optionValue="value" class="w-full" />
+        <div v-if="isPropFirm">
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.stage') }} *</label>
+          <Select v-model="form.stage" :options="stageOptions" optionLabel="label" optionValue="value" class="w-full" />
         </div>
       </div>
 
