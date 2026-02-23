@@ -6,6 +6,7 @@ use App\Exceptions\HttpException;
 use App\Exceptions\UnauthorizedException;
 use App\Exceptions\ValidationException;
 use App\Repositories\RefreshTokenRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\UserRepository;
 use Firebase\JWT\JWT;
@@ -15,13 +16,15 @@ class AuthService
     private UserRepository $userRepo;
     private RefreshTokenRepository $tokenRepo;
     private ?SymbolRepository $symbolRepo;
+    private ?SetupRepository $setupRepo;
     private array $config;
 
-    public function __construct(UserRepository $userRepo, RefreshTokenRepository $tokenRepo, ?SymbolRepository $symbolRepo, array $config)
+    public function __construct(UserRepository $userRepo, RefreshTokenRepository $tokenRepo, ?SymbolRepository $symbolRepo, ?SetupRepository $setupRepo, array $config)
     {
         $this->userRepo = $userRepo;
         $this->tokenRepo = $tokenRepo;
         $this->symbolRepo = $symbolRepo;
+        $this->setupRepo = $setupRepo;
         $this->config = $config;
     }
 
@@ -48,6 +51,11 @@ class AuthService
         // Seed default symbols for new user
         if ($this->symbolRepo) {
             $this->symbolRepo->seedForUser((int)$user['id']);
+        }
+
+        // Seed default setups for new user
+        if ($this->setupRepo) {
+            $this->setupRepo->seedForUser((int)$user['id']);
         }
 
         $accessToken = $this->generateAccessToken((int)$user['id']);

@@ -4,6 +4,7 @@ use App\Controllers\AccountController;
 use App\Controllers\AuthController;
 use App\Controllers\OrderController;
 use App\Controllers\PositionController;
+use App\Controllers\SetupController;
 use App\Controllers\SymbolController;
 use App\Controllers\TradeController;
 use App\Core\Database;
@@ -13,6 +14,7 @@ use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PartialExitRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
@@ -25,6 +27,7 @@ use App\Services\AuthService;
 use App\Services\OrderService;
 use App\Services\PositionService;
 use App\Services\ShareService;
+use App\Services\SetupService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
 
@@ -45,7 +48,8 @@ $pdo = Database::getConnection();
 $userRepo = new UserRepository($pdo);
 $tokenRepo = new RefreshTokenRepository($pdo);
 $symbolRepo = new SymbolRepository($pdo);
-$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $authConfig);
+$setupRepo = new SetupRepository($pdo);
+$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig);
 $authController = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authConfig['jwt_secret']);
 
@@ -88,6 +92,14 @@ $router->get('/symbols/{id}', [$symbolController, 'show'], [$authMiddleware]);
 $router->put('/symbols/{id}', [$symbolController, 'update'], [$authMiddleware]);
 $router->delete('/symbols/{id}', [$symbolController, 'destroy'], [$authMiddleware]);
 
+// ── Setups ──────────────────────────────────────────────────────
+$setupService = new SetupService($setupRepo);
+$setupController = new SetupController($setupService);
+
+$router->get('/setups', [$setupController, 'index'], [$authMiddleware]);
+$router->post('/setups', [$setupController, 'store'], [$authMiddleware]);
+$router->delete('/setups/{id}', [$setupController, 'destroy'], [$authMiddleware]);
+
 // ── Accounts ────────────────────────────────────────────────────
 $accountRepo = new AccountRepository($pdo);
 $accountService = new AccountService($accountRepo);
@@ -106,7 +118,7 @@ $partialExitRepo = new PartialExitRepository($pdo);
 // ── Positions ──────────────────────────────────────────────────
 $positionRepo = new PositionRepository($pdo);
 $historyRepo = new StatusHistoryRepository($pdo);
-$positionService = new PositionService($positionRepo, $accountRepo, $historyRepo);
+$positionService = new PositionService($positionRepo, $accountRepo, $historyRepo, $setupRepo);
 $shareService = new ShareService($positionRepo, $tradeRepo);
 $positionController = new PositionController($positionService, $shareService);
 
@@ -121,7 +133,7 @@ $router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTex
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware]);
@@ -132,7 +144,7 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware]);
 
 // ── Trades ─────────────────────────────────────────────────────
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware]);

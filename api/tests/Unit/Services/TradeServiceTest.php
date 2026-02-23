@@ -61,7 +61,7 @@ class TradeServiceTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => '18500.00000',
             'size' => '1.0000',
-            'setup' => 'Breakout',
+            'setup' => ['Breakout'],
             'sl_points' => '50.00',
             'sl_price' => '18450.00000',
             'be_points' => null,
@@ -83,7 +83,7 @@ class TradeServiceTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => 18500,
             'size' => 1,
-            'setup' => 'Breakout',
+            'setup' => ['Breakout'],
             'sl_points' => 50,
             'opened_at' => '2026-01-15 10:00:00',
         ], $overrides);
@@ -270,9 +270,9 @@ class TradeServiceTest extends TestCase
         $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('trades.error.field_required');
+        $this->expectExceptionMessage('trades.error.invalid_setup');
 
-        $this->service->create(1, $this->validCreateData(['setup' => '']));
+        $this->service->create(1, $this->validCreateData(['setup' => []]));
     }
 
     public function testCreateThrowsWhenSlPointsZero(): void

@@ -5,6 +5,7 @@ import { useToast } from 'primevue/usetoast'
 import { usePositionsStore } from '@/stores/positions'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
+import { useSetupsStore } from '@/stores/setups'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -19,8 +20,15 @@ const toast = useToast()
 const store = usePositionsStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
+const setupsStore = useSetupsStore()
 
 const showForm = ref(false)
+
+function parseSetup(setup) {
+  if (Array.isArray(setup)) return setup
+  if (!setup) return []
+  try { return JSON.parse(setup) } catch { return [setup] }
+}
 
 function symbolName(code) {
   const s = symbolsStore.symbols.find((sym) => sym.code === code)
@@ -47,7 +55,7 @@ const typeOptions = [
 ]
 
 onMounted(async () => {
-  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols()])
+  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
   await store.fetchPositions()
 })
 
@@ -164,7 +172,6 @@ function typeSeverity(type) {
         </template>
       </Column>
       <Column field="size" :header="t('positions.size')" />
-      <Column field="setup" :header="t('positions.setup')" />
       <Column field="sl_price" :header="t('positions.sl_price')">
         <template #body="{ data }">
           {{ Number(data.sl_price).toLocaleString() }}
@@ -195,6 +202,7 @@ function typeSeverity(type) {
       v-model:visible="showForm"
       :position="editingPosition"
       :symbols="symbolsStore.symbolOptions"
+      :setups="setupsStore.setupOptions"
       :loading="store.loading"
       @save="handleSave"
     />

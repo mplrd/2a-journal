@@ -78,6 +78,21 @@ CREATE TABLE IF NOT EXISTS symbols (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
+-- 3b. SETUPS (per-user trading setups dictionary)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS setups (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    label VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    KEY idx_setups_user_id (user_id),
+    UNIQUE KEY uk_setups_user_label (user_id, label),
+    CONSTRAINT fk_setups_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
 -- 4. POSITIONS (base table: shared fields for orders & trades)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS positions (
@@ -88,7 +103,7 @@ CREATE TABLE IF NOT EXISTS positions (
     symbol VARCHAR(50) NOT NULL,
     entry_price DECIMAL(15,5) NOT NULL,
     size DECIMAL(10,4) NOT NULL,
-    setup VARCHAR(255) NOT NULL,
+    setup TEXT NOT NULL,
     sl_points DECIMAL(10,2) NOT NULL,
     sl_price DECIMAL(15,5) NOT NULL,
     be_points DECIMAL(10,2) NULL DEFAULT NULL,

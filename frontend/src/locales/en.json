@@ -322,6 +322,20 @@
       "deleted": "Asset deleted successfully"
     }
   },
+  "setups": {
+    "title": "Setups",
+    "error": {
+      "field_required": "This field is required",
+      "not_found": "Setup not found",
+      "forbidden": "Unauthorized access",
+      "duplicate_label": "This setup already exists",
+      "label_too_long": "Label is too long (100 characters max)"
+    },
+    "success": {
+      "created": "Setup created successfully",
+      "deleted": "Setup deleted successfully"
+    }
+  },
   "share": {
     "title": "Share",
     "share": "Share",

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
+import AutoComplete from 'primevue/autocomplete'
 import Textarea from 'primevue/textarea'
 import Select from 'primevue/select'
 import DatePicker from 'primevue/datepicker'
@@ -22,12 +23,24 @@ const props = defineProps({
   visible: Boolean,
   accounts: { type: Array, default: () => [] },
   symbols: { type: Array, default: () => [] },
+  setups: { type: Array, default: () => [] },
   loading: Boolean,
 })
 
 const emit = defineEmits(['update:visible', 'save'])
 
 const showSymbolForm = ref(false)
+const filteredSetups = ref([])
+
+function searchSetups(event) {
+  const query = event.query.trim()
+  const queryLower = query.toLowerCase()
+  const matches = props.setups.filter((s) => s.toLowerCase().includes(queryLower))
+  if (query && !matches.some((s) => s.toLowerCase() === queryLower)) {
+    matches.unshift(query)
+  }
+  filteredSetups.value = matches
+}
 
 const form = ref(getDefaultForm())
 
@@ -46,7 +59,7 @@ function getDefaultForm() {
     be_size: null,
     direction: Direction.BUY,
     symbol: '',
-    setup: '',
+    setup: [],
     notes: '',
     targets: [],
     opened_at: new Date(),
@@ -205,7 +218,13 @@ async function handleSymbolCreate(data) {
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.setup') }} *</label>
-        <InputText v-model="form.setup" class="w-full" :maxlength="255" />
+        <AutoComplete
+          v-model="form.setup"
+          :suggestions="filteredSetups"
+          multiple
+          class="w-full"
+          @complete="searchSetups"
+        />
       </div>
 
       <div class="grid grid-cols-2 gap-4">

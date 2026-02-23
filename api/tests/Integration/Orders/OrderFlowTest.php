@@ -107,7 +107,7 @@ class OrderFlowTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => 18500,
             'size' => 1,
-            'setup' => 'Breakout',
+            'setup' => ['Breakout'],
             'sl_points' => 50,
         ], $overrides);
     }

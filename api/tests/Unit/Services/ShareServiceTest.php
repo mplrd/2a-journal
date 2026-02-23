@@ -32,7 +32,7 @@ class ShareServiceTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => '18240.00000',
             'size' => '1.0000',
-            'setup' => 'Divergence haussière sur RSI',
+            'setup' => '["Divergence haussière sur RSI"]',
             'sl_points' => '50.00',
             'sl_price' => '18190.00000',
             'be_points' => null,
@@ -91,7 +91,7 @@ class ShareServiceTest extends TestCase
             'sl_points' => '30.00',
             'sl_price' => '16530.00000',
             'targets' => json_encode([['points' => 60, 'size' => 1, 'price' => 16440]]),
-            'setup' => 'Rejet résistance',
+            'setup' => '["Rejet résistance"]',
         ]);
         $this->positionRepo->method('findById')->willReturn($position);
 
@@ -315,11 +315,31 @@ class ShareServiceTest extends TestCase
 
     public function testSetupIsIncludedForOrder(): void
     {
-        $position = $this->fakePosition(['setup' => 'Touchette haut de zone weekly']);
+        $position = $this->fakePosition(['setup' => '["Touchette haut de zone weekly"]']);
         $this->positionRepo->method('findById')->willReturn($position);
 
         $text = $this->service->generateText(1, 10);
 
         $this->assertStringContainsString('💬 Touchette haut de zone weekly', $text);
+    }
+
+    public function testSetupMultiValueJoined(): void
+    {
+        $position = $this->fakePosition(['setup' => '["Breakout","FVG"]']);
+        $this->positionRepo->method('findById')->willReturn($position);
+
+        $text = $this->service->generateText(1, 10);
+
+        $this->assertStringContainsString('💬 Breakout | FVG', $text);
+    }
+
+    public function testSetupLegacyStringFallback(): void
+    {
+        $position = $this->fakePosition(['setup' => 'Legacy plain text']);
+        $this->positionRepo->method('findById')->willReturn($position);
+
+        $text = $this->service->generateText(1, 10);
+
+        $this->assertStringContainsString('💬 Legacy plain text', $text);
     }
 }

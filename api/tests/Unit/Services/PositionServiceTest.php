@@ -200,7 +200,7 @@ class PositionServiceTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessage('positions.error.invalid_setup');
 
-        $this->service->update(1, 1, ['setup' => '']);
+        $this->service->update(1, 1, ['setup' => []]);
     }
 
     public function testUpdateThrowsWhenNotesTooLong(): void

@@ -107,7 +107,7 @@ class TradeFlowTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => 18500,
             'size' => 2,
-            'setup' => 'Breakout',
+            'setup' => ['Breakout'],
             'sl_points' => 50,
             'opened_at' => '2026-01-15 10:00:00',
         ], $overrides);

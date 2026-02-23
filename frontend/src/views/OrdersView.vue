@@ -5,6 +5,7 @@ import { useToast } from 'primevue/usetoast'
 import { useOrdersStore } from '@/stores/orders'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
+import { useSetupsStore } from '@/stores/setups'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -19,10 +20,17 @@ const toast = useToast()
 const store = useOrdersStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
+const setupsStore = useSetupsStore()
 
 const showForm = ref(false)
 const showShare = ref(false)
 const sharePositionId = ref(null)
+
+function parseSetup(setup) {
+  if (Array.isArray(setup)) return setup
+  if (!setup) return []
+  try { return JSON.parse(setup) } catch { return [setup] }
+}
 
 function symbolName(code) {
   const s = symbolsStore.symbols.find((sym) => sym.code === code)
@@ -46,7 +54,7 @@ const statusOptions = [
 ]
 
 onMounted(async () => {
-  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols()])
+  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
   await store.fetchOrders()
 })
 
@@ -63,8 +71,8 @@ async function handleCreate(data) {
     await store.createOrder(data)
     toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.created'), life: 3000 })
     showForm.value = false
-  } catch {
-    // error is set in the store
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   }
 }
 
@@ -182,7 +190,13 @@ function statusSeverity(status) {
         </template>
       </Column>
       <Column field="size" :header="t('positions.size')" />
-      <Column field="setup" :header="t('positions.setup')" />
+      <Column field="setup" :header="t('positions.setup')">
+        <template #body="{ data }">
+          <div class="flex flex-wrap gap-1">
+            <Tag v-for="s in parseSetup(data.setup)" :key="s" :value="s" severity="info" />
+          </div>
+        </template>
+      </Column>
       <Column field="sl_price" :header="t('positions.sl_price')">
         <template #body="{ data }">
           {{ Number(data.sl_price).toLocaleString() }}
@@ -235,6 +249,7 @@ function statusSeverity(status) {
       v-model:visible="showForm"
       :accounts="accountsStore.accounts"
       :symbols="symbolsStore.symbolOptions"
+      :setups="setupsStore.setupOptions"
       :loading="store.loading"
       @save="handleCreate"
     />

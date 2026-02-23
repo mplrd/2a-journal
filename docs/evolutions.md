@@ -21,12 +21,13 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - ~~Responsive friendly~~
 - **Résolu** : Layout refactorisé — header full-width en haut, sidebar CSS persistant en dessous (ouvert par défaut sur desktop, overlay sur mobile, état persisté en localStorage). Popover utilisateur (avatar initiales, logout), sélecteur FR/EN dans le header. Colonne "Compte" ajoutée dans les grids Positions/Ordres/Trades. Directive Tooltip enregistrée dans main.js. 91 frontend tests verts. Voir `docs/13-nav.md`
 
-### 3. Setup en badges multi-sélection
-- Le champ "setup" ne doit pas être un simple texte libre
-- Un trade peut être pris sur plusieurs setups en convergence → multi-tags/badges
-- Quand l'utilisateur tape un setup qui n'existe pas → auto-création (insert)
-- Nécessite : table `setups` (ou stockage JSON), composant chips/tags avec autocomplete
-- Impacte : OrderForm, PositionForm, schema BDD potentiellement
+### ~~3. Setup en badges multi-sélection~~ ✅
+- ~~Le champ "setup" ne doit pas être un simple texte libre~~
+- ~~Un trade peut être pris sur plusieurs setups en convergence → multi-tags/badges~~
+- ~~Quand l'utilisateur tape un setup qui n'existe pas → auto-création (insert)~~
+- ~~Nécessite : table `setups` (ou stockage JSON), composant chips/tags avec autocomplete~~
+- ~~Impacte : OrderForm, PositionForm, schema BDD potentiellement~~
+- **Résolu** : table `setups` per-user avec CRUD (GET/POST/DELETE /setups), seed de 8 setups par défaut à l'inscription. Champ `positions.setup` migré en TEXT stockant un JSON array. Validation array dans OrderService/TradeService/PositionService avec auto-création via `INSERT IGNORE`. Frontend : AutoComplete PrimeVue `multiple` dans OrderForm/TradeForm/PositionForm, Tags dans les grids, share preview avec join ` | `. 477 backend tests, build frontend OK. Voir `docs/12-setup-badges.md`
 
 ### ~~4. Sélecteur de langue dans le header~~ ✅
 - ~~Actuellement la locale est fixée par `VITE_DEFAULT_LOCALE` (défaut `fr`)~~

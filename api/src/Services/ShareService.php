@@ -112,10 +112,11 @@ class ShareService
         }
 
         // Setup
+        $setupText = $this->formatSetup($position['setup']);
         $lines[] = '';
         $lines[] = $withEmojis
-            ? "💬 {$position['setup']}"
-            : $position['setup'];
+            ? "💬 {$setupText}"
+            : $setupText;
 
         return implode("\n", $lines);
     }
@@ -163,10 +164,11 @@ class ShareService
         }
 
         // Setup
+        $setupText = $this->formatSetup($position['setup']);
         $lines[] = '';
         $lines[] = $withEmojis
-            ? "💬 {$position['setup']}"
-            : $position['setup'];
+            ? "💬 {$setupText}"
+            : $setupText;
 
         return implode("\n", $lines);
     }
@@ -196,6 +198,15 @@ class ShareService
         }
 
         return $lines;
+    }
+
+    private function formatSetup(string $setup): string
+    {
+        $decoded = json_decode($setup, true);
+        if (is_array($decoded)) {
+            return implode(' | ', $decoded);
+        }
+        return $setup;
     }
 
     private function parseTargets(?string $json): ?array

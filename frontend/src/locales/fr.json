@@ -322,6 +322,20 @@
       "deleted": "Actif supprimé avec succès"
     }
   },
+  "setups": {
+    "title": "Setups",
+    "error": {
+      "field_required": "Ce champ est requis",
+      "not_found": "Setup non trouvé",
+      "forbidden": "Accès non autorisé",
+      "duplicate_label": "Ce setup existe déjà",
+      "label_too_long": "Le label est trop long (100 caractères max)"
+    },
+    "success": {
+      "created": "Setup créé avec succès",
+      "deleted": "Setup supprimé avec succès"
+    }
+  },
   "share": {
     "title": "Partager",
     "share": "Partager",

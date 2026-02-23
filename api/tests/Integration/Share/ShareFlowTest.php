@@ -107,7 +107,7 @@ class ShareFlowTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => 18240,
             'size' => 1,
-            'setup' => 'Touchette haut de zone weekly',
+            'setup' => ['Touchette haut de zone weekly'],
             'sl_points' => 50,
             'targets' => json_encode([['points' => 110, 'size' => 1, 'price' => 18350]]),
         ]));
@@ -123,7 +123,7 @@ class ShareFlowTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => 18240,
             'size' => 1,
-            'setup' => 'Divergence haussière sur RSI',
+            'setup' => ['Divergence haussière sur RSI'],
             'sl_points' => 50,
             'targets' => json_encode([['points' => 110, 'size' => 1, 'price' => 18350]]),
             'opened_at' => '2026-02-13 10:00:00',
@@ -178,7 +178,7 @@ class ShareFlowTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => 18240,
             'size' => 1,
-            'setup' => 'Breakout',
+            'setup' => ['Breakout'],
             'sl_points' => 50,
             'opened_at' => '2026-02-13 10:00:00',
         ]));

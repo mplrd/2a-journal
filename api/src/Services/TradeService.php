@@ -14,6 +14,7 @@ use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 
@@ -24,19 +25,22 @@ class TradeService
     private PositionRepository $positionRepo;
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
+    private ?SetupRepository $setupRepo;
 
     public function __construct(
         TradeRepository $tradeRepo,
         PartialExitRepository $partialExitRepo,
         PositionRepository $positionRepo,
         AccountRepository $accountRepo,
-        StatusHistoryRepository $historyRepo
+        StatusHistoryRepository $historyRepo,
+        ?SetupRepository $setupRepo = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
         $this->positionRepo = $positionRepo;
         $this->accountRepo = $accountRepo;
         $this->historyRepo = $historyRepo;
+        $this->setupRepo = $setupRepo;
     }
 
     public function create(int $userId, array $data): array
@@ -80,6 +84,11 @@ class TradeService
             }
         }
 
+        // Auto-create unknown setups in dictionary
+        if ($this->setupRepo) {
+            $this->setupRepo->ensureExist($userId, $data['setup']);
+        }
+
         // Create position
         $size = (float) $data['size'];
         $position = $this->positionRepo->create([
@@ -89,7 +98,7 @@ class TradeService
             'symbol' => $data['symbol'],
             'entry_price' => $entryPrice,
             'size' => $size,
-            'setup' => $data['setup'],
+            'setup' => json_encode($data['setup']),
             'sl_points' => $slPoints,
             'sl_price' => $slPrice,
             'be_points' => $data['be_points'] ?? null,
@@ -335,8 +344,13 @@ class TradeService
             throw new ValidationException('trades.error.invalid_size', 'size');
         }
 
-        if (empty($data['setup']) || mb_strlen($data['setup']) > 255) {
+        if (empty($data['setup']) || !is_array($data['setup']) || count($data['setup']) === 0 || count($data['setup']) > 20) {
             throw new ValidationException('trades.error.invalid_setup', 'setup');
+        }
+        foreach ($data['setup'] as $label) {
+            if (!is_string($label) || mb_strlen(trim($label)) === 0 || mb_strlen($label) > 100) {
+                throw new ValidationException('trades.error.invalid_setup', 'setup');
+            }
         }
 
         if ((float) $data['sl_points'] <= 0) {

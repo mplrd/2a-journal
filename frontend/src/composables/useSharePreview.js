@@ -51,9 +51,10 @@ export function useSharePreview(form, calculatedTargets, calculatedSlPrice, calc
     }
 
     // Setup
-    if (f.setup) {
+    const setupArr = Array.isArray(f.setup) ? f.setup : [f.setup]
+    if (setupArr.length > 0 && setupArr[0]) {
       lines.push('')
-      lines.push(`\u{1F4AC} ${f.setup}`)
+      lines.push(`\u{1F4AC} ${setupArr.join(' | ')}`)
     }
 
     return lines.join('\n')

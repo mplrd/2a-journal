@@ -87,7 +87,7 @@ class PartialExitRepositoryTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => '18500.00000',
             'size' => '2.0000',
-            'setup' => 'Breakout',
+            'setup' => '["Breakout"]',
             'sl_points' => '50.00',
             'sl_price' => '18450.00000',
             'position_type' => 'TRADE',

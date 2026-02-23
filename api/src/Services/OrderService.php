@@ -14,6 +14,7 @@ use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 
@@ -24,19 +25,22 @@ class OrderService
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
     private TradeRepository $tradeRepo;
+    private ?SetupRepository $setupRepo;
 
     public function __construct(
         OrderRepository $orderRepo,
         PositionRepository $positionRepo,
         AccountRepository $accountRepo,
         StatusHistoryRepository $historyRepo,
-        TradeRepository $tradeRepo
+        TradeRepository $tradeRepo,
+        ?SetupRepository $setupRepo = null
     ) {
         $this->orderRepo = $orderRepo;
         $this->positionRepo = $positionRepo;
         $this->accountRepo = $accountRepo;
         $this->historyRepo = $historyRepo;
         $this->tradeRepo = $tradeRepo;
+        $this->setupRepo = $setupRepo;
     }
 
     public function create(int $userId, array $data): array
@@ -85,6 +89,11 @@ class OrderService
             }
         }
 
+        // Auto-create unknown setups in dictionary
+        if ($this->setupRepo) {
+            $this->setupRepo->ensureExist($userId, $data['setup']);
+        }
+
         // Create position
         $position = $this->positionRepo->create([
             'user_id' => $userId,
@@ -93,7 +102,7 @@ class OrderService
             'symbol' => $data['symbol'],
             'entry_price' => $entryPrice,
             'size' => (float) $data['size'],
-            'setup' => $data['setup'],
+            'setup' => json_encode($data['setup']),
             'sl_points' => $slPoints,
             'sl_price' => $slPrice,
             'be_points' => $data['be_points'] ?? null,
@@ -291,9 +300,14 @@ class OrderService
             throw new ValidationException('orders.error.invalid_size', 'size');
         }
 
-        // Setup: non-empty, max 255
-        if (empty($data['setup']) || mb_strlen($data['setup']) > 255) {
+        // Setup: must be non-empty array of strings (max 20)
+        if (empty($data['setup']) || !is_array($data['setup']) || count($data['setup']) === 0 || count($data['setup']) > 20) {
             throw new ValidationException('orders.error.invalid_setup', 'setup');
+        }
+        foreach ($data['setup'] as $label) {
+            if (!is_string($label) || mb_strlen(trim($label)) === 0 || mb_strlen($label) > 100) {
+                throw new ValidationException('orders.error.invalid_setup', 'setup');
+            }
         }
 
         // SL points > 0

@@ -11,6 +11,7 @@ use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\PositionRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 
 class PositionService
@@ -18,15 +19,18 @@ class PositionService
     private PositionRepository $positionRepo;
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
+    private ?SetupRepository $setupRepo;
 
     public function __construct(
         PositionRepository $positionRepo,
         AccountRepository $accountRepo,
-        StatusHistoryRepository $historyRepo
+        StatusHistoryRepository $historyRepo,
+        ?SetupRepository $setupRepo = null
     ) {
         $this->positionRepo = $positionRepo;
         $this->accountRepo = $accountRepo;
         $this->historyRepo = $historyRepo;
+        $this->setupRepo = $setupRepo;
     }
 
     public function list(int $userId, array $filters = []): array
@@ -110,6 +114,14 @@ class PositionService
                 $targets = $this->calculateTargetPrices($targets, $entryPrice, $direction);
                 $data['targets'] = json_encode($targets);
             }
+        }
+
+        // Setup: auto-create unknown setups and json_encode
+        if (isset($data['setup']) && is_array($data['setup'])) {
+            if ($this->setupRepo) {
+                $this->setupRepo->ensureExist($userId, $data['setup']);
+            }
+            $data['setup'] = json_encode($data['setup']);
         }
 
         return $this->positionRepo->update((int) $position['id'], $data);
@@ -199,8 +211,15 @@ class PositionService
             throw new ValidationException('positions.error.invalid_symbol', 'symbol');
         }
 
-        if (array_key_exists('setup', $data) && (empty($data['setup']) || mb_strlen($data['setup']) > 255)) {
-            throw new ValidationException('positions.error.invalid_setup', 'setup');
+        if (array_key_exists('setup', $data)) {
+            if (empty($data['setup']) || !is_array($data['setup']) || count($data['setup']) === 0 || count($data['setup']) > 20) {
+                throw new ValidationException('positions.error.invalid_setup', 'setup');
+            }
+            foreach ($data['setup'] as $label) {
+                if (!is_string($label) || mb_strlen(trim($label)) === 0 || mb_strlen($label) > 100) {
+                    throw new ValidationException('positions.error.invalid_setup', 'setup');
+                }
+            }
         }
 
         if (isset($data['notes']) && mb_strlen($data['notes']) > 10000) {
