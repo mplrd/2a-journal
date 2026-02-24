@@ -12,7 +12,10 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import OrderForm from '@/components/order/OrderForm.vue'
+import PositionForm from '@/components/position/PositionForm.vue'
+import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
+import { usePositionsStore } from '@/stores/positions'
 import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
@@ -22,9 +25,15 @@ const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
 
+const positionsStore = usePositionsStore()
+
 const showForm = ref(false)
 const showShare = ref(false)
 const sharePositionId = ref(null)
+const editingPosition = ref(null)
+const showEditForm = ref(false)
+const transferringPosition = ref(null)
+const showTransfer = ref(false)
 
 function parseSetup(setup) {
   if (Array.isArray(setup)) return setup
@@ -112,6 +121,38 @@ async function handleDelete(order) {
 function openShare(order) {
   sharePositionId.value = Number(order.position_id)
   showShare.value = true
+}
+
+async function openEdit(order) {
+  editingPosition.value = await positionsStore.fetchPosition(order.position_id)
+  showEditForm.value = true
+}
+
+async function handleEditSave(data) {
+  try {
+    await positionsStore.updatePosition(editingPosition.value.id, data)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.updated'), life: 3000 })
+    showEditForm.value = false
+    await store.fetchOrders()
+  } catch {
+    // error is set in the store
+  }
+}
+
+async function openTransfer(order) {
+  transferringPosition.value = await positionsStore.fetchPosition(order.position_id)
+  showTransfer.value = true
+}
+
+async function handleTransfer(accountId) {
+  try {
+    await positionsStore.transferPosition(transferringPosition.value.id, accountId)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.transferred'), life: 3000 })
+    showTransfer.value = false
+    await store.fetchOrders()
+  } catch {
+    // error is set in the store
+  }
 }
 
 function directionSeverity(direction) {
@@ -220,6 +261,8 @@ function statusSeverity(status) {
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">
+            <Button v-if="data.status === OrderStatus.PENDING" icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
+            <Button v-if="data.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
             <Button
               v-if="data.status === OrderStatus.PENDING"
               icon="pi pi-check"
@@ -252,6 +295,23 @@ function statusSeverity(status) {
       :setups="setupsStore.setupOptions"
       :loading="store.loading"
       @save="handleCreate"
+    />
+
+    <PositionForm
+      v-model:visible="showEditForm"
+      :position="editingPosition"
+      :symbols="symbolsStore.symbolOptions"
+      :setups="setupsStore.setupOptions"
+      :loading="positionsStore.loading"
+      @save="handleEditSave"
+    />
+
+    <TransferDialog
+      v-model:visible="showTransfer"
+      :position="transferringPosition"
+      :accounts="accountsStore.accounts"
+      :loading="positionsStore.loading"
+      @transfer="handleTransfer"
     />
 
     <ShareDialog v-model:visible="showShare" :positionId="sharePositionId" />

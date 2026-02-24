@@ -124,7 +124,6 @@
     "be_price": "BE price",
     "be_size": "BE size",
     "notes": "Notes",
-    "type": "Type",
     "created_at": "Created at",
     "targets": "Targets",
     "add_target": "Add target",
@@ -135,18 +134,14 @@
     "transfer_description": "Select the target account to transfer this position to.",
     "target_account": "Target account",
     "select_account": "Select an account",
+    "total_size": "Total Size",
+    "pru": "Avg. Price",
+    "first_opened_at": "Opened",
     "filter_account": "Filter by account",
-    "filter_type": "Filter by type",
     "all_accounts": "All accounts",
-    "all_types": "All types",
-    "confirm_delete": "Are you sure you want to delete this position?",
     "directions": {
       "BUY": "Buy",
       "SELL": "Sell"
-    },
-    "types": {
-      "ORDER": "Order",
-      "TRADE": "Trade"
     },
     "error": {
       "not_found": "Position not found",

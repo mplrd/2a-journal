@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\TradeStatus;
 use PDO;
 
 class PositionRepository
@@ -133,6 +134,35 @@ class PositionRepository
         $stmt->execute(['id' => $id]);
 
         return $stmt->rowCount() > 0;
+    }
+
+    public function findAggregatedByUserId(int $userId, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured) AND t.remaining_size > 0';
+        $params = [
+            'user_id' => $userId,
+            'status_open' => TradeStatus::OPEN->value,
+            'status_secured' => TradeStatus::SECURED->value,
+        ];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = $filters['account_id'];
+        }
+
+        $sql = "SELECT p.account_id, p.symbol, p.direction,
+                       SUM(t.remaining_size) AS total_size,
+                       SUM(p.entry_price * t.remaining_size) / SUM(t.remaining_size) AS pru,
+                       MIN(t.opened_at) AS first_opened_at
+                FROM trades t
+                JOIN positions p ON p.id = t.position_id
+                $where
+                GROUP BY p.account_id, p.symbol, p.direction
+                ORDER BY MIN(t.opened_at) DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
     public function transfer(int $id, int $newAccountId): ?array

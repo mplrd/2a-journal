@@ -123,6 +123,7 @@ $shareService = new ShareService($positionRepo, $tradeRepo);
 $positionController = new PositionController($positionService, $shareService);
 
 $router->get('/positions', [$positionController, 'index'], [$authMiddleware]);
+$router->get('/positions/aggregated', [$positionController, 'aggregated'], [$authMiddleware]);
 $router->get('/positions/{id}', [$positionController, 'show'], [$authMiddleware]);
 $router->put('/positions/{id}', [$positionController, 'update'], [$authMiddleware]);
 $router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddleware]);

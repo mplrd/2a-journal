@@ -1,34 +1,19 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useToast } from 'primevue/usetoast'
 import { usePositionsStore } from '@/stores/positions'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
-import { useSetupsStore } from '@/stores/setups'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
-import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Select from 'primevue/select'
-import PositionForm from '@/components/position/PositionForm.vue'
-import TransferDialog from '@/components/position/TransferDialog.vue'
-import { Direction, PositionType } from '@/constants/enums'
+import { Direction } from '@/constants/enums'
 
 const { t } = useI18n()
-const toast = useToast()
 const store = usePositionsStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
-const setupsStore = useSetupsStore()
-
-const showForm = ref(false)
-
-function parseSetup(setup) {
-  if (Array.isArray(setup)) return setup
-  if (!setup) return []
-  try { return JSON.parse(setup) } catch { return [setup] }
-}
 
 function symbolName(code) {
   const s = symbolsStore.symbols.find((sym) => sym.code === code)
@@ -39,81 +24,23 @@ function accountName(accountId) {
   const a = accountsStore.accounts.find((acc) => acc.id === accountId)
   return a ? a.name : '-'
 }
-const editingPosition = ref(null)
-const showTransfer = ref(false)
-const transferringPosition = ref(null)
 
 const filterAccountId = ref(null)
-const filterType = ref(null)
-
-const typeOptions = [
-  { label: t('positions.all_types'), value: null },
-  ...Object.values(PositionType).map((value) => ({
-    label: t(`positions.types.${value}`),
-    value,
-  })),
-]
 
 onMounted(async () => {
-  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
-  await store.fetchPositions()
+  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols()])
+  await store.fetchAggregated()
 })
 
 async function applyFilters() {
   const filters = {}
   if (filterAccountId.value) filters.account_id = filterAccountId.value
-  if (filterType.value) filters.position_type = filterType.value
   store.setFilters(filters)
-  await store.fetchPositions()
-}
-
-function openEdit(position) {
-  editingPosition.value = position
-  showForm.value = true
-}
-
-async function handleSave(data) {
-  try {
-    await store.updatePosition(editingPosition.value.id, data)
-    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.updated'), life: 3000 })
-    showForm.value = false
-  } catch {
-    // error is set in the store
-  }
-}
-
-function openTransfer(position) {
-  transferringPosition.value = position
-  showTransfer.value = true
-}
-
-async function handleTransfer(accountId) {
-  try {
-    await store.transferPosition(transferringPosition.value.id, accountId)
-    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.transferred'), life: 3000 })
-    showTransfer.value = false
-  } catch {
-    // error is set in the store
-  }
-}
-
-async function handleDelete(position) {
-  if (confirm(t('positions.confirm_delete'))) {
-    try {
-      await store.deletePosition(position.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.deleted'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
-  }
+  await store.fetchAggregated()
 }
 
 function directionSeverity(direction) {
   return direction === Direction.BUY ? 'success' : 'danger'
-}
-
-function typeSeverity(type) {
-  return type === PositionType.ORDER ? 'warn' : 'info'
 }
 </script>
 
@@ -130,15 +57,6 @@ function typeSeverity(type) {
         optionLabel="label"
         optionValue="value"
         :placeholder="t('positions.filter_account')"
-        class="w-48"
-        @change="applyFilters"
-      />
-      <Select
-        v-model="filterType"
-        :options="typeOptions"
-        optionLabel="label"
-        optionValue="value"
-        :placeholder="t('positions.filter_type')"
         class="w-48"
         @change="applyFilters"
       />
@@ -166,53 +84,17 @@ function typeSeverity(type) {
           <Tag :value="t(`positions.directions.${data.direction}`)" :severity="directionSeverity(data.direction)" />
         </template>
       </Column>
-      <Column field="entry_price" :header="t('positions.entry_price')">
+      <Column field="total_size" :header="t('positions.total_size')" />
+      <Column field="pru" :header="t('positions.pru')">
         <template #body="{ data }">
-          {{ Number(data.entry_price).toLocaleString() }}
+          {{ Number(data.pru).toLocaleString() }}
         </template>
       </Column>
-      <Column field="size" :header="t('positions.size')" />
-      <Column field="sl_price" :header="t('positions.sl_price')">
+      <Column field="first_opened_at" :header="t('positions.first_opened_at')">
         <template #body="{ data }">
-          {{ Number(data.sl_price).toLocaleString() }}
-        </template>
-      </Column>
-      <Column field="position_type" :header="t('positions.type')">
-        <template #body="{ data }">
-          <Tag :value="t(`positions.types.${data.position_type}`)" :severity="typeSeverity(data.position_type)" />
-        </template>
-      </Column>
-      <Column field="created_at" :header="t('positions.created_at')">
-        <template #body="{ data }">
-          {{ new Date(data.created_at).toLocaleDateString() }}
-        </template>
-      </Column>
-      <Column :header="''">
-        <template #body="{ data }">
-          <div class="flex gap-2">
-            <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
-            <Button icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
-          </div>
+          {{ new Date(data.first_opened_at).toLocaleDateString() }}
         </template>
       </Column>
     </DataTable>
-
-    <PositionForm
-      v-model:visible="showForm"
-      :position="editingPosition"
-      :symbols="symbolsStore.symbolOptions"
-      :setups="setupsStore.setupOptions"
-      :loading="store.loading"
-      @save="handleSave"
-    />
-
-    <TransferDialog
-      v-model:visible="showTransfer"
-      :position="transferringPosition"
-      :accounts="accountsStore.accounts"
-      :loading="store.loading"
-      @transfer="handleTransfer"
-    />
   </div>
 </template>

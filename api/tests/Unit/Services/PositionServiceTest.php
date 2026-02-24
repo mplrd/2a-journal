@@ -507,4 +507,39 @@ class PositionServiceTest extends TestCase
         $this->assertSame(2, $result['meta']['total']);
         $this->assertSame(1, $result['meta']['page']);
     }
+
+    // ── listAggregated ──────────────────────────────────────────
+
+    public function testListAggregatedDelegatesToRepo(): void
+    {
+        $aggregated = [
+            ['account_id' => 10, 'symbol' => 'NASDAQ', 'direction' => 'BUY', 'total_size' => '5.0000', 'pru' => '18800.00000', 'first_opened_at' => '2025-01-15 10:00:00'],
+        ];
+        $this->positionRepo->method('findAggregatedByUserId')->with(1, [])->willReturn($aggregated);
+
+        $result = $this->service->listAggregated(1);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('NASDAQ', $result[0]['symbol']);
+    }
+
+    public function testListAggregatedPassesAccountIdFilter(): void
+    {
+        $this->positionRepo->expects($this->once())
+            ->method('findAggregatedByUserId')
+            ->with(1, ['account_id' => 10])
+            ->willReturn([]);
+
+        $this->service->listAggregated(1, ['account_id' => '10']);
+    }
+
+    public function testListAggregatedIgnoresEmptyAccountId(): void
+    {
+        $this->positionRepo->expects($this->once())
+            ->method('findAggregatedByUserId')
+            ->with(1, [])
+            ->willReturn([]);
+
+        $this->service->listAggregated(1, ['account_id' => '']);
+    }
 }

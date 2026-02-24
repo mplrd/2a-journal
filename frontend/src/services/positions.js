@@ -10,6 +10,15 @@ export const positionsService = {
     return api.get(`/positions${query ? `?${query}` : ''}`)
   },
 
+  async listAggregated(filters = {}) {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) params.append(key, value)
+    }
+    const query = params.toString()
+    return api.get(`/positions/aggregated${query ? `?${query}` : ''}`)
+  },
+
   async get(id) {
     return api.get(`/positions/${id}`)
   },

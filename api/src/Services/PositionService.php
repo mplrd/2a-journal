@@ -33,6 +33,17 @@ class PositionService
         $this->setupRepo = $setupRepo;
     }
 
+    public function listAggregated(int $userId, array $filters = []): array
+    {
+        $validFilters = [];
+
+        if (!empty($filters['account_id'])) {
+            $validFilters['account_id'] = (int) $filters['account_id'];
+        }
+
+        return $this->positionRepo->findAggregatedByUserId($userId, $validFilters);
+    }
+
     public function list(int $userId, array $filters = []): array
     {
         $validFilters = [];

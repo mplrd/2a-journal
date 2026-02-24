@@ -19,6 +19,19 @@ class PositionController extends Controller
         $this->shareService = $shareService;
     }
 
+    public function aggregated(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = [];
+        $accountId = $request->getQuery('account_id');
+        if ($accountId !== null && $accountId !== '') {
+            $filters['account_id'] = $accountId;
+        }
+        $data = $this->positionService->listAggregated($userId, $filters);
+
+        return $this->jsonSuccess($data);
+    }
+
     public function index(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

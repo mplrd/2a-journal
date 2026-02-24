@@ -41,6 +41,7 @@ class PositionRepositoryTest extends TestCase
         $this->repo = new PositionRepository($this->pdo);
 
         // Clean tables
+        $this->pdo->exec('DELETE FROM trades');
         $this->pdo->exec('DELETE FROM positions');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM users');
@@ -61,6 +62,7 @@ class PositionRepositoryTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->pdo->exec('DELETE FROM trades');
         $this->pdo->exec('DELETE FROM positions');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM users');
@@ -226,5 +228,138 @@ class PositionRepositoryTest extends TestCase
 
         $this->assertNotNull($transferred);
         $this->assertEquals($newAccount['id'], $transferred['account_id']);
+    }
+
+    // ── findAggregatedByUserId ──────────────────────────────────
+
+    private function insertPositionWithTrade(array $posOverrides = [], array $tradeOverrides = []): array
+    {
+        $position = $this->insertPosition(array_merge(['position_type' => 'TRADE'], $posOverrides));
+        $positionId = (int) $position['id'];
+
+        $tradeData = array_merge([
+            'position_id' => $positionId,
+            'opened_at' => '2025-01-15 10:00:00',
+            'remaining_size' => $position['size'],
+            'status' => 'OPEN',
+        ], $tradeOverrides);
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO trades (position_id, opened_at, remaining_size, status)
+             VALUES (:position_id, :opened_at, :remaining_size, :status)'
+        );
+        $stmt->execute($tradeData);
+
+        return $position;
+    }
+
+    public function testAggregatedReturnsEmptyWhenNoTrades(): void
+    {
+        $result = $this->repo->findAggregatedByUserId($this->userId);
+
+        $this->assertIsArray($result);
+        $this->assertCount(0, $result);
+    }
+
+    public function testAggregatedReturnsSingleTrade(): void
+    {
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'entry_price' => '18500.00000', 'size' => '2.0000'],
+            ['remaining_size' => '2.0000', 'opened_at' => '2025-01-15 10:00:00']
+        );
+
+        $result = $this->repo->findAggregatedByUserId($this->userId);
+
+        $this->assertCount(1, $result);
+        $row = $result[0];
+        $this->assertSame('NASDAQ', $row['symbol']);
+        $this->assertSame('BUY', $row['direction']);
+        $this->assertEquals(2.0, (float) $row['total_size']);
+        $this->assertEquals(18500.0, (float) $row['pru']);
+        $this->assertNotNull($row['first_opened_at']);
+    }
+
+    public function testAggregatedGroupsSameSymbolAndDirection(): void
+    {
+        // Trade 1: NASDAQ BUY, entry 18500, remaining 2
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'direction' => 'BUY', 'entry_price' => '18500.00000', 'size' => '2.0000'],
+            ['remaining_size' => '2.0000', 'opened_at' => '2025-01-15 10:00:00']
+        );
+        // Trade 2: NASDAQ BUY, entry 19000, remaining 3
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'direction' => 'BUY', 'entry_price' => '19000.00000', 'size' => '3.0000'],
+            ['remaining_size' => '3.0000', 'opened_at' => '2025-01-16 10:00:00']
+        );
+
+        $result = $this->repo->findAggregatedByUserId($this->userId);
+
+        $this->assertCount(1, $result);
+        $row = $result[0];
+        $this->assertEquals(5.0, (float) $row['total_size']);
+        // PRU = (18500*2 + 19000*3) / (2+3) = (37000+57000)/5 = 94000/5 = 18800
+        $this->assertEquals(18800.0, (float) $row['pru']);
+        $this->assertSame('2025-01-15 10:00:00', $row['first_opened_at']);
+    }
+
+    public function testAggregatedExcludesClosedTrades(): void
+    {
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'entry_price' => '18500.00000', 'size' => '1.0000'],
+            ['remaining_size' => '1.0000', 'status' => 'OPEN']
+        );
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'entry_price' => '19000.00000', 'size' => '2.0000'],
+            ['remaining_size' => '0.0000', 'status' => 'CLOSED']
+        );
+
+        $result = $this->repo->findAggregatedByUserId($this->userId);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(1.0, (float) $result[0]['total_size']);
+        $this->assertEquals(18500.0, (float) $result[0]['pru']);
+    }
+
+    public function testAggregatedFiltersAccountId(): void
+    {
+        $accountRepo = new AccountRepository($this->pdo);
+        $secondAccount = $accountRepo->create([
+            'user_id' => $this->userId,
+            'name' => 'Second Account',
+            'account_type' => 'BROKER_LIVE',
+        ]);
+        $secondAccountId = (int) $secondAccount['id'];
+
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'account_id' => $this->accountId],
+            ['remaining_size' => '1.0000']
+        );
+        $this->insertPositionWithTrade(
+            ['symbol' => 'DAX', 'account_id' => $secondAccountId],
+            ['remaining_size' => '2.0000']
+        );
+
+        // Filter by first account
+        $result = $this->repo->findAggregatedByUserId($this->userId, ['account_id' => $this->accountId]);
+        $this->assertCount(1, $result);
+        $this->assertSame('NASDAQ', $result[0]['symbol']);
+
+        // Filter by second account
+        $result = $this->repo->findAggregatedByUserId($this->userId, ['account_id' => $secondAccountId]);
+        $this->assertCount(1, $result);
+        $this->assertSame('DAX', $result[0]['symbol']);
+    }
+
+    public function testAggregatedIncludesSecuredTrades(): void
+    {
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'size' => '1.0000'],
+            ['remaining_size' => '1.0000', 'status' => 'SECURED']
+        );
+
+        $result = $this->repo->findAggregatedByUserId($this->userId);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(1.0, (float) $result[0]['total_size']);
     }
 }

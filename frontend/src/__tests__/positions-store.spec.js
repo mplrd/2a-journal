@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePositionsStore } from '@/stores/positions'
 import { positionsService } from '@/services/positions'
-import { Direction, PositionType } from '@/constants/enums'
+import { Direction } from '@/constants/enums'
 
 vi.mock('@/services/positions', () => ({
   positionsService: {
     list: vi.fn(),
+    listAggregated: vi.fn(),
     get: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
@@ -33,8 +34,8 @@ describe('positions store', () => {
 
   it('fetchPositions loads positions', async () => {
     const mockPositions = [
-      { id: 1, symbol: 'NASDAQ', direction: Direction.BUY, position_type: PositionType.TRADE },
-      { id: 2, symbol: 'DAX', direction: Direction.SELL, position_type: PositionType.ORDER },
+      { id: 1, symbol: 'NASDAQ', direction: Direction.BUY },
+      { id: 2, symbol: 'DAX', direction: Direction.SELL },
     ]
     positionsService.list.mockResolvedValue({ success: true, data: mockPositions })
 
@@ -124,8 +125,50 @@ describe('positions store', () => {
   })
 
   it('setFilters updates filters', () => {
-    store.setFilters({ position_type: PositionType.TRADE, symbol: 'NASDAQ' })
+    store.setFilters({ account_id: 10, symbol: 'NASDAQ' })
 
-    expect(store.filters).toEqual({ position_type: PositionType.TRADE, symbol: 'NASDAQ' })
+    expect(store.filters).toEqual({ account_id: 10, symbol: 'NASDAQ' })
+  })
+
+  it('fetchAggregated loads aggregated positions', async () => {
+    const mockAggregated = [
+      { account_id: 1, symbol: 'NASDAQ', direction: 'BUY', total_size: '5.0000', pru: '18800.00000', first_opened_at: '2025-01-15 10:00:00' },
+    ]
+    positionsService.listAggregated.mockResolvedValue({ success: true, data: mockAggregated })
+
+    await store.fetchAggregated()
+
+    expect(store.positions).toEqual(mockAggregated)
+    expect(store.loading).toBe(false)
+    expect(positionsService.listAggregated).toHaveBeenCalledWith({})
+  })
+
+  it('fetchAggregated passes filters', async () => {
+    positionsService.listAggregated.mockResolvedValue({ success: true, data: [] })
+    store.setFilters({ account_id: 5 })
+
+    await store.fetchAggregated()
+
+    expect(positionsService.listAggregated).toHaveBeenCalledWith({ account_id: 5 })
+  })
+
+  it('fetchAggregated sets error on failure', async () => {
+    const error = new Error('Network error')
+    error.messageKey = 'error.network'
+    positionsService.listAggregated.mockRejectedValue(error)
+
+    await expect(store.fetchAggregated()).rejects.toThrow()
+
+    expect(store.error).toBe('error.network')
+  })
+
+  it('fetchPosition returns single position data', async () => {
+    const mockPosition = { id: 1, symbol: 'NASDAQ', direction: 'BUY' }
+    positionsService.get.mockResolvedValue({ success: true, data: mockPosition })
+
+    const result = await store.fetchPosition(1)
+
+    expect(result).toEqual(mockPosition)
+    expect(positionsService.get).toHaveBeenCalledWith(1)
   })
 })

@@ -23,6 +23,26 @@ export const usePositionsStore = defineStore('positions', () => {
     }
   }
 
+  async function fetchAggregated() {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await positionsService.listAggregated(filters.value)
+      positions.value = response.data
+      return response
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchPosition(id) {
+    const response = await positionsService.get(id)
+    return response.data
+  }
+
   async function updatePosition(id, data) {
     loading.value = true
     error.value = null
@@ -90,6 +110,8 @@ export const usePositionsStore = defineStore('positions', () => {
     error,
     filters,
     fetchPositions,
+    fetchAggregated,
+    fetchPosition,
     updatePosition,
     deletePosition,
     transferPosition,

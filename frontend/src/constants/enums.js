@@ -15,11 +15,6 @@ export const Direction = {
   SELL: 'SELL',
 }
 
-export const PositionType = {
-  ORDER: 'ORDER',
-  TRADE: 'TRADE',
-}
-
 export const OrderStatus = {
   PENDING: 'PENDING',
   EXECUTED: 'EXECUTED',
