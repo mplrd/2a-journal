@@ -85,7 +85,7 @@ function handleClose() {
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_price') }} *</label>
-        <InputNumber v-model="form.exit_price" class="w-full" :min="0" mode="decimal" :maxFractionDigits="5" />
+        <InputNumber v-model="form.exit_price" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
       </div>
 
       <div>
@@ -93,7 +93,7 @@ function handleClose() {
           <label class="block text-sm font-medium text-gray-700">{{ t('trades.exit_size') }} *</label>
           <Button :label="t('trades.close_full')" size="small" severity="secondary" text @click="handleCloseFull" />
         </div>
-        <InputNumber v-model="form.exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" :maxFractionDigits="4" />
+        <InputNumber v-model="form.exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" locale="en-US" :maxFractionDigits="5" />
       </div>
 
       <div>

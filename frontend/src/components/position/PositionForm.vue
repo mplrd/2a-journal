@@ -194,11 +194,11 @@ async function handleSymbolCreate(data) {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.entry_price') }} *</label>
-          <InputNumber v-model="form.entry_price" class="w-full" :min="0" mode="decimal" :maxFractionDigits="5" />
+          <InputNumber v-model="form.entry_price" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.size') }} *</label>
-          <InputNumber v-model="form.size" class="w-full" :min="0" mode="decimal" :maxFractionDigits="4" />
+          <InputNumber v-model="form.size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
         </div>
       </div>
 
@@ -216,7 +216,7 @@ async function handleSymbolCreate(data) {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.sl_points') }} *</label>
-          <InputNumber v-model="form.sl_points" class="w-full" :min="0" mode="decimal" :maxFractionDigits="2" />
+          <InputNumber v-model="form.sl_points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.sl_price') }}</label>
@@ -229,7 +229,7 @@ async function handleSymbolCreate(data) {
       <div class="grid grid-cols-3 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.be_points') }}</label>
-          <InputNumber v-model="form.be_points" class="w-full" :min="0" mode="decimal" :maxFractionDigits="2" />
+          <InputNumber v-model="form.be_points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.be_price') }}</label>
@@ -239,7 +239,7 @@ async function handleSymbolCreate(data) {
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('positions.be_size') }}</label>
-          <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" :maxFractionDigits="4" />
+          <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
         </div>
       </div>
 
@@ -250,8 +250,8 @@ async function handleSymbolCreate(data) {
         </div>
         <div v-for="(target, index) in form.targets" :key="index" class="flex items-center gap-2 mb-2">
           <InputText v-model="target.label" class="w-20" :placeholder="t('positions.target_label')" />
-          <InputNumber v-model="target.points" class="w-28" :min="0" mode="decimal" :maxFractionDigits="2" :placeholder="t('positions.target_points')" />
-          <InputNumber v-model="target.size" class="w-28" :min="0" mode="decimal" :maxFractionDigits="4" :placeholder="t('positions.target_size')" />
+          <InputNumber v-model="target.points" class="w-28" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" :placeholder="t('positions.target_points')" />
+          <InputNumber v-model="target.size" class="w-28" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" :placeholder="t('positions.target_size')" />
           <span class="text-sm text-gray-500 w-28">
             {{ calculatedTargets[index]?.price != null ? calculatedTargets[index].price.toLocaleString() : '-' }}
           </span>

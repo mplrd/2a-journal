@@ -90,7 +90,7 @@ function handleClose() {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('symbols.point_value') }} *</label>
-          <InputNumber v-model="form.point_value" class="w-full" :min="0.00001" mode="decimal" :maxFractionDigits="5" />
+          <InputNumber v-model="form.point_value" class="w-full" :min="0.00001" mode="decimal" locale="en-US" :maxFractionDigits="5" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('symbols.currency') }} *</label>

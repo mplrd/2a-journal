@@ -63,7 +63,7 @@ Chaque type de donnée numérique a une précision adaptée :
 | Usage | Type | Capacité |
 |-------|------|----------|
 | Prix, capitaux | `DECIMAL(15,5)` | Jusqu'à 9 999 999 999.99999 |
-| Tailles/quantités | `DECIMAL(10,4)` | Jusqu'à 999 999.9999 |
+| Tailles/quantités | `DECIMAL(10,5)` | De 0.00001 à 99 999.99999 |
 | P&L monétaire | `DECIMAL(15,2)` | Jusqu'à 9 999 999 999 999.99 |
 | Pourcentages P&L | `DECIMAL(8,4)` | Jusqu'à 9999.9999% |
 | Ratios (RR) | `DECIMAL(8,4)` | Valeurs fractionnaires |
