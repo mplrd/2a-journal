@@ -64,7 +64,26 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "welcome": "Welcome, {name}"
+    "welcome": "Welcome, {name}",
+    "total_trades": "Total Trades",
+    "win_rate": "Win Rate",
+    "total_pnl": "Total P&L",
+    "profit_factor": "Profit Factor",
+    "avg_rr": "Avg R:R",
+    "best_worst": "Best / Worst",
+    "best_trade": "Best trade",
+    "worst_trade": "Worst trade",
+    "cumulative_pnl": "Cumulative P&L",
+    "win_loss_distribution": "Win / Loss Distribution",
+    "wins": "Wins",
+    "losses": "Losses",
+    "breakeven": "Breakeven",
+    "recent_trades": "Recent Trades",
+    "no_recent_trades": "No closed trades yet.",
+    "no_data": "No data available.",
+    "view_all": "View all",
+    "all_accounts": "All accounts",
+    "filter_account": "Filter by account"
   },
   "accounts": {
     "title": "Accounts",

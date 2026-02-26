@@ -1,0 +1,186 @@
+<?php
+
+namespace App\Repositories;
+
+use App\Enums\TradeStatus;
+use PDO;
+
+class StatsRepository
+{
+    private PDO $pdo;
+
+    public function __construct(PDO $pdo)
+    {
+        $this->pdo = $pdo;
+    }
+
+    public function getOverview(int $userId, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
+        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = $filters['account_id'];
+        }
+
+        $sql = "SELECT
+                    COUNT(*) AS total_trades,
+                    COALESCE(SUM(t.pnl), 0) AS total_pnl,
+                    SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS winning_trades,
+                    SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) AS losing_trades,
+                    SUM(CASE WHEN t.pnl = 0 THEN 1 ELSE 0 END) AS be_trades,
+                    CASE WHEN COUNT(*) > 0
+                        THEN ROUND(SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+                        ELSE 0
+                    END AS win_rate,
+                    CASE WHEN SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END) > 0
+                        THEN ROUND(
+                            SUM(CASE WHEN t.pnl > 0 THEN t.pnl ELSE 0 END)
+                            / SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END),
+                            2
+                        )
+                        ELSE NULL
+                    END AS profit_factor,
+                    MAX(t.pnl) AS best_trade,
+                    MIN(t.pnl) AS worst_trade,
+                    ROUND(AVG(t.risk_reward), 2) AS avg_rr
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                $where";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return [
+            'total_trades' => (int) $row['total_trades'],
+            'total_pnl' => (float) $row['total_pnl'],
+            'winning_trades' => (int) ($row['winning_trades'] ?? 0),
+            'losing_trades' => (int) ($row['losing_trades'] ?? 0),
+            'be_trades' => (int) ($row['be_trades'] ?? 0),
+            'win_rate' => (float) $row['win_rate'],
+            'profit_factor' => $row['profit_factor'] !== null ? (float) $row['profit_factor'] : null,
+            'best_trade' => $row['total_trades'] > 0 ? (float) $row['best_trade'] : null,
+            'worst_trade' => $row['total_trades'] > 0 ? (float) $row['worst_trade'] : null,
+            'avg_rr' => $row['avg_rr'] !== null ? (float) $row['avg_rr'] : null,
+        ];
+    }
+
+    public function getCumulativePnl(int $userId, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
+        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = $filters['account_id'];
+        }
+
+        $sql = "SELECT t.closed_at, t.pnl, p.symbol
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                $where
+                ORDER BY t.closed_at ASC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        $cumulative = 0;
+        $result = [];
+        foreach ($rows as $row) {
+            $cumulative += (float) $row['pnl'];
+            $result[] = [
+                'closed_at' => $row['closed_at'],
+                'pnl' => (float) $row['pnl'],
+                'cumulative_pnl' => round($cumulative, 2),
+                'symbol' => $row['symbol'],
+            ];
+        }
+
+        return $result;
+    }
+
+    public function getWinLossDistribution(int $userId, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
+        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = $filters['account_id'];
+        }
+
+        $sql = "SELECT
+                    SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS win,
+                    SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) AS loss,
+                    SUM(CASE WHEN t.pnl = 0 THEN 1 ELSE 0 END) AS be
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                $where";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return [
+            'win' => (int) ($row['win'] ?? 0),
+            'loss' => (int) ($row['loss'] ?? 0),
+            'be' => (int) ($row['be'] ?? 0),
+        ];
+    }
+
+    public function getPnlBySymbol(int $userId, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
+        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = $filters['account_id'];
+        }
+
+        $sql = "SELECT p.symbol,
+                    COUNT(*) AS trade_count,
+                    COALESCE(SUM(t.pnl), 0) AS total_pnl
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                $where
+                GROUP BY p.symbol
+                ORDER BY total_pnl DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll();
+    }
+
+    public function getRecentTrades(int $userId, int $limit = 5, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
+        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = $filters['account_id'];
+        }
+
+        $sql = "SELECT t.id, t.pnl, t.exit_type, t.closed_at, t.risk_reward,
+                       p.symbol, p.direction
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                $where
+                ORDER BY t.closed_at DESC
+                LIMIT :limit";
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+}

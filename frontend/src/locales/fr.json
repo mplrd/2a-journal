@@ -64,7 +64,26 @@
   },
   "dashboard": {
     "title": "Tableau de bord",
-    "welcome": "Bienvenue, {name}"
+    "welcome": "Bienvenue, {name}",
+    "total_trades": "Total trades",
+    "win_rate": "Taux de réussite",
+    "total_pnl": "P&L total",
+    "profit_factor": "Profit Factor",
+    "avg_rr": "R:R moyen",
+    "best_worst": "Meilleur / Pire",
+    "best_trade": "Meilleur trade",
+    "worst_trade": "Pire trade",
+    "cumulative_pnl": "P&L cumulé",
+    "win_loss_distribution": "Répartition gains / pertes",
+    "wins": "Gains",
+    "losses": "Pertes",
+    "breakeven": "Breakeven",
+    "recent_trades": "Trades récents",
+    "no_recent_trades": "Aucun trade fermé pour le moment.",
+    "no_data": "Aucune donnée disponible.",
+    "view_all": "Voir tout",
+    "all_accounts": "Tous les comptes",
+    "filter_account": "Filtrer par compte"
   },
   "accounts": {
     "title": "Comptes",

@@ -6,6 +6,7 @@ use App\Controllers\OrderController;
 use App\Controllers\PositionController;
 use App\Controllers\SetupController;
 use App\Controllers\SymbolController;
+use App\Controllers\StatsController;
 use App\Controllers\TradeController;
 use App\Core\Database;
 use App\Core\Router;
@@ -18,6 +19,7 @@ use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
+use App\Repositories\StatsRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
@@ -28,6 +30,7 @@ use App\Services\OrderService;
 use App\Services\PositionService;
 use App\Services\ShareService;
 use App\Services\SetupService;
+use App\Services\StatsService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
 
@@ -153,3 +156,11 @@ $router->post('/trades', [$tradeController, 'store'], [$authMiddleware]);
 $router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware]);
 $router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware]);
 $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware]);
+
+// ── Stats ─────────────────────────────────────────────────────
+$statsRepo = new StatsRepository($pdo);
+$statsService = new StatsService($statsRepo, $accountRepo);
+$statsController = new StatsController($statsService);
+
+$router->get('/stats/overview', [$statsController, 'dashboard'], [$authMiddleware]);
+$router->get('/stats/charts', [$statsController, 'charts'], [$authMiddleware]);
