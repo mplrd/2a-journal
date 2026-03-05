@@ -26,33 +26,33 @@ async function handleRegister() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
-    <div class="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
-      <h1 class="text-2xl font-bold text-center mb-6">{{ t('auth.register') }}</h1>
+  <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div class="w-full max-w-md p-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      <h1 class="text-2xl font-bold text-center mb-6 text-gray-900 dark:text-gray-100">{{ t('auth.register') }}</h1>
 
-      <div v-if="errorKey" class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+      <div v-if="errorKey" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400 text-sm">
         {{ t(errorKey) }}
       </div>
 
       <form @submit.prevent="handleRegister" class="flex flex-col gap-4">
         <div class="grid grid-cols-2 gap-4">
           <div class="flex flex-col gap-1">
-            <label for="first_name" class="text-sm font-medium">{{ t('auth.first_name') }}</label>
+            <label for="first_name" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('auth.first_name') }}</label>
             <InputText id="first_name" v-model="form.first_name" class="w-full" />
           </div>
           <div class="flex flex-col gap-1">
-            <label for="last_name" class="text-sm font-medium">{{ t('auth.last_name') }}</label>
+            <label for="last_name" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('auth.last_name') }}</label>
             <InputText id="last_name" v-model="form.last_name" class="w-full" />
           </div>
         </div>
 
         <div class="flex flex-col gap-1">
-          <label for="email" class="text-sm font-medium">{{ t('auth.email') }}</label>
+          <label for="email" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('auth.email') }}</label>
           <InputText id="email" v-model="form.email" type="email" required class="w-full" />
         </div>
 
         <div class="flex flex-col gap-1">
-          <label for="password" class="text-sm font-medium">{{ t('auth.password') }}</label>
+          <label for="password" class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('auth.password') }}</label>
           <Password id="password" v-model="form.password" toggle-mask required
             input-class="w-full" class="w-full" />
         </div>
@@ -60,9 +60,9 @@ async function handleRegister() {
         <Button type="submit" :label="t('auth.register_button')" :loading="authStore.loading" class="w-full mt-2" />
       </form>
 
-      <p class="text-center mt-4 text-sm text-gray-600">
+      <p class="text-center mt-4 text-sm text-gray-600 dark:text-gray-400">
         {{ t('auth.has_account') }}
-        <RouterLink to="/login" class="text-blue-600 hover:underline">{{ t('auth.login_button') }}</RouterLink>
+        <RouterLink to="/login" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.login_button') }}</RouterLink>
       </p>
     </div>
   </div>
