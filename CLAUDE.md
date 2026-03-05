@@ -18,7 +18,19 @@ Specs completes dans `docs/specs/trading-journal-specs-v5.md`.
 - Code & DB: English
 - Docs: French
 - Commits: English, conventional (feat:, fix:, refactor:, docs:, test:, chore:)
+- Commits: no Co-Authored-By, no author/committer mention (human or AI)
 - camelCase (vars/functions), PascalCase (classes), snake_case (DB), UPPER_SNAKE_CASE (enums)
+
+## Methodology — TDD strict
+- Always write tests BEFORE implementation code
+- Strict cycle: tests (red) → code (green) → refactor → doc
+- Never consider a feature complete without passing tests
+- Use `/tdd-feature` skill for any non-trivial feature implementation
+
+## Documentation — Systematic
+- Every feature produces or updates a doc in `docs/` (French)
+- Doc is delivered IN the same flow as implementation, not as an afterthought
+- Update existing docs when a feature modifies already-documented behavior
 
 ## Git Workflow
 - Never push, commit, or run destructive git commands without explicit user request

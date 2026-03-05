@@ -1,6 +1,6 @@
 ---
 name: tdd-feature
-description: Execute the full TDD workflow for a new feature. Use when implementing any new feature on the project. Follows the strict cycle tests → code → refactor → doc.
+description: Execute the full TDD workflow for a new feature. Use when the user asks to implement, add, build or create a feature, module, or any non-trivial functionality touching backend and/or frontend. Always prefer this over manual implementation.
 argument-hint: "[feature-name]"
 allowed-tools: "Read, Write, Edit, Grep, Glob, Bash"
 ---

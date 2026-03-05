@@ -1,6 +1,6 @@
 ---
 name: new-component
-description: Scaffold a new Vue 3 component with i18n support and Vitest tests. Use when creating a new frontend component.
+description: Scaffold a new Vue 3 component with i18n support and Vitest tests. Use when the user asks to create, add, or scaffold a new Vue component, dialog, view, or frontend widget.
 argument-hint: "[ComponentName]"
 allowed-tools: "Read, Write, Edit, Grep, Glob"
 ---

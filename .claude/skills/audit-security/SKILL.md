@@ -1,6 +1,6 @@
 ---
 name: audit-security
-description: Audit security vulnerabilities in the codebase (OWASP Top 10). Use to verify the application is protected against common attack vectors.
+description: Audit security vulnerabilities in the codebase (OWASP Top 10). Use when the user asks to audit security, check for vulnerabilities, review OWASP compliance, or verify protection against common attack vectors.
 argument-hint: "[backend|frontend|all]"
 allowed-tools: "Read, Grep, Glob, Bash"
 ---

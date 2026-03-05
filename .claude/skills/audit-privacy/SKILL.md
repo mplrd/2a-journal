@@ -1,6 +1,6 @@
 ---
 name: audit-privacy
-description: Audit data protection and privacy practices. Use to verify sensitive data handling, token storage, cookies, and cleanup on logout.
+description: Audit data protection and privacy practices. Use when the user asks to audit privacy, check data protection, review token storage, verify cookie security, or check cleanup on logout.
 argument-hint: "[backend|frontend|all]"
 allowed-tools: "Read, Grep, Glob, Bash"
 ---

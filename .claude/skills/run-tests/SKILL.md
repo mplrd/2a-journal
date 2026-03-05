@@ -1,6 +1,6 @@
 ---
 name: run-tests
-description: Run backend (PHPUnit) and/or frontend (Vitest) tests with clear reporting. Use when you need to verify tests pass.
+description: Run backend (PHPUnit) and/or frontend (Vitest) tests with clear reporting. Use after writing or modifying code, before considering a task complete, or when the user asks to run tests, check tests, or verify tests pass.
 argument-hint: "[backend|frontend|all]"
 allowed-tools: "Bash, Read"
 ---

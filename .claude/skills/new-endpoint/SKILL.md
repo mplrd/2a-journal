@@ -1,6 +1,6 @@
 ---
 name: new-endpoint
-description: Scaffold a new API endpoint with all layers (controller, service, repository, tests). Use when adding a new route to the API.
+description: Scaffold a new API endpoint with all layers (controller, service, repository, tests). Use when adding a new route, endpoint, or API action, or when the user asks to create a backend route or API method.
 argument-hint: "[METHOD] [/route]"
 allowed-tools: "Read, Write, Edit, Grep, Glob"
 ---

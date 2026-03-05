@@ -1,6 +1,6 @@
 ---
 name: check-i18n
-description: Check for missing i18n translation keys across locale files and source code. Detects orphan keys, missing translations, and keys used in code but absent from locale files.
+description: Check for missing i18n translation keys across locale files and source code. Use when the user asks to check translations, verify i18n keys, find missing keys, or audit locale files for consistency.
 allowed-tools: "Read, Grep, Glob, Edit"
 ---
 
