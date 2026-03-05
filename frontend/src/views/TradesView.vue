@@ -17,7 +17,7 @@ import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
-import { Direction, TradeStatus } from '@/constants/enums'
+import { Direction, ExitType, TradeStatus } from '@/constants/enums'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -51,6 +51,7 @@ function accountName(accountId) {
 }
 const showCloseDialog = ref(false)
 const selectedTrade = ref(null)
+const closePrefill = ref(null)
 const showShare = ref(false)
 const sharePositionId = ref(null)
 
@@ -88,7 +89,77 @@ async function handleCreate(data) {
   }
 }
 
+function getNextObjective(trade) {
+  const partialExits = trade.partial_exits || []
+
+  // Step 1: BE if be_price defined
+  if (trade.be_price) {
+    if (trade.be_size) {
+      // BE with partial exit: check if already taken
+      const beAlreadyTaken = partialExits.some((pe) => pe.exit_type === ExitType.BE)
+      if (!beAlreadyTaken) {
+        return {
+          label: 'BE',
+          exit_price: Number(trade.be_price),
+          exit_size: Number(trade.be_size),
+          exit_type: ExitType.BE,
+          action: 'close',
+        }
+      }
+    } else if (!Number(trade.be_reached)) {
+      // BE without partial exit: just mark as reached
+      return {
+        label: 'BE',
+        action: 'mark',
+      }
+    }
+  }
+
+  // Step 2: First untaken target
+  let targets = trade.targets
+  if (typeof targets === 'string') {
+    try { targets = JSON.parse(targets) } catch { targets = null }
+  }
+  if (Array.isArray(targets)) {
+    const takenTargetIds = new Set(partialExits.map((pe) => pe.target_id).filter(Boolean))
+    for (const target of targets) {
+      if (!takenTargetIds.has(target.id)) {
+        return {
+          label: target.label || target.id,
+          exit_price: Number(target.price),
+          exit_size: Number(target.size),
+          exit_type: ExitType.TP,
+          target_id: target.id,
+          action: 'close',
+        }
+      }
+    }
+  }
+
+  return null
+}
+
 function openCloseDialog(trade) {
+  closePrefill.value = null
+  selectedTrade.value = trade
+  showCloseDialog.value = true
+}
+
+async function openNextObjective(trade) {
+  const objective = getNextObjective(trade)
+  if (!objective) return
+
+  if (objective.action === 'mark') {
+    try {
+      await store.markBeHit(trade.id)
+      toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.be_reached'), life: 3000 })
+    } catch {
+      // error is set in the store
+    }
+    return
+  }
+
+  closePrefill.value = objective
   selectedTrade.value = trade
   showCloseDialog.value = true
 }
@@ -99,6 +170,7 @@ async function handleClose(data) {
     toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.closed'), life: 3000 })
     showCloseDialog.value = false
     selectedTrade.value = null
+    closePrefill.value = null
   } catch {
     // error is set in the store
   }
@@ -167,6 +239,13 @@ function statusSeverity(status) {
     default:
       return 'info'
   }
+}
+
+function realizedPnl(trade) {
+  if (trade.pnl != null) return Number(trade.pnl)
+  const exits = trade.partial_exits || []
+  if (exits.length === 0) return null
+  return exits.reduce((sum, pe) => sum + Number(pe.pnl), 0)
 }
 
 function pnlClass(pnl) {
@@ -251,8 +330,8 @@ function pnlClass(pnl) {
       </Column>
       <Column field="pnl" :header="t('trades.pnl')">
         <template #body="{ data }">
-          <span :class="pnlClass(data.pnl)">
-            {{ data.pnl != null ? (Number(data.pnl) >= 0 ? '+' : '') + Number(data.pnl).toFixed(2) : '-' }}
+          <span :class="pnlClass(realizedPnl(data))">
+            {{ realizedPnl(data) != null ? (realizedPnl(data) >= 0 ? '+' : '') + realizedPnl(data).toFixed(2) : '-' }}
           </span>
         </template>
       </Column>
@@ -261,6 +340,15 @@ function pnlClass(pnl) {
           <div class="flex gap-2">
             <Button v-if="data.status !== TradeStatus.CLOSED" icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button v-if="data.status !== TradeStatus.CLOSED" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
+            <Button
+              v-if="data.status !== TradeStatus.CLOSED && getNextObjective(data)"
+              icon="pi pi-angle-double-up"
+              severity="success"
+              size="small"
+              text
+              v-tooltip.top="getNextObjective(data)?.label"
+              @click="openNextObjective(data)"
+            />
             <Button
               v-if="data.status !== TradeStatus.CLOSED"
               icon="pi pi-sign-out"
@@ -289,6 +377,7 @@ function pnlClass(pnl) {
     <CloseTradeDialog
       v-model:visible="showCloseDialog"
       :trade="selectedTrade"
+      :prefill="closePrefill"
       :loading="store.loading"
       @close="handleClose"
     />

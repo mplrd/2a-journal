@@ -23,13 +23,14 @@ Module complet de gestion des trades (pièce centrale du journal de trading). Un
 #### Service
 - **TradeService** (`api/src/Services/TradeService.php`)
   - `create()` — validation, calcul prix dérivés, création position + trade, log historique
-  - `list()` — filtres + pagination
+  - `list()` — filtres + pagination, inclut `partial_exits` par trade
   - `get()` — ownership check, inclut partial_exits
-  - `close()` — sortie partielle ou totale, calcul PnL, transitions de statut
+  - `close()` — sortie partielle ou totale, calcul PnL, transitions de statut, propagation `target_id`
+  - `markBeReached()` — marque `be_reached=1` sur un trade (BE sans allègement)
   - `delete()` — suppression via position (CASCADE)
 
 #### Controller
-- **TradeController** (`api/src/Controllers/TradeController.php`) — thin controller, 5 actions
+- **TradeController** (`api/src/Controllers/TradeController.php`) — thin controller, 6 actions
 
 #### Routes
 | Méthode | URI | Action | Middleware |
@@ -38,18 +39,19 @@ Module complet de gestion des trades (pièce centrale du journal de trading). Un
 | POST | `/trades` | store | AuthMiddleware |
 | GET | `/trades/{id}` | show | AuthMiddleware |
 | POST | `/trades/{id}/close` | close | AuthMiddleware |
+| POST | `/trades/{id}/be-hit` | beHit | AuthMiddleware |
 | DELETE | `/trades/{id}` | destroy | AuthMiddleware |
 
 ### Frontend
 
 #### Service & Store
-- **tradesService** (`frontend/src/services/trades.js`) — list, get, create, close, remove
-- **useTradesStore** (`frontend/src/stores/trades.js`) — state Pinia avec trades, loading, error, filters
+- **tradesService** (`frontend/src/services/trades.js`) — list, get, create, close, markBeHit, remove
+- **useTradesStore** (`frontend/src/stores/trades.js`) — state Pinia avec trades, loading, error, filters + action markBeHit
 
 #### Composants
-- **TradesView** (`frontend/src/views/TradesView.vue`) — DataTable avec filtres, création, fermeture, suppression
+- **TradesView** (`frontend/src/views/TradesView.vue`) — DataTable avec filtres, création, fermeture, suppression, bouton raccourci "prochain objectif"
 - **TradeForm** (`frontend/src/components/trade/TradeForm.vue`) — Dialog création (similaire OrderForm + opened_at)
-- **CloseTradeDialog** (`frontend/src/components/trade/CloseTradeDialog.vue`) — Dialog fermeture avec aperçu PnL
+- **CloseTradeDialog** (`frontend/src/components/trade/CloseTradeDialog.vue`) — Dialog fermeture avec aperçu PnL, support prop `prefill` pour pré-remplissage
 
 #### Enums
 - `TradeStatus` (OPEN, SECURED, CLOSED) ajouté dans `constants/enums.js`
@@ -91,14 +93,35 @@ OPEN → (sortie totale directe) → CLOSED
 
 Chaque transition est enregistrée dans `status_history`.
 
+## Bouton raccourci "Prochain objectif"
+
+Un bouton unique par trade (icône `pi-angle-double-up`, severity `success`) apparaît dans la colonne actions si le trade n'est pas CLOSED et qu'il reste un objectif à atteindre.
+
+### Séquence de détection (`getNextObjective`)
+1. Si `be_price` défini ET `be_size` défini ET aucune `partial_exit` avec `exit_type=BE` → objectif = **BE** (action `close` — ouvre CloseTradeDialog pré-rempli)
+2. Si `be_price` défini ET `be_size` **non** défini ET `be_reached=0` → objectif = **BE** (action `mark` — marque le BE atteint sans sortie partielle)
+3. Sinon, parcours de `targets[]` dans l'ordre du tableau, premier dont `id` n'apparaît pas dans `partial_exits[].target_id` → objectif = ce **TP** (action `close`)
+4. Si rien → pas de bouton
+
+**Note** : si `be_price` n'est pas défini (pas de BE configuré), on passe directement aux TPs.
+
+### Comportement
+- Le tooltip affiche le label de l'objectif (ex: "BE", "TP1", "TP2")
+- Si `action=close` : ouvre `CloseTradeDialog` pré-rempli avec `exit_price`, `exit_size`, `exit_type` et `target_id` de l'objectif. Le `target_id` est propagé jusqu'en base dans `partial_exits.target_id`
+- Si `action=mark` : appelle `POST /trades/{id}/be-hit` qui met `be_reached=1` en base, affiche un toast de succès ("BE atteint"), sans ouvrir de dialog
+
+### Données nécessaires
+- `GET /trades` retourne désormais `partial_exits[]` par trade (nécessaire pour savoir quels objectifs sont déjà pris)
+- `POST /trades/{id}/close` accepte un champ optionnel `target_id` stocké dans la sortie partielle
+
 ## i18n
 
 Bloc `trades` ajouté dans `fr.json` et `en.json` avec :
-- Labels de base (title, create, empty, opened_at, etc.)
+- Labels de base (title, create, empty, opened_at, next_objective, etc.)
 - Statuts (OPEN, SECURED, CLOSED)
 - Types de sortie (BE, TP, SL, MANUAL)
 - Messages d'erreur (not_found, forbidden, already_closed, invalid_exit_size, etc.)
-- Messages de succès (created, closed, deleted)
+- Messages de succès (created, closed, deleted, be_reached)
 
 ## Tests
 
@@ -106,7 +129,7 @@ Bloc `trades` ajouté dans `fr.json` et `en.json` avec :
 - **TradeRepositoryTest** (6 tests) — CRUD + filtres
 - **PartialExitRepositoryTest** (3 tests) — create + findByTradeId
 - **TradeServiceTest** (30 tests) — create, list, get, close, delete avec validations
-- **TradeFlowTest** (15 tests) — lifecycle complet, PnL, status transitions
+- **TradeFlowTest** (20 tests) — lifecycle complet, PnL, status transitions, target_id, partial_exits dans list, BE hit
 
 ### Frontend (61 tests)
 - **trades-store.spec.js** (10 tests) — fetchTrades, createTrade, closeTrade, deleteTrade, setFilters, loading, errors

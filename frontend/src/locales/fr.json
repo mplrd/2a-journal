@@ -261,6 +261,8 @@
     "filter_status": "Filtrer par statut",
     "all_accounts": "Tous les comptes",
     "all_statuses": "Tous les statuts",
+    "next_objective": "Prochain objectif",
+    "be_reached": "BE atteint",
     "confirm_close": "Êtes-vous sûr de vouloir fermer ce trade ?",
     "confirm_delete": "Êtes-vous sûr de vouloir supprimer ce trade ?",
     "statuses": {

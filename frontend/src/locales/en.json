@@ -261,6 +261,8 @@
     "filter_status": "Filter by status",
     "all_accounts": "All accounts",
     "all_statuses": "All statuses",
+    "next_objective": "Next objective",
+    "be_reached": "BE reached",
     "confirm_close": "Are you sure you want to close this trade?",
     "confirm_delete": "Are you sure you want to delete this trade?",
     "statuses": {

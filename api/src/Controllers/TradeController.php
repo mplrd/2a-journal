@@ -59,6 +59,15 @@ class TradeController extends Controller
         return $this->jsonSuccess($trade);
     }
 
+    public function beHit(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $tradeId = (int) $request->getRouteParam('id');
+        $trade = $this->tradeService->markBeReached($userId, $tradeId);
+
+        return $this->jsonSuccess($trade);
+    }
+
     public function destroy(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

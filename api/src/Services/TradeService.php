@@ -158,8 +158,14 @@ class TradeService
         $total = $result['total'];
         $totalPages = (int) ceil($total / $perPage);
 
+        $items = $result['items'];
+        foreach ($items as &$item) {
+            $item['partial_exits'] = $this->partialExitRepo->findByTradeId((int) $item['id']);
+        }
+        unset($item);
+
         return [
-            'data' => $result['items'],
+            'data' => $items,
             'meta' => [
                 'page' => $page,
                 'per_page' => $perPage,
@@ -246,6 +252,7 @@ class TradeService
             'exit_price' => $exitPrice,
             'size' => $exitSize,
             'exit_type' => $exitTypeValue,
+            'target_id' => $data['target_id'] ?? null,
             'pnl' => round($partialPnl, 2),
         ]);
 
@@ -297,6 +304,30 @@ class TradeService
         }
 
         $updated['partial_exits'] = $allExits;
+
+        return $updated;
+    }
+
+    public function markBeReached(int $userId, int $tradeId): array
+    {
+        $this->validateId($tradeId);
+
+        $trade = $this->tradeRepo->findById($tradeId);
+
+        if (!$trade) {
+            throw new NotFoundException('trades.error.not_found');
+        }
+
+        if ((int) $trade['user_id'] !== $userId) {
+            throw new ForbiddenException('trades.error.forbidden');
+        }
+
+        if ($trade['status'] === TradeStatus::CLOSED->value) {
+            throw new ValidationException('trades.error.already_closed', 'status');
+        }
+
+        $updated = $this->tradeRepo->update($tradeId, ['be_reached' => 1]);
+        $updated['partial_exits'] = $this->partialExitRepo->findByTradeId($tradeId);
 
         return $updated;
     }

@@ -56,6 +56,20 @@ export const useTradesStore = defineStore('trades', () => {
     }
   }
 
+  async function markBeHit(id) {
+    try {
+      const response = await tradesService.markBeHit(id)
+      const index = trades.value.findIndex((t) => t.id === id)
+      if (index !== -1) {
+        trades.value[index] = response.data
+      }
+      return response
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
   async function deleteTrade(id) {
     loading.value = true
     error.value = null
@@ -89,6 +103,7 @@ export const useTradesStore = defineStore('trades', () => {
     fetchTrades,
     createTrade,
     closeTrade,
+    markBeHit,
     deleteTrade,
     setFilters,
     $reset,

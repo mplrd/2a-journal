@@ -22,6 +22,10 @@ export const tradesService = {
     return api.post(`/trades/${id}/close`, data)
   },
 
+  async markBeHit(id) {
+    return api.post(`/trades/${id}/be-hit`)
+  },
+
   async remove(id) {
     return api.delete(`/trades/${id}`)
   },

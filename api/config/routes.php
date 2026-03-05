@@ -155,6 +155,7 @@ $router->get('/trades', [$tradeController, 'index'], [$authMiddleware]);
 $router->post('/trades', [$tradeController, 'store'], [$authMiddleware]);
 $router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware]);
 $router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware]);
+$router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware]);
 $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware]);
 
 // ── Stats ─────────────────────────────────────────────────────

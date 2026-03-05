@@ -13,6 +13,7 @@ const props = defineProps({
   visible: Boolean,
   trade: { type: Object, default: null },
   loading: Boolean,
+  prefill: { type: Object, default: null },
 })
 
 const emit = defineEmits(['update:visible', 'close'])
@@ -29,6 +30,7 @@ function getDefaultForm() {
     exit_price: 0,
     exit_size: 0,
     exit_type: ExitType.TP,
+    target_id: null,
   }
 }
 
@@ -36,10 +38,20 @@ watch(
   () => props.visible,
   (val) => {
     if (val && props.trade) {
-      form.value = {
-        exit_price: 0,
-        exit_size: Number(props.trade.remaining_size),
-        exit_type: ExitType.TP,
+      if (props.prefill) {
+        form.value = {
+          exit_price: props.prefill.exit_price ?? 0,
+          exit_size: props.prefill.exit_size ?? Number(props.trade.remaining_size),
+          exit_type: props.prefill.exit_type ?? ExitType.TP,
+          target_id: props.prefill.target_id ?? null,
+        }
+      } else {
+        form.value = {
+          exit_price: 0,
+          exit_size: Number(props.trade.remaining_size),
+          exit_type: ExitType.TP,
+          target_id: null,
+        }
       }
     }
   },

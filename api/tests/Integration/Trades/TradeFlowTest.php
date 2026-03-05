@@ -386,6 +386,99 @@ class TradeFlowTest extends TestCase
         $this->assertSame('CLOSED', $last['new_status']);
     }
 
+    public function testCloseTradeWithTargetIdStoresIt(): void
+    {
+        $trade = $this->createTrade([
+            'size' => 2,
+            'targets' => [['id' => 'tp1', 'label' => 'TP1', 'points' => 100, 'size' => 1]],
+        ]);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/close", [
+                'exit_price' => 18600,
+                'exit_size' => 1,
+                'exit_type' => 'TP',
+                'target_id' => 'tp1',
+            ])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(1, $body['data']['partial_exits']);
+        $this->assertSame('tp1', $body['data']['partial_exits'][0]['target_id']);
+    }
+
+    public function testListTradesIncludesPartialExits(): void
+    {
+        $trade = $this->createTrade(['size' => 2]);
+
+        // Create a partial exit
+        $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/close", [
+                'exit_price' => 18600,
+                'exit_size' => 1,
+                'exit_type' => 'TP',
+            ])
+        );
+
+        $response = $this->router->dispatch($this->authRequest('GET', '/trades'));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(1, $body['data']);
+        $this->assertArrayHasKey('partial_exits', $body['data'][0]);
+        $this->assertCount(1, $body['data'][0]['partial_exits']);
+        $this->assertSame('TP', $body['data'][0]['partial_exits'][0]['exit_type']);
+    }
+
+    // ── Delete ──────────────────────────────────────────────────
+
+    // ── BE Hit ──────────────────────────────────────────────────
+
+    public function testMarkBeReached(): void
+    {
+        $trade = $this->createTrade([
+            'be_points' => 30,
+        ]);
+
+        $this->assertSame(0, (int) $trade['be_reached']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/be-hit")
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame(1, (int) $body['data']['be_reached']);
+        $this->assertArrayHasKey('partial_exits', $body['data']);
+    }
+
+    public function testMarkBeReachedAlreadyClosed(): void
+    {
+        $trade = $this->createTrade(['size' => 1]);
+
+        // Close the trade
+        $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/close", [
+                'exit_price' => 18600,
+                'exit_size' => 1,
+                'exit_type' => 'TP',
+            ])
+        );
+
+        // Try to mark BE reached on closed trade
+        try {
+            $this->router->dispatch(
+                $this->authRequest('POST', "/trades/{$trade['id']}/be-hit")
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('trades.error.already_closed', $e->getMessageKey());
+        }
+    }
+
     // ── Delete ──────────────────────────────────────────────────
 
     public function testDeleteTradeSuccess(): void
