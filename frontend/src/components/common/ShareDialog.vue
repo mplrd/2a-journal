@@ -142,7 +142,7 @@ function close() {
       />
 
       <div class="flex flex-wrap gap-2 mt-3">
-        <p class="w-full text-sm text-gray-500">{{ t('share.share_via') }}</p>
+        <p class="w-full text-sm text-gray-500 dark:text-gray-400">{{ t('share.share_via') }}</p>
         <Button
           :label="t('share.whatsapp')"
           icon="pi pi-whatsapp"

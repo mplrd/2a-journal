@@ -12,6 +12,11 @@ import { i18n } from './locales'
 import 'primeicons/primeicons.css'
 import './assets/main.css'
 
+// Apply theme from localStorage before mount to prevent flash
+if (localStorage.getItem('theme') === 'dark') {
+  document.documentElement.classList.add('dark-mode')
+}
+
 const app = createApp(App)
 
 app.use(pinia)

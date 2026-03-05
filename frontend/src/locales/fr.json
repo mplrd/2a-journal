@@ -54,12 +54,19 @@
       "email_too_long": "L'email est trop long (255 caractères maximum)",
       "field_too_long": "Ce champ est trop long",
       "invalid_locale": "Langue non supportée",
-      "password_too_long": "Le mot de passe est trop long (72 caractères maximum)"
+      "invalid_timezone": "Fuseau horaire invalide",
+      "invalid_currency": "Devise invalide",
+      "invalid_theme": "Thème invalide",
+      "password_too_long": "Le mot de passe est trop long (72 caractères maximum)",
+      "invalid_image_type": "Format d'image non supporté (JPG, PNG ou WebP uniquement)",
+      "image_too_large": "L'image est trop volumineuse (2 Mo maximum)"
     },
     "success": {
       "registered": "Compte créé avec succès",
       "logged_in": "Connexion réussie",
-      "logged_out": "Déconnexion réussie"
+      "logged_out": "Déconnexion réussie",
+      "profile_updated": "Profil mis à jour avec succès",
+      "profile_picture_updated": "Photo de profil mise à jour"
     }
   },
   "dashboard": {
@@ -367,6 +374,21 @@
     "email": "Email",
     "email_subject": "Position de trading",
     "preview": "Aperçu du partage"
+  },
+  "account": {
+    "title": "Mon compte",
+    "first_name": "Prénom",
+    "last_name": "Nom",
+    "email": "Email",
+    "timezone": "Fuseau horaire",
+    "default_currency": "Devise par défaut",
+    "theme": "Thème",
+    "locale": "Langue",
+    "profile_picture": "Photo de profil",
+    "change_picture": "Changer la photo",
+    "theme_light": "Clair",
+    "theme_dark": "Sombre",
+    "save": "Enregistrer"
   },
   "error": {
     "field_too_long": "Ce champ est trop long",

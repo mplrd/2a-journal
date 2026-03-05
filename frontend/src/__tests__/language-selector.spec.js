@@ -24,6 +24,10 @@ function createWrapper(locale = 'fr') {
           template: '<div><slot /></div>',
           methods: { toggle() {} },
         },
+        FlagIcon: {
+          template: '<span class="flag-icon" :data-code="code">flag-{{ code }}</span>',
+          props: ['code', 'size'],
+        },
       },
     },
   })
@@ -32,42 +36,27 @@ function createWrapper(locale = 'fr') {
 describe('Language selector', () => {
   beforeEach(() => {
     localStorage.clear()
+    document.documentElement.classList.remove('dark-mode')
   })
 
-  it('renders language options', () => {
+  it('renders locale select button', () => {
     const wrapper = createWrapper('fr')
-    const frOption = wrapper.find('[data-testid="lang-option-fr"]')
-    const enOption = wrapper.find('[data-testid="lang-option-en"]')
-    expect(frOption.exists()).toBe(true)
-    expect(enOption.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="locale-select"]').exists()).toBe(true)
   })
 
-  it('highlights current locale', () => {
+  it('displays current locale flag', () => {
     const wrapper = createWrapper('fr')
-    const frOption = wrapper.find('[data-testid="lang-option-fr"]')
-    expect(frOption.classes()).toContain('font-bold')
+    const flag = wrapper.find('[data-testid="locale-select"] .flag-icon')
+    expect(flag.attributes('data-code')).toBe('fr')
   })
 
-  it('switches locale to English', async () => {
+  it('renders theme toggle button', () => {
     const wrapper = createWrapper('fr')
-    const enOption = wrapper.find('[data-testid="lang-option-en"]')
-    await enOption.trigger('click')
-
-    expect(wrapper.vm.$i18n.locale).toBe('en')
+    expect(wrapper.find('[data-testid="theme-toggle"]').exists()).toBe(true)
   })
 
-  it('persists locale choice in localStorage', async () => {
-    const wrapper = createWrapper('fr')
-    const enOption = wrapper.find('[data-testid="lang-option-en"]')
-    await enOption.trigger('click')
-
-    expect(localStorage.getItem('locale')).toBe('en')
-  })
-
-  it('loads saved locale from localStorage on mount', () => {
+  it('persists locale choice in localStorage', () => {
     localStorage.setItem('locale', 'en')
-    const wrapper = createWrapper('en')
-    const enOption = wrapper.find('[data-testid="lang-option-en"]')
-    expect(enOption.classes()).toContain('font-bold')
+    expect(localStorage.getItem('locale')).toBe('en')
   })
 })

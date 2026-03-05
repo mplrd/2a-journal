@@ -33,7 +33,7 @@ async function applyFilters() {
 <template>
   <div>
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-2xl font-bold">{{ t('dashboard.title') }}</h1>
+      <h1 class="text-2xl font-bold dark:text-gray-100">{{ t('dashboard.title') }}</h1>
       <Select
         v-model="filterAccountId"
         :options="[{ label: t('dashboard.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"

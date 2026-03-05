@@ -20,4 +20,14 @@ export const authService = {
   async updateLocale(locale) {
     return api.patch('/auth/locale', { locale })
   },
+
+  async updateProfile(data) {
+    return api.patch('/auth/profile', data)
+  },
+
+  async uploadProfilePicture(file) {
+    const formData = new FormData()
+    formData.append('profile_picture', file)
+    return api.upload('/auth/profile-picture', formData)
+  },
 }

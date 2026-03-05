@@ -5,6 +5,8 @@ import Chart from 'primevue/chart'
 
 const { t } = useI18n()
 
+const isDark = computed(() => document.documentElement.classList.contains('dark-mode'))
+
 const props = defineProps({
   data: {
     type: Object,
@@ -42,15 +44,15 @@ const chartOptions = computed(() => ({
   plugins: {
     legend: {
       position: 'bottom',
-      labels: { padding: 16 },
+      labels: { padding: 16, color: isDark.value ? '#9ca3af' : '#6b7280' },
     },
   },
 }))
 </script>
 
 <template>
-  <div class="bg-white rounded-lg border border-gray-200 p-4">
-    <h3 class="text-sm font-medium text-gray-500 mb-3">{{ t('dashboard.win_loss_distribution') }}</h3>
+  <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+    <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">{{ t('dashboard.win_loss_distribution') }}</h3>
     <div v-if="chartData" class="h-64">
       <Chart type="doughnut" :data="chartData" :options="chartOptions" class="h-full" />
     </div>

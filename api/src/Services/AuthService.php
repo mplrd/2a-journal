@@ -145,6 +145,54 @@ class AuthService
     }
 
     private const SUPPORTED_LOCALES = ['fr', 'en'];
+    private const SUPPORTED_THEMES = ['light', 'dark'];
+    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale'];
+    private const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2 MB
+    private const IMAGE_EXTENSIONS = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+
+    public function updateProfile(int $userId, array $data): array
+    {
+        // Whitelist fields
+        $filtered = array_intersect_key($data, array_flip(self::PROFILE_FIELDS));
+
+        // Validate first_name / last_name length
+        foreach (['first_name', 'last_name'] as $nameField) {
+            if (isset($filtered[$nameField]) && mb_strlen($filtered[$nameField]) > 100) {
+                throw new ValidationException('auth.error.field_too_long', $nameField);
+            }
+        }
+
+        // Validate timezone
+        if (isset($filtered['timezone'])) {
+            if (!in_array($filtered['timezone'], \DateTimeZone::listIdentifiers(), true)) {
+                throw new ValidationException('auth.error.invalid_timezone', 'timezone');
+            }
+        }
+
+        // Validate currency
+        if (isset($filtered['default_currency'])) {
+            if (!preg_match('/^[A-Z]{3}$/', $filtered['default_currency'])) {
+                throw new ValidationException('auth.error.invalid_currency', 'default_currency');
+            }
+        }
+
+        // Validate theme
+        if (isset($filtered['theme'])) {
+            if (!in_array($filtered['theme'], self::SUPPORTED_THEMES, true)) {
+                throw new ValidationException('auth.error.invalid_theme', 'theme');
+            }
+        }
+
+        // Validate locale
+        if (isset($filtered['locale'])) {
+            if (!in_array($filtered['locale'], self::SUPPORTED_LOCALES, true)) {
+                throw new ValidationException('auth.error.invalid_locale', 'locale');
+            }
+        }
+
+        return $this->userRepo->updateProfile($userId, $filtered);
+    }
 
     public function updateLocale(int $userId, string $locale): array
     {
@@ -156,6 +204,57 @@ class AuthService
         }
 
         return $this->userRepo->updateLocale($userId, $locale);
+    }
+
+    public function uploadProfilePicture(int $userId, array $file): array
+    {
+        if (empty($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new ValidationException('auth.error.field_required', 'profile_picture');
+        }
+
+        // Validate size
+        if ($file['size'] > self::MAX_IMAGE_SIZE) {
+            throw new ValidationException('auth.error.image_too_large', 'profile_picture');
+        }
+
+        // Validate MIME type via finfo (not trusting client-provided type)
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file['tmp_name']);
+
+        if (!in_array($mimeType, self::ALLOWED_IMAGE_TYPES, true)) {
+            throw new ValidationException('auth.error.invalid_image_type', 'profile_picture');
+        }
+
+        // Generate unique filename
+        $ext = self::IMAGE_EXTENSIONS[$mimeType];
+        $filename = "{$userId}_" . time() . ".{$ext}";
+        $uploadDir = __DIR__ . '/../../public/uploads/avatars';
+
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        $destination = "{$uploadDir}/{$filename}";
+
+        // Delete old picture if exists
+        $currentUser = $this->userRepo->findById($userId);
+        if ($currentUser && !empty($currentUser['profile_picture'])) {
+            $oldPath = __DIR__ . '/../../public/' . $currentUser['profile_picture'];
+            if (file_exists($oldPath)) {
+                unlink($oldPath);
+            }
+        }
+
+        // Move uploaded file (or copy for tests)
+        if (is_uploaded_file($file['tmp_name'])) {
+            move_uploaded_file($file['tmp_name'], $destination);
+        } else {
+            copy($file['tmp_name'], $destination);
+        }
+
+        $relativePath = "uploads/avatars/{$filename}";
+
+        return $this->userRepo->updateProfile($userId, ['profile_picture' => $relativePath]);
     }
 
     private function buildRefreshCookie(string $token, int $ttl): string

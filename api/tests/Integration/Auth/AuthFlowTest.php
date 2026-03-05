@@ -570,4 +570,348 @@ class AuthFlowTest extends TestCase
             $this->assertSame(401, $e->getStatusCode());
         }
     }
+
+    // ── Update profile ──────────────────────────────────────────────
+
+    public function testUpdateProfileSuccess(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'profile@test.com',
+            'password' => 'Test1234',
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('PATCH', '/auth/profile', [
+            'first_name' => 'Jane',
+            'theme' => 'dark',
+            'locale' => 'fr',
+        ], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame('Jane', $body['data']['first_name']);
+        $this->assertSame('dark', $body['data']['theme']);
+        $this->assertSame('fr', $body['data']['locale']);
+    }
+
+    public function testUpdateProfilePersists(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'persist@test.com',
+            'password' => 'Test1234',
+            'first_name' => 'John',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('PATCH', '/auth/profile', [
+            'first_name' => 'Updated',
+            'theme' => 'dark',
+        ], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $this->router->dispatch($request);
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame('Updated', $body['data']['first_name']);
+        $this->assertSame('dark', $body['data']['theme']);
+    }
+
+    public function testUpdateProfilePartialUpdate(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'partial@test.com',
+            'password' => 'Test1234',
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'locale' => 'fr',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        // Only update theme
+        $request = Request::create('PATCH', '/auth/profile', [
+            'theme' => 'dark',
+        ], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame('dark', $body['data']['theme']);
+        $this->assertSame('John', $body['data']['first_name']);
+        $this->assertSame('Doe', $body['data']['last_name']);
+        $this->assertSame('fr', $body['data']['locale']);
+    }
+
+    public function testUpdateProfileInvalidTheme(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'badtheme@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('PATCH', '/auth/profile', [
+            'theme' => 'blue',
+        ], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.invalid_theme', $e->getMessageKey());
+        }
+    }
+
+    public function testUpdateProfileInvalidTimezone(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'badtz@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('PATCH', '/auth/profile', [
+            'timezone' => 'Fake/Zone',
+        ], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.invalid_timezone', $e->getMessageKey());
+        }
+    }
+
+    public function testUpdateProfileInvalidCurrency(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'badcur@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        $request = Request::create('PATCH', '/auth/profile', [
+            'default_currency' => 'ABCD',
+        ], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.invalid_currency', $e->getMessageKey());
+        }
+    }
+
+    public function testUpdateProfileWithoutAuth(): void
+    {
+        $request = Request::create('PATCH', '/auth/profile', ['theme' => 'dark']);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    // ── Profile picture upload ──────────────────────────────────────
+
+    private function createTempImage(string $mimeType = 'image/jpeg', int $size = 1024): string
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_img_');
+        if ($mimeType === 'image/jpeg') {
+            $img = imagecreatetruecolor(100, 100);
+            imagejpeg($img, $tmpFile);
+            imagedestroy($img);
+        } elseif ($mimeType === 'image/png') {
+            $img = imagecreatetruecolor(100, 100);
+            imagepng($img, $tmpFile);
+            imagedestroy($img);
+        } else {
+            // Write plain text for invalid type tests
+            file_put_contents($tmpFile, str_repeat('x', $size));
+        }
+        return $tmpFile;
+    }
+
+    private function registerAndGetToken(string $email = 'avatar@test.com'): string
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => $email,
+            'password' => 'Test1234',
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+        ]);
+        $response = $this->router->dispatch($request);
+        return $response->getBody()['data']['access_token'];
+    }
+
+    public function testUploadProfilePictureSuccess(): void
+    {
+        $accessToken = $this->registerAndGetToken('avatar-ok@test.com');
+        $tmpFile = $this->createTempImage('image/jpeg');
+
+        $request = Request::create('POST', '/auth/profile-picture', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $request->setFiles([
+            'profile_picture' => [
+                'name' => 'photo.jpg',
+                'type' => 'image/jpeg',
+                'tmp_name' => $tmpFile,
+                'error' => UPLOAD_ERR_OK,
+                'size' => filesize($tmpFile),
+            ],
+        ]);
+
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertNotNull($body['data']['profile_picture']);
+        $this->assertStringContainsString('uploads/avatars/', $body['data']['profile_picture']);
+
+        // Cleanup
+        $picturePath = __DIR__ . '/../../../public/' . $body['data']['profile_picture'];
+        if (file_exists($picturePath)) {
+            unlink($picturePath);
+        }
+        @unlink($tmpFile);
+    }
+
+    public function testUploadProfilePictureInvalidType(): void
+    {
+        $accessToken = $this->registerAndGetToken('avatar-badtype@test.com');
+        $tmpFile = $this->createTempImage('text/plain', 100);
+
+        $request = Request::create('POST', '/auth/profile-picture', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $request->setFiles([
+            'profile_picture' => [
+                'name' => 'file.txt',
+                'type' => 'text/plain',
+                'tmp_name' => $tmpFile,
+                'error' => UPLOAD_ERR_OK,
+                'size' => filesize($tmpFile),
+            ],
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.invalid_image_type', $e->getMessageKey());
+        }
+
+        @unlink($tmpFile);
+    }
+
+    public function testUploadProfilePictureTooLarge(): void
+    {
+        $accessToken = $this->registerAndGetToken('avatar-big@test.com');
+        $tmpFile = $this->createTempImage('image/jpeg');
+        // Simulate oversized file by setting size > 2MB in the file array
+        $request = Request::create('POST', '/auth/profile-picture', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $request->setFiles([
+            'profile_picture' => [
+                'name' => 'big.jpg',
+                'type' => 'image/jpeg',
+                'tmp_name' => $tmpFile,
+                'error' => UPLOAD_ERR_OK,
+                'size' => 3 * 1024 * 1024, // 3MB
+            ],
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.image_too_large', $e->getMessageKey());
+        }
+
+        @unlink($tmpFile);
+    }
+
+    public function testUploadProfilePictureWithoutAuth(): void
+    {
+        $request = Request::create('POST', '/auth/profile-picture');
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    public function testProfilePictureUrlInMe(): void
+    {
+        $accessToken = $this->registerAndGetToken('avatar-me@test.com');
+        $tmpFile = $this->createTempImage('image/jpeg');
+
+        // Upload picture
+        $request = Request::create('POST', '/auth/profile-picture', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $request->setFiles([
+            'profile_picture' => [
+                'name' => 'photo.jpg',
+                'type' => 'image/jpeg',
+                'tmp_name' => $tmpFile,
+                'error' => UPLOAD_ERR_OK,
+                'size' => filesize($tmpFile),
+            ],
+        ]);
+        $uploadResponse = $this->router->dispatch($request);
+        $picturePath = $uploadResponse->getBody()['data']['profile_picture'];
+
+        // GET /auth/me should return profile_picture
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame($picturePath, $body['data']['profile_picture']);
+
+        // Cleanup
+        $fullPath = __DIR__ . '/../../../public/' . $picturePath;
+        if (file_exists($fullPath)) {
+            unlink($fullPath);
+        }
+        @unlink($tmpFile);
+    }
 }

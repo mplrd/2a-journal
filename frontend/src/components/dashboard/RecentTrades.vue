@@ -47,9 +47,9 @@ function formatPnl(pnl) {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg border border-gray-200 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-medium text-gray-500">{{ t('dashboard.recent_trades') }}</h3>
+      <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.recent_trades') }}</h3>
       <Button
         :label="t('dashboard.view_all')"
         icon="pi pi-arrow-right"

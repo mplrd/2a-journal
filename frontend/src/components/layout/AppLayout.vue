@@ -3,20 +3,29 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useTheme } from '@/composables/useTheme'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
+import FlagIcon from '@/components/common/FlagIcon.vue'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const { initTheme, toggleTheme, getCurrentTheme } = useTheme()
 
 const userMenuRef = ref(null)
+const localeMenuRef = ref(null)
 
 const isMobile = ref(window.innerWidth < 768)
 function onResize() {
   isMobile.value = window.innerWidth < 768
 }
-onMounted(() => window.addEventListener('resize', onResize))
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  initTheme()
+})
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
 // Sidebar: open by default on desktop, closed on mobile, persist preference
@@ -40,9 +49,9 @@ function handleNavClick() {
   }
 }
 
-const languages = [
-  { code: 'fr', label: 'FR' },
-  { code: 'en', label: 'EN' },
+const localeOptions = [
+  { code: 'fr', label: 'Français' },
+  { code: 'en', label: 'English' },
 ]
 
 const navLinks = computed(() => [
@@ -60,6 +69,15 @@ const userInitials = computed(() => {
   return (f + l).toUpperCase()
 })
 
+const avatarUrl = computed(() => {
+  if (authStore.user?.profile_picture) {
+    return `${API_URL.replace(/\/api$/, '/api/')}${authStore.user.profile_picture}`
+  }
+  return null
+})
+
+const themeIcon = computed(() => getCurrentTheme() === 'dark' ? 'pi pi-sun' : 'pi pi-moon')
+
 // Apply locale from user profile when it loads
 watch(
   () => authStore.user?.locale,
@@ -76,7 +94,7 @@ function switchLocale(code) {
   locale.value = code
   localStorage.setItem('locale', code)
   if (authStore.isAuthenticated) {
-    authStore.updateLocale(code)
+    authStore.updateProfile({ locale: code })
   }
 }
 
@@ -91,63 +109,97 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-screen bg-gray-50">
+  <div class="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
     <!-- Header (full width, always on top) -->
-    <header class="bg-white shadow-sm border-b border-gray-200 z-10">
+    <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 z-10">
       <div class="px-4 py-3 flex items-center justify-between">
         <!-- Left: Burger + Title -->
         <div class="flex items-center gap-3">
           <button
-            class="text-gray-600 hover:text-gray-900 cursor-pointer"
+            class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer"
             data-testid="burger-menu"
             :aria-label="t('nav.menu')"
             @click="toggleSidebar"
           >
             <i class="pi pi-bars text-xl"></i>
           </button>
-          <h1 class="text-lg font-semibold text-gray-800">{{ t('app.title') }}</h1>
+          <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ t('app.title') }}</h1>
         </div>
 
-        <!-- Right: Language selector + Avatar + User menu -->
+        <!-- Right: Locale selector + Dark mode toggle + Avatar + User menu -->
         <div class="flex items-center gap-3">
-          <!-- Language selector -->
-          <div class="flex gap-1">
-            <button
-              v-for="lang in languages"
-              :key="lang.code"
-              :data-testid="`lang-option-${lang.code}`"
-              class="px-2 py-1 text-sm rounded border cursor-pointer"
-              :class="locale === lang.code
-                ? 'font-bold bg-blue-50 border-blue-300 text-blue-700'
-                : 'border-gray-300 text-gray-600 hover:bg-gray-50'"
-              @click="switchLocale(lang.code)"
-            >
-              {{ lang.label }}
-            </button>
-          </div>
+          <!-- Locale selector (flag badge) -->
+          <button
+            data-testid="locale-select"
+            class="cursor-pointer"
+            @click="localeMenuRef.toggle($event)"
+          >
+            <FlagIcon :code="locale" :size="28" data-testid="locale-flag" />
+          </button>
+          <Popover ref="localeMenuRef">
+            <div class="flex flex-col gap-1 min-w-[140px]">
+              <button
+                v-for="option in localeOptions"
+                :key="option.code"
+                class="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                :class="locale === option.code ? 'bg-gray-100 dark:bg-gray-700' : ''"
+                @click="switchLocale(option.code); localeMenuRef.toggle($event)"
+              >
+                <FlagIcon :code="option.code" :size="20" />
+                <span class="text-sm">{{ option.label }}</span>
+              </button>
+            </div>
+          </Popover>
+
+          <!-- Dark mode toggle -->
+          <button
+            data-testid="theme-toggle"
+            class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer p-1"
+            @click="toggleTheme"
+          >
+            <i :class="themeIcon" class="text-lg"></i>
+          </button>
 
           <button
             class="flex items-center gap-2 cursor-pointer"
             data-testid="user-menu-trigger"
             @click="toggleUserMenu"
           >
+            <img
+              v-if="authStore.user?.profile_picture"
+              :src="avatarUrl"
+              alt=""
+              class="w-8 h-8 rounded-full object-cover"
+              data-testid="user-avatar"
+            />
             <span
+              v-else
               class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-semibold"
               data-testid="user-avatar"
             >
               {{ userInitials }}
             </span>
-            <span class="hidden md:inline text-sm text-gray-700">{{ authStore.fullName }}</span>
-            <i class="pi pi-chevron-down text-xs text-gray-500"></i>
+            <span class="hidden md:inline text-sm text-gray-700 dark:text-gray-300">{{ authStore.fullName }}</span>
+            <i class="pi pi-chevron-down text-xs text-gray-500 dark:text-gray-400"></i>
           </button>
 
           <Popover ref="userMenuRef">
             <div class="p-3 min-w-[200px]">
               <!-- User info -->
-              <div class="mb-3 pb-3 border-b border-gray-200">
-                <p class="font-semibold text-sm text-gray-800">{{ authStore.fullName }}</p>
-                <p class="text-xs text-gray-500" data-testid="user-email">{{ authStore.user?.email }}</p>
+              <div class="mb-3 pb-3 border-b border-gray-200 dark:border-gray-600">
+                <p class="font-semibold text-sm text-gray-800 dark:text-gray-100">{{ authStore.fullName }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400" data-testid="user-email">{{ authStore.user?.email }}</p>
               </div>
+
+              <!-- My account link -->
+              <RouterLink
+                to="/account"
+                class="flex items-center gap-2 px-2 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md mb-2"
+                data-testid="my-account-link"
+              >
+                <i class="pi pi-user"></i>
+                {{ t('nav.my_account') }}
+              </RouterLink>
 
               <!-- Logout -->
               <Button
@@ -175,7 +227,7 @@ async function handleLogout() {
 
       <!-- Sidebar (below header) -->
       <aside
-        class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white border-r border-gray-200 transition-all duration-300 overflow-hidden shrink-0"
+        class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden shrink-0"
         :class="sidebarOpen ? 'w-64' : 'w-0'"
       >
         <nav class="w-64 p-3 flex flex-col gap-1 overflow-y-auto">
@@ -183,7 +235,7 @@ async function handleLogout() {
             v-for="link in navLinks"
             :key="link.to"
             :to="link.to"
-            class="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+            class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
             @click="handleNavClick"
           >
             <i :class="link.icon"></i>

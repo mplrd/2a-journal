@@ -10,6 +10,7 @@ vi.mock('@/services/auth', () => ({
     login: vi.fn(),
     logout: vi.fn(),
     me: vi.fn(),
+    updateProfile: vi.fn(),
   },
 }))
 
@@ -152,5 +153,28 @@ describe('auth store', () => {
     expect(store.initialized).toBe(true)
     expect(store.user).toBeNull()
     expect(api.getAccessToken()).toBeNull()
+  })
+
+  it('updateProfile updates user data', async () => {
+    store.user = { id: 1, email: 'test@test.com', first_name: 'John', theme: 'light' }
+    authService.updateProfile.mockResolvedValue({
+      success: true,
+      data: { id: 1, email: 'test@test.com', first_name: 'Jane', theme: 'dark' },
+    })
+
+    await store.updateProfile({ first_name: 'Jane', theme: 'dark' })
+
+    expect(store.user.first_name).toBe('Jane')
+    expect(store.user.theme).toBe('dark')
+  })
+
+  it('updateProfile does not throw on failure', async () => {
+    store.user = { id: 1, email: 'test@test.com', theme: 'light' }
+    authService.updateProfile.mockRejectedValue(new Error('Network error'))
+
+    await store.updateProfile({ theme: 'dark' })
+
+    // User data unchanged, no exception
+    expect(store.user.theme).toBe('light')
   })
 })

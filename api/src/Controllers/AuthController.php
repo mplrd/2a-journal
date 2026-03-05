@@ -60,11 +60,28 @@ class AuthController extends Controller
         return $this->jsonSuccess($user);
     }
 
+    public function updateProfile(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $user = $this->authService->updateProfile($userId, $request->getBody());
+
+        return $this->jsonSuccess($user);
+    }
+
     public function updateLocale(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
         $locale = $request->getBody('locale') ?? '';
         $user = $this->authService->updateLocale($userId, $locale);
+
+        return $this->jsonSuccess($user);
+    }
+
+    public function uploadProfilePicture(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $file = $request->getFile('profile_picture') ?? [];
+        $user = $this->authService->uploadProfilePicture($userId, $file);
 
         return $this->jsonSuccess($user);
     }

@@ -13,8 +13,9 @@ class Request
     private array $attributes;
     private string $clientIp;
     private array $cookies;
+    private array $files;
 
-    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [])
+    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [], array $files = [])
     {
         $this->method = $method;
         $this->uri = $uri;
@@ -25,6 +26,7 @@ class Request
         $this->attributes = [];
         $this->clientIp = $clientIp;
         $this->cookies = $cookies;
+        $this->files = $files;
     }
 
     public static function capture(): self
@@ -70,7 +72,7 @@ class Request
 
         $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
-        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE);
+        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES);
     }
 
     public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = [], array $cookies = []): self
@@ -148,5 +150,15 @@ class Request
     public function getClientIp(): string
     {
         return $this->clientIp;
+    }
+
+    public function getFile(string $name): ?array
+    {
+        return $this->files[$name] ?? null;
+    }
+
+    public function setFiles(array $files): void
+    {
+        $this->files = $files;
     }
 }

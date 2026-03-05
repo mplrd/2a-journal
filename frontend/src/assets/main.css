@@ -1,6 +1,22 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark-mode, .dark-mode *));
+
 body {
   color: #1f2937;
   background-color: #f9fafb;
+}
+
+.dark-mode body {
+  color: #f3f4f6;
+  background-color: #111827;
+}
+
+/* Force PrimeVue form components to shrink inside CSS Grid cells */
+.p-inputnumber,
+.p-inputtext,
+.p-select,
+.p-autocomplete,
+.p-datepicker {
+  min-width: 0 !important;
 }

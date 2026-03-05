@@ -92,6 +92,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function updateProfile(data) {
+    try {
+      const response = await authService.updateProfile(data)
+      user.value = response.data
+    } catch {
+      // Non-blocking — settings are still applied client-side
+    }
+  }
+
+  async function uploadProfilePicture(file) {
+    const response = await authService.uploadProfilePicture(file)
+    user.value = response.data
+    return response
+  }
+
   async function initSession() {
     try {
       const response = await api.refreshAccessToken()
@@ -119,6 +134,8 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     fetchProfile,
     updateLocale,
+    updateProfile,
+    uploadProfilePicture,
     initSession,
   }
 })
