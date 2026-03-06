@@ -9,8 +9,10 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import AccountForm from '@/components/account/AccountForm.vue'
 import { AccountType, AccountStage } from '@/constants/enums'
+import { useOnboarding } from '@/composables/useOnboarding'
 
 const { t } = useI18n()
+const { isOnboarding, currentStep } = useOnboarding()
 const toast = useToast()
 const store = useAccountsStore()
 
@@ -78,6 +80,14 @@ function stageSeverity(stage) {
 
 <template>
   <div>
+    <div
+      v-if="isOnboarding && currentStep === 'accounts'"
+      class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-800 dark:text-blue-200"
+      data-testid="onboarding-banner"
+    >
+      {{ t('onboarding.welcome') }}
+    </div>
+
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold">{{ t('accounts.title') }}</h1>
       <Button :label="t('accounts.create')" icon="pi pi-plus" @click="openCreate" />

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
+import { useOnboarding } from '@/composables/useOnboarding'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
 import FlagIcon from '@/components/common/FlagIcon.vue'
@@ -14,6 +15,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const { initTheme, toggleTheme, getCurrentTheme } = useTheme()
+const { isRouteAllowed } = useOnboarding()
 
 const userMenuRef = ref(null)
 const localeMenuRef = ref(null)
@@ -55,12 +57,12 @@ const localeOptions = [
 ]
 
 const navLinks = computed(() => [
-  { to: '/', label: t('nav.dashboard'), icon: 'pi pi-home' },
-  { to: '/accounts', label: t('nav.accounts'), icon: 'pi pi-wallet' },
-  { to: '/positions', label: t('nav.positions'), icon: 'pi pi-chart-line' },
-  { to: '/orders', label: t('nav.orders'), icon: 'pi pi-list' },
-  { to: '/trades', label: t('nav.trades'), icon: 'pi pi-arrow-right-arrow-left' },
-  { to: '/symbols', label: t('nav.symbols'), icon: 'pi pi-star' },
+  { to: '/', name: 'dashboard', label: t('nav.dashboard'), icon: 'pi pi-home' },
+  { to: '/accounts', name: 'accounts', label: t('nav.accounts'), icon: 'pi pi-wallet' },
+  { to: '/positions', name: 'positions', label: t('nav.positions'), icon: 'pi pi-chart-line' },
+  { to: '/orders', name: 'orders', label: t('nav.orders'), icon: 'pi pi-list' },
+  { to: '/trades', name: 'trades', label: t('nav.trades'), icon: 'pi pi-arrow-right-arrow-left' },
+  { to: '/symbols', name: 'symbols', label: t('nav.symbols'), icon: 'pi pi-star' },
 ])
 
 const userInitials = computed(() => {
@@ -231,16 +233,24 @@ async function handleLogout() {
         :class="sidebarOpen ? 'w-64' : 'w-0'"
       >
         <nav class="w-64 p-3 flex flex-col gap-1 overflow-y-auto">
-          <RouterLink
-            v-for="link in navLinks"
-            :key="link.to"
-            :to="link.to"
-            class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-            @click="handleNavClick"
-          >
-            <i :class="link.icon"></i>
-            <span>{{ link.label }}</span>
-          </RouterLink>
+          <template v-for="link in navLinks" :key="link.to">
+            <RouterLink
+              v-if="isRouteAllowed(link.name)"
+              :to="link.to"
+              class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+              @click="handleNavClick"
+            >
+              <i :class="link.icon"></i>
+              <span>{{ link.label }}</span>
+            </RouterLink>
+            <span
+              v-else
+              class="flex items-center gap-3 px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
+            >
+              <i :class="link.icon"></i>
+              <span>{{ link.label }}</span>
+            </span>
+          </template>
         </nav>
       </aside>
 

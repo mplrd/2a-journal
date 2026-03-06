@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Trading Journal - Database Schema
--- Version: 5.2
+-- Version: 5.3
 -- Database: 2ai_tools_journal (MariaDB, utf8mb4_unicode_ci)
 -- ============================================================================
 
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
     locale VARCHAR(5) NOT NULL DEFAULT 'fr',
     theme VARCHAR(20) NOT NULL DEFAULT 'light',
     profile_picture VARCHAR(255) NULL DEFAULT NULL,
+    onboarding_completed_at TIMESTAMP NULL DEFAULT NULL,
     email_verified_at TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

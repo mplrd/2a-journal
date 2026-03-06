@@ -30,4 +30,8 @@ export const authService = {
     formData.append('profile_picture', file)
     return api.upload('/auth/profile-picture', formData)
   },
+
+  async completeOnboarding() {
+    return api.post('/auth/complete-onboarding')
+  },
 }

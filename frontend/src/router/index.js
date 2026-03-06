@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '@/services/api'
 import pinia from '@/stores'
 import { useAuthStore } from '@/stores/auth'
+import { useOnboarding } from '@/composables/useOnboarding'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -82,7 +83,20 @@ router.beforeEach(async (to) => {
     return { name: 'login' }
   }
 
+  if (to.meta.auth && token) {
+    const { ensureAccountsLoaded, isOnboarding, isRouteAllowed, onboardingRoute } = useOnboarding()
+    await ensureAccountsLoaded()
+
+    if (isOnboarding.value && !isRouteAllowed(to.name)) {
+      return onboardingRoute.value
+    }
+  }
+
   if (to.meta.guest && token) {
+    const { isOnboarding, onboardingRoute } = useOnboarding()
+    if (isOnboarding.value && onboardingRoute.value) {
+      return onboardingRoute.value
+    }
     return { name: 'dashboard' }
   }
 })

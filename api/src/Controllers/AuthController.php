@@ -86,6 +86,14 @@ class AuthController extends Controller
         return $this->jsonSuccess($user);
     }
 
+    public function completeOnboarding(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $user = $this->authService->completeOnboarding($userId);
+
+        return $this->jsonSuccess($user);
+    }
+
     private function respondWithCookie(array $result, int $status = 200): Response
     {
         $cookie = $result['refresh_cookie'] ?? null;

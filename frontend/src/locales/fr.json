@@ -390,6 +390,13 @@
     "theme_dark": "Sombre",
     "save": "Enregistrer"
   },
+  "onboarding": {
+    "welcome": "Bienvenue ! Commencez par cr\u00e9er un compte de trading.",
+    "step_accounts_description": "Cr\u00e9ez votre premier compte de trading pour d\u00e9marrer.",
+    "step_symbols": "Actifs",
+    "step_symbols_description": "V\u00e9rifiez vos actifs et ajustez-les selon vos besoins. Quand vous \u00eates pr\u00eat, cliquez sur le bouton ci-dessous.",
+    "start_trading": "Commencer \u00e0 trader"
+  },
   "error": {
     "field_too_long": "Ce champ est trop long",
     "internal": "Erreur interne du serveur",

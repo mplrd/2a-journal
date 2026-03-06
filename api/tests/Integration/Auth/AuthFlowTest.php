@@ -876,6 +876,84 @@ class AuthFlowTest extends TestCase
         }
     }
 
+    // ── Onboarding ──────────────────────────────────────────────────
+
+    public function testRegisterReturnsOnboardingNull(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'onboard@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(201, $response->getStatusCode());
+        $this->assertArrayHasKey('onboarding_completed_at', $body['data']['user']);
+        $this->assertNull($body['data']['user']['onboarding_completed_at']);
+    }
+
+    public function testCompleteOnboardingSuccess(): void
+    {
+        $accessToken = $this->registerAndGetToken('onboard-complete@test.com');
+
+        $request = Request::create('POST', '/auth/complete-onboarding', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertNotNull($body['data']['onboarding_completed_at']);
+    }
+
+    public function testCompleteOnboardingIdempotent(): void
+    {
+        $accessToken = $this->registerAndGetToken('onboard-idem@test.com');
+
+        // First call
+        $request = Request::create('POST', '/auth/complete-onboarding', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $firstTimestamp = $response->getBody()['data']['onboarding_completed_at'];
+
+        // Second call should not change timestamp
+        $request = Request::create('POST', '/auth/complete-onboarding', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $secondTimestamp = $response->getBody()['data']['onboarding_completed_at'];
+
+        $this->assertSame($firstTimestamp, $secondTimestamp);
+    }
+
+    public function testCompleteOnboardingWithoutAuth(): void
+    {
+        $request = Request::create('POST', '/auth/complete-onboarding');
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    public function testOnboardingCompletedAtInMe(): void
+    {
+        $accessToken = $this->registerAndGetToken('onboard-me@test.com');
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertArrayHasKey('onboarding_completed_at', $body['data']);
+    }
+
     public function testProfilePictureUrlInMe(): void
     {
         $accessToken = $this->registerAndGetToken('avatar-me@test.com');

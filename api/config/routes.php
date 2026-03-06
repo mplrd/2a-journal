@@ -86,6 +86,7 @@ $router->get('/auth/me', [$authController, 'me'], [$authMiddleware]);
 $router->patch('/auth/profile', [$authController, 'updateProfile'], [$authMiddleware]);
 $router->patch('/auth/locale', [$authController, 'updateLocale'], [$authMiddleware]);
 $router->post('/auth/profile-picture', [$authController, 'uploadProfilePicture'], [$authMiddleware]);
+$router->post('/auth/complete-onboarding', [$authController, 'completeOnboarding'], [$authMiddleware]);
 
 // ── Symbols ─────────────────────────────────────────────────────
 $symbolService = new SymbolService($symbolRepo);

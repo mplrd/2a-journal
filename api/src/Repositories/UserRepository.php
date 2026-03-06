@@ -43,12 +43,22 @@ class UserRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, profile_picture, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
+            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, profile_picture, onboarding_completed_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
         $user = $stmt->fetch();
 
         return $user ?: null;
+    }
+
+    public function completeOnboarding(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET onboarding_completed_at = CURRENT_TIMESTAMP WHERE id = :id AND onboarding_completed_at IS NULL AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+
+        return $this->findById($id);
     }
 
     public function existsByEmail(string $email): bool

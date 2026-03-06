@@ -4,6 +4,7 @@ import { accountsService } from '@/services/accounts'
 
 export const useAccountsStore = defineStore('accounts', () => {
   const accounts = ref([])
+  const loaded = ref(false)
   const loading = ref(false)
   const error = ref(null)
 
@@ -13,6 +14,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     try {
       const response = await accountsService.list()
       accounts.value = response.data
+      loaded.value = true
       return response
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
@@ -71,12 +73,14 @@ export const useAccountsStore = defineStore('accounts', () => {
 
   function $reset() {
     accounts.value = []
+    loaded.value = false
     loading.value = false
     error.value = null
   }
 
   return {
     accounts,
+    loaded,
     loading,
     error,
     fetchAccounts,

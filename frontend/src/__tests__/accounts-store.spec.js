@@ -25,6 +25,7 @@ describe('accounts store', () => {
 
   it('initial state is empty', () => {
     expect(store.accounts).toEqual([])
+    expect(store.loaded).toBe(false)
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
   })
@@ -39,6 +40,7 @@ describe('accounts store', () => {
     await store.fetchAccounts()
 
     expect(store.accounts).toEqual(mockAccounts)
+    expect(store.loaded).toBe(true)
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
   })
@@ -111,6 +113,16 @@ describe('accounts store', () => {
     expect(store.error).toBe('accounts.error.forbidden')
     // Account should still be in list since delete failed
     expect(store.accounts).toHaveLength(1)
+  })
+
+  it('$reset clears loaded flag', async () => {
+    accountsService.list.mockResolvedValue({ success: true, data: [{ id: 1 }] })
+    await store.fetchAccounts()
+    expect(store.loaded).toBe(true)
+
+    store.$reset()
+    expect(store.loaded).toBe(false)
+    expect(store.accounts).toEqual([])
   })
 
   it('loading is true during operations', async () => {

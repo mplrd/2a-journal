@@ -144,6 +144,17 @@ class AuthService
         return $user;
     }
 
+    public function completeOnboarding(int $userId): array
+    {
+        $user = $this->userRepo->completeOnboarding($userId);
+
+        if (!$user) {
+            throw new UnauthorizedException('auth.error.token_invalid', 'TOKEN_INVALID');
+        }
+
+        return $user;
+    }
+
     private const SUPPORTED_LOCALES = ['fr', 'en'];
     private const SUPPORTED_THEMES = ['light', 'dark'];
     private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale'];
