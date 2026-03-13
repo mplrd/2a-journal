@@ -224,6 +224,7 @@ async function handleSymbolCreate(data) {
           :suggestions="filteredSetups"
           multiple
           class="w-full"
+          dropdown
           @complete="searchSetups"
         />
       </div>

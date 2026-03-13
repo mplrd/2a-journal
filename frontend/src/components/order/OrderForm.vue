@@ -223,6 +223,7 @@ async function handleSymbolCreate(data) {
           v-model="form.setup"
           :suggestions="filteredSetups"
           multiple
+          dropdown
           class="w-full"
           @complete="searchSetups"
         />
