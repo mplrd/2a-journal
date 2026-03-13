@@ -14,15 +14,61 @@ class StatsRepository
         $this->pdo = $pdo;
     }
 
-    public function getOverview(int $userId, array $filters = []): array
+    /**
+     * Build WHERE clause and params from filters.
+     * @return array{0: string, 1: array}
+     */
+    private function buildWhereClause(int $userId, array $filters = []): array
     {
         $where = 'WHERE p.user_id = :user_id AND t.status = :status';
         $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
 
         if (!empty($filters['account_id'])) {
             $where .= ' AND p.account_id = :account_id';
-            $params['account_id'] = $filters['account_id'];
+            $params['account_id'] = (int) $filters['account_id'];
         }
+
+        if (!empty($filters['date_from'])) {
+            $where .= ' AND t.closed_at >= :date_from';
+            $params['date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+
+        if (!empty($filters['date_to'])) {
+            $where .= ' AND t.closed_at <= :date_to';
+            $params['date_to'] = $filters['date_to'] . ' 23:59:59';
+        }
+
+        if (!empty($filters['direction'])) {
+            $where .= ' AND p.direction = :direction';
+            $params['direction'] = $filters['direction'];
+        }
+
+        if (!empty($filters['symbols'])) {
+            $placeholders = [];
+            foreach ($filters['symbols'] as $i => $symbol) {
+                $key = "sym_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = $symbol;
+            }
+            $where .= ' AND p.symbol IN (' . implode(', ', $placeholders) . ')';
+        }
+
+        if (!empty($filters['setups'])) {
+            $conditions = [];
+            foreach ($filters['setups'] as $i => $setup) {
+                $key = "setup_{$i}";
+                $conditions[] = "JSON_CONTAINS(p.setup, :{$key})";
+                $params[$key] = json_encode($setup);
+            }
+            $where .= ' AND (' . implode(' OR ', $conditions) . ')';
+        }
+
+        return [$where, $params];
+    }
+
+    public function getOverview(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT
                     COUNT(*) AS total_trades,
@@ -69,13 +115,7 @@ class StatsRepository
 
     public function getCumulativePnl(int $userId, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
-
-        if (!empty($filters['account_id'])) {
-            $where .= ' AND p.account_id = :account_id';
-            $params['account_id'] = $filters['account_id'];
-        }
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT t.closed_at, t.pnl, p.symbol
                 FROM trades t
@@ -104,13 +144,7 @@ class StatsRepository
 
     public function getWinLossDistribution(int $userId, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
-
-        if (!empty($filters['account_id'])) {
-            $where .= ' AND p.account_id = :account_id';
-            $params['account_id'] = $filters['account_id'];
-        }
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT
                     SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS win,
@@ -133,13 +167,7 @@ class StatsRepository
 
     public function getPnlBySymbol(int $userId, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
-
-        if (!empty($filters['account_id'])) {
-            $where .= ' AND p.account_id = :account_id';
-            $params['account_id'] = $filters['account_id'];
-        }
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT p.symbol,
                     COUNT(*) AS trade_count,
@@ -156,15 +184,107 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
+    private function dimensionStatsSelect(): string
+    {
+        return "COUNT(*) AS total_trades,
+                SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) AS losses,
+                CASE WHEN COUNT(*) > 0
+                    THEN ROUND(SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+                    ELSE 0
+                END AS win_rate,
+                COALESCE(SUM(t.pnl), 0) AS total_pnl,
+                ROUND(AVG(t.risk_reward), 2) AS avg_rr,
+                CASE WHEN SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END) > 0
+                    THEN ROUND(
+                        SUM(CASE WHEN t.pnl > 0 THEN t.pnl ELSE 0 END)
+                        / SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END),
+                        2
+                    )
+                    ELSE NULL
+                END AS profit_factor";
+    }
+
+    public function getStatsBySymbol(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        $sql = "SELECT p.symbol, {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY p.symbol
+                ORDER BY total_pnl DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function getStatsByDirection(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        $sql = "SELECT p.direction, {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY p.direction
+                ORDER BY total_pnl DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function getStatsBySetup(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        // JSON_UNQUOTE + JSON_EXTRACT to flatten the setup array
+        $sql = "SELECT s.setup, {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                CROSS JOIN JSON_TABLE(p.setup, '$[*]' COLUMNS (setup VARCHAR(255) PATH '$')) AS s
+                {$where}
+                GROUP BY s.setup
+                ORDER BY total_pnl DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function getStatsByPeriod(int $userId, string $group = 'month', array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        $periodExpr = match ($group) {
+            'day' => "DATE_FORMAT(t.closed_at, '%Y-%m-%d')",
+            'week' => "DATE_FORMAT(t.closed_at, '%x-W%v')",
+            'year' => "DATE_FORMAT(t.closed_at, '%Y')",
+            default => "DATE_FORMAT(t.closed_at, '%Y-%m')",
+        };
+
+        $sql = "SELECT {$periodExpr} AS period, {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY period
+                ORDER BY period ASC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
     public function getRecentTrades(int $userId, int $limit = 5, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
-
-        if (!empty($filters['account_id'])) {
-            $where .= ' AND p.account_id = :account_id';
-            $params['account_id'] = $filters['account_id'];
-        }
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT t.id, t.pnl, t.exit_type, t.closed_at, t.risk_reward,
                        p.symbol, p.direction

@@ -185,3 +185,7 @@ $statsController = new StatsController($statsService);
 
 $router->get('/stats/overview', [$statsController, 'dashboard'], [$authMiddleware]);
 $router->get('/stats/charts', [$statsController, 'charts'], [$authMiddleware]);
+$router->get('/stats/by-symbol', [$statsController, 'bySymbol'], [$authMiddleware]);
+$router->get('/stats/by-direction', [$statsController, 'byDirection'], [$authMiddleware]);
+$router->get('/stats/by-setup', [$statsController, 'bySetup'], [$authMiddleware]);
+$router->get('/stats/by-period', [$statsController, 'byPeriod'], [$authMiddleware]);

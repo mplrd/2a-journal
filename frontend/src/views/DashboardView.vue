@@ -8,6 +8,7 @@ import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner.v
 import KpiCards from '@/components/dashboard/KpiCards.vue'
 import CumulativePnlChart from '@/components/dashboard/CumulativePnlChart.vue'
 import WinLossChart from '@/components/dashboard/WinLossChart.vue'
+import PnlBySymbolChart from '@/components/dashboard/PnlBySymbolChart.vue'
 import RecentTrades from '@/components/dashboard/RecentTrades.vue'
 
 const { t } = useI18n()
@@ -54,9 +55,10 @@ async function applyFilters() {
     <template v-else>
       <KpiCards :overview="statsStore.overview" class="mb-6" />
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <CumulativePnlChart :data="statsStore.charts?.cumulative_pnl" />
         <WinLossChart :data="statsStore.charts?.win_loss" />
+        <PnlBySymbolChart :data="statsStore.charts?.pnl_by_symbol" />
       </div>
 
       <RecentTrades :trades="statsStore.recentTrades" />

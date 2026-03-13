@@ -133,6 +133,74 @@ class StatsServiceTest extends TestCase
         $this->assertSame(5, $result['win_loss']['win']);
     }
 
+    // ── Filter validation ───────────────────────────────────────
+
+    public function testValidateFiltersPassesValidDateRange(): void
+    {
+        $this->statsRepo->method('getOverview')->willReturn($this->fakeOverview());
+        $this->statsRepo->method('getRecentTrades')->willReturn([]);
+
+        $this->statsRepo->expects($this->once())
+            ->method('getOverview')
+            ->with(1, ['date_from' => '2026-01-01', 'date_to' => '2026-01-31']);
+
+        $this->service->getDashboard(1, ['date_from' => '2026-01-01', 'date_to' => '2026-01-31']);
+    }
+
+    public function testValidateFiltersRejectsInvalidDateFrom(): void
+    {
+        $this->expectException(\App\Exceptions\ValidationException::class);
+        $this->service->getDashboard(1, ['date_from' => 'not-a-date']);
+    }
+
+    public function testValidateFiltersRejectsInvalidDateTo(): void
+    {
+        $this->expectException(\App\Exceptions\ValidationException::class);
+        $this->service->getDashboard(1, ['date_to' => '2026-13-01']);
+    }
+
+    public function testValidateFiltersRejectsInvalidDirection(): void
+    {
+        $this->expectException(\App\Exceptions\ValidationException::class);
+        $this->service->getDashboard(1, ['direction' => 'LONG']);
+    }
+
+    public function testValidateFiltersPassesValidDirection(): void
+    {
+        $this->statsRepo->method('getOverview')->willReturn($this->fakeOverview());
+        $this->statsRepo->method('getRecentTrades')->willReturn([]);
+
+        $this->statsRepo->expects($this->once())
+            ->method('getOverview')
+            ->with(1, ['direction' => 'BUY']);
+
+        $this->service->getDashboard(1, ['direction' => 'BUY']);
+    }
+
+    public function testValidateFiltersPassesSymbolsArray(): void
+    {
+        $this->statsRepo->method('getOverview')->willReturn($this->fakeOverview());
+        $this->statsRepo->method('getRecentTrades')->willReturn([]);
+
+        $this->statsRepo->expects($this->once())
+            ->method('getOverview')
+            ->with(1, ['symbols' => ['NASDAQ', 'DAX']]);
+
+        $this->service->getDashboard(1, ['symbols' => ['NASDAQ', 'DAX']]);
+    }
+
+    public function testValidateFiltersPassesSetupsArray(): void
+    {
+        $this->statsRepo->method('getOverview')->willReturn($this->fakeOverview());
+        $this->statsRepo->method('getRecentTrades')->willReturn([]);
+
+        $this->statsRepo->expects($this->once())
+            ->method('getOverview')
+            ->with(1, ['setups' => ['Breakout', 'Pullback']]);
+
+        $this->service->getDashboard(1, ['setups' => ['Breakout', 'Pullback']]);
+    }
+
     public function testGetChartsProfitFactorNullSafety(): void
     {
         $this->statsRepo->method('getCumulativePnl')->willReturn([]);

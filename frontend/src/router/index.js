@@ -67,6 +67,11 @@ const router = createRouter({
           component: () => import('@/views/TradesView.vue'),
         },
         {
+          path: 'performance',
+          name: 'performance',
+          component: () => import('@/views/PerformanceView.vue'),
+        },
+        {
           path: 'account',
           name: 'account',
           component: () => import('@/views/AccountView.vue'),

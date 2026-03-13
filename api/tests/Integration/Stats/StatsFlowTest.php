@@ -108,20 +108,33 @@ class StatsFlowTest extends TestCase
 
     private function createAndCloseTrade(int $accountId, float $exitPrice, string $exitType = 'TP'): void
     {
-        // Create trade
+        $this->createAndCloseTradeWithOptions($accountId, $exitPrice, $exitType);
+    }
+
+    private function createAndCloseTradeWithDate(int $accountId, float $exitPrice, string $exitType, string $closedAt): void
+    {
+        $this->createAndCloseTradeWithOptions($accountId, $exitPrice, $exitType, [
+            'opened_at' => $closedAt,
+        ]);
+        // Update closed_at directly since the close API uses current time
+        $stmt = $this->pdo->prepare('UPDATE trades SET closed_at = :closed_at ORDER BY id DESC LIMIT 1');
+        $stmt->execute(['closed_at' => $closedAt]);
+    }
+
+    private function createAndCloseTradeWithOptions(int $accountId, float $exitPrice, string $exitType = 'TP', array $options = []): void
+    {
         $response = $this->router->dispatch($this->authRequest('POST', '/trades', [
             'account_id' => $accountId,
-            'direction' => 'BUY',
-            'symbol' => 'NASDAQ',
+            'direction' => $options['direction'] ?? 'BUY',
+            'symbol' => $options['symbol'] ?? 'NASDAQ',
             'entry_price' => 18500,
             'size' => 1,
             'setup' => ['Breakout'],
             'sl_points' => 50,
-            'opened_at' => '2026-01-15 10:00:00',
+            'opened_at' => $options['opened_at'] ?? '2026-01-15 10:00:00',
         ]));
         $tradeId = $response->getBody()['data']['id'];
 
-        // Close trade
         $this->router->dispatch($this->authRequest('POST', "/trades/{$tradeId}/close", [
             'exit_price' => $exitPrice,
             'exit_size' => 1,
@@ -188,6 +201,152 @@ class StatsFlowTest extends TestCase
         $this->assertArrayHasKey('cumulative_pnl', $body['data']);
         $this->assertArrayHasKey('win_loss', $body['data']);
         $this->assertArrayHasKey('pnl_by_symbol', $body['data']);
+    }
+
+    // ── Advanced filters ────────────────────────────────────────
+
+    public function testOverviewFiltersDateRange(): void
+    {
+        $this->createAndCloseTradeWithDate($this->accountId, 18600, 'TP', '2026-01-10 10:00:00');
+        $this->createAndCloseTradeWithDate($this->accountId, 18400, 'SL', '2026-01-20 10:00:00');
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/overview', [], [
+                'date_from' => '2026-01-08',
+                'date_to' => '2026-01-12',
+            ])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, $body['data']['overview']['total_trades']);
+    }
+
+    public function testOverviewFiltersDirection(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['direction' => 'BUY']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['direction' => 'SELL']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/overview', [], ['direction' => 'SELL'])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, $body['data']['overview']['total_trades']);
+    }
+
+    public function testChartsFiltersSymbols(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'DAX']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'EURUSD']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/charts', [], ['symbols' => 'NASDAQ,DAX'])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(2, $body['data']['cumulative_pnl']);
+    }
+
+    public function testOverviewRejectsInvalidDirection(): void
+    {
+        try {
+            $this->router->dispatch(
+                $this->authRequest('GET', '/stats/overview', [], ['direction' => 'LONG'])
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+        }
+    }
+
+    // ── Dimension endpoints ─────────────────────────────────────
+
+    public function testBySymbolReturns200WithStructure(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18400, 'SL', ['symbol' => 'DAX']);
+
+        $response = $this->router->dispatch($this->authRequest('GET', '/stats/by-symbol'));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertCount(2, $body['data']);
+        $this->assertArrayHasKey('symbol', $body['data'][0]);
+        $this->assertArrayHasKey('total_trades', $body['data'][0]);
+        $this->assertArrayHasKey('wins', $body['data'][0]);
+        $this->assertArrayHasKey('win_rate', $body['data'][0]);
+        $this->assertArrayHasKey('profit_factor', $body['data'][0]);
+    }
+
+    public function testByDirectionReturns200WithStructure(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['direction' => 'BUY']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18400, 'SL', ['direction' => 'SELL']);
+
+        $response = $this->router->dispatch($this->authRequest('GET', '/stats/by-direction'));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(2, $body['data']);
+        $this->assertArrayHasKey('direction', $body['data'][0]);
+    }
+
+    public function testBySetupReturns200WithStructure(): void
+    {
+        $this->createAndCloseTrade($this->accountId, 18600, 'TP');
+
+        $response = $this->router->dispatch($this->authRequest('GET', '/stats/by-setup'));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(1, $body['data']);
+        $this->assertArrayHasKey('setup', $body['data'][0]);
+    }
+
+    public function testByPeriodReturns200WithGrouping(): void
+    {
+        $this->createAndCloseTrade($this->accountId, 18600, 'TP');
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/by-period', [], ['group' => 'month'])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertGreaterThanOrEqual(1, count($body['data']));
+        $this->assertArrayHasKey('period', $body['data'][0]);
+        $this->assertArrayHasKey('total_trades', $body['data'][0]);
+    }
+
+    public function testByPeriodRejectsInvalidGroup(): void
+    {
+        try {
+            $this->router->dispatch(
+                $this->authRequest('GET', '/stats/by-period', [], ['group' => 'invalid'])
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+        }
+    }
+
+    public function testBySymbolSupportsAdvancedFilters(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['direction' => 'BUY', 'symbol' => 'NASDAQ']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['direction' => 'SELL', 'symbol' => 'NASDAQ']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/by-symbol', [], ['direction' => 'BUY'])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, (int) $body['data'][0]['total_trades']);
     }
 
     // ── Empty state ─────────────────────────────────────────────

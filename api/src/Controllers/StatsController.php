@@ -36,13 +36,69 @@ class StatsController extends Controller
         return $this->jsonSuccess($result);
     }
 
+    public function bySymbol(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getStatsBySymbol($userId, $filters));
+    }
+
+    public function byDirection(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getStatsByDirection($userId, $filters));
+    }
+
+    public function bySetup(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getStatsBySetup($userId, $filters));
+    }
+
+    public function byPeriod(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        $group = $request->getQuery('group') ?? 'month';
+        return $this->jsonSuccess($this->statsService->getStatsByPeriod($userId, $group, $filters));
+    }
+
     private function extractFilters(Request $request): array
     {
         $filters = [];
+
         $accountId = $request->getQuery('account_id');
         if ($accountId !== null && $accountId !== '') {
             $filters['account_id'] = $accountId;
         }
+
+        $dateFrom = $request->getQuery('date_from');
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $filters['date_from'] = $dateFrom;
+        }
+
+        $dateTo = $request->getQuery('date_to');
+        if ($dateTo !== null && $dateTo !== '') {
+            $filters['date_to'] = $dateTo;
+        }
+
+        $direction = $request->getQuery('direction');
+        if ($direction !== null && $direction !== '') {
+            $filters['direction'] = $direction;
+        }
+
+        $symbols = $request->getQuery('symbols');
+        if ($symbols !== null && $symbols !== '') {
+            $filters['symbols'] = explode(',', $symbols);
+        }
+
+        $setups = $request->getQuery('setups');
+        if ($setups !== null && $setups !== '') {
+            $filters['setups'] = explode(',', $setups);
+        }
+
         return $filters;
     }
 }

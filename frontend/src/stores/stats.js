@@ -11,6 +11,13 @@ export const useStatsStore = defineStore('stats', () => {
   const error = ref(null)
   const filters = ref({})
 
+  // Dimension stats (Phase B)
+  const bySymbol = ref([])
+  const byDirection = ref([])
+  const bySetup = ref([])
+  const byPeriod = ref([])
+  const dimensionsLoading = ref(false)
+
   async function fetchDashboard() {
     loading.value = true
     error.value = null
@@ -41,6 +48,58 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
+  async function fetchBySymbol() {
+    dimensionsLoading.value = true
+    try {
+      const response = await statsService.getBySymbol(filters.value)
+      bySymbol.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      dimensionsLoading.value = false
+    }
+  }
+
+  async function fetchByDirection() {
+    dimensionsLoading.value = true
+    try {
+      const response = await statsService.getByDirection(filters.value)
+      byDirection.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      dimensionsLoading.value = false
+    }
+  }
+
+  async function fetchBySetup() {
+    dimensionsLoading.value = true
+    try {
+      const response = await statsService.getBySetup(filters.value)
+      bySetup.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      dimensionsLoading.value = false
+    }
+  }
+
+  async function fetchByPeriod(group = 'month') {
+    dimensionsLoading.value = true
+    try {
+      const response = await statsService.getByPeriod(filters.value, group)
+      byPeriod.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      dimensionsLoading.value = false
+    }
+  }
+
   function setFilters(newFilters) {
     filters.value = { ...newFilters }
   }
@@ -53,6 +112,11 @@ export const useStatsStore = defineStore('stats', () => {
     chartsLoading.value = false
     error.value = null
     filters.value = {}
+    bySymbol.value = []
+    byDirection.value = []
+    bySetup.value = []
+    byPeriod.value = []
+    dimensionsLoading.value = false
   }
 
   return {
@@ -63,8 +127,17 @@ export const useStatsStore = defineStore('stats', () => {
     chartsLoading,
     error,
     filters,
+    bySymbol,
+    byDirection,
+    bySetup,
+    byPeriod,
+    dimensionsLoading,
     fetchDashboard,
     fetchCharts,
+    fetchBySymbol,
+    fetchByDirection,
+    fetchBySetup,
+    fetchByPeriod,
     setFilters,
     $reset,
   }

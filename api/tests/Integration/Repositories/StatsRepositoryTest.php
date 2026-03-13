@@ -99,7 +99,7 @@ class StatsRepositoryTest extends TestCase
             'sl_points' => '50.00',
             'sl_price' => '18450.00000',
             'position_type' => 'TRADE',
-        ], array_intersect_key($overrides, array_flip(['account_id', 'symbol', 'direction', 'size', 'entry_price']))));
+        ], array_intersect_key($overrides, array_flip(['account_id', 'symbol', 'direction', 'size', 'entry_price', 'setup']))));
 
         $trade = $this->tradeRepo->create([
             'position_id' => (int) $position['id'],
@@ -266,6 +266,241 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(150.0, (float) $indexed['NASDAQ']['total_pnl']);
         $this->assertSame(2, (int) $indexed['NASDAQ']['trade_count']);
         $this->assertEquals(-30.0, (float) $indexed['DAX']['total_pnl']);
+    }
+
+    // ── Advanced filters ─────────────────────────────────────────
+
+    public function testGetOverviewFiltersDateRange(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-10 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-20 10:00:00']);
+
+        $overview = $this->repo->getOverview($this->userId, [
+            'date_from' => '2026-01-12',
+            'date_to' => '2026-01-16',
+        ]);
+
+        $this->assertSame(1, $overview['total_trades']);
+        $this->assertEquals(200.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetOverviewFiltersDirection(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['direction' => 'BUY']);
+        $this->createClosedTrade(200.0, 'TP', ['direction' => 'SELL']);
+
+        $overview = $this->repo->getOverview($this->userId, ['direction' => 'SELL']);
+
+        $this->assertSame(1, $overview['total_trades']);
+        $this->assertEquals(200.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetOverviewFiltersSymbols(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createClosedTrade(200.0, 'TP', ['symbol' => 'DAX']);
+        $this->createClosedTrade(-50.0, 'SL', ['symbol' => 'EURUSD']);
+
+        $overview = $this->repo->getOverview($this->userId, ['symbols' => ['NASDAQ', 'DAX']]);
+
+        $this->assertSame(2, $overview['total_trades']);
+        $this->assertEquals(300.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetOverviewFiltersSetups(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["Breakout"]']);
+        $this->createClosedTrade(200.0, 'TP', ['setup' => '["Pullback"]']);
+        $this->createClosedTrade(-50.0, 'SL', ['setup' => '["Range"]']);
+
+        $overview = $this->repo->getOverview($this->userId, ['setups' => ['Breakout', 'Pullback']]);
+
+        $this->assertSame(2, $overview['total_trades']);
+        $this->assertEquals(300.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetOverviewFiltersCombined(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', [
+            'direction' => 'BUY', 'symbol' => 'NASDAQ',
+            'closed_at' => '2026-01-15 10:00:00',
+        ]);
+        $this->createClosedTrade(200.0, 'TP', [
+            'direction' => 'BUY', 'symbol' => 'NASDAQ',
+            'closed_at' => '2026-01-20 10:00:00',
+        ]);
+        $this->createClosedTrade(-50.0, 'SL', [
+            'direction' => 'SELL', 'symbol' => 'NASDAQ',
+            'closed_at' => '2026-01-15 10:00:00',
+        ]);
+
+        $overview = $this->repo->getOverview($this->userId, [
+            'direction' => 'BUY',
+            'symbols' => ['NASDAQ'],
+            'date_from' => '2026-01-14',
+            'date_to' => '2026-01-16',
+        ]);
+
+        $this->assertSame(1, $overview['total_trades']);
+        $this->assertEquals(100.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetCumulativePnlFiltersDateRange(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-10 10:00:00']);
+        $this->createClosedTrade(-30.0, 'SL', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(50.0, 'TP', ['closed_at' => '2026-01-20 10:00:00']);
+
+        $series = $this->repo->getCumulativePnl($this->userId, [
+            'date_from' => '2026-01-12',
+            'date_to' => '2026-01-18',
+        ]);
+
+        $this->assertCount(1, $series);
+        $this->assertEquals(-30.0, (float) $series[0]['pnl']);
+    }
+
+    public function testGetPnlBySymbolFiltersDirection(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ', 'direction' => 'BUY']);
+        $this->createClosedTrade(200.0, 'TP', ['symbol' => 'NASDAQ', 'direction' => 'SELL']);
+        $this->createClosedTrade(-30.0, 'SL', ['symbol' => 'DAX', 'direction' => 'BUY']);
+
+        $bySymbol = $this->repo->getPnlBySymbol($this->userId, ['direction' => 'BUY']);
+
+        $indexed = [];
+        foreach ($bySymbol as $row) {
+            $indexed[$row['symbol']] = $row;
+        }
+
+        $this->assertCount(2, $bySymbol);
+        $this->assertEquals(100.0, (float) $indexed['NASDAQ']['total_pnl']);
+        $this->assertEquals(-30.0, (float) $indexed['DAX']['total_pnl']);
+    }
+
+    // ── getStatsBySymbol ───────────────────────────────────────
+
+    public function testGetStatsBySymbolReturnsGroupedMetrics(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createClosedTrade(200.0, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createClosedTrade(-50.0, 'SL', ['symbol' => 'DAX']);
+
+        $result = $this->repo->getStatsBySymbol($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['symbol']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $indexed['NASDAQ']['total_trades']);
+        $this->assertSame(2, (int) $indexed['NASDAQ']['wins']);
+        $this->assertSame(0, (int) $indexed['NASDAQ']['losses']);
+        $this->assertEquals(300.0, (float) $indexed['NASDAQ']['total_pnl']);
+        $this->assertArrayHasKey('win_rate', $indexed['NASDAQ']);
+        $this->assertArrayHasKey('avg_rr', $indexed['NASDAQ']);
+        $this->assertArrayHasKey('profit_factor', $indexed['NASDAQ']);
+    }
+
+    public function testGetStatsBySymbolRespectsFilters(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ', 'direction' => 'BUY']);
+        $this->createClosedTrade(200.0, 'TP', ['symbol' => 'NASDAQ', 'direction' => 'SELL']);
+
+        $result = $this->repo->getStatsBySymbol($this->userId, ['direction' => 'BUY']);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
+    // ── getStatsByDirection ─────────────────────────────────────
+
+    public function testGetStatsByDirectionReturnsGroupedMetrics(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['direction' => 'BUY']);
+        $this->createClosedTrade(200.0, 'TP', ['direction' => 'BUY']);
+        $this->createClosedTrade(-50.0, 'SL', ['direction' => 'SELL']);
+
+        $result = $this->repo->getStatsByDirection($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['direction']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $indexed['BUY']['total_trades']);
+        $this->assertSame(2, (int) $indexed['BUY']['wins']);
+        $this->assertEquals(300.0, (float) $indexed['BUY']['total_pnl']);
+        $this->assertSame(1, (int) $indexed['SELL']['total_trades']);
+    }
+
+    // ── getStatsBySetup ─────────────────────────────────────────
+
+    public function testGetStatsBySetupReturnsGroupedMetrics(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["Breakout"]']);
+        $this->createClosedTrade(200.0, 'TP', ['setup' => '["Breakout"]']);
+        $this->createClosedTrade(-50.0, 'SL', ['setup' => '["Pullback"]']);
+
+        $result = $this->repo->getStatsBySetup($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['setup']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $indexed['Breakout']['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed['Breakout']['total_pnl']);
+        $this->assertSame(1, (int) $indexed['Pullback']['total_trades']);
+    }
+
+    // ── getStatsByPeriod ────────────────────────────────────────
+
+    public function testGetStatsByPeriodGroupsByMonth(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-20 10:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-02-10 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'month');
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['period']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $indexed['2026-01']['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed['2026-01']['total_pnl']);
+        $this->assertSame(1, (int) $indexed['2026-02']['total_trades']);
+    }
+
+    public function testGetStatsByPeriodGroupsByDay(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 14:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-16 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'day');
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $result[0]['total_trades']);
+    }
+
+    public function testGetStatsByPeriodGroupsByYear(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-06-10 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'year');
+
+        $this->assertCount(1, $result);
+        $this->assertSame(2, (int) $result[0]['total_trades']);
+        $this->assertSame('2026', $result[0]['period']);
     }
 
     // ── getRecentTrades ─────────────────────────────────────────
