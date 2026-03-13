@@ -113,17 +113,23 @@ describe('useOnboarding', () => {
       expect(isRouteAllowed('positions')).toBe(false)
     })
 
-    it('allows accounts, symbols and account at symbols step', () => {
+    it('allows accounts and account at symbols step', () => {
       authStore.user = { id: 1, onboarding_completed_at: null }
       accountsStore.accounts = [{ id: 1 }]
       const { isRouteAllowed } = useOnboarding()
       expect(isRouteAllowed('accounts')).toBe(true)
-      expect(isRouteAllowed('symbols')).toBe(true)
       expect(isRouteAllowed('account')).toBe(true)
       expect(isRouteAllowed('dashboard')).toBe(false)
       expect(isRouteAllowed('trades')).toBe(false)
       expect(isRouteAllowed('orders')).toBe(false)
       expect(isRouteAllowed('positions')).toBe(false)
+    })
+
+    it('redirects symbols step to account route with tab query', () => {
+      authStore.user = { id: 1, onboarding_completed_at: null }
+      accountsStore.accounts = [{ id: 1 }]
+      const { onboardingRoute } = useOnboarding()
+      expect(onboardingRoute.value).toEqual({ name: 'account', query: { tab: 'assets' } })
     })
   })
 

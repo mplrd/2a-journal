@@ -5,7 +5,7 @@ import { authService } from '@/services/auth'
 
 const STEP_ROUTES = {
   accounts: ['accounts', 'account'],
-  symbols: ['accounts', 'symbols', 'account'],
+  symbols: ['accounts', 'account'],
 }
 
 export function useOnboarding() {
@@ -24,6 +24,9 @@ export function useOnboarding() {
 
   const onboardingRoute = computed(() => {
     if (!currentStep.value) return null
+    if (currentStep.value === 'symbols') {
+      return { name: 'account', query: { tab: 'assets' } }
+    }
     return { name: currentStep.value }
   })
 

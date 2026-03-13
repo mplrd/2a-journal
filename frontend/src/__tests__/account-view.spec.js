@@ -9,13 +9,40 @@ import AccountView from '@/views/AccountView.vue'
 import fr from '@/locales/fr.json'
 import en from '@/locales/en.json'
 
+const mockRoute = { query: {} }
+const mockRouter = { push: vi.fn(), replace: vi.fn() }
+
+vi.mock('vue-router', () => ({
+  useRoute: () => mockRoute,
+  useRouter: () => mockRouter,
+}))
+
 vi.mock('@/services/auth', () => ({
   authService: {
     updateProfile: vi.fn(),
   },
 }))
 
-function createWrapper() {
+vi.mock('@/services/setups', () => ({
+  setupsService: {
+    list: vi.fn().mockResolvedValue({ data: [] }),
+    create: vi.fn(),
+    remove: vi.fn(),
+  },
+}))
+
+vi.mock('@/services/symbols', () => ({
+  symbolsService: {
+    list: vi.fn().mockResolvedValue({ data: [] }),
+    create: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+  },
+}))
+
+function createWrapper(query = {}) {
+  mockRoute.query = query
+
   const pinia = createPinia()
   setActivePinia(pinia)
 
@@ -29,6 +56,7 @@ function createWrapper() {
     default_currency: 'EUR',
     theme: 'light',
     locale: 'fr',
+    onboarding_completed_at: '2024-01-01',
   }
 
   const i18n = createI18n({
@@ -42,17 +70,17 @@ function createWrapper() {
     global: {
       plugins: [pinia, i18n, PrimeVue, ToastService],
       stubs: {
-        InputText: {
-          template: '<input :value="modelValue" :disabled="disabled" :data-testid="$attrs[\'data-testid\']" />',
-          props: ['modelValue', 'disabled'],
+        ProfileTab: { template: '<div data-testid="profile-tab">Profile</div>' },
+        AssetsTab: { template: '<div data-testid="assets-tab">Assets</div>' },
+        SetupsTab: { template: '<div data-testid="setups-tab">Setups</div>' },
+        TabView: {
+          template: '<div data-testid="tab-view"><slot /></div>',
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
         },
-        Select: {
-          template: '<select :data-testid="$attrs[\'data-testid\']"></select>',
-          props: ['modelValue', 'options', 'optionLabel', 'optionValue', 'filter'],
-        },
-        Button: {
-          template: '<button :data-testid="$attrs[\'data-testid\']" type="submit">{{ label }}</button>',
-          props: ['label', 'loading'],
+        TabPanel: {
+          template: '<div :data-testid="`tab-panel-${value}`"><slot /></div>',
+          props: ['header', 'value'],
         },
       },
     },
@@ -63,99 +91,39 @@ describe('AccountView', () => {
   beforeEach(() => {
     localStorage.clear()
     document.documentElement.classList.remove('dark-mode')
+    mockRoute.query = {}
   })
 
-  it('renders profile form fields', () => {
+  it('renders TabView with three tab panels', () => {
     const wrapper = createWrapper()
-    expect(wrapper.find('[data-testid="input-first-name"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="input-last-name"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="input-email"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="select-timezone"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="select-currency"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="select-theme"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="select-locale"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="save-button"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(true)
   })
 
-  it('initializes form from user data', async () => {
+  it('renders page title', () => {
     const wrapper = createWrapper()
-    await wrapper.vm.$nextTick()
-    const firstNameInput = wrapper.find('[data-testid="input-first-name"]')
-    expect(firstNameInput.element.value).toBe('John')
-    const emailInput = wrapper.find('[data-testid="input-email"]')
-    expect(emailInput.element.value).toBe('test@test.com')
-    expect(emailInput.element.disabled).toBe(true)
+    expect(wrapper.find('h2').exists()).toBe(true)
   })
 
-  it('calls updateProfile on save', async () => {
+  it('has profile tab as default active', () => {
     const wrapper = createWrapper()
-    const authStore = useAuthStore()
-    authStore.updateProfile = vi.fn()
-
-    await wrapper.find('[data-testid="account-form"]').trigger('submit')
-
-    expect(authStore.updateProfile).toHaveBeenCalledWith({
-      first_name: 'John',
-      last_name: 'Doe',
-      timezone: 'Europe/Paris',
-      default_currency: 'EUR',
-      theme: 'light',
-      locale: 'fr',
-    })
+    expect(wrapper.vm.activeTab).toBe('profile')
   })
 
-  it('renders avatar with initials when no picture', () => {
-    const wrapper = createWrapper()
-    expect(wrapper.find('[data-testid="avatar-initials"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="avatar-initials"]').text()).toBe('JD')
-    expect(wrapper.find('[data-testid="avatar-image"]').exists()).toBe(false)
+  it('activates assets tab from query param', () => {
+    const wrapper = createWrapper({ tab: 'assets' })
+    expect(wrapper.vm.activeTab).toBe('assets')
   })
 
-  it('renders avatar with image when picture exists', () => {
-    const pinia = createPinia()
-    setActivePinia(pinia)
+  it('activates setups tab from query param', () => {
+    const wrapper = createWrapper({ tab: 'setups' })
+    expect(wrapper.vm.activeTab).toBe('setups')
+  })
 
-    const authStore = useAuthStore()
-    authStore.user = {
-      id: 1,
-      email: 'test@test.com',
-      first_name: 'John',
-      last_name: 'Doe',
-      timezone: 'Europe/Paris',
-      default_currency: 'EUR',
-      theme: 'light',
-      locale: 'fr',
-      profile_picture: 'uploads/avatars/1_123456.jpg',
-    }
-
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'fr',
-      fallbackLocale: 'en',
-      messages: { fr, en },
-    })
-
-    const wrapper = mount(AccountView, {
-      global: {
-        plugins: [pinia, i18n, PrimeVue, ToastService],
-        stubs: {
-          InputText: {
-            template: '<input :value="modelValue" :disabled="disabled" :data-testid="$attrs[\'data-testid\']" />',
-            props: ['modelValue', 'disabled'],
-          },
-          Select: {
-            template: '<select :data-testid="$attrs[\'data-testid\']"></select>',
-            props: ['modelValue', 'options', 'optionLabel', 'optionValue', 'filter'],
-          },
-          Button: {
-            template: '<button :data-testid="$attrs[\'data-testid\']" type="submit">{{ label }}</button>',
-            props: ['label', 'loading'],
-          },
-        },
-      },
-    })
-
-    expect(wrapper.find('[data-testid="avatar-image"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="avatar-initials"]').exists()).toBe(false)
+  it('defaults to profile for unknown tab query', () => {
+    const wrapper = createWrapper({ tab: 'unknown' })
+    expect(wrapper.vm.activeTab).toBe('profile')
   })
 })

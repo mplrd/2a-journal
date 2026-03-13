@@ -62,11 +62,6 @@ const router = createRouter({
           component: () => import('@/views/OrdersView.vue'),
         },
         {
-          path: 'symbols',
-          name: 'symbols',
-          component: () => import('@/views/SymbolsView.vue'),
-        },
-        {
           path: 'trades',
           name: 'trades',
           component: () => import('@/views/TradesView.vue'),

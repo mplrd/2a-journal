@@ -367,7 +367,13 @@
     }
   },
   "setups": {
-    "title": "Setups",
+    "title": "Mes Setups",
+    "label": "Label",
+    "add": "Ajouter",
+    "placeholder": "Nom du setup...",
+    "empty": "Aucun setup configuré",
+    "confirm_delete_title": "Supprimer le setup",
+    "confirm_delete": "Supprimer le setup « {label} » ? Il ne sera plus proposé dans les formulaires.",
     "error": {
       "field_required": "Ce champ est requis",
       "not_found": "Setup non trouvé",
@@ -409,7 +415,12 @@
     "change_picture": "Changer la photo",
     "theme_light": "Clair",
     "theme_dark": "Sombre",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "tabs": {
+      "profile": "Profil",
+      "assets": "Mes Actifs",
+      "setups": "Mes Setups"
+    }
   },
   "onboarding": {
     "welcome": "Bienvenue ! Commencez par ajouter vos comptes de trading.",

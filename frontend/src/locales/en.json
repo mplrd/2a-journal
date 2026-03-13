@@ -367,7 +367,13 @@
     }
   },
   "setups": {
-    "title": "Setups",
+    "title": "My Setups",
+    "label": "Label",
+    "add": "Add",
+    "placeholder": "Setup name...",
+    "empty": "No setups configured",
+    "confirm_delete_title": "Delete setup",
+    "confirm_delete": "Delete setup \"{label}\"? It will no longer be available in forms.",
     "error": {
       "field_required": "This field is required",
       "not_found": "Setup not found",
@@ -409,7 +415,12 @@
     "change_picture": "Change picture",
     "theme_light": "Light",
     "theme_dark": "Dark",
-    "save": "Save"
+    "save": "Save",
+    "tabs": {
+      "profile": "Profile",
+      "assets": "My Assets",
+      "setups": "My Setups"
+    }
   },
   "onboarding": {
     "welcome": "Welcome! Start by adding your trading accounts.",
