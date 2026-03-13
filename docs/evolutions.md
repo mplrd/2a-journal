@@ -80,6 +80,28 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Templates de format adaptés par plateforme
 - Branding personnel (nom/pseudo, logo)
 
+## Sécurité / Auth
+
+### 14. Authentification à deux facteurs (2FA/MFA)
+- TOTP (Google Authenticator, Authy) ou WebAuthn
+- Activation optionnelle dans les préférences du compte
+- Codes de récupération en cas de perte du device
+
+### 15. Audit log des événements d'authentification
+- Historique des connexions (date, IP, user-agent)
+- Alertes de connexion depuis un nouvel appareil/IP
+- Vue dédiée dans le profil utilisateur
+
+### 16. Blocage de l'app sans vérification d'email
+- Actuellement : un bandeau d'avertissement non bloquant s'affiche sur le dashboard si l'email n'est pas vérifié
+- Quand l'abonnement payant sera en place : bloquer totalement l'accès à l'app après login, rediriger vers une page "Vérifiez votre email" tant que l'email n'est pas confirmé
+- Justification : avec paiement, on doit garantir l'identité de l'utilisateur
+
+### 17. Gestion des sessions actives
+- Liste des sessions ouvertes (device, IP, date)
+- Possibilité de révoquer une session à distance
+- Déconnexion de toutes les sessions
+
 ## Traductions
 
 ### ~~6. Vérifier les clés manquantes~~ ✅

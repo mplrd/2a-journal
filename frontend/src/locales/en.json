@@ -41,6 +41,17 @@
     "register_button": "Sign up",
     "no_account": "Don't have an account?",
     "has_account": "Already have an account?",
+    "forgot_password": "Forgot your password?",
+    "forgot_password_description": "Enter your email address and we'll send you a link to reset your password.",
+    "forgot_password_sent": "If an account exists with this email address, a reset link has been sent.",
+    "send_reset_link": "Send reset link",
+    "back_to_login": "Back to login",
+    "reset_password": "Reset password",
+    "new_password": "New password",
+    "reset_password_button": "Reset",
+    "verify_email": "Email verification",
+    "email_not_verified": "Your email address has not been verified yet. Please check your inbox.",
+    "resend_verification": "Resend email",
     "error": {
       "field_required": "This field is required",
       "invalid_email": "Invalid email",
@@ -59,14 +70,24 @@
       "invalid_theme": "Invalid theme",
       "password_too_long": "Password is too long (72 characters maximum)",
       "invalid_image_type": "Unsupported image format (JPG, PNG or WebP only)",
-      "image_too_large": "Image is too large (2 MB maximum)"
+      "image_too_large": "Image is too large (2 MB maximum)",
+      "account_locked": "Account temporarily locked due to too many attempts. Please try again in 15 minutes.",
+      "invalid_verification_token": "Invalid verification link",
+      "verification_token_expired": "Verification link has expired. Please request a new one.",
+      "already_verified": "Your email is already verified",
+      "invalid_reset_token": "Invalid reset link",
+      "reset_token_expired": "Reset link has expired. Please request a new one."
     },
     "success": {
       "registered": "Account created successfully",
       "logged_in": "Signed in successfully",
       "logged_out": "Signed out successfully",
       "profile_updated": "Profile updated successfully",
-      "profile_picture_updated": "Profile picture updated"
+      "profile_picture_updated": "Profile picture updated",
+      "email_verified": "Your email address has been verified successfully!",
+      "verification_resent": "Verification email resent",
+      "reset_email_sent": "Reset email sent",
+      "password_reset": "Password reset successfully"
     }
   },
   "dashboard": {

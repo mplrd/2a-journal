@@ -94,6 +94,36 @@ class AuthController extends Controller
         return $this->jsonSuccess($user);
     }
 
+    public function verifyEmail(Request $request): Response
+    {
+        $token = $request->getQuery('token') ?? '';
+        $this->authService->verifyEmail($token);
+
+        return $this->jsonSuccess(['message_key' => 'auth.success.email_verified']);
+    }
+
+    public function resendVerification(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $this->authService->resendVerification($userId);
+
+        return $this->jsonSuccess(['message_key' => 'auth.success.verification_resent']);
+    }
+
+    public function forgotPassword(Request $request): Response
+    {
+        $this->authService->forgotPassword($request->getBody());
+
+        return $this->jsonSuccess(['message_key' => 'auth.success.reset_email_sent']);
+    }
+
+    public function resetPassword(Request $request): Response
+    {
+        $this->authService->resetPassword($request->getBody());
+
+        return $this->jsonSuccess(['message_key' => 'auth.success.password_reset']);
+    }
+
     private function respondWithCookie(array $result, int $status = 200): Response
     {
         $cookie = $result['refresh_cookie'] ?? null;

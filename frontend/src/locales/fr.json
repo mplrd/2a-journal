@@ -41,6 +41,17 @@
     "register_button": "S'inscrire",
     "no_account": "Pas encore de compte ?",
     "has_account": "Déjà un compte ?",
+    "forgot_password": "Mot de passe oublié ?",
+    "forgot_password_description": "Entrez votre adresse email et nous vous enverrons un lien pour réinitialiser votre mot de passe.",
+    "forgot_password_sent": "Si un compte existe avec cette adresse email, un lien de réinitialisation a été envoyé.",
+    "send_reset_link": "Envoyer le lien",
+    "back_to_login": "Retour à la connexion",
+    "reset_password": "Réinitialiser le mot de passe",
+    "new_password": "Nouveau mot de passe",
+    "reset_password_button": "Réinitialiser",
+    "verify_email": "Vérification de l'email",
+    "email_not_verified": "Votre adresse email n'a pas encore été vérifiée. Vérifiez votre boîte de réception.",
+    "resend_verification": "Renvoyer l'email",
     "error": {
       "field_required": "Ce champ est requis",
       "invalid_email": "Email invalide",
@@ -59,14 +70,24 @@
       "invalid_theme": "Thème invalide",
       "password_too_long": "Le mot de passe est trop long (72 caractères maximum)",
       "invalid_image_type": "Format d'image non supporté (JPG, PNG ou WebP uniquement)",
-      "image_too_large": "L'image est trop volumineuse (2 Mo maximum)"
+      "image_too_large": "L'image est trop volumineuse (2 Mo maximum)",
+      "account_locked": "Compte temporairement verrouillé suite à trop de tentatives. Réessayez dans 15 minutes.",
+      "invalid_verification_token": "Lien de vérification invalide",
+      "verification_token_expired": "Lien de vérification expiré. Veuillez en demander un nouveau.",
+      "already_verified": "Votre email est déjà vérifié",
+      "invalid_reset_token": "Lien de réinitialisation invalide",
+      "reset_token_expired": "Lien de réinitialisation expiré. Veuillez en demander un nouveau."
     },
     "success": {
       "registered": "Compte créé avec succès",
       "logged_in": "Connexion réussie",
       "logged_out": "Déconnexion réussie",
       "profile_updated": "Profil mis à jour avec succès",
-      "profile_picture_updated": "Photo de profil mise à jour"
+      "profile_picture_updated": "Photo de profil mise à jour",
+      "email_verified": "Votre adresse email a été vérifiée avec succès !",
+      "verification_resent": "Email de vérification renvoyé",
+      "reset_email_sent": "Email de réinitialisation envoyé",
+      "password_reset": "Mot de passe réinitialisé avec succès"
     }
   },
   "dashboard": {

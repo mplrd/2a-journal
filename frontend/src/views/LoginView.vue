@@ -49,7 +49,11 @@ async function handleLogin() {
         <Button type="submit" :label="t('auth.login_button')" :loading="authStore.loading" class="w-full mt-2" />
       </form>
 
-      <p class="text-center mt-4 text-sm text-gray-600 dark:text-gray-400">
+      <p class="text-center mt-3 text-sm">
+        <RouterLink to="/forgot-password" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.forgot_password') }}</RouterLink>
+      </p>
+
+      <p class="text-center mt-2 text-sm text-gray-600 dark:text-gray-400">
         {{ t('auth.no_account') }}
         <RouterLink to="/register" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.register_button') }}</RouterLink>
       </p>

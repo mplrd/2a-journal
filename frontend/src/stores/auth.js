@@ -107,6 +107,10 @@ export const useAuthStore = defineStore('auth', () => {
     return response
   }
 
+  async function resendVerification() {
+    return authService.resendVerification()
+  }
+
   async function initSession() {
     try {
       const response = await api.refreshAccessToken()
@@ -136,6 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
     updateLocale,
     updateProfile,
     uploadProfilePicture,
+    resendVerification,
     initSession,
   }
 })

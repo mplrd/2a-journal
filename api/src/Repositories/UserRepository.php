@@ -32,7 +32,7 @@ class UserRepository
     public function findByEmail(string $email): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, password, first_name, last_name, timezone, default_currency, locale, theme, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
+            'SELECT id, email, password, first_name, last_name, timezone, default_currency, locale, theme, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
         );
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch();
@@ -43,10 +43,14 @@ class UserRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, profile_picture, onboarding_completed_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
+            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
         $user = $stmt->fetch();
+
+        if ($user) {
+            $user['email_verified'] = $user['email_verified_at'] !== null;
+        }
 
         return $user ?: null;
     }
@@ -75,6 +79,50 @@ class UserRepository
         $stmt->execute(['id' => $id, 'locale' => $locale]);
 
         return $this->findById($id);
+    }
+
+    public function incrementFailedLoginAttempts(int $id): int
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+
+        $stmt = $this->pdo->prepare('SELECT failed_login_attempts FROM users WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    public function lockAccount(int $id, string $lockedUntil): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET locked_until = :locked_until WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id, 'locked_until' => $lockedUntil]);
+    }
+
+    public function resetLoginAttempts(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
+    public function setEmailVerified(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE id = :id AND email_verified_at IS NULL AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
+    public function updatePassword(int $id, string $hashedPassword): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET password = :password, failed_login_attempts = 0, locked_until = NULL WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id, 'password' => $hashedPassword]);
     }
 
     private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'profile_picture'];

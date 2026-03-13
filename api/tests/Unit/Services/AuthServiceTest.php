@@ -114,15 +114,19 @@ class AuthServiceTest extends TestCase
 
     public function testRegisterSuccess(): void
     {
-        $this->userRepo->method('existsByEmail')->willReturn(false);
-        $this->userRepo->method('create')->willReturn([
+        $userData = [
             'id' => 1,
             'email' => 'new@test.com',
             'first_name' => 'John',
             'last_name' => 'Doe',
+            'email_verified' => true,
+            'email_verified_at' => '2026-01-01 00:00:00',
             'created_at' => '2026-01-01 00:00:00',
             'updated_at' => '2026-01-01 00:00:00',
-        ]);
+        ];
+        $this->userRepo->method('existsByEmail')->willReturn(false);
+        $this->userRepo->method('create')->willReturn($userData);
+        $this->userRepo->method('findById')->willReturn($userData);
 
         $result = $this->service->register([
             'email' => 'new@test.com',
@@ -175,6 +179,8 @@ class AuthServiceTest extends TestCase
             'id' => 1,
             'email' => 'test@test.com',
             'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+            'locked_until' => null,
+            'failed_login_attempts' => 0,
         ]);
 
         $this->expectException(UnauthorizedException::class);
@@ -192,6 +198,8 @@ class AuthServiceTest extends TestCase
             'password' => $hashedPassword,
             'first_name' => 'John',
             'last_name' => 'Doe',
+            'locked_until' => null,
+            'failed_login_attempts' => 0,
         ]);
         $this->userRepo->method('findById')->willReturn([
             'id' => 1,

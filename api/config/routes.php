@@ -24,8 +24,11 @@ use App\Repositories\RefreshTokenRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\UserRepository;
+use App\Repositories\EmailVerificationTokenRepository;
+use App\Repositories\PasswordResetTokenRepository;
 use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\EmailService;
 use App\Services\OrderService;
 use App\Services\PositionService;
 use App\Services\ShareService;
@@ -52,12 +55,16 @@ $userRepo = new UserRepository($pdo);
 $tokenRepo = new RefreshTokenRepository($pdo);
 $symbolRepo = new SymbolRepository($pdo);
 $setupRepo = new SetupRepository($pdo);
-$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig);
+$securityConfig = require __DIR__ . '/security.php';
+$mailConfig = require __DIR__ . '/mail.php';
+$verificationTokenRepo = new EmailVerificationTokenRepository($pdo);
+$resetTokenRepo = new PasswordResetTokenRepository($pdo);
+$emailService = new EmailService($mailConfig);
+$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig);
 $authController = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authConfig['jwt_secret']);
 
 // Rate limiting
-$securityConfig = require __DIR__ . '/security.php';
 $rateLimitRepo = new RateLimitRepository($pdo);
 $loginRateLimit = new RateLimitMiddleware(
     $rateLimitRepo,
@@ -77,6 +84,12 @@ $refreshRateLimit = new RateLimitMiddleware(
     $securityConfig['rate_limits']['refresh']['window_seconds'],
     '/auth/refresh'
 );
+$forgotPasswordRateLimit = new RateLimitMiddleware(
+    $rateLimitRepo,
+    $securityConfig['rate_limits']['forgot_password']['max_attempts'],
+    $securityConfig['rate_limits']['forgot_password']['window_seconds'],
+    '/auth/forgot-password'
+);
 
 $router->post('/auth/register', [$authController, 'register'], [$registerRateLimit]);
 $router->post('/auth/login', [$authController, 'login'], [$loginRateLimit]);
@@ -87,6 +100,10 @@ $router->patch('/auth/profile', [$authController, 'updateProfile'], [$authMiddle
 $router->patch('/auth/locale', [$authController, 'updateLocale'], [$authMiddleware]);
 $router->post('/auth/profile-picture', [$authController, 'uploadProfilePicture'], [$authMiddleware]);
 $router->post('/auth/complete-onboarding', [$authController, 'completeOnboarding'], [$authMiddleware]);
+$router->get('/auth/verify-email', [$authController, 'verifyEmail']);
+$router->post('/auth/resend-verification', [$authController, 'resendVerification'], [$authMiddleware]);
+$router->post('/auth/forgot-password', [$authController, 'forgotPassword'], [$forgotPasswordRateLimit]);
+$router->post('/auth/reset-password', [$authController, 'resetPassword']);
 
 // ── Symbols ─────────────────────────────────────────────────────
 $symbolService = new SymbolService($symbolRepo);

@@ -34,4 +34,16 @@ export const authService = {
   async completeOnboarding() {
     return api.post('/auth/complete-onboarding')
   },
+
+  async resendVerification() {
+    return api.post('/auth/resend-verification')
+  },
+
+  async forgotPassword(email) {
+    return api.post('/auth/forgot-password', { email }, { auth: false })
+  },
+
+  async resetPassword(token, password) {
+    return api.post('/auth/reset-password', { token, password }, { auth: false })
+  },
 }

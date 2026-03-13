@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
     profile_picture VARCHAR(255) NULL DEFAULT NULL,
     onboarding_completed_at TIMESTAMP NULL DEFAULT NULL,
     email_verified_at TIMESTAMP NULL DEFAULT NULL,
+    failed_login_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    locked_until TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
@@ -251,7 +253,39 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- 11. RATE_LIMITS (brute-force protection)
+-- 11. EMAIL_VERIFICATION_TOKENS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    token VARCHAR(64) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_evt_token (token),
+    KEY idx_evt_user (user_id),
+    CONSTRAINT fk_evt_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 12. PASSWORD_RESET_TOKENS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    token VARCHAR(64) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_prt_token (token),
+    KEY idx_prt_user (user_id),
+    CONSTRAINT fk_prt_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 13. RATE_LIMITS (brute-force protection)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS rate_limits (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

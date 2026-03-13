@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useStatsStore } from '@/stores/stats'
 import { useAccountsStore } from '@/stores/accounts'
 import Select from 'primevue/select'
+import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner.vue'
 import KpiCards from '@/components/dashboard/KpiCards.vue'
 import CumulativePnlChart from '@/components/dashboard/CumulativePnlChart.vue'
 import WinLossChart from '@/components/dashboard/WinLossChart.vue'
@@ -32,6 +33,7 @@ async function applyFilters() {
 
 <template>
   <div>
+    <EmailVerificationBanner />
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold dark:text-gray-100">{{ t('dashboard.title') }}</h1>
       <Select

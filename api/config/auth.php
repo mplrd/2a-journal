@@ -12,4 +12,7 @@ return [
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
     'cookie_secure' => filter_var(getenv('COOKIE_SECURE'), FILTER_VALIDATE_BOOLEAN),
+    'email_verification_enabled' => filter_var(getenv('EMAIL_VERIFICATION_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+    'verification_token_ttl' => 86400,  // 24 hours
+    'reset_token_ttl' => 3600,          // 1 hour
 ];

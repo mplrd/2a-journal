@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Exceptions\HttpException;
 use App\Exceptions\UnauthorizedException;
 use App\Exceptions\ValidationException;
+use App\Repositories\EmailVerificationTokenRepository;
+use App\Repositories\PasswordResetTokenRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
@@ -17,15 +19,32 @@ class AuthService
     private RefreshTokenRepository $tokenRepo;
     private ?SymbolRepository $symbolRepo;
     private ?SetupRepository $setupRepo;
+    private ?EmailVerificationTokenRepository $verificationTokenRepo;
+    private ?PasswordResetTokenRepository $resetTokenRepo;
+    private ?EmailService $emailService;
     private array $config;
+    private array $securityConfig;
 
-    public function __construct(UserRepository $userRepo, RefreshTokenRepository $tokenRepo, ?SymbolRepository $symbolRepo, ?SetupRepository $setupRepo, array $config)
-    {
+    public function __construct(
+        UserRepository $userRepo,
+        RefreshTokenRepository $tokenRepo,
+        ?SymbolRepository $symbolRepo,
+        ?SetupRepository $setupRepo,
+        array $config,
+        ?EmailVerificationTokenRepository $verificationTokenRepo = null,
+        ?PasswordResetTokenRepository $resetTokenRepo = null,
+        ?EmailService $emailService = null,
+        array $securityConfig = []
+    ) {
         $this->userRepo = $userRepo;
         $this->tokenRepo = $tokenRepo;
         $this->symbolRepo = $symbolRepo;
         $this->setupRepo = $setupRepo;
         $this->config = $config;
+        $this->verificationTokenRepo = $verificationTokenRepo;
+        $this->resetTokenRepo = $resetTokenRepo;
+        $this->emailService = $emailService;
+        $this->securityConfig = $securityConfig;
     }
 
     public function register(array $data): array
@@ -48,18 +67,29 @@ class AuthService
             'locale' => $locale,
         ]);
 
+        $userId = (int)$user['id'];
+
         // Seed default symbols for new user
         if ($this->symbolRepo) {
-            $this->symbolRepo->seedForUser((int)$user['id']);
+            $this->symbolRepo->seedForUser($userId);
         }
 
         // Seed default setups for new user
         if ($this->setupRepo) {
-            $this->setupRepo->seedForUser((int)$user['id']);
+            $this->setupRepo->seedForUser($userId);
         }
 
-        $accessToken = $this->generateAccessToken((int)$user['id']);
-        $refreshToken = $this->generateRefreshToken((int)$user['id']);
+        // Email verification
+        if ($this->isEmailVerificationEnabled()) {
+            $this->createAndSendVerificationToken($userId, $data['email'], $locale);
+        } else {
+            // Auto-verify when disabled
+            $this->userRepo->setEmailVerified($userId);
+            $user = $this->userRepo->findById($userId);
+        }
+
+        $accessToken = $this->generateAccessToken($userId);
+        $refreshToken = $this->generateRefreshToken($userId);
 
         return [
             'access_token' => $accessToken,
@@ -79,11 +109,22 @@ class AuthService
 
         $user = $this->userRepo->findByEmail($data['email']);
 
-        if (!$user || !password_verify($data['password'], $user['password'])) {
+        if (!$user) {
             throw new UnauthorizedException('auth.error.invalid_credentials', 'INVALID_CREDENTIALS');
         }
 
+        // Check account lockout
+        $this->checkAccountLockout($user);
+
+        if (!password_verify($data['password'], $user['password'])) {
+            $this->handleFailedLogin($user);
+            throw new UnauthorizedException('auth.error.invalid_credentials', 'INVALID_CREDENTIALS');
+        }
+
+        // Reset failed attempts on successful login
         $userId = (int)$user['id'];
+        $this->userRepo->resetLoginAttempts($userId);
+
         $accessToken = $this->generateAccessToken($userId);
         $refreshToken = $this->generateRefreshToken($userId);
 
@@ -154,6 +195,111 @@ class AuthService
 
         return $user;
     }
+
+    // ── Email verification ──────────────────────────────────────
+
+    public function verifyEmail(string $token): void
+    {
+        if (empty($token)) {
+            throw new ValidationException('auth.error.field_required', 'token');
+        }
+
+        if (!$this->verificationTokenRepo) {
+            throw new HttpException('VERIFICATION_ERROR', 'auth.error.invalid_verification_token', null, 400);
+        }
+
+        $stored = $this->verificationTokenRepo->findByToken($token);
+
+        if (!$stored) {
+            throw new HttpException('INVALID_TOKEN', 'auth.error.invalid_verification_token', null, 400);
+        }
+
+        if (strtotime($stored['expires_at']) < time()) {
+            $this->verificationTokenRepo->deleteByToken($token);
+            throw new HttpException('TOKEN_EXPIRED', 'auth.error.verification_token_expired', null, 400);
+        }
+
+        $this->userRepo->setEmailVerified((int)$stored['user_id']);
+        $this->verificationTokenRepo->deleteByToken($token);
+    }
+
+    public function resendVerification(int $userId): void
+    {
+        $user = $this->userRepo->findById($userId);
+
+        if (!$user) {
+            throw new UnauthorizedException('auth.error.token_invalid', 'TOKEN_INVALID');
+        }
+
+        if ($user['email_verified']) {
+            throw new HttpException('ALREADY_VERIFIED', 'auth.error.already_verified', null, 400);
+        }
+
+        $this->createAndSendVerificationToken($userId, $user['email'], $user['locale'] ?? 'en');
+    }
+
+    // ── Password reset ──────────────────────────────────────────
+
+    public function forgotPassword(array $data): void
+    {
+        if (empty($data['email'])) {
+            throw new ValidationException('auth.error.field_required', 'email');
+        }
+
+        $user = $this->userRepo->findByEmail($data['email']);
+
+        // Always return success to prevent email enumeration
+        if (!$user || !$this->resetTokenRepo) {
+            return;
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $expiresAt = date('Y-m-d H:i:s', time() + ($this->config['reset_token_ttl'] ?? 3600));
+
+        $this->resetTokenRepo->create((int)$user['id'], $token, $expiresAt);
+
+        if ($this->emailService) {
+            $this->emailService->sendPasswordResetEmail($user['email'], $token, $user['locale'] ?? 'en');
+        }
+    }
+
+    public function resetPassword(array $data): void
+    {
+        if (empty($data['token'])) {
+            throw new ValidationException('auth.error.field_required', 'token');
+        }
+        if (empty($data['password'])) {
+            throw new ValidationException('auth.error.field_required', 'password');
+        }
+
+        $this->validatePassword($data['password']);
+
+        if (!$this->resetTokenRepo) {
+            throw new HttpException('RESET_ERROR', 'auth.error.invalid_reset_token', null, 400);
+        }
+
+        $stored = $this->resetTokenRepo->findByToken($data['token']);
+
+        if (!$stored) {
+            throw new HttpException('INVALID_TOKEN', 'auth.error.invalid_reset_token', null, 400);
+        }
+
+        if (strtotime($stored['expires_at']) < time()) {
+            $this->resetTokenRepo->deleteByToken($data['token']);
+            throw new HttpException('TOKEN_EXPIRED', 'auth.error.reset_token_expired', null, 400);
+        }
+
+        $userId = (int)$stored['user_id'];
+        $hashedPassword = password_hash($data['password'], PASSWORD_BCRYPT, ['cost' => $this->config['bcrypt_cost']]);
+
+        $this->userRepo->updatePassword($userId, $hashedPassword);
+        $this->resetTokenRepo->deleteByToken($data['token']);
+
+        // Invalidate all refresh tokens (force re-login)
+        $this->tokenRepo->deleteAllByUserId($userId);
+    }
+
+    // ── Profile ─────────────────────────────────────────────────
 
     private const SUPPORTED_LOCALES = ['fr', 'en'];
     private const SUPPORTED_THEMES = ['light', 'dark'];
@@ -266,6 +412,59 @@ class AuthService
         $relativePath = "uploads/avatars/{$filename}";
 
         return $this->userRepo->updateProfile($userId, ['profile_picture' => $relativePath]);
+    }
+
+    // ── Private helpers ─────────────────────────────────────────
+
+    private function isEmailVerificationEnabled(): bool
+    {
+        return ($this->config['email_verification_enabled'] ?? true) && $this->verificationTokenRepo !== null;
+    }
+
+    private function createAndSendVerificationToken(int $userId, string $email, string $locale): void
+    {
+        if (!$this->verificationTokenRepo) {
+            return;
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $expiresAt = date('Y-m-d H:i:s', time() + ($this->config['verification_token_ttl'] ?? 86400));
+
+        $this->verificationTokenRepo->create($userId, $token, $expiresAt);
+
+        if ($this->emailService) {
+            $this->emailService->sendVerificationEmail($email, $token, $locale);
+        }
+    }
+
+    private function checkAccountLockout(array $user): void
+    {
+        if (!empty($user['locked_until'])) {
+            if (strtotime($user['locked_until']) > time()) {
+                throw new HttpException('ACCOUNT_LOCKED', 'auth.error.account_locked', null, 423);
+            }
+            // Lock expired, reset
+            $this->userRepo->resetLoginAttempts((int)$user['id']);
+        }
+    }
+
+    private function handleFailedLogin(array $user): void
+    {
+        $userId = (int)$user['id'];
+        $attempts = $this->userRepo->incrementFailedLoginAttempts($userId);
+
+        $maxAttempts = $this->securityConfig['lockout']['max_attempts'] ?? 5;
+        $lockoutSeconds = $this->securityConfig['lockout']['lockout_seconds'] ?? 900;
+
+        if ($attempts >= $maxAttempts) {
+            $lockedUntil = date('Y-m-d H:i:s', time() + $lockoutSeconds);
+            $this->userRepo->lockAccount($userId, $lockedUntil);
+
+            // Send lockout notification email
+            if ($this->emailService) {
+                $this->emailService->sendAccountLockedEmail($user['email'], $user['locale'] ?? 'en');
+            }
+        }
     }
 
     private function buildRefreshCookie(string $token, int $ttl): string
