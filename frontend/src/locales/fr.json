@@ -147,6 +147,16 @@
     "pnl_by_period": "P&L par période",
     "win_rate_by_symbol": "Taux de réussite par symbole",
     "pnl_by_setup": "P&L par setup",
+    "rr_distribution_title": "Distribution des R:R",
+    "equity_curve_title": "Courbe d'equity",
+    "heatmap_title": "Heatmap performances jour/heure",
+    "heatmap_sun": "Dim",
+    "heatmap_mon": "Lun",
+    "heatmap_tue": "Mar",
+    "heatmap_wed": "Mer",
+    "heatmap_thu": "Jeu",
+    "heatmap_fri": "Ven",
+    "heatmap_sat": "Sam",
     "view_details": "Voir le détail"
   },
   "accounts": {

@@ -147,6 +147,16 @@
     "pnl_by_period": "P&L by Period",
     "win_rate_by_symbol": "Win Rate by Symbol",
     "pnl_by_setup": "P&L by Setup",
+    "rr_distribution_title": "R:R Distribution",
+    "equity_curve_title": "Equity Curve",
+    "heatmap_title": "Performance Heatmap (Day/Hour)",
+    "heatmap_sun": "Sun",
+    "heatmap_mon": "Mon",
+    "heatmap_tue": "Tue",
+    "heatmap_wed": "Wed",
+    "heatmap_thu": "Thu",
+    "heatmap_fri": "Fri",
+    "heatmap_sat": "Sat",
     "view_details": "View details"
   },
   "accounts": {

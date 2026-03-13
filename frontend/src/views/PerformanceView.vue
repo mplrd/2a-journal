@@ -10,6 +10,9 @@ import Select from 'primevue/select'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
 import StatsDetailDialog from '@/components/performance/StatsDetailDialog.vue'
+import RrDistributionChart from '@/components/performance/RrDistributionChart.vue'
+import EquityCurveChart from '@/components/performance/EquityCurveChart.vue'
+import HeatmapChart from '@/components/performance/HeatmapChart.vue'
 
 const { t } = useI18n()
 const statsStore = useStatsStore()
@@ -45,6 +48,16 @@ const dialogData = computed(() => {
   return map[dialogDimension.value] || []
 })
 
+// Equity curve: initial capital from selected account (or sum of all)
+const initialCapital = computed(() => {
+  const accountId = statsStore.filters?.account_id
+  if (accountId) {
+    const account = accountsStore.accounts.find((a) => a.id === accountId)
+    return account ? Number(account.initial_capital || 0) : 0
+  }
+  return accountsStore.accounts.reduce((sum, a) => sum + Number(a.initial_capital || 0), 0)
+})
+
 // ── Data fetching ────────────────────────────────────────
 
 async function fetchAll() {
@@ -54,6 +67,8 @@ async function fetchAll() {
     statsStore.fetchByDirection(),
     statsStore.fetchBySetup(),
     statsStore.fetchByPeriod(periodGroup.value),
+    statsStore.fetchRrDistribution(),
+    statsStore.fetchHeatmap(),
   ])
 }
 
@@ -158,7 +173,7 @@ const winLossChartData = computed(() => {
     </div>
 
     <template v-else>
-      <!-- Row 1: Cumulative P&L + Win/Loss -->
+      <!-- Row 1: Cumulative P&L + Equity Curve -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('dashboard.cumulative_pnl')"
@@ -166,6 +181,14 @@ const winLossChartData = computed(() => {
           :data="cumulativePnlChartData"
           :options="lineChartOptions"
         />
+        <EquityCurveChart
+          :cumulativePnl="statsStore.charts?.cumulative_pnl"
+          :initialCapital="initialCapital"
+        />
+      </div>
+
+      <!-- Row 2: Win/Loss + R:R Distribution -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('dashboard.win_loss_distribution')"
           type="doughnut"
@@ -174,9 +197,10 @@ const winLossChartData = computed(() => {
           detailable
           @detail="openDetail('direction')"
         />
+        <RrDistributionChart :data="statsStore.rrDistribution" />
       </div>
 
-      <!-- Row 2: P&L by Symbol + Win Rate by Symbol -->
+      <!-- Row 3: P&L by Symbol + Win Rate by Symbol -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('dashboard.pnl_by_symbol')"
@@ -196,7 +220,7 @@ const winLossChartData = computed(() => {
         />
       </div>
 
-      <!-- Row 3: P&L by Setup + P&L by Period -->
+      <!-- Row 4: P&L by Setup + P&L by Period -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('performance.pnl_by_setup')"
@@ -225,6 +249,11 @@ const winLossChartData = computed(() => {
             />
           </template>
         </ChartCard>
+      </div>
+
+      <!-- Row 5: Heatmap (full width) -->
+      <div class="mb-6">
+        <HeatmapChart :data="statsStore.heatmap" />
       </div>
     </template>
 

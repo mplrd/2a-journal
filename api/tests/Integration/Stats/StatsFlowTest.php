@@ -349,6 +349,71 @@ class StatsFlowTest extends TestCase
         $this->assertSame(1, (int) $body['data'][0]['total_trades']);
     }
 
+    // ── R:R Distribution ──────────────────────────────────────
+
+    public function testRrDistributionReturns200WithBuckets(): void
+    {
+        $this->createAndCloseTrade($this->accountId, 18600, 'TP');  // win
+        $this->createAndCloseTrade($this->accountId, 18400, 'SL');  // loss
+
+        $response = $this->router->dispatch($this->authRequest('GET', '/stats/rr-distribution'));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertGreaterThanOrEqual(1, count($body['data']));
+        $this->assertArrayHasKey('bucket', $body['data'][0]);
+        $this->assertArrayHasKey('count', $body['data'][0]);
+    }
+
+    public function testRrDistributionSupportsFilters(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'DAX']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/rr-distribution', [], ['symbols' => 'NASDAQ'])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $total = array_sum(array_column($body['data'], 'count'));
+        $this->assertSame(1, $total);
+    }
+
+    // ── Heatmap ─────────────────────────────────────────────────
+
+    public function testHeatmapReturns200WithDayHourGrid(): void
+    {
+        $this->createAndCloseTrade($this->accountId, 18600, 'TP');
+
+        $response = $this->router->dispatch($this->authRequest('GET', '/stats/heatmap'));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertGreaterThanOrEqual(1, count($body['data']));
+        $this->assertArrayHasKey('day', $body['data'][0]);
+        $this->assertArrayHasKey('hour', $body['data'][0]);
+        $this->assertArrayHasKey('trade_count', $body['data'][0]);
+        $this->assertArrayHasKey('total_pnl', $body['data'][0]);
+    }
+
+    public function testHeatmapSupportsFilters(): void
+    {
+        $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['direction' => 'BUY']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18400, 'SL', ['direction' => 'SELL']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/heatmap', [], ['direction' => 'BUY'])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $total = array_sum(array_column($body['data'], 'trade_count'));
+        $this->assertSame(1, $total);
+    }
+
     // ── Empty state ─────────────────────────────────────────────
 
     public function testOverviewEmptyState(): void

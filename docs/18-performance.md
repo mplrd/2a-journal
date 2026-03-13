@@ -24,6 +24,14 @@ Statistiques groupées par setup. Utilise `JSON_TABLE` pour dénormaliser le cha
 
 Statistiques groupées par période. Query param `group` = day | week | month (défaut) | year.
 
+### GET /stats/rr-distribution
+
+Distribution des trades par buckets de R:R : `[{bucket, count}]`. Buckets : <-2, -2/-1, -1/0, 0/1, 1/2, 2/3, >3.
+
+### GET /stats/heatmap
+
+Performances par jour de semaine × heure : `[{day, hour, trade_count, total_pnl, avg_pnl}]`. `day` = 0 (dimanche) à 6 (samedi), `hour` = 0 à 23.
+
 ### GET /stats/charts
 
 Réutilisé depuis le dashboard : P&L cumulé, distribution W/L, P&L par symbole.
@@ -43,14 +51,17 @@ Réutilisé depuis le dashboard : P&L cumulé, distribution W/L, P&L par symbole
 
 La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voir le détail" qui ouvre une modale avec le DataTable correspondant.
 
-**Graphiques** (5 charts) :
+**Graphiques** (8 charts) :
 1. P&L cumulé (ligne) — réutilise les données de `/stats/charts`
-2. Distribution W/L (doughnut) — bouton détail → DataTable par direction
-3. P&L par symbole (barres vert/rouge) — bouton détail → DataTable par symbole
-4. Taux de réussite par symbole (barres bleues) — bouton détail → DataTable par symbole
-5. P&L par période (barres vert/rouge) — sélecteur jour/semaine/mois/année + bouton détail → DataTable par période
+2. Courbe d'equity (ligne) — capital initial + P&L cumulé, couleur violette
+3. Distribution W/L (doughnut) — bouton détail → DataTable par direction
+4. Distribution des R:R (barres) — histogramme par buckets (<-2, -2/-1, -1/0, 0/1, 1/2, 2/3, >3)
+5. P&L par symbole (barres vert/rouge) — bouton détail → DataTable par symbole
+6. Taux de réussite par symbole (barres bleues) — bouton détail → DataTable par symbole
+7. P&L par setup (barres vert/rouge) — bouton détail → DataTable par setup
+8. P&L par période (barres vert/rouge) — sélecteur jour/semaine/mois/année + bouton détail → DataTable par période
 
-**Bouton setup** : un bouton séparé permet d'ouvrir le DataTable par setup (pas de chart dédié).
+**Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades.
 
 **Dialog** (modale PrimeVue) : DataTable dynamique selon la dimension sélectionnée, colonnes adaptées (avg_rr et profit_factor masqués pour la dimension période).
 
@@ -86,5 +97,5 @@ Script `api/database/seed-demo.php` crée un compte demo pré-rempli :
 
 ## Clés i18n
 
-Namespace `performance.*` : 20 clés (en.json et fr.json).
+Namespace `performance.*` : 31 clés (en.json et fr.json).
 Clé `nav.performance` ajoutée.

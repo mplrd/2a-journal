@@ -189,3 +189,5 @@ $router->get('/stats/by-symbol', [$statsController, 'bySymbol'], [$authMiddlewar
 $router->get('/stats/by-direction', [$statsController, 'byDirection'], [$authMiddleware]);
 $router->get('/stats/by-setup', [$statsController, 'bySetup'], [$authMiddleware]);
 $router->get('/stats/by-period', [$statsController, 'byPeriod'], [$authMiddleware]);
+$router->get('/stats/rr-distribution', [$statsController, 'rrDistribution'], [$authMiddleware]);
+$router->get('/stats/heatmap', [$statsController, 'heatmap'], [$authMiddleware]);

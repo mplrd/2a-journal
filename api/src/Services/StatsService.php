@@ -71,6 +71,18 @@ class StatsService
         return $this->statsRepo->getStatsByPeriod($userId, $group, $filters);
     }
 
+    public function getRrDistribution(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getRrDistribution($userId, $filters);
+    }
+
+    public function getHeatmap(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getHeatmap($userId, $filters);
+    }
+
     private function validateFilters(int $userId, array $filters): array
     {
         $validated = [];

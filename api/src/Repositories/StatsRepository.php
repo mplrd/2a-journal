@@ -282,6 +282,53 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
+    public function getRrDistribution(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+
+        $sql = "SELECT
+                    CASE
+                        WHEN t.risk_reward < -2 THEN '<-2'
+                        WHEN t.risk_reward < -1 THEN '-2--1'
+                        WHEN t.risk_reward < 0  THEN '-1-0'
+                        WHEN t.risk_reward < 1  THEN '0-1'
+                        WHEN t.risk_reward < 2  THEN '1-2'
+                        WHEN t.risk_reward < 3  THEN '2-3'
+                        ELSE '>3'
+                    END AS bucket,
+                    COUNT(*) AS count
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY bucket
+                ORDER BY MIN(t.risk_reward) ASC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function getHeatmap(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+
+        $sql = "SELECT
+                    DAYOFWEEK(t.closed_at) - 1 AS day,
+                    HOUR(t.closed_at) AS hour,
+                    COUNT(*) AS trade_count,
+                    COALESCE(SUM(t.pnl), 0) AS total_pnl,
+                    ROUND(AVG(t.pnl), 2) AS avg_pnl
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY day, hour
+                ORDER BY day, hour";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
     public function getRecentTrades(int $userId, int $limit = 5, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);

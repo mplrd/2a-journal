@@ -503,6 +503,95 @@ class StatsRepositoryTest extends TestCase
         $this->assertSame('2026', $result[0]['period']);
     }
 
+    // ── getRrDistribution ─────────────────────────────────────
+
+    public function testGetRrDistributionReturnsBuckets(): void
+    {
+        // R:R = pnl / 50 (sl_points=50, size=1)
+        $this->createClosedTrade(150.0, 'TP');  // RR = 3.0 → bucket ">3"
+        $this->createClosedTrade(125.0, 'TP');  // RR = 2.5 → bucket "2-3"
+        $this->createClosedTrade(75.0, 'TP');   // RR = 1.5 → bucket "1-2"
+        $this->createClosedTrade(25.0, 'TP');   // RR = 0.5 → bucket "0-1"
+        $this->createClosedTrade(-50.0, 'SL');  // RR = -1.0 → bucket "-1-0"
+        $this->createClosedTrade(-150.0, 'SL'); // RR = -3.0 → bucket "<-2"
+
+        $result = $this->repo->getRrDistribution($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['bucket']] = (int) $row['count'];
+        }
+
+        $this->assertSame(1, $indexed['>3']);
+        $this->assertSame(1, $indexed['2-3']);
+        $this->assertSame(1, $indexed['1-2']);
+        $this->assertSame(1, $indexed['0-1']);
+        $this->assertSame(1, $indexed['-1-0']);
+        $this->assertSame(1, $indexed['<-2']);
+    }
+
+    public function testGetRrDistributionRespectsFilters(): void
+    {
+        $this->createClosedTrade(150.0, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createClosedTrade(75.0, 'TP', ['symbol' => 'DAX']);
+
+        $result = $this->repo->getRrDistribution($this->userId, ['symbols' => ['NASDAQ']]);
+
+        $total = array_sum(array_column($result, 'count'));
+        $this->assertSame(1, $total);
+    }
+
+    public function testGetRrDistributionExcludesOpenTrades(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createOpenTrade();
+
+        $result = $this->repo->getRrDistribution($this->userId);
+
+        $total = array_sum(array_column($result, 'count'));
+        $this->assertSame(1, $total);
+    }
+
+    // ── getHeatmap ──────────────────────────────────────────────
+
+    public function testGetHeatmapReturnsDayHourGrid(): void
+    {
+        // Wednesday (day 3) at 10h and 14h
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-14 10:30:00']);
+        $this->createClosedTrade(-30.0, 'SL', ['closed_at' => '2026-01-14 14:15:00']);
+        // Thursday (day 4) at 10h
+        $this->createClosedTrade(50.0, 'TP', ['closed_at' => '2026-01-15 10:45:00']);
+
+        $result = $this->repo->getHeatmap($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['day'] . '-' . $row['hour']] = $row;
+        }
+
+        $this->assertArrayHasKey('3-10', $indexed);
+        $this->assertSame(1, (int) $indexed['3-10']['trade_count']);
+        $this->assertEquals(100.0, (float) $indexed['3-10']['total_pnl']);
+
+        $this->assertArrayHasKey('3-14', $indexed);
+        $this->assertSame(1, (int) $indexed['3-14']['trade_count']);
+
+        $this->assertArrayHasKey('4-10', $indexed);
+        $this->assertSame(1, (int) $indexed['4-10']['trade_count']);
+    }
+
+    public function testGetHeatmapRespectsFilters(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-14 10:00:00', 'symbol' => 'NASDAQ']);
+        $this->createClosedTrade(-30.0, 'SL', ['closed_at' => '2026-01-14 10:00:00', 'symbol' => 'DAX']);
+
+        $result = $this->repo->getHeatmap($this->userId, ['symbols' => ['NASDAQ']]);
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, (int) $result[0]['trade_count']);
+        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
     // ── getRecentTrades ─────────────────────────────────────────
 
     public function testGetRecentTradesReturnsLimitedClosedTrades(): void

@@ -44,4 +44,14 @@ export const statsService = {
     const query = buildQueryString(allFilters)
     return api.get(`/stats/by-period${query ? `?${query}` : ''}`)
   },
+
+  async getRrDistribution(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/rr-distribution${query ? `?${query}` : ''}`)
+  },
+
+  async getHeatmap(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/heatmap${query ? `?${query}` : ''}`)
+  },
 }

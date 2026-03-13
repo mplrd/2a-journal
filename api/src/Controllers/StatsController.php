@@ -65,6 +65,20 @@ class StatsController extends Controller
         return $this->jsonSuccess($this->statsService->getStatsByPeriod($userId, $group, $filters));
     }
 
+    public function rrDistribution(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getRrDistribution($userId, $filters));
+    }
+
+    public function heatmap(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getHeatmap($userId, $filters));
+    }
+
     private function extractFilters(Request $request): array
     {
         $filters = [];

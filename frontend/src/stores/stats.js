@@ -16,6 +16,8 @@ export const useStatsStore = defineStore('stats', () => {
   const byDirection = ref([])
   const bySetup = ref([])
   const byPeriod = ref([])
+  const rrDistribution = ref([])
+  const heatmap = ref([])
   const dimensionsLoading = ref(false)
 
   async function fetchDashboard() {
@@ -100,6 +102,32 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
+  async function fetchRrDistribution() {
+    dimensionsLoading.value = true
+    try {
+      const response = await statsService.getRrDistribution(filters.value)
+      rrDistribution.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      dimensionsLoading.value = false
+    }
+  }
+
+  async function fetchHeatmap() {
+    dimensionsLoading.value = true
+    try {
+      const response = await statsService.getHeatmap(filters.value)
+      heatmap.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      dimensionsLoading.value = false
+    }
+  }
+
   function setFilters(newFilters) {
     filters.value = { ...newFilters }
   }
@@ -116,6 +144,8 @@ export const useStatsStore = defineStore('stats', () => {
     byDirection.value = []
     bySetup.value = []
     byPeriod.value = []
+    rrDistribution.value = []
+    heatmap.value = []
     dimensionsLoading.value = false
   }
 
@@ -131,6 +161,8 @@ export const useStatsStore = defineStore('stats', () => {
     byDirection,
     bySetup,
     byPeriod,
+    rrDistribution,
+    heatmap,
     dimensionsLoading,
     fetchDashboard,
     fetchCharts,
@@ -138,6 +170,8 @@ export const useStatsStore = defineStore('stats', () => {
     fetchByDirection,
     fetchBySetup,
     fetchByPeriod,
+    fetchRrDistribution,
+    fetchHeatmap,
     setFilters,
     $reset,
   }
