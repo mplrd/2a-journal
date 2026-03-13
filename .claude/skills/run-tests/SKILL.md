@@ -27,3 +27,9 @@ cd frontend && npx vitest run
 - If all pass: report green summary
 - If failures: list each failing test with the reason, suggest fixes
 - Never mark a feature as complete if tests are failing
+
+## Re-seed demo data
+After backend tests, always re-seed the demo account (tests clean all tables):
+```bash
+cd api && php database/seed-demo.php
+```

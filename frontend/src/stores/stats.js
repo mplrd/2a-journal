@@ -11,7 +11,7 @@ export const useStatsStore = defineStore('stats', () => {
   const error = ref(null)
   const filters = ref({})
 
-  // Dimension stats (Phase B)
+  // Dimension stats
   const bySymbol = ref([])
   const byDirection = ref([])
   const bySetup = ref([])
@@ -51,80 +51,62 @@ export const useStatsStore = defineStore('stats', () => {
   }
 
   async function fetchBySymbol() {
-    dimensionsLoading.value = true
     try {
       const response = await statsService.getBySymbol(filters.value)
       bySymbol.value = response.data
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
       throw err
-    } finally {
-      dimensionsLoading.value = false
     }
   }
 
   async function fetchByDirection() {
-    dimensionsLoading.value = true
     try {
       const response = await statsService.getByDirection(filters.value)
       byDirection.value = response.data
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
       throw err
-    } finally {
-      dimensionsLoading.value = false
     }
   }
 
   async function fetchBySetup() {
-    dimensionsLoading.value = true
     try {
       const response = await statsService.getBySetup(filters.value)
       bySetup.value = response.data
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
       throw err
-    } finally {
-      dimensionsLoading.value = false
     }
   }
 
   async function fetchByPeriod(group = 'month') {
-    dimensionsLoading.value = true
     try {
       const response = await statsService.getByPeriod(filters.value, group)
       byPeriod.value = response.data
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
       throw err
-    } finally {
-      dimensionsLoading.value = false
     }
   }
 
   async function fetchRrDistribution() {
-    dimensionsLoading.value = true
     try {
       const response = await statsService.getRrDistribution(filters.value)
       rrDistribution.value = response.data
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
       throw err
-    } finally {
-      dimensionsLoading.value = false
     }
   }
 
   async function fetchHeatmap() {
-    dimensionsLoading.value = true
     try {
       const response = await statsService.getHeatmap(filters.value)
       heatmap.value = response.data
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
       throw err
-    } finally {
-      dimensionsLoading.value = false
     }
   }
 

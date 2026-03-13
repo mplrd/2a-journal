@@ -61,15 +61,20 @@ const initialCapital = computed(() => {
 // ── Data fetching ────────────────────────────────────────
 
 async function fetchAll() {
-  await Promise.all([
-    statsStore.fetchCharts(),
-    statsStore.fetchBySymbol(),
-    statsStore.fetchByDirection(),
-    statsStore.fetchBySetup(),
-    statsStore.fetchByPeriod(periodGroup.value),
-    statsStore.fetchRrDistribution(),
-    statsStore.fetchHeatmap(),
-  ])
+  statsStore.dimensionsLoading = true
+  try {
+    await Promise.all([
+      statsStore.fetchCharts(),
+      statsStore.fetchBySymbol(),
+      statsStore.fetchByDirection(),
+      statsStore.fetchBySetup(),
+      statsStore.fetchByPeriod(periodGroup.value),
+      statsStore.fetchRrDistribution(),
+      statsStore.fetchHeatmap(),
+    ])
+  } finally {
+    statsStore.dimensionsLoading = false
+  }
 }
 
 onMounted(async () => {
