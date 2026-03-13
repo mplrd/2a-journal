@@ -1,7 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import { useSymbolsStore } from '@/stores/symbols'
 import DataTable from 'primevue/datatable'
@@ -10,13 +9,9 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import { SymbolType } from '@/constants/enums'
-import { useOnboarding } from '@/composables/useOnboarding'
-
 const { t } = useI18n()
 const toast = useToast()
 const store = useSymbolsStore()
-const router = useRouter()
-const { isOnboarding, completeOnboarding } = useOnboarding()
 
 const showForm = ref(false)
 const editingSymbol = ref(null)
@@ -61,11 +56,6 @@ async function handleDelete(symbol) {
   }
 }
 
-async function handleStartTrading() {
-  await completeOnboarding()
-  router.push({ name: 'dashboard' })
-}
-
 function typeSeverity(type) {
   const map = {
     [SymbolType.INDEX]: 'info',
@@ -80,15 +70,6 @@ function typeSeverity(type) {
 
 <template>
   <div>
-    <div
-      v-if="isOnboarding"
-      class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-800 dark:text-blue-200"
-      data-testid="onboarding-banner"
-    >
-      <p class="mb-3">{{ t('onboarding.step_symbols_description') }}</p>
-      <Button :label="t('onboarding.start_trading')" icon="pi pi-play" @click="handleStartTrading" data-testid="start-trading-btn" />
-    </div>
-
     <div class="flex items-center justify-between mb-4">
       <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ t('symbols.title') }}</h3>
       <Button :label="t('symbols.create')" icon="pi pi-plus" size="small" @click="openCreate" />

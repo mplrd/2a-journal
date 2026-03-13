@@ -427,7 +427,11 @@
     "step_accounts_description": "Ajoutez vos comptes de trading pour d\u00e9marrer.",
     "step_symbols": "Actifs",
     "step_symbols_description": "V\u00e9rifiez vos actifs et ajustez-les selon vos besoins. Quand vous \u00eates pr\u00eat, cliquez sur le bouton ci-dessous.",
-    "start_trading": "Commencer \u00e0 suivre mes performances"
+    "start_trading": "Commencer à suivre mes performances",
+    "choice_title": "Compte créé !",
+    "choice_description": "Votre premier compte de trading est prêt. Vous pouvez personnaliser vos actifs et setups, ou commencer directement.",
+    "configure_assets": "Paramétrer mes actifs",
+    "start_now": "Commencer de suite"
   },
   "error": {
     "field_too_long": "Ce champ est trop long",

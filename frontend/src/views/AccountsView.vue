@@ -1,23 +1,27 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import { useAccountsStore } from '@/stores/accounts'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import Dialog from 'primevue/dialog'
 import AccountForm from '@/components/account/AccountForm.vue'
 import { AccountType, AccountStage } from '@/constants/enums'
 import { useOnboarding } from '@/composables/useOnboarding'
 
 const { t } = useI18n()
-const { isOnboarding, currentStep } = useOnboarding()
+const router = useRouter()
+const { isOnboarding, currentStep, completeOnboarding } = useOnboarding()
 const toast = useToast()
 const store = useAccountsStore()
 
 const showForm = ref(false)
 const editingAccount = ref(null)
+const showOnboardingChoice = ref(false)
 
 onMounted(() => {
   store.fetchAccounts()
@@ -35,6 +39,7 @@ function openEdit(account) {
 
 async function handleSave(data) {
   try {
+    const wasFirstAccount = isOnboarding.value && store.accounts.length === 0
     if (editingAccount.value) {
       await store.updateAccount(editingAccount.value.id, data)
       toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.updated'), life: 3000 })
@@ -43,9 +48,24 @@ async function handleSave(data) {
       toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.created'), life: 3000 })
     }
     showForm.value = false
+
+    if (wasFirstAccount) {
+      showOnboardingChoice.value = true
+    }
   } catch {
     // error is set in the store
   }
+}
+
+function handleConfigureAssets() {
+  showOnboardingChoice.value = false
+  router.push({ name: 'account', query: { tab: 'assets' } })
+}
+
+async function handleStartNow() {
+  showOnboardingChoice.value = false
+  await completeOnboarding()
+  router.push({ name: 'dashboard' })
 }
 
 async function handleDelete(account) {
@@ -139,5 +159,32 @@ function stageSeverity(stage) {
       :loading="store.loading"
       @save="handleSave"
     />
+
+    <!-- Onboarding choice dialog after first account creation -->
+    <Dialog
+      v-model:visible="showOnboardingChoice"
+      :header="t('onboarding.choice_title')"
+      modal
+      :closable="false"
+      :style="{ width: '450px' }"
+      data-testid="onboarding-choice-dialog"
+    >
+      <p class="mb-4">{{ t('onboarding.choice_description') }}</p>
+      <div class="flex flex-col gap-2">
+        <Button
+          :label="t('onboarding.configure_assets')"
+          icon="pi pi-cog"
+          @click="handleConfigureAssets"
+          data-testid="configure-assets-btn"
+        />
+        <Button
+          :label="t('onboarding.start_now')"
+          icon="pi pi-play"
+          severity="secondary"
+          @click="handleStartNow"
+          data-testid="start-now-btn"
+        />
+      </div>
+    </Dialog>
   </div>
 </template>

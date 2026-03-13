@@ -427,7 +427,11 @@
     "step_accounts_description": "Add your trading accounts to get started.",
     "step_symbols": "Assets",
     "step_symbols_description": "Review your assets and adjust them to your needs. When you're ready, click the button below.",
-    "start_trading": "Start tracking my performance"
+    "start_trading": "Start tracking my performance",
+    "choice_title": "Account created!",
+    "choice_description": "Your first trading account is ready. You can customize your assets and setups, or start right away.",
+    "configure_assets": "Configure my assets",
+    "start_now": "Start right away"
   },
   "error": {
     "field_too_long": "This field is too long",

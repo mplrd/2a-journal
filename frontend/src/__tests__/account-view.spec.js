@@ -65,14 +65,25 @@ const stubs = {
   ProfileTab: { template: '<div data-testid="profile-tab">Profile</div>' },
   AssetsTab: { template: '<div data-testid="assets-tab">Assets</div>' },
   SetupsTab: { template: '<div data-testid="setups-tab">Setups</div>' },
-  TabView: {
-    template: '<div data-testid="tab-view"><slot /></div>',
-    props: ['modelValue'],
-    emits: ['update:modelValue'],
+  Tabs: {
+    template: '<div data-testid="tabs"><slot /></div>',
+    props: ['value'],
+    emits: ['update:value'],
   },
+  TabList: { template: '<div data-testid="tab-list"><slot /></div>' },
+  Tab: {
+    template: '<div :data-testid="`tab-${value}`"><slot /></div>',
+    props: ['value'],
+  },
+  TabPanels: { template: '<div data-testid="tab-panels"><slot /></div>' },
   TabPanel: {
     template: '<div :data-testid="`tab-panel-${value}`"><slot /></div>',
-    props: ['header', 'value'],
+    props: ['value'],
+  },
+  Button: {
+    template: '<button :data-testid="$attrs[\'data-testid\']" @click="$emit(\'click\')">{{ label }}</button>',
+    props: ['label', 'icon'],
+    emits: ['click'],
   },
 }
 
@@ -122,71 +133,54 @@ describe('AccountView', () => {
     mockRoute.query = {}
   })
 
-  describe('onboarding completed', () => {
-    it('renders TabView with three tab panels', () => {
-      const wrapper = createWrapper()
-      expect(wrapper.find('[data-testid="tab-view"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(true)
-    })
-
-    it('renders page title', () => {
-      const wrapper = createWrapper()
-      expect(wrapper.find('h2').exists()).toBe(true)
-    })
-
-    it('has profile tab as default active', () => {
-      const wrapper = createWrapper()
-      expect(wrapper.vm.activeTab).toBe('profile')
-    })
-
-    it('activates assets tab from query param', () => {
-      const wrapper = createWrapper({ tab: 'assets' })
-      expect(wrapper.vm.activeTab).toBe('assets')
-    })
-
-    it('activates setups tab from query param', () => {
-      const wrapper = createWrapper({ tab: 'setups' })
-      expect(wrapper.vm.activeTab).toBe('setups')
-    })
-
-    it('defaults to profile for unknown tab query', () => {
-      const wrapper = createWrapper({ tab: 'unknown' })
-      expect(wrapper.vm.activeTab).toBe('profile')
-    })
+  it('renders Tabs with three tab panels', () => {
+    const wrapper = createWrapper()
+    expect(wrapper.find('[data-testid="tabs"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(true)
   })
 
-  describe('during onboarding - accounts step (no accounts)', () => {
-    it('shows only profile tab', () => {
-      const wrapper = createWrapper({}, { onboardingCompleted: false, hasAccounts: false })
-      expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(false)
-    })
-
-    it('ignores assets tab query param', () => {
-      const wrapper = createWrapper({ tab: 'assets' }, { onboardingCompleted: false, hasAccounts: false })
-      expect(wrapper.vm.activeTab).toBe('profile')
-    })
+  it('renders page title', () => {
+    const wrapper = createWrapper()
+    expect(wrapper.find('h2').exists()).toBe(true)
   })
 
-  describe('during onboarding - symbols step (has accounts)', () => {
-    it('shows profile and assets tabs, hides setups', () => {
-      const wrapper = createWrapper({}, { onboardingCompleted: false, hasAccounts: true })
-      expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(true)
-      expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(false)
-    })
+  it('has profile tab as default active', () => {
+    const wrapper = createWrapper()
+    expect(wrapper.vm.activeTab).toBe('profile')
+  })
 
-    it('allows assets tab query param', () => {
-      const wrapper = createWrapper({ tab: 'assets' }, { onboardingCompleted: false, hasAccounts: true })
-      expect(wrapper.vm.activeTab).toBe('assets')
-    })
+  it('activates assets tab from query param', () => {
+    const wrapper = createWrapper({ tab: 'assets' })
+    expect(wrapper.vm.activeTab).toBe('assets')
+  })
 
-    it('ignores setups tab query param', () => {
-      const wrapper = createWrapper({ tab: 'setups' }, { onboardingCompleted: false, hasAccounts: true })
-      expect(wrapper.vm.activeTab).toBe('profile')
-    })
+  it('activates setups tab from query param', () => {
+    const wrapper = createWrapper({ tab: 'setups' })
+    expect(wrapper.vm.activeTab).toBe('setups')
+  })
+
+  it('defaults to profile for unknown tab query', () => {
+    const wrapper = createWrapper({ tab: 'unknown' })
+    expect(wrapper.vm.activeTab).toBe('profile')
+  })
+
+  it('shows onboarding banner during onboarding', () => {
+    const wrapper = createWrapper({}, { onboardingCompleted: false })
+    expect(wrapper.find('[data-testid="onboarding-banner"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="start-trading-btn"]').exists()).toBe(true)
+  })
+
+  it('hides onboarding banner when onboarding completed', () => {
+    const wrapper = createWrapper()
+    expect(wrapper.find('[data-testid="onboarding-banner"]').exists()).toBe(false)
+  })
+
+  it('shows all three tabs during onboarding', () => {
+    const wrapper = createWrapper({}, { onboardingCompleted: false })
+    expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(true)
   })
 })
