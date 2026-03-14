@@ -157,7 +157,18 @@
     "heatmap_thu": "Jeu",
     "heatmap_fri": "Ven",
     "heatmap_sat": "Sam",
-    "view_details": "Voir le détail"
+    "view_details": "Voir le détail",
+    "pnl_by_session": "P&L par session",
+    "pnl_by_account": "P&L par compte",
+    "pnl_by_account_type": "P&L par type de compte",
+    "by_session": "Par session",
+    "by_account": "Par compte",
+    "by_account_type": "Par type de compte",
+    "sessions": {
+      "ASIA": "Asie",
+      "EUROPE": "Europe",
+      "US": "US"
+    }
   },
   "accounts": {
     "title": "Comptes",

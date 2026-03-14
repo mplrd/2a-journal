@@ -83,6 +83,24 @@ class StatsService
         return $this->statsRepo->getHeatmap($userId, $filters);
     }
 
+    public function getStatsBySession(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getStatsBySession($userId, $filters);
+    }
+
+    public function getStatsByAccount(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getStatsByAccount($userId, $filters);
+    }
+
+    public function getStatsByAccountType(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getStatsByAccountType($userId, $filters);
+    }
+
     private function validateFilters(int $userId, array $filters): array
     {
         $validated = [];

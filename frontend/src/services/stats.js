@@ -54,4 +54,19 @@ export const statsService = {
     const query = buildQueryString(filters)
     return api.get(`/stats/heatmap${query ? `?${query}` : ''}`)
   },
+
+  async getBySession(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/by-session${query ? `?${query}` : ''}`)
+  },
+
+  async getByAccount(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/by-account${query ? `?${query}` : ''}`)
+  },
+
+  async getByAccountType(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/by-account-type${query ? `?${query}` : ''}`)
+  },
 }

@@ -16,6 +16,9 @@ export const useStatsStore = defineStore('stats', () => {
   const byDirection = ref([])
   const bySetup = ref([])
   const byPeriod = ref([])
+  const bySession = ref([])
+  const byAccount = ref([])
+  const byAccountType = ref([])
   const rrDistribution = ref([])
   const heatmap = ref([])
   const dimensionsLoading = ref(false)
@@ -90,6 +93,36 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
+  async function fetchBySession() {
+    try {
+      const response = await statsService.getBySession(filters.value)
+      bySession.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
+  async function fetchByAccount() {
+    try {
+      const response = await statsService.getByAccount(filters.value)
+      byAccount.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
+  async function fetchByAccountType() {
+    try {
+      const response = await statsService.getByAccountType(filters.value)
+      byAccountType.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
   async function fetchRrDistribution() {
     try {
       const response = await statsService.getRrDistribution(filters.value)
@@ -126,6 +159,9 @@ export const useStatsStore = defineStore('stats', () => {
     byDirection.value = []
     bySetup.value = []
     byPeriod.value = []
+    bySession.value = []
+    byAccount.value = []
+    byAccountType.value = []
     rrDistribution.value = []
     heatmap.value = []
     dimensionsLoading.value = false
@@ -143,6 +179,9 @@ export const useStatsStore = defineStore('stats', () => {
     byDirection,
     bySetup,
     byPeriod,
+    bySession,
+    byAccount,
+    byAccountType,
     rrDistribution,
     heatmap,
     dimensionsLoading,
@@ -152,6 +191,9 @@ export const useStatsStore = defineStore('stats', () => {
     fetchByDirection,
     fetchBySetup,
     fetchByPeriod,
+    fetchBySession,
+    fetchByAccount,
+    fetchByAccountType,
     fetchRrDistribution,
     fetchHeatmap,
     setFilters,

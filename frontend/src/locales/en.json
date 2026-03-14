@@ -157,7 +157,18 @@
     "heatmap_thu": "Thu",
     "heatmap_fri": "Fri",
     "heatmap_sat": "Sat",
-    "view_details": "View details"
+    "view_details": "View details",
+    "pnl_by_session": "P&L by Session",
+    "pnl_by_account": "P&L by Account",
+    "pnl_by_account_type": "P&L by Account Type",
+    "by_session": "By Session",
+    "by_account": "By Account",
+    "by_account_type": "By Account Type",
+    "sessions": {
+      "ASIA": "Asia",
+      "EUROPE": "Europe",
+      "US": "US"
+    }
   },
   "accounts": {
     "title": "Accounts",

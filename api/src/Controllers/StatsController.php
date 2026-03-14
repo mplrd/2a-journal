@@ -79,6 +79,27 @@ class StatsController extends Controller
         return $this->jsonSuccess($this->statsService->getHeatmap($userId, $filters));
     }
 
+    public function bySession(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getStatsBySession($userId, $filters));
+    }
+
+    public function byAccount(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getStatsByAccount($userId, $filters));
+    }
+
+    public function byAccountType(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getStatsByAccountType($userId, $filters));
+    }
+
     private function extractFilters(Request $request): array
     {
         $filters = [];

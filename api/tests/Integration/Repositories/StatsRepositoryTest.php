@@ -592,6 +592,149 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
     }
 
+    // ── getStatsBySession ──────────────────────────────────────
+
+    public function testGetStatsBySessionReturnsGroupedByTradingSession(): void
+    {
+        // ASIA: 0-8h UTC → closed_at 03:00
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 03:00:00']);
+        // EUROPE: 8-14h UTC → closed_at 10:00
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-15 12:00:00']);
+        // US: 14-22h UTC → closed_at 16:00
+        $this->createClosedTrade(150.0, 'TP', ['closed_at' => '2026-01-15 16:00:00']);
+
+        $result = $this->repo->getStatsBySession($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['session']] = $row;
+        }
+
+        $this->assertCount(3, $result);
+        $this->assertSame(1, (int) $indexed['ASIA']['total_trades']);
+        $this->assertEquals(100.0, (float) $indexed['ASIA']['total_pnl']);
+        $this->assertSame(2, (int) $indexed['EUROPE']['total_trades']);
+        $this->assertEquals(150.0, (float) $indexed['EUROPE']['total_pnl']);
+        $this->assertSame(1, (int) $indexed['US']['total_trades']);
+        $this->assertEquals(150.0, (float) $indexed['US']['total_pnl']);
+    }
+
+    public function testGetStatsBySessionRespectsFilters(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00', 'symbol' => 'NASDAQ']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 10:00:00', 'symbol' => 'DAX']);
+
+        $result = $this->repo->getStatsBySession($this->userId, ['symbols' => ['NASDAQ']]);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
+    public function testGetStatsBySessionExcludesOpenTrades(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createOpenTrade();
+
+        $result = $this->repo->getStatsBySession($this->userId);
+
+        $total = array_sum(array_column($result, 'total_trades'));
+        $this->assertSame(1, $total);
+    }
+
+    // ── getStatsByAccount ───────────────────────────────────────
+
+    public function testGetStatsByAccountReturnsGroupedByAccount(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(200.0, 'TP', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(-50.0, 'SL', ['account_id' => $this->accountId2]);
+
+        $result = $this->repo->getStatsByAccount($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[(int) $row['account_id']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $indexed[$this->accountId]['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed[$this->accountId]['total_pnl']);
+        $this->assertSame(1, (int) $indexed[$this->accountId2]['total_trades']);
+        $this->assertArrayHasKey('account_name', $indexed[$this->accountId]);
+    }
+
+    public function testGetStatsByAccountRespectsFilters(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', [
+            'account_id' => $this->accountId,
+            'direction' => 'BUY',
+        ]);
+        $this->createClosedTrade(200.0, 'TP', [
+            'account_id' => $this->accountId,
+            'direction' => 'SELL',
+        ]);
+
+        $result = $this->repo->getStatsByAccount($this->userId, ['direction' => 'BUY']);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
+    // ── getStatsByAccountType ───────────────────────────────────
+
+    public function testGetStatsByAccountTypeReturnsGroupedByType(): void
+    {
+        // Account 1 = BROKER_DEMO, Account 2 = BROKER_LIVE
+        $this->createClosedTrade(100.0, 'TP', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(200.0, 'TP', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(-50.0, 'SL', ['account_id' => $this->accountId2]);
+
+        $result = $this->repo->getStatsByAccountType($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['account_type']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertSame(2, (int) $indexed['BROKER_DEMO']['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed['BROKER_DEMO']['total_pnl']);
+        $this->assertSame(1, (int) $indexed['BROKER_LIVE']['total_trades']);
+        $this->assertEquals(-50.0, (float) $indexed['BROKER_LIVE']['total_pnl']);
+    }
+
+    public function testGetStatsByAccountTypeRespectsFilters(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', [
+            'account_id' => $this->accountId,
+            'closed_at' => '2026-01-15 10:00:00',
+        ]);
+        $this->createClosedTrade(200.0, 'TP', [
+            'account_id' => $this->accountId2,
+            'closed_at' => '2026-02-15 10:00:00',
+        ]);
+
+        $result = $this->repo->getStatsByAccountType($this->userId, [
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-31',
+        ]);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
+    public function testGetStatsByAccountTypeExcludesOpenTrades(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createOpenTrade();
+
+        $result = $this->repo->getStatsByAccountType($this->userId);
+
+        $total = array_sum(array_column($result, 'total_trades'));
+        $this->assertSame(1, $total);
+    }
+
     // ── getRecentTrades ─────────────────────────────────────────
 
     public function testGetRecentTradesReturnsLimitedClosedTrades(): void

@@ -201,6 +201,73 @@ class StatsServiceTest extends TestCase
         $this->service->getDashboard(1, ['setups' => ['Breakout', 'Pullback']]);
     }
 
+    // ── getStatsBySession ─────────────────────────────────────
+
+    public function testGetStatsBySessionDelegatesToRepo(): void
+    {
+        $expected = [
+            ['session' => 'ASIA', 'total_trades' => 5, 'total_pnl' => 200.0],
+            ['session' => 'EUROPE', 'total_trades' => 10, 'total_pnl' => 500.0],
+        ];
+
+        $this->statsRepo->expects($this->once())
+            ->method('getStatsBySession')
+            ->with(1, [])
+            ->willReturn($expected);
+
+        $result = $this->service->getStatsBySession(1);
+
+        $this->assertCount(2, $result);
+        $this->assertSame('ASIA', $result[0]['session']);
+    }
+
+    public function testGetStatsBySessionValidatesFilters(): void
+    {
+        $this->accountRepo->method('findById')->willReturn(['id' => 5, 'user_id' => 99]);
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->getStatsBySession(1, ['account_id' => 5]);
+    }
+
+    // ── getStatsByAccount ──────────────────────────────────────
+
+    public function testGetStatsByAccountDelegatesToRepo(): void
+    {
+        $expected = [
+            ['account_id' => 1, 'account_name' => 'Account 1', 'total_trades' => 5, 'total_pnl' => 200.0],
+        ];
+
+        $this->statsRepo->expects($this->once())
+            ->method('getStatsByAccount')
+            ->with(1, [])
+            ->willReturn($expected);
+
+        $result = $this->service->getStatsByAccount(1);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('Account 1', $result[0]['account_name']);
+    }
+
+    // ── getStatsByAccountType ──────────────────────────────────
+
+    public function testGetStatsByAccountTypeDelegatesToRepo(): void
+    {
+        $expected = [
+            ['account_type' => 'BROKER_DEMO', 'total_trades' => 5, 'total_pnl' => 200.0],
+            ['account_type' => 'PROP_FIRM', 'total_trades' => 3, 'total_pnl' => -100.0],
+        ];
+
+        $this->statsRepo->expects($this->once())
+            ->method('getStatsByAccountType')
+            ->with(1, [])
+            ->willReturn($expected);
+
+        $result = $this->service->getStatsByAccountType(1);
+
+        $this->assertCount(2, $result);
+        $this->assertSame('BROKER_DEMO', $result[0]['account_type']);
+    }
+
     public function testGetChartsProfitFactorNullSafety(): void
     {
         $this->statsRepo->method('getCumulativePnl')->willReturn([]);

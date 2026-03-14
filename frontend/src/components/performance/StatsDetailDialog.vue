@@ -21,6 +21,9 @@ const title = computed(() => {
     direction: t('performance.by_direction'),
     setup: t('performance.by_setup'),
     period: t('performance.by_period'),
+    session: t('performance.by_session'),
+    account: t('performance.by_account'),
+    account_type: t('performance.by_account_type'),
   }
   return titles[props.dimension] || ''
 })
@@ -31,6 +34,9 @@ const groupColumn = computed(() => {
     direction: { field: 'direction', header: t('dashboard.direction') },
     setup: { field: 'setup', header: t('dashboard.setups') },
     period: { field: 'period', header: t('performance.by_period') },
+    session: { field: 'session', header: t('performance.by_session') },
+    account: { field: 'account_name', header: t('performance.by_account') },
+    account_type: { field: 'account_type', header: t('performance.by_account_type') },
   }
   return map[props.dimension] || { field: '', header: '' }
 })

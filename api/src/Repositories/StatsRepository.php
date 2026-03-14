@@ -329,6 +329,66 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
+    public function getStatsBySession(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        $sql = "SELECT
+                    CASE
+                        WHEN HOUR(t.closed_at) >= 0 AND HOUR(t.closed_at) < 8 THEN 'ASIA'
+                        WHEN HOUR(t.closed_at) >= 8 AND HOUR(t.closed_at) < 14 THEN 'EUROPE'
+                        WHEN HOUR(t.closed_at) >= 14 AND HOUR(t.closed_at) < 22 THEN 'US'
+                        ELSE 'ASIA'
+                    END AS session,
+                    {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY session
+                ORDER BY FIELD(session, 'ASIA', 'EUROPE', 'US')";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function getStatsByAccount(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        $sql = "SELECT p.account_id, a.name AS account_name, a.account_type, {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                INNER JOIN accounts a ON a.id = p.account_id
+                {$where}
+                GROUP BY p.account_id, a.name, a.account_type
+                ORDER BY total_pnl DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function getStatsByAccountType(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $select = $this->dimensionStatsSelect();
+
+        $sql = "SELECT a.account_type, {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                INNER JOIN accounts a ON a.id = p.account_id
+                {$where}
+                GROUP BY a.account_type
+                ORDER BY total_pnl DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
     public function getRecentTrades(int $userId, int $limit = 5, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);

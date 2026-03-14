@@ -44,6 +44,9 @@ const dialogData = computed(() => {
     direction: statsStore.byDirection,
     setup: statsStore.bySetup,
     period: statsStore.byPeriod,
+    session: statsStore.bySession,
+    account: statsStore.byAccount,
+    account_type: statsStore.byAccountType,
   }
   return map[dialogDimension.value] || []
 })
@@ -69,6 +72,9 @@ async function fetchAll() {
       statsStore.fetchByDirection(),
       statsStore.fetchBySetup(),
       statsStore.fetchByPeriod(periodGroup.value),
+      statsStore.fetchBySession(),
+      statsStore.fetchByAccount(),
+      statsStore.fetchByAccountType(),
       statsStore.fetchRrDistribution(),
       statsStore.fetchHeatmap(),
     ])
@@ -118,6 +124,33 @@ function pnlBarData(items, labelField) {
 const pnlBySymbolChartData = computed(() => pnlBarData(statsStore.bySymbol, 'symbol'))
 const pnlBySetupChartData = computed(() => pnlBarData(statsStore.bySetup, 'setup'))
 const pnlByPeriodChartData = computed(() => pnlBarData(statsStore.byPeriod, 'period'))
+const pnlBySessionChartData = computed(() => {
+  const data = statsStore.bySession
+  if (!data || data.length === 0) return null
+  return {
+    labels: data.map((d) => t(`performance.sessions.${d.session}`)),
+    datasets: [{
+      label: t('performance.total_pnl'),
+      data: data.map((d) => Number(d.total_pnl)),
+      backgroundColor: data.map((d) => (Number(d.total_pnl) >= 0 ? '#22c55e' : '#ef4444')),
+      borderRadius: 4,
+    }],
+  }
+})
+const pnlByAccountChartData = computed(() => pnlBarData(statsStore.byAccount, 'account_name'))
+const pnlByAccountTypeChartData = computed(() => {
+  const data = statsStore.byAccountType
+  if (!data || data.length === 0) return null
+  return {
+    labels: data.map((d) => t(`accounts.types.${d.account_type}`)),
+    datasets: [{
+      label: t('performance.total_pnl'),
+      data: data.map((d) => Number(d.total_pnl)),
+      backgroundColor: data.map((d) => (Number(d.total_pnl) >= 0 ? '#22c55e' : '#ef4444')),
+      borderRadius: 4,
+    }],
+  }
+})
 
 const winRateBySymbolChartData = computed(() => {
   const data = statsStore.bySymbol
@@ -256,7 +289,39 @@ const winLossChartData = computed(() => {
         </ChartCard>
       </div>
 
-      <!-- Row 5: Heatmap (full width) -->
+      <!-- Row 5: P&L by Session + P&L by Account Type -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
+          :title="t('performance.pnl_by_session')"
+          type="bar"
+          :data="pnlBySessionChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('session')"
+        />
+        <ChartCard
+          :title="t('performance.pnl_by_account_type')"
+          type="bar"
+          :data="pnlByAccountTypeChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('account_type')"
+        />
+      </div>
+
+      <!-- Row 6: P&L by Account (full width) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
+          :title="t('performance.pnl_by_account')"
+          type="bar"
+          :data="pnlByAccountChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('account')"
+        />
+      </div>
+
+      <!-- Row 7: Heatmap (full width) -->
       <div class="mb-6">
         <HeatmapChart :data="statsStore.heatmap" />
       </div>
