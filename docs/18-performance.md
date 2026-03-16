@@ -27,12 +27,12 @@ Statistiques groupées par période. Query param `group` = day | week | month (d
 ### GET /stats/by-session
 
 Statistiques groupées par session de trading. La session est dérivée de l'heure de clôture (`closed_at`) en UTC :
-- **ASIA** : 0h–6h UTC (Tokyo 8h–14h JST)
+- **ASIA** : 0h–6h UTC (Tokyo 9h–15h JST)
 - **EUROPE** : 7h–13h UTC (Paris 8h–14h CET)
 - **US** : 14h–21h UTC (New York 9h30–16h EST)
-- **OFF** : 22h–23h UTC (hors session)
+- **OFF** : heures hors session (gaps entre sessions)
 
-Enum backend : `TradingSession` (ASIA, EUROPE, US, OFF). La heatmap affiche des bandes colorées au-dessus des heures pour visualiser les plages de session.
+Enum backend : `TradingSession` (ASIA, EUROPE, US, OFF). Classification en UTC pur (pas de conversion timezone).
 
 ### GET /stats/by-account
 
@@ -48,7 +48,7 @@ Distribution des trades par buckets de R:R : `[{bucket, count}]`. Buckets : <-2,
 
 ### GET /stats/heatmap
 
-Performances par jour de semaine × heure : `[{day, hour, trade_count, total_pnl, avg_pnl}]`. `day` = 0 (dimanche) à 6 (samedi), `hour` = 0 à 23.
+Performances par jour de semaine × heure : `[{day, hour, trade_count, total_pnl, avg_pnl}]`. `day` = 0 (dimanche) à 6 (samedi), `hour` = 0 à 23. Les heures sont converties dans le fuseau horaire du user (via `CONVERT_TZ` et le timezone du profil).
 
 ### GET /stats/charts
 
@@ -58,7 +58,7 @@ Réutilisé depuis le dashboard : P&L cumulé, distribution W/L, P&L par symbole
 
 | Couche | Fichier | Rôle |
 |--------|---------|------|
-| Enum | `TradingSession.php` | ASIA, EUROPE, US |
+| Enum | `TradingSession.php` | ASIA, EUROPE, US, OFF |
 | Repository | `StatsRepository.php` | `buildWhereClause()` partagée, `dimensionStatsSelect()` pour les métriques, 7 méthodes `getStatsBy*()` |
 | Service | `StatsService.php` | Validation filtres (dates, direction, arrays), 7 méthodes déléguant au repo |
 | Controller | `StatsController.php` | 7 actions : `bySymbol()`, `byDirection()`, `bySetup()`, `byPeriod()`, `bySession()`, `byAccount()`, `byAccountType()` |
@@ -84,7 +84,7 @@ La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voi
 
 **Choix de visualisation** : les dimensions d'efficacité (symbole, setup, session, type de compte) utilisent un chart double axe (win rate % à gauche, R:R moyen à droite) plutôt que du P&L brut. Le P&L reste affiché pour le symbole (utile en absolu) et la période (évolution temporelle). Le composable `useChartOptions` expose `dualAxisChartOptions` pour ces charts.
 
-**Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades.
+**Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades. Les heures sont converties dans le fuseau du user via `CONVERT_TZ` côté backend. Les bandes de session au-dessus des heures sont décalées côté frontend selon l'offset UTC du user.
 
 **Dialog** (modale PrimeVue) : DataTable dynamique selon la dimension sélectionnée, colonnes adaptées (avg_rr et profit_factor masqués pour la dimension période).
 
