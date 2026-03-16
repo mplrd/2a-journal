@@ -171,7 +171,8 @@
     "sessions": {
       "ASIA": "Asie",
       "EUROPE": "Europe",
-      "US": "US"
+      "US": "US",
+      "OFF": "Hors session"
     }
   },
   "accounts": {

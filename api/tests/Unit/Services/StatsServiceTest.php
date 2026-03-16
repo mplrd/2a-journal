@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Exceptions\ForbiddenException;
 use App\Repositories\AccountRepository;
 use App\Repositories\StatsRepository;
+use App\Repositories\UserRepository;
 use App\Services\StatsService;
 use PHPUnit\Framework\TestCase;
 
@@ -13,12 +14,15 @@ class StatsServiceTest extends TestCase
     private StatsService $service;
     private StatsRepository $statsRepo;
     private AccountRepository $accountRepo;
+    private UserRepository $userRepo;
 
     protected function setUp(): void
     {
         $this->statsRepo = $this->createMock(StatsRepository::class);
         $this->accountRepo = $this->createMock(AccountRepository::class);
-        $this->service = new StatsService($this->statsRepo, $this->accountRepo);
+        $this->userRepo = $this->createMock(UserRepository::class);
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris']);
+        $this->service = new StatsService($this->statsRepo, $this->accountRepo, $this->userRepo);
     }
 
     private function fakeOverview(array $overrides = []): array

@@ -308,13 +308,23 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
-    public function getHeatmap(int $userId, array $filters = []): array
+    private function localClosedAt(string $tzOffset): string
+    {
+        if ($tzOffset === '+00:00') {
+            return 't.closed_at';
+        }
+        $tzSafe = $this->pdo->quote($tzOffset);
+        return "CONVERT_TZ(t.closed_at, '+00:00', {$tzSafe})";
+    }
+
+    public function getHeatmap(int $userId, array $filters = [], string $tzOffset = '+00:00'): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $local = $this->localClosedAt($tzOffset);
 
         $sql = "SELECT
-                    DAYOFWEEK(t.closed_at) - 1 AS day,
-                    HOUR(t.closed_at) AS hour,
+                    DAYOFWEEK({$local}) - 1 AS day,
+                    HOUR({$local}) AS hour,
                     COUNT(*) AS trade_count,
                     COALESCE(SUM(t.pnl), 0) AS total_pnl,
                     ROUND(AVG(t.pnl), 2) AS avg_pnl
@@ -334,19 +344,20 @@ class StatsRepository
         [$where, $params] = $this->buildWhereClause($userId, $filters);
         $select = $this->dimensionStatsSelect();
 
+        // Session hours in UTC: Asia 0-6 (Tokyo 9-15), Europe 7-13 (Paris 8-14), US 14-21 (NY 9:30-16)
         $sql = "SELECT
                     CASE
-                        WHEN HOUR(t.closed_at) >= 0 AND HOUR(t.closed_at) < 8 THEN 'ASIA'
-                        WHEN HOUR(t.closed_at) >= 8 AND HOUR(t.closed_at) < 14 THEN 'EUROPE'
-                        WHEN HOUR(t.closed_at) >= 14 AND HOUR(t.closed_at) < 22 THEN 'US'
-                        ELSE 'ASIA'
+                        WHEN HOUR(t.closed_at) <= 5 THEN 'ASIA'
+                        WHEN HOUR(t.closed_at) >= 7 AND HOUR(t.closed_at) <= 13 THEN 'EUROPE'
+                        WHEN HOUR(t.closed_at) >= 14 AND HOUR(t.closed_at) <= 21 THEN 'US'
+                        ELSE 'OFF'
                     END AS session,
                     {$select}
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 {$where}
                 GROUP BY session
-                ORDER BY FIELD(session, 'ASIA', 'EUROPE', 'US')";
+                ORDER BY FIELD(session, 'ASIA', 'EUROPE', 'US', 'OFF')";
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);

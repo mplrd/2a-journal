@@ -7,16 +7,31 @@ use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\StatsRepository;
+use App\Repositories\UserRepository;
 
 class StatsService
 {
     private StatsRepository $statsRepo;
     private AccountRepository $accountRepo;
+    private UserRepository $userRepo;
 
-    public function __construct(StatsRepository $statsRepo, AccountRepository $accountRepo)
+    public function __construct(StatsRepository $statsRepo, AccountRepository $accountRepo, UserRepository $userRepo)
     {
         $this->statsRepo = $statsRepo;
         $this->accountRepo = $accountRepo;
+        $this->userRepo = $userRepo;
+    }
+
+    private function getUserTimezoneOffset(int $userId): string
+    {
+        $user = $this->userRepo->findById($userId);
+        $tzName = $user['timezone'] ?? 'UTC';
+        $tz = new \DateTimeZone($tzName);
+        $offset = $tz->getOffset(new \DateTime('now', $tz));
+        $sign = $offset >= 0 ? '+' : '-';
+        $hours = str_pad((string) intdiv(abs($offset), 3600), 2, '0', STR_PAD_LEFT);
+        $minutes = str_pad((string) ((abs($offset) % 3600) / 60), 2, '0', STR_PAD_LEFT);
+        return "{$sign}{$hours}:{$minutes}";
     }
 
     public function getDashboard(int $userId, array $filters = []): array
@@ -80,7 +95,8 @@ class StatsService
     public function getHeatmap(int $userId, array $filters = []): array
     {
         $filters = $this->validateFilters($userId, $filters);
-        return $this->statsRepo->getHeatmap($userId, $filters);
+        $tz = $this->getUserTimezoneOffset($userId);
+        return $this->statsRepo->getHeatmap($userId, $filters, $tz);
     }
 
     public function getStatsBySession(int $userId, array $filters = []): array

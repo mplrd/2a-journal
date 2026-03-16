@@ -11,10 +11,20 @@ const props = defineProps({
   data: { type: Array, default: () => [] },
 })
 
+const bucketLabels = {
+  '<-2': '< -2R',
+  '-2--1': '-2R / -1R',
+  '-1-0': '-1R / 0',
+  '0-1': '0 / +1R',
+  '1-2': '+1R / +2R',
+  '2-3': '+2R / +3R',
+  '>3': '> +3R',
+}
+
 const chartData = computed(() => {
   if (!props.data || props.data.length === 0) return null
   return {
-    labels: props.data.map((d) => d.bucket),
+    labels: props.data.map((d) => bucketLabels[d.bucket] || d.bucket),
     datasets: [{
       label: t('performance.rr_distribution_title'),
       data: props.data.map((d) => Number(d.count)),

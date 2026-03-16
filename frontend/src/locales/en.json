@@ -171,7 +171,8 @@
     "sessions": {
       "ASIA": "Asia",
       "EUROPE": "Europe",
-      "US": "US"
+      "US": "US",
+      "OFF": "Off-session"
     }
   },
   "accounts": {

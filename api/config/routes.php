@@ -180,7 +180,7 @@ $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware]
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);
-$statsService = new StatsService($statsRepo, $accountRepo);
+$statsService = new StatsService($statsRepo, $accountRepo, $userRepo);
 $statsController = new StatsController($statsService);
 
 $router->get('/stats/overview', [$statsController, 'dashboard'], [$authMiddleware]);

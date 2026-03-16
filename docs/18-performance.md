@@ -26,13 +26,13 @@ Statistiques groupées par période. Query param `group` = day | week | month (d
 
 ### GET /stats/by-session
 
-Statistiques groupées par session de trading. La session est dérivée de l'heure de clôture (`closed_at`) :
-- **ASIA** : 0h–8h UTC
-- **EUROPE** : 8h–14h UTC
-- **US** : 14h–22h UTC
-- 22h–0h → ASIA (par défaut)
+Statistiques groupées par session de trading. La session est dérivée de l'heure de clôture (`closed_at`) en UTC :
+- **ASIA** : 0h–6h UTC (Tokyo 8h–14h JST)
+- **EUROPE** : 7h–13h UTC (Paris 8h–14h CET)
+- **US** : 14h–21h UTC (New York 9h30–16h EST)
+- **OFF** : 22h–23h UTC (hors session)
 
-Enum backend : `TradingSession` (ASIA, EUROPE, US).
+Enum backend : `TradingSession` (ASIA, EUROPE, US, OFF). La heatmap affiche des bandes colorées au-dessus des heures pour visualiser les plages de session.
 
 ### GET /stats/by-account
 

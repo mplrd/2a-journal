@@ -596,12 +596,12 @@ class StatsRepositoryTest extends TestCase
 
     public function testGetStatsBySessionReturnsGroupedByTradingSession(): void
     {
-        // ASIA: 0-8h UTC → closed_at 03:00
+        // ASIA: 23-5h UTC → closed_at 03:00
         $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 03:00:00']);
-        // EUROPE: 8-14h UTC → closed_at 10:00
+        // EUROPE: 7-13h UTC → closed_at 10:00
         $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
         $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-15 12:00:00']);
-        // US: 14-22h UTC → closed_at 16:00
+        // US: 14-21h UTC → closed_at 16:00
         $this->createClosedTrade(150.0, 'TP', ['closed_at' => '2026-01-15 16:00:00']);
 
         $result = $this->repo->getStatsBySession($this->userId);
