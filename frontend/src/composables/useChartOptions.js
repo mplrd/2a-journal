@@ -37,11 +37,37 @@ export function useChartOptions() {
     },
   }))
 
+  const dualAxisChartOptions = computed(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { color: isDark.value ? '#9ca3af' : '#6b7280' } } },
+    scales: {
+      y: {
+        beginAtZero: true,
+        position: 'left',
+        title: { display: true, text: 'Win Rate %', color: isDark.value ? '#9ca3af' : '#6b7280' },
+        grid: { color: isDark.value ? '#374151' : '#f3f4f6' },
+        ticks: { color: isDark.value ? '#9ca3af' : '#6b7280' },
+      },
+      y1: {
+        beginAtZero: true,
+        position: 'right',
+        title: { display: true, text: 'R:R', color: isDark.value ? '#9ca3af' : '#6b7280' },
+        grid: { drawOnChartArea: false },
+        ticks: { color: isDark.value ? '#9ca3af' : '#6b7280' },
+      },
+      x: {
+        grid: { display: false },
+        ticks: { color: isDark.value ? '#9ca3af' : '#6b7280' },
+      },
+    },
+  }))
+
   const doughnutChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { position: 'bottom' } },
   }
 
-  return { isDark, barChartOptions, lineChartOptions, doughnutChartOptions }
+  return { isDark, barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions }
 }

@@ -19,7 +19,7 @@ const statsStore = useStatsStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
-const { barChartOptions, lineChartOptions, doughnutChartOptions } = useChartOptions()
+const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions } = useChartOptions()
 
 const periodGroup = ref('month')
 const periodGroupOptions = [
@@ -45,7 +45,6 @@ const dialogData = computed(() => {
     setup: statsStore.bySetup,
     period: statsStore.byPeriod,
     session: statsStore.bySession,
-    account: statsStore.byAccount,
     account_type: statsStore.byAccountType,
   }
   return map[dialogDimension.value] || []
@@ -73,7 +72,6 @@ async function fetchAll() {
       statsStore.fetchBySetup(),
       statsStore.fetchByPeriod(periodGroup.value),
       statsStore.fetchBySession(),
-      statsStore.fetchByAccount(),
       statsStore.fetchByAccountType(),
       statsStore.fetchRrDistribution(),
       statsStore.fetchHeatmap(),
@@ -106,7 +104,7 @@ async function onPeriodGroupChange() {
   await statsStore.fetchByPeriod(periodGroup.value)
 }
 
-// ── Chart data ───────────────────────────────────────────
+// ── Chart data helpers ───────────────────────────────────
 
 function pnlBarData(items, labelField) {
   if (!items || items.length === 0) return null
@@ -121,50 +119,45 @@ function pnlBarData(items, labelField) {
   }
 }
 
-const pnlBySymbolChartData = computed(() => pnlBarData(statsStore.bySymbol, 'symbol'))
-const pnlBySetupChartData = computed(() => pnlBarData(statsStore.bySetup, 'setup'))
-const pnlByPeriodChartData = computed(() => pnlBarData(statsStore.byPeriod, 'period'))
-const pnlBySessionChartData = computed(() => {
-  const data = statsStore.bySession
-  if (!data || data.length === 0) return null
+function dualMetricData(items, labelField, labelTranslator = null) {
+  if (!items || items.length === 0) return null
+  const labels = labelTranslator
+    ? items.map((d) => labelTranslator(d[labelField]))
+    : items.map((d) => d[labelField])
   return {
-    labels: data.map((d) => t(`performance.sessions.${d.session}`)),
-    datasets: [{
-      label: t('performance.total_pnl'),
-      data: data.map((d) => Number(d.total_pnl)),
-      backgroundColor: data.map((d) => (Number(d.total_pnl) >= 0 ? '#22c55e' : '#ef4444')),
-      borderRadius: 4,
-    }],
+    labels,
+    datasets: [
+      {
+        label: t('performance.win_rate'),
+        data: items.map((d) => Number(d.win_rate)),
+        backgroundColor: '#3b82f6',
+        borderRadius: 4,
+        yAxisID: 'y',
+      },
+      {
+        label: t('performance.avg_rr'),
+        data: items.map((d) => Number(d.avg_rr || 0)),
+        backgroundColor: '#a855f7',
+        borderRadius: 4,
+        yAxisID: 'y1',
+      },
+    ],
   }
-})
-const pnlByAccountChartData = computed(() => pnlBarData(statsStore.byAccount, 'account_name'))
-const pnlByAccountTypeChartData = computed(() => {
-  const data = statsStore.byAccountType
-  if (!data || data.length === 0) return null
-  return {
-    labels: data.map((d) => t(`accounts.types.${d.account_type}`)),
-    datasets: [{
-      label: t('performance.total_pnl'),
-      data: data.map((d) => Number(d.total_pnl)),
-      backgroundColor: data.map((d) => (Number(d.total_pnl) >= 0 ? '#22c55e' : '#ef4444')),
-      borderRadius: 4,
-    }],
-  }
-})
+}
 
-const winRateBySymbolChartData = computed(() => {
-  const data = statsStore.bySymbol
-  if (!data || data.length === 0) return null
-  return {
-    labels: data.map((d) => d.symbol),
-    datasets: [{
-      label: t('performance.win_rate'),
-      data: data.map((d) => Number(d.win_rate)),
-      backgroundColor: '#3b82f6',
-      borderRadius: 4,
-    }],
-  }
-})
+// ── Chart data ───────────────────────────────────────────
+
+const pnlBySymbolChartData = computed(() => pnlBarData(statsStore.bySymbol, 'symbol'))
+const pnlByPeriodChartData = computed(() => pnlBarData(statsStore.byPeriod, 'period'))
+
+const perfBySymbolChartData = computed(() => dualMetricData(statsStore.bySymbol, 'symbol'))
+const perfBySetupChartData = computed(() => dualMetricData(statsStore.bySetup, 'setup'))
+const perfBySessionChartData = computed(() =>
+  dualMetricData(statsStore.bySession, 'session', (v) => t(`performance.sessions.${v}`)),
+)
+const perfByAccountTypeChartData = computed(() =>
+  dualMetricData(statsStore.byAccountType, 'account_type', (v) => t(`accounts.types.${v}`)),
+)
 
 const cumulativePnlChartData = computed(() => {
   const data = statsStore.charts?.cumulative_pnl
@@ -238,7 +231,7 @@ const winLossChartData = computed(() => {
         <RrDistributionChart :data="statsStore.rrDistribution" />
       </div>
 
-      <!-- Row 3: P&L by Symbol + Win Rate by Symbol -->
+      <!-- Row 3: P&L by Symbol + Win Rate & R:R by Symbol -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('dashboard.pnl_by_symbol')"
@@ -249,22 +242,22 @@ const winLossChartData = computed(() => {
           @detail="openDetail('symbol')"
         />
         <ChartCard
-          :title="t('performance.win_rate_by_symbol')"
+          :title="t('performance.perf_by_symbol')"
           type="bar"
-          :data="winRateBySymbolChartData"
-          :options="barChartOptions"
+          :data="perfBySymbolChartData"
+          :options="dualAxisChartOptions"
           detailable
           @detail="openDetail('symbol')"
         />
       </div>
 
-      <!-- Row 4: P&L by Setup + P&L by Period -->
+      <!-- Row 4: Perf by Setup + P&L by Period -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
-          :title="t('performance.pnl_by_setup')"
+          :title="t('performance.perf_by_setup')"
           type="bar"
-          :data="pnlBySetupChartData"
-          :options="barChartOptions"
+          :data="perfBySetupChartData"
+          :options="dualAxisChartOptions"
           detailable
           @detail="openDetail('setup')"
         />
@@ -289,39 +282,27 @@ const winLossChartData = computed(() => {
         </ChartCard>
       </div>
 
-      <!-- Row 5: P&L by Session + P&L by Account Type -->
+      <!-- Row 5: Perf by Session + Perf by Account Type -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
-          :title="t('performance.pnl_by_session')"
+          :title="t('performance.perf_by_session')"
           type="bar"
-          :data="pnlBySessionChartData"
-          :options="barChartOptions"
+          :data="perfBySessionChartData"
+          :options="dualAxisChartOptions"
           detailable
           @detail="openDetail('session')"
         />
         <ChartCard
-          :title="t('performance.pnl_by_account_type')"
+          :title="t('performance.perf_by_account_type')"
           type="bar"
-          :data="pnlByAccountTypeChartData"
-          :options="barChartOptions"
+          :data="perfByAccountTypeChartData"
+          :options="dualAxisChartOptions"
           detailable
           @detail="openDetail('account_type')"
         />
       </div>
 
-      <!-- Row 6: P&L by Account (full width) -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <ChartCard
-          :title="t('performance.pnl_by_account')"
-          type="bar"
-          :data="pnlByAccountChartData"
-          :options="barChartOptions"
-          detailable
-          @detail="openDetail('account')"
-        />
-      </div>
-
-      <!-- Row 7: Heatmap (full width) -->
+      <!-- Row 6: Heatmap (full width) -->
       <div class="mb-6">
         <HeatmapChart :data="statsStore.heatmap" />
       </div>

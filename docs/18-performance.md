@@ -2,7 +2,7 @@
 
 ## Objectif
 
-Page dédiée d'analyse détaillée des performances par dimensions (symbole, direction, setup, période, session, compte, type de compte) avec graphiques et DataTables. Filtres avancés (période, direction, symboles, setups, compte).
+Page dédiée d'analyse détaillée des performances par dimensions (symbole, direction, setup, période, session, type de compte) avec graphiques et DataTables. Filtres avancés (période, direction, symboles, setups, compte).
 
 ## Endpoints API
 
@@ -70,18 +70,19 @@ Réutilisé depuis le dashboard : P&L cumulé, distribution W/L, P&L par symbole
 
 La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voir le détail" qui ouvre une modale avec le DataTable correspondant.
 
-**Graphiques** (11 charts) :
+**Graphiques** (10 charts) :
 1. P&L cumulé (ligne) — réutilise les données de `/stats/charts`
 2. Courbe d'equity (ligne) — capital initial + P&L cumulé, couleur violette
 3. Distribution W/L (doughnut) — bouton détail → DataTable par direction
 4. Distribution des R:R (barres) — histogramme par buckets (<-2, -2/-1, -1/0, 0/1, 1/2, 2/3, >3)
 5. P&L par symbole (barres vert/rouge) — bouton détail → DataTable par symbole
-6. Taux de réussite par symbole (barres bleues) — bouton détail → DataTable par symbole
-7. P&L par setup (barres vert/rouge) — bouton détail → DataTable par setup
+6. Win Rate & R:R par symbole (double axe, barres groupées bleu/violet) — bouton détail → DataTable par symbole
+7. Win Rate & R:R par setup (double axe) — bouton détail → DataTable par setup
 8. P&L par période (barres vert/rouge) — sélecteur jour/semaine/mois/année + bouton détail → DataTable par période
-9. P&L par session (barres vert/rouge) — bouton détail → DataTable par session
-10. P&L par type de compte (barres vert/rouge) — bouton détail → DataTable par type de compte
-11. P&L par compte (barres vert/rouge) — bouton détail → DataTable par compte
+9. Win Rate & R:R par session (double axe) — bouton détail → DataTable par session
+10. Win Rate & R:R par type de compte (double axe) — bouton détail → DataTable par type de compte
+
+**Choix de visualisation** : les dimensions d'efficacité (symbole, setup, session, type de compte) utilisent un chart double axe (win rate % à gauche, R:R moyen à droite) plutôt que du P&L brut. Le P&L reste affiché pour le symbole (utile en absolu) et la période (évolution temporelle). Le composable `useChartOptions` expose `dualAxisChartOptions` pour ces charts.
 
 **Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades.
 
@@ -93,7 +94,7 @@ Composant `DashboardFilters.vue` réutilisé : compte, dates, direction, symbole
 
 ### Store
 
-`stats.js` étendu : `bySymbol`, `byDirection`, `bySetup`, `byPeriod`, `bySession`, `byAccount`, `byAccountType`, `dimensionsLoading`, `fetchBy*()`.
+`stats.js` étendu : `bySymbol`, `byDirection`, `bySetup`, `byPeriod`, `bySession`, `byAccountType`, `dimensionsLoading`, `fetchBy*()`.
 
 ### Route
 
@@ -120,6 +121,6 @@ Script `api/database/seed-demo.php` crée un compte demo pré-rempli :
 
 ## Clés i18n
 
-Namespace `performance.*` : 40 clés (en.json et fr.json).
-Ajouts : `pnl_by_session`, `pnl_by_account`, `pnl_by_account_type`, `by_session`, `by_account`, `by_account_type`, `sessions.ASIA`, `sessions.EUROPE`, `sessions.US`.
+Namespace `performance.*` : 42 clés (en.json et fr.json).
+Ajouts : `perf_by_symbol`, `perf_by_setup`, `perf_by_session`, `perf_by_account_type`, `by_session`, `by_account_type`, `sessions.ASIA`, `sessions.EUROPE`, `sessions.US`.
 Clé `nav.performance` existante.
