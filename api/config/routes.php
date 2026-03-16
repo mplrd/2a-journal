@@ -191,6 +191,8 @@ $router->get('/stats/by-setup', [$statsController, 'bySetup'], [$authMiddleware]
 $router->get('/stats/by-period', [$statsController, 'byPeriod'], [$authMiddleware]);
 $router->get('/stats/rr-distribution', [$statsController, 'rrDistribution'], [$authMiddleware]);
 $router->get('/stats/heatmap', [$statsController, 'heatmap'], [$authMiddleware]);
+$router->get('/stats/open-trades', [$statsController, 'openTrades'], [$authMiddleware]);
+$router->get('/stats/daily-pnl', [$statsController, 'dailyPnl'], [$authMiddleware]);
 $router->get('/stats/by-session', [$statsController, 'bySession'], [$authMiddleware]);
 $router->get('/stats/by-account', [$statsController, 'byAccount'], [$authMiddleware]);
 $router->get('/stats/by-account-type', [$statsController, 'byAccountType'], [$authMiddleware]);

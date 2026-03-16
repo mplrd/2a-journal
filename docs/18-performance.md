@@ -104,10 +104,10 @@ Composant `DashboardFilters.vue` réutilisé : compte, dates, direction, symbole
 
 Script `api/database/seed-demo.php` crée un compte demo pré-rempli :
 - **Login** : demo@2a.journal / Demo*123
-- 2 comptes : FTMO Challenge (PROP_FIRM) + Compte perso (BROKER_LIVE)
+- 3 comptes : FTMO Challenge (PROP_FIRM, rentable), Compte perso (BROKER_LIVE), MFF Évaluation (PROP_FIRM, dans le rouge)
 - 5 symboles (NASDAQ, DAX, EURUSD, GBPUSD, BTCUSD)
 - 5 setups (Breakout, Pullback, Range, Trend Follow, Reversal)
-- 30 trades variés sur 2 mois (wins, losses, BE, directions mixtes, sessions mixtes, répartis sur les 2 comptes)
+- 48 trades fermés sur 3 mois (wins, losses, BE, directions/sessions/comptes variés) + 3 trades ouverts
 - Idempotent : relancer le script recrée les données proprement
 
 ## Tests

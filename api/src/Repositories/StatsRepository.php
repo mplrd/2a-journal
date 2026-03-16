@@ -410,4 +410,52 @@ class StatsRepository
 
         return $stmt->fetchAll();
     }
+
+    public function getOpenTrades(int $userId, int $limit = 5, array $filters = []): array
+    {
+        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
+        $params = ['user_id' => $userId, 'status' => 'OPEN'];
+
+        if (!empty($filters['account_id'])) {
+            $where .= ' AND p.account_id = :account_id';
+            $params['account_id'] = (int) $filters['account_id'];
+        }
+
+        $sql = "SELECT t.id, t.opened_at, t.remaining_size,
+                       p.symbol, p.direction, p.entry_price, p.size,
+                       a.name AS account_name
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                INNER JOIN accounts a ON a.id = p.account_id
+                $where
+                ORDER BY t.opened_at DESC
+                LIMIT :limit";
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
+    public function getDailyPnl(int $userId, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+
+        $sql = "SELECT DATE(t.closed_at) AS date,
+                       COUNT(*) AS trade_count,
+                       COALESCE(SUM(t.pnl), 0) AS total_pnl
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}
+                GROUP BY DATE(t.closed_at)
+                ORDER BY date ASC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
 }

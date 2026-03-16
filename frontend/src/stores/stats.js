@@ -11,6 +11,10 @@ export const useStatsStore = defineStore('stats', () => {
   const error = ref(null)
   const filters = ref({})
 
+  // Dashboard
+  const openTrades = ref([])
+  const dailyPnl = ref([])
+
   // Dimension stats
   const bySymbol = ref([])
   const byDirection = ref([])
@@ -143,6 +147,26 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
+  async function fetchOpenTrades() {
+    try {
+      const response = await statsService.getOpenTrades(filters.value)
+      openTrades.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
+  async function fetchDailyPnl() {
+    try {
+      const response = await statsService.getDailyPnl(filters.value)
+      dailyPnl.value = response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
   function setFilters(newFilters) {
     filters.value = { ...newFilters }
   }
@@ -150,6 +174,8 @@ export const useStatsStore = defineStore('stats', () => {
   function $reset() {
     overview.value = null
     recentTrades.value = []
+    openTrades.value = []
+    dailyPnl.value = []
     charts.value = null
     loading.value = false
     chartsLoading.value = false
@@ -185,8 +211,12 @@ export const useStatsStore = defineStore('stats', () => {
     rrDistribution,
     heatmap,
     dimensionsLoading,
+    openTrades,
+    dailyPnl,
     fetchDashboard,
     fetchCharts,
+    fetchOpenTrades,
+    fetchDailyPnl,
     fetchBySymbol,
     fetchByDirection,
     fetchBySetup,

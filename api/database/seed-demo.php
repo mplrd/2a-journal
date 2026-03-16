@@ -71,7 +71,14 @@ $pdo->prepare("INSERT INTO accounts (user_id, name, account_type, broker, curren
     ->execute(['uid' => $userId]);
 $accountId2 = (int) $pdo->lastInsertId();
 
-echo "Created accounts: FTMO Challenge (id={$accountId}), Compte perso (id={$accountId2})\n";
+$pdo->prepare("INSERT INTO accounts (user_id, name, account_type, broker, currency, initial_capital, current_capital)
+    VALUES (:uid, 'MFF Évaluation', 'PROP_FIRM', 'MyForexFunds', 'USD', 50000.00, 50000.00)")
+    ->execute(['uid' => $userId]);
+$accountId3 = (int) $pdo->lastInsertId();
+$pdo->prepare("UPDATE accounts SET stage = 'CHALLENGE', max_drawdown = 5000.00, daily_drawdown = 2500.00, profit_target = 4000.00 WHERE id = :id")
+    ->execute(['id' => $accountId3]);
+
+echo "Created 3 accounts (ids: {$accountId}, {$accountId2}, {$accountId3})\n";
 
 // ── 3. Create symbols ───────────────────────────────────────
 $symbols = [
@@ -131,11 +138,31 @@ $trades = [
     ['GBPUSD', 'BUY',  1.2700, 0.0020, 1.2750, 'TP', 'Trend Follow', '2026-02-17 15:00:00', '2026-02-17 19:00:00', 3, 2],
     ['DAX',    'BUY',  18400, 30, 18500, 'TP', 'Pullback',     '2026-02-18 08:00:00', '2026-02-18 10:30:00', 1, 1],
     ['NASDAQ', 'SELL', 19300, 40, 19350, 'SL', 'Range',         '2026-02-19 15:00:00', '2026-02-19 16:30:00', 1, 1],
+    // ── Account 3: MFF (losing account) ──
+    ['NASDAQ', 'BUY',  19200, 50, 19140, 'SL', 'Breakout',     '2026-02-20 09:30:00', '2026-02-20 10:00:00', 2, 3],
+    ['DAX',    'SELL', 18500, 30, 18550, 'SL', 'Reversal',     '2026-02-21 08:00:00', '2026-02-21 08:30:00', 2, 3],
+    ['NASDAQ', 'BUY',  19100, 40, 19050, 'SL', 'Pullback',     '2026-02-24 09:30:00', '2026-02-24 10:15:00', 1, 3],
+    ['EURUSD', 'SELL', 1.0900, 0.0020, 1.0930, 'SL', 'Range',   '2026-02-25 10:00:00', '2026-02-25 11:00:00', 3, 3],
+    ['NASDAQ', 'BUY',  19000, 50, 19080, 'TP', 'Trend Follow', '2026-02-26 09:30:00', '2026-02-26 13:00:00', 1, 3],
+    ['DAX',    'BUY',  18400, 25, 18360, 'SL', 'Pullback',     '2026-02-27 08:00:00', '2026-02-27 08:40:00', 2, 3],
+    ['NASDAQ', 'SELL', 19200, 45, 19260, 'SL', 'Reversal',     '2026-03-02 09:30:00', '2026-03-02 10:00:00', 1, 3],
+    ['GBPUSD', 'BUY',  1.2680, 0.0020, 1.2650, 'SL', 'Range',   '2026-03-03 10:00:00', '2026-03-03 11:00:00', 2, 3],
+    // ── March trades (for calendar) ──
+    ['NASDAQ', 'BUY',  19400, 50, 19520, 'TP', 'Breakout',     '2026-03-02 09:30:00', '2026-03-02 12:00:00', 1, 1],
+    ['DAX',    'SELL', 18600, 30, 18550, 'TP', 'Range',         '2026-03-03 08:00:00', '2026-03-03 10:00:00', 1, 1],
+    ['NASDAQ', 'BUY',  19500, 45, 19440, 'SL', 'Pullback',     '2026-03-04 09:30:00', '2026-03-04 10:00:00', 1, 1],
+    ['EURUSD', 'BUY',  1.0800, 0.0025, 1.0860, 'TP', 'Trend Follow', '2026-03-05 10:00:00', '2026-03-05 14:00:00', 2, 2],
+    ['NASDAQ', 'SELL', 19600, 50, 19520, 'TP', 'Reversal',     '2026-03-06 09:30:00', '2026-03-06 11:00:00', 1, 1],
+    ['DAX',    'BUY',  18700, 30, 18650, 'SL', 'Pullback',     '2026-03-09 08:00:00', '2026-03-09 08:45:00', 1, 1],
+    ['NASDAQ', 'BUY',  19550, 40, 19630, 'TP', 'Breakout',     '2026-03-10 09:30:00', '2026-03-10 13:00:00', 1, 1],
+    ['GBPUSD', 'SELL', 1.2720, 0.0020, 1.2680, 'TP', 'Range',   '2026-03-11 10:00:00', '2026-03-11 15:00:00', 2, 2],
+    ['NASDAQ', 'BUY',  19650, 50, 19600, 'SL', 'Trend Follow', '2026-03-12 09:30:00', '2026-03-12 10:15:00', 1, 1],
+    ['DAX',    'BUY',  18800, 25, 18870, 'TP', 'Pullback',     '2026-03-13 08:00:00', '2026-03-13 10:00:00', 1, 1],
 ];
 
 $tradeCount = 0;
 foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitType, $setup, $openedAt, $closedAt, $size, $acctNum]) {
-    $tradeAccountId = $acctNum === 2 ? $accountId2 : $accountId;
+    $tradeAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
     // Calculate SL price
     if ($direction === 'BUY') {
         $slPrice = $entry - $slPoints;
@@ -210,13 +237,54 @@ foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitTy
     $tradeCount++;
 }
 
-// Update account capital with total PnL
-$stmt = $pdo->prepare("SELECT COALESCE(SUM(t.pnl), 0) FROM trades t INNER JOIN positions p ON p.id = t.position_id WHERE p.account_id = :aid AND t.status = 'CLOSED'");
-$stmt->execute(['aid' => $accountId]);
-$totalPnl = (float) $stmt->fetchColumn();
-$pdo->prepare("UPDATE accounts SET current_capital = initial_capital + :pnl WHERE id = :id")
-    ->execute(['pnl' => $totalPnl, 'id' => $accountId]);
+// ── 6. Create open trades ──────────────────────────────────
+$openTrades = [
+    // [symbol, direction, entry, sl_points, setup, opened_at, size, account]
+    ['NASDAQ', 'BUY',  19700, 50, 'Breakout',     '2026-03-16 09:30:00', 1, 1],
+    ['DAX',    'SELL', 18900, 30, 'Range',         '2026-03-16 08:15:00', 1, 1],
+    ['EURUSD', 'BUY',  1.0830, 0.0025, 'Trend Follow', '2026-03-16 10:00:00', 2, 2],
+];
 
-echo "Created {$tradeCount} trades (total P&L: {$totalPnl})\n";
+$openCount = 0;
+foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $openedAt, $size, $acctNum]) {
+    $openAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
+    $slPrice = $direction === 'BUY' ? $entry - $slPoints : $entry + $slPoints;
+
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'TRADE')")
+        ->execute([
+            'uid' => $userId,
+            'aid' => $openAccountId,
+            'dir' => $direction,
+            'sym' => $symbol,
+            'entry' => $entry,
+            'size' => $size,
+            'setup' => json_encode([$setup]),
+            'sl_pts' => $slPoints,
+            'sl_price' => $slPrice,
+        ]);
+    $positionId = (int) $pdo->lastInsertId();
+
+    $pdo->prepare("INSERT INTO trades (position_id, opened_at, remaining_size, status)
+        VALUES (:pid, :opened, :size, 'OPEN')")
+        ->execute([
+            'pid' => $positionId,
+            'opened' => $openedAt,
+            'size' => $size,
+        ]);
+
+    $openCount++;
+}
+
+// ── 7. Update account capitals ─────────────────────────────
+foreach ([$accountId, $accountId2, $accountId3] as $aid) {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(t.pnl), 0) FROM trades t INNER JOIN positions p ON p.id = t.position_id WHERE p.account_id = :aid AND t.status = 'CLOSED'");
+    $stmt->execute(['aid' => $aid]);
+    $pnl = (float) $stmt->fetchColumn();
+    $pdo->prepare("UPDATE accounts SET current_capital = initial_capital + :pnl WHERE id = :id")
+        ->execute(['pnl' => $pnl, 'id' => $aid]);
+}
+
+echo "Created {$tradeCount} closed trades + {$openCount} open trades\n";
 echo "\nDemo account ready!\n";
 echo "Login: {$email} / {$password}\n";

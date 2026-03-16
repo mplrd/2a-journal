@@ -101,6 +101,18 @@ class StatsService
         return $this->statsRepo->getStatsByAccountType($userId, $filters);
     }
 
+    public function getOpenTrades(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getOpenTrades($userId, 5, $filters);
+    }
+
+    public function getDailyPnl(int $userId, array $filters = []): array
+    {
+        $filters = $this->validateFilters($userId, $filters);
+        return $this->statsRepo->getDailyPnl($userId, $filters);
+    }
+
     private function validateFilters(int $userId, array $filters): array
     {
         $validated = [];

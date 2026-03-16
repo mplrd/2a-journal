@@ -79,6 +79,20 @@ class StatsController extends Controller
         return $this->jsonSuccess($this->statsService->getHeatmap($userId, $filters));
     }
 
+    public function openTrades(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getOpenTrades($userId, $filters));
+    }
+
+    public function dailyPnl(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $filters = $this->extractFilters($request);
+        return $this->jsonSuccess($this->statsService->getDailyPnl($userId, $filters));
+    }
+
     public function bySession(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

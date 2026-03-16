@@ -2,13 +2,13 @@
 
 ## Objectif
 
-Fournir une vue d'ensemble simple du journal de trading avec les KPIs clés, des graphiques de performance et les trades récents. Filtre par compte uniquement.
+Fournir une vue d'ensemble simple du journal de trading avec les KPIs clés, des graphiques de performance, les trades (en cours et récents) et un calendrier de P&L journalier. Filtre par compte uniquement.
 
 ## Endpoints API
 
 ### GET /stats/overview
 
-Retourne les KPIs et les trades récents.
+Retourne les KPIs et les trades récents (5 derniers trades fermés).
 
 **Query params** : `account_id` (optionnel, filtre par compte)
 
@@ -42,6 +42,22 @@ Retourne les données pour les graphiques (P&L cumulé, distribution W/L, P&L pa
 
 **Query params** : mêmes filtres que `/stats/overview`
 
+### GET /stats/open-trades
+
+Retourne les 5 trades actuellement ouverts (status = OPEN), ordonnés par date d'ouverture décroissante.
+
+**Query params** : `account_id` (optionnel)
+
+**Réponse** : `[{id, opened_at, remaining_size, symbol, direction, entry_price, size, account_name}]`
+
+### GET /stats/daily-pnl
+
+Retourne le P&L agrégé par jour (trades fermés uniquement).
+
+**Query params** : mêmes filtres que `/stats/overview`
+
+**Réponse** : `[{date, trade_count, total_pnl}]`
+
 ## Architecture frontend
 
 ### Composants
@@ -52,7 +68,8 @@ Retourne les données pour les graphiques (P&L cumulé, distribution W/L, P&L pa
 | `CumulativePnlChart.vue` | Graphique en courbe (Chart.js via PrimeVue) |
 | `WinLossChart.vue` | Graphique doughnut gains/pertes/BE |
 | `PnlBySymbolChart.vue` | Graphique en barres P&L par symbole (vert/rouge) |
-| `RecentTrades.vue` | DataTable compact des 5 derniers trades fermés |
+| `RecentTrades.vue` | Tabs "En cours" / "Récents" — trades ouverts et 5 derniers trades fermés |
+| `PnlCalendar.vue` | Calendrier mensuel avec P&L journalier, navigation mois, couleurs vert/rouge/jaune |
 | `DashboardView.vue` | Vue principale — filtre par compte (Select inline), pas de filtres avancés |
 
 ### Layout
@@ -60,13 +77,15 @@ Retourne les données pour les graphiques (P&L cumulé, distribution W/L, P&L pa
 - Header avec titre + Select de compte
 - KPIs en grille 6 colonnes
 - 3 charts en grille responsive (lg:3 cols, mobile stack)
-- DataTable des trades récents
+- Dernière ligne en grille lg:3 cols :
+  - Trades avec tabs (2/3 — `lg:col-span-2`) : onglet "En cours" (trades ouverts) et "Récents" (trades fermés)
+  - Calendrier P&L journalier (1/3) : grille mensuelle, jours colorés selon la perf (vert = gain, rouge = perte, jaune = BE), navigation mois précédent/suivant
 
 ## Tests
 
 | Type | Fichier | Tests |
 |------|---------|-------|
-| Integration | `StatsRepositoryTest.php` | 16 tests |
+| Integration | `StatsRepositoryTest.php` | getOpenTrades (3), getDailyPnl (3) |
 | Unit | `StatsServiceTest.php` | 13 tests |
 | Integration | `StatsFlowTest.php` | 15 tests |
 | Frontend | `PnlBySymbolChart.spec.js` | 3 tests |

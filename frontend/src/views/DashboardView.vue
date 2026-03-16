@@ -10,6 +10,7 @@ import CumulativePnlChart from '@/components/dashboard/CumulativePnlChart.vue'
 import WinLossChart from '@/components/dashboard/WinLossChart.vue'
 import PnlBySymbolChart from '@/components/dashboard/PnlBySymbolChart.vue'
 import RecentTrades from '@/components/dashboard/RecentTrades.vue'
+import PnlCalendar from '@/components/dashboard/PnlCalendar.vue'
 
 const { t } = useI18n()
 const statsStore = useStatsStore()
@@ -19,16 +20,24 @@ const filterAccountId = ref(null)
 
 onMounted(async () => {
   await accountsStore.fetchAccounts()
-  await statsStore.fetchDashboard()
-  statsStore.fetchCharts()
+  await Promise.all([
+    statsStore.fetchDashboard(),
+    statsStore.fetchCharts(),
+    statsStore.fetchOpenTrades(),
+    statsStore.fetchDailyPnl(),
+  ])
 })
 
 async function applyFilters() {
   const filters = {}
   if (filterAccountId.value) filters.account_id = filterAccountId.value
   statsStore.setFilters(filters)
-  await statsStore.fetchDashboard()
-  statsStore.fetchCharts()
+  await Promise.all([
+    statsStore.fetchDashboard(),
+    statsStore.fetchCharts(),
+    statsStore.fetchOpenTrades(),
+    statsStore.fetchDailyPnl(),
+  ])
 }
 </script>
 
@@ -61,7 +70,12 @@ async function applyFilters() {
         <PnlBySymbolChart :data="statsStore.charts?.pnl_by_symbol" />
       </div>
 
-      <RecentTrades :trades="statsStore.recentTrades" />
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2">
+          <RecentTrades :trades="statsStore.recentTrades" :openTrades="statsStore.openTrades" />
+        </div>
+        <PnlCalendar :dailyPnl="statsStore.dailyPnl" />
+      </div>
     </template>
   </div>
 </template>

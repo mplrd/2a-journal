@@ -754,4 +754,86 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(70.0, (float) $recent[0]['pnl']);
         $this->assertEquals(60.0, (float) $recent[1]['pnl']);
     }
+
+    // ── getOpenTrades ──────────────────────────────────────────
+
+    public function testGetOpenTradesReturnsOnlyOpenTrades(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createOpenTrade();
+        $this->createOpenTrade();
+
+        $result = $this->repo->getOpenTrades($this->userId);
+
+        $this->assertCount(2, $result);
+        $this->assertArrayHasKey('symbol', $result[0]);
+        $this->assertArrayHasKey('direction', $result[0]);
+        $this->assertArrayHasKey('entry_price', $result[0]);
+        $this->assertArrayHasKey('account_name', $result[0]);
+    }
+
+    public function testGetOpenTradesRespectsAccountFilter(): void
+    {
+        $this->createOpenTrade();
+
+        $result = $this->repo->getOpenTrades($this->userId, 5, ['account_id' => $this->accountId2]);
+
+        $this->assertCount(0, $result);
+    }
+
+    public function testGetOpenTradesRespectsLimit(): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $this->createOpenTrade();
+        }
+
+        $result = $this->repo->getOpenTrades($this->userId, 5);
+
+        $this->assertCount(5, $result);
+    }
+
+    // ── getDailyPnl ────────────────────────────────────────────
+
+    public function testGetDailyPnlReturnsGroupedByDay(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(50.0, 'TP', ['closed_at' => '2026-01-15 14:00:00']);
+        $this->createClosedTrade(-30.0, 'SL', ['closed_at' => '2026-01-16 10:00:00']);
+
+        $result = $this->repo->getDailyPnl($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['date']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        $this->assertEquals(150.0, (float) $indexed['2026-01-15']['total_pnl']);
+        $this->assertSame(2, (int) $indexed['2026-01-15']['trade_count']);
+        $this->assertEquals(-30.0, (float) $indexed['2026-01-16']['total_pnl']);
+    }
+
+    public function testGetDailyPnlRespectsFilters(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-02-15 10:00:00']);
+
+        $result = $this->repo->getDailyPnl($this->userId, [
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-31',
+        ]);
+
+        $this->assertCount(1, $result);
+        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
+    public function testGetDailyPnlExcludesOpenTrades(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createOpenTrade();
+
+        $result = $this->repo->getDailyPnl($this->userId);
+
+        $this->assertCount(1, $result);
+    }
 }

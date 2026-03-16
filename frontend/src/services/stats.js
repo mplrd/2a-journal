@@ -69,4 +69,14 @@ export const statsService = {
     const query = buildQueryString(filters)
     return api.get(`/stats/by-account-type${query ? `?${query}` : ''}`)
   },
+
+  async getOpenTrades(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/open-trades${query ? `?${query}` : ''}`)
+  },
+
+  async getDailyPnl(filters = {}) {
+    const query = buildQueryString(filters)
+    return api.get(`/stats/daily-pnl${query ? `?${query}` : ''}`)
+  },
 }
