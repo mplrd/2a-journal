@@ -11,7 +11,7 @@ class PositionRepository
 
     private const COLUMNS = 'id, user_id, account_id, direction, symbol, entry_price, size, setup,
                     sl_points, sl_price, be_points, be_price, be_size, targets, notes,
-                    position_type, created_at, updated_at';
+                    import_batch_id, external_id, position_type, created_at, updated_at';
 
     public function __construct(PDO $pdo)
     {
@@ -22,9 +22,11 @@ class PositionRepository
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup,
-                    sl_points, sl_price, be_points, be_price, be_size, targets, notes, position_type)
+                    sl_points, sl_price, be_points, be_price, be_size, targets, notes,
+                    import_batch_id, external_id, position_type)
              VALUES (:user_id, :account_id, :direction, :symbol, :entry_price, :size, :setup,
-                    :sl_points, :sl_price, :be_points, :be_price, :be_size, :targets, :notes, :position_type)'
+                    :sl_points, :sl_price, :be_points, :be_price, :be_size, :targets, :notes,
+                    :import_batch_id, :external_id, :position_type)'
         );
         $stmt->execute([
             'user_id' => $data['user_id'],
@@ -33,14 +35,16 @@ class PositionRepository
             'symbol' => $data['symbol'],
             'entry_price' => $data['entry_price'],
             'size' => $data['size'],
-            'setup' => $data['setup'],
-            'sl_points' => $data['sl_points'],
-            'sl_price' => $data['sl_price'],
+            'setup' => $data['setup'] ?? null,
+            'sl_points' => $data['sl_points'] ?? null,
+            'sl_price' => $data['sl_price'] ?? null,
             'be_points' => $data['be_points'] ?? null,
             'be_price' => $data['be_price'] ?? null,
             'be_size' => $data['be_size'] ?? null,
             'targets' => $data['targets'] ?? null,
             'notes' => $data['notes'] ?? null,
+            'import_batch_id' => $data['import_batch_id'] ?? null,
+            'external_id' => $data['external_id'] ?? null,
             'position_type' => $data['position_type'],
         ]);
 

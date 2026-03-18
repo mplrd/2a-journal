@@ -107,14 +107,16 @@ CREATE TABLE IF NOT EXISTS positions (
     symbol VARCHAR(50) NOT NULL,
     entry_price DECIMAL(15,5) NOT NULL,
     size DECIMAL(10,5) NOT NULL,
-    setup TEXT NOT NULL,
-    sl_points DECIMAL(10,2) NOT NULL,
-    sl_price DECIMAL(15,5) NOT NULL,
+    setup TEXT NULL DEFAULT NULL,
+    sl_points DECIMAL(10,2) NULL DEFAULT NULL,
+    sl_price DECIMAL(15,5) NULL DEFAULT NULL,
     be_points DECIMAL(10,2) NULL DEFAULT NULL,
     be_price DECIMAL(15,5) NULL DEFAULT NULL,
     be_size DECIMAL(10,5) NULL DEFAULT NULL,
     targets JSON NULL DEFAULT NULL,
     notes TEXT NULL,
+    import_batch_id INT UNSIGNED NULL DEFAULT NULL,
+    external_id VARCHAR(128) NULL DEFAULT NULL,
     position_type ENUM('ORDER','TRADE') NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -123,6 +125,7 @@ CREATE TABLE IF NOT EXISTS positions (
     KEY idx_positions_account_id (account_id),
     KEY idx_positions_symbol (symbol),
     KEY idx_positions_type (position_type),
+    KEY idx_positions_import_batch (import_batch_id),
     CONSTRAINT fk_positions_user FOREIGN KEY (user_id)
         REFERENCES users (id) ON DELETE CASCADE,
     CONSTRAINT fk_positions_account FOREIGN KEY (account_id)
@@ -295,6 +298,51 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     window_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE KEY uk_rate_limits_ip_endpoint (ip, endpoint)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 14. IMPORT_BATCHES (import history audit trail)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS import_batches (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    account_id INT UNSIGNED NOT NULL,
+    broker_template VARCHAR(50) NULL DEFAULT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    file_hash VARCHAR(64) NOT NULL,
+    total_rows INT UNSIGNED NOT NULL DEFAULT 0,
+    imported_positions INT UNSIGNED NOT NULL DEFAULT 0,
+    imported_trades INT UNSIGNED NOT NULL DEFAULT 0,
+    skipped_duplicates INT UNSIGNED NOT NULL DEFAULT 0,
+    skipped_errors INT UNSIGNED NOT NULL DEFAULT 0,
+    error_log JSON NULL DEFAULT NULL,
+    status ENUM('PENDING','PROCESSING','COMPLETED','FAILED','ROLLED_BACK') NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL DEFAULT NULL,
+
+    KEY idx_import_batches_user (user_id),
+    KEY idx_import_batches_account (account_id),
+    CONSTRAINT fk_import_batches_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_import_batches_account FOREIGN KEY (account_id)
+        REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 15. SYMBOL_ALIASES (broker symbol → journal symbol mapping)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS symbol_aliases (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    broker_symbol VARCHAR(100) NOT NULL,
+    journal_symbol VARCHAR(50) NOT NULL,
+    broker_template VARCHAR(50) NULL DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_symbol_aliases_user_broker (user_id, broker_symbol, broker_template),
+    KEY idx_symbol_aliases_user (user_id),
+    CONSTRAINT fk_symbol_aliases_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

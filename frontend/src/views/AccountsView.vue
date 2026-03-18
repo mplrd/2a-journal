@@ -10,6 +10,7 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import AccountForm from '@/components/account/AccountForm.vue'
+import ImportDialog from '@/components/import/ImportDialog.vue'
 import { AccountType, AccountStage } from '@/constants/enums'
 import { useOnboarding } from '@/composables/useOnboarding'
 
@@ -22,6 +23,13 @@ const store = useAccountsStore()
 const showForm = ref(false)
 const editingAccount = ref(null)
 const showOnboardingChoice = ref(false)
+const showImport = ref(false)
+const importAccount = ref(null)
+
+function openImport(account) {
+  importAccount.value = account
+  showImport.value = true
+}
 
 onMounted(() => {
   store.fetchAccounts()
@@ -146,6 +154,7 @@ function stageSeverity(stage) {
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">
+            <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
@@ -158,6 +167,11 @@ function stageSeverity(stage) {
       :account="editingAccount"
       :loading="store.loading"
       @save="handleSave"
+    />
+
+    <ImportDialog
+      v-model:visible="showImport"
+      :account="importAccount"
     />
 
     <!-- Onboarding choice dialog after first account creation -->

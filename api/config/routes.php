@@ -6,6 +6,7 @@ use App\Controllers\OrderController;
 use App\Controllers\PositionController;
 use App\Controllers\SetupController;
 use App\Controllers\SymbolController;
+use App\Controllers\ImportController;
 use App\Controllers\StatsController;
 use App\Controllers\TradeController;
 use App\Core\Database;
@@ -19,7 +20,9 @@ use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
+use App\Repositories\ImportBatchRepository;
 use App\Repositories\StatsRepository;
+use App\Repositories\SymbolAliasRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
@@ -33,6 +36,10 @@ use App\Services\OrderService;
 use App\Services\PositionService;
 use App\Services\ShareService;
 use App\Services\SetupService;
+use App\Services\Import\ImportService;
+use App\Services\Import\FileParserService;
+use App\Services\Import\ColumnMapperService;
+use App\Services\Import\RowGroupingService;
 use App\Services\StatsService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
@@ -177,6 +184,29 @@ $router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware]);
 $router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware]);
 $router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware]);
 $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware]);
+
+// ── Import ────────────────────────────────────────────────────
+$importBatchRepo = new ImportBatchRepository($pdo);
+$symbolAliasRepo = new SymbolAliasRepository($pdo);
+$importService = new ImportService(
+    new FileParserService(),
+    new ColumnMapperService(),
+    new RowGroupingService(),
+    $importBatchRepo,
+    $symbolAliasRepo,
+    $positionRepo,
+    $tradeRepo,
+    $accountRepo,
+    $pdo
+);
+$importController = new ImportController($importService);
+
+$router->get('/imports/templates', [$importController, 'templates'], [$authMiddleware]);
+$router->post('/imports/headers', [$importController, 'headers'], [$authMiddleware]);
+$router->post('/imports/preview', [$importController, 'preview'], [$authMiddleware]);
+$router->post('/imports/confirm', [$importController, 'confirm'], [$authMiddleware]);
+$router->get('/imports/batches', [$importController, 'batches'], [$authMiddleware]);
+$router->post('/imports/batches/{id}/rollback', [$importController, 'rollback'], [$authMiddleware]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

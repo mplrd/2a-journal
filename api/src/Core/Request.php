@@ -46,11 +46,17 @@ class Request
 
         // Parse body
         $body = [];
-        $rawBody = file_get_contents('php://input');
-        if ($rawBody !== false && $rawBody !== '') {
-            $decoded = json_decode($rawBody, true);
-            if (is_array($decoded)) {
-                $body = $decoded;
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        if (str_contains($contentType, 'multipart/form-data')) {
+            // multipart/form-data: fields are in $_POST, files in $_FILES
+            $body = $_POST;
+        } else {
+            $rawBody = file_get_contents('php://input');
+            if ($rawBody !== false && $rawBody !== '') {
+                $decoded = json_decode($rawBody, true);
+                if (is_array($decoded)) {
+                    $body = $decoded;
+                }
             }
         }
 
