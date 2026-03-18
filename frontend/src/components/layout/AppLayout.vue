@@ -111,9 +111,9 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+  <div class="flex flex-col h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
     <!-- Header (full width, always on top) -->
-    <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 z-10">
+    <header class="shrink-0 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 z-10">
       <div class="px-4 py-3 flex items-center justify-between">
         <!-- Left: Burger + Title -->
         <div class="flex items-center gap-3">
@@ -254,9 +254,11 @@ async function handleLogout() {
         </nav>
       </aside>
 
-      <!-- Main content -->
-      <main class="flex-1 px-4 py-6 max-w-7xl w-full mx-auto min-w-0">
-        <RouterView />
+      <!-- Main content (only this area scrolls) -->
+      <main class="flex-1 overflow-y-auto px-4 py-6 min-w-0">
+        <div class="max-w-7xl w-full mx-auto">
+          <RouterView />
+        </div>
       </main>
     </div>
   </div>
