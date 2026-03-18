@@ -81,6 +81,11 @@ Retourne le P&L agrégé par jour (trades fermés uniquement).
   - Trades avec tabs (2/3 — `lg:col-span-2`) : onglet "En cours" (trades ouverts) et "Récents" (trades fermés)
   - Calendrier P&L journalier (1/3) : grille mensuelle, jours colorés selon la perf (vert = gain, rouge = perte, jaune = BE), navigation mois précédent/suivant
 
+### Comportement au chargement
+
+- **Reset des filtres** : les filtres du store sont remis à zéro (`setFilters({})`) au montage de la page. Ainsi, naviguer vers une autre page puis revenir affiche toujours les données non filtrées.
+- **Overlay de chargement** : pendant le fetch, un overlay semi-transparent (`bg-white/60` / `bg-gray-900/60`) s'affiche par-dessus le contenu existant avec un spinner centré, plutôt que de masquer le contenu. Cela évite le flicker (flash des anciennes données → spinner → nouvelles données).
+
 ## Tests
 
 | Type | Fichier | Tests |

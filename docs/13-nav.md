@@ -51,6 +51,10 @@ Le sidebar n'utilise **pas** le composant PrimeVue `Sidebar` — c'est un `<asid
 | **Clic lien** | Reste ouvert | Ferme le sidebar |
 | **Persistance** | `localStorage('sidebarOpen')` | Toujours fermé au chargement |
 
+### Scroll
+
+Le layout utilise `h-screen overflow-hidden` sur le conteneur racine : seule la zone de contenu principale (`<main>`) est scrollable (`overflow-y-auto`). Le header et le sidebar restent fixes en permanence, quel que soit le scroll du contenu.
+
 ### Header
 
 - **Burger** : toujours visible, toggle le sidebar
