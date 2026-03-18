@@ -140,7 +140,7 @@ describe('positions store', () => {
 
     expect(store.positions).toEqual(mockAggregated)
     expect(store.loading).toBe(false)
-    expect(positionsService.listAggregated).toHaveBeenCalledWith({})
+    expect(positionsService.listAggregated).toHaveBeenCalledWith({ page: 1, per_page: 25 })
   })
 
   it('fetchAggregated passes filters', async () => {
@@ -149,7 +149,7 @@ describe('positions store', () => {
 
     await store.fetchAggregated()
 
-    expect(positionsService.listAggregated).toHaveBeenCalledWith({ account_id: 5 })
+    expect(positionsService.listAggregated).toHaveBeenCalledWith({ account_id: 5, page: 1, per_page: 25 })
   })
 
   it('fetchAggregated sets error on failure', async () => {

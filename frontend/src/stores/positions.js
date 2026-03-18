@@ -7,13 +7,23 @@ export const usePositionsStore = defineStore('positions', () => {
   const loading = ref(false)
   const error = ref(null)
   const filters = ref({})
+  const page = ref(1)
+  const perPage = ref(25)
+  const totalRecords = ref(0)
 
   async function fetchPositions() {
     loading.value = true
     error.value = null
     try {
-      const response = await positionsService.list(filters.value)
+      const response = await positionsService.list({
+        ...filters.value,
+        page: page.value,
+        per_page: perPage.value,
+      })
       positions.value = response.data
+      if (response.meta) {
+        totalRecords.value = response.meta.total || 0
+      }
       return response
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
@@ -27,8 +37,15 @@ export const usePositionsStore = defineStore('positions', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await positionsService.listAggregated(filters.value)
+      const response = await positionsService.listAggregated({
+        ...filters.value,
+        page: page.value,
+        per_page: perPage.value,
+      })
       positions.value = response.data
+      if (response.meta) {
+        totalRecords.value = response.meta.total || 0
+      }
       return response
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
@@ -102,6 +119,9 @@ export const usePositionsStore = defineStore('positions', () => {
     loading.value = false
     error.value = null
     filters.value = {}
+    page.value = 1
+    perPage.value = 25
+    totalRecords.value = 0
   }
 
   return {
@@ -109,6 +129,9 @@ export const usePositionsStore = defineStore('positions', () => {
     loading,
     error,
     filters,
+    page,
+    perPage,
+    totalRecords,
     fetchPositions,
     fetchAggregated,
     fetchPosition,
