@@ -80,6 +80,26 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Templates de format adaptés par plateforme
 - Branding personnel (nom/pseudo, logo)
 
+## Import / Connecteurs broker
+
+### 18. Import de trades (fichier + API broker)
+- **Import fichier** (CSV/XLSX) : pour les brokers sans API, upload manuel avec templates de mapping par broker (cTrader, MT4, MT5...) + mode custom
+- **Import API** : connecteurs broker avec OAuth2, sync initial + incrémental (cTrader Open API en premier)
+- Preview avant import, détection de doublons (hash external_id), mapping symboles broker ↔ journal
+- Regroupement des exécutions en positions (même entry_price + direction + symbol = partial exits)
+- Tables : `import_batches` (audit trail), `symbol_aliases` (mapping symboles), `broker_connections` (tokens chiffrés)
+- Templates broker en JSON déclaratif (colonnes, format date, mapping direction FR/EN)
+- Priorité haute : prérequis d'adoption pour tout utilisateur avec un historique existant
+
+## Architecture / UX
+
+### 19. Widgets autonomes avec chargement indépendant
+- Repenser chaque bloc de l'app (KPI cards, charts, calendrier, trades récents, etc.) comme un widget autonome
+- Chaque widget se charge en AJAX indépendamment : son propre état loading (skeleton/spinner), son propre fetch, sa propre gestion d'erreur
+- Avantages : affichage progressif (le plus rapide s'affiche en premier), pas de loader global qui bloque toute la page, meilleure résilience (un widget en erreur n'empêche pas les autres)
+- Impacte : refactoring des views (Dashboard, Performance) pour éclater le `Promise.all` monolithique en fetches indépendants par widget
+- Pattern : composable `useAsyncWidget(fetchFn)` retournant `{ data, loading, error, refresh }`
+
 ## Sécurité / Auth
 
 ### 14. Authentification à deux facteurs (2FA/MFA)
