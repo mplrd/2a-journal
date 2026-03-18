@@ -207,22 +207,62 @@ class StatsServiceTest extends TestCase
 
     // ── getStatsBySession ─────────────────────────────────────
 
-    public function testGetStatsBySessionDelegatesToRepo(): void
+    public function testGetStatsBySessionClassifiesTradesWithTimezones(): void
     {
-        $expected = [
-            ['session' => 'ASIA', 'total_trades' => 5, 'total_pnl' => 200.0],
-            ['session' => 'EUROPE', 'total_trades' => 10, 'total_pnl' => 500.0],
+        // Trade at 03:00 UTC = 12:00 Tokyo → ASIA
+        // Trade at 10:00 UTC = 11:00 CET → EUROPE (US not open)
+        // Trade at 14:30 UTC = 15:30 CET + 09:30 EST → EUROPE_US (overlap)
+        // Trade at 16:00 UTC = 17:00 CET (EU closed) + 11:00 EST → US
+        $trades = [
+            ['closed_at' => '2026-01-15 03:00:00', 'pnl' => 100.0, 'risk_reward' => 2.0],
+            ['closed_at' => '2026-01-15 10:00:00', 'pnl' => 200.0, 'risk_reward' => 1.5],
+            ['closed_at' => '2026-01-15 14:30:00', 'pnl' => -50.0, 'risk_reward' => -0.5],
+            ['closed_at' => '2026-01-15 16:00:00', 'pnl' => 150.0, 'risk_reward' => 3.0],
         ];
 
         $this->statsRepo->expects($this->once())
-            ->method('getStatsBySession')
+            ->method('getTradesForSessionStats')
             ->with(1, [])
-            ->willReturn($expected);
+            ->willReturn($trades);
 
         $result = $this->service->getStatsBySession(1);
 
-        $this->assertCount(2, $result);
-        $this->assertSame('ASIA', $result[0]['session']);
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['session']] = $row;
+        }
+
+        $this->assertCount(4, $result);
+        $this->assertSame(1, $indexed['ASIA']['total_trades']);
+        $this->assertEquals(100.0, $indexed['ASIA']['total_pnl']);
+        $this->assertSame(1, $indexed['EUROPE']['total_trades']);
+        $this->assertEquals(200.0, $indexed['EUROPE']['total_pnl']);
+        $this->assertSame(1, $indexed['EUROPE_US']['total_trades']);
+        $this->assertEquals(-50.0, $indexed['EUROPE_US']['total_pnl']);
+        $this->assertSame(1, $indexed['US']['total_trades']);
+        $this->assertEquals(150.0, $indexed['US']['total_pnl']);
+    }
+
+    public function testGetStatsBySessionComputesWinRateAndAvgRr(): void
+    {
+        $trades = [
+            ['closed_at' => '2026-01-15 10:00:00', 'pnl' => 200.0, 'risk_reward' => 2.0],
+            ['closed_at' => '2026-01-15 11:00:00', 'pnl' => -50.0, 'risk_reward' => -0.5],
+            ['closed_at' => '2026-01-15 12:00:00', 'pnl' => 100.0, 'risk_reward' => 1.0],
+        ];
+
+        $this->statsRepo->method('getTradesForSessionStats')->willReturn($trades);
+
+        $result = $this->service->getStatsBySession(1);
+
+        $this->assertCount(1, $result);
+        $europe = $result[0];
+        $this->assertSame('EUROPE', $europe['session']);
+        $this->assertSame(3, $europe['total_trades']);
+        $this->assertSame(2, $europe['wins']);
+        $this->assertSame(1, $europe['losses']);
+        $this->assertEquals(66.67, $europe['win_rate']);
+        $this->assertEquals(0.83, $europe['avg_rr']);
     }
 
     public function testGetStatsBySessionValidatesFilters(): void

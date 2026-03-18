@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\Direction;
+use App\Enums\TradingSession;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
@@ -102,7 +103,61 @@ class StatsService
     public function getStatsBySession(int $userId, array $filters = []): array
     {
         $filters = $this->validateFilters($userId, $filters);
-        return $this->statsRepo->getStatsBySession($userId, $filters);
+        $trades = $this->statsRepo->getTradesForSessionStats($userId, $filters);
+
+        $groups = [];
+        foreach ($trades as $trade) {
+            $dt = new \DateTime($trade['closed_at'], new \DateTimeZone('UTC'));
+            $session = TradingSession::classify($dt)->value;
+            $groups[$session][] = $trade;
+        }
+
+        $result = [];
+        $order = ['ASIA', 'EUROPE', 'EUROPE_US', 'US', 'OFF'];
+        foreach ($order as $session) {
+            if (empty($groups[$session])) {
+                continue;
+            }
+            $result[] = $this->aggregateSessionStats($session, $groups[$session]);
+        }
+
+        return $result;
+    }
+
+    private function aggregateSessionStats(string $session, array $trades): array
+    {
+        $total = count($trades);
+        $wins = 0;
+        $losses = 0;
+        $totalPnl = 0.0;
+        $sumRr = 0.0;
+        $grossProfit = 0.0;
+        $grossLoss = 0.0;
+
+        foreach ($trades as $t) {
+            $pnl = (float) $t['pnl'];
+            $totalPnl += $pnl;
+            $sumRr += (float) ($t['risk_reward'] ?? 0);
+
+            if ($pnl > 0) {
+                $wins++;
+                $grossProfit += $pnl;
+            } elseif ($pnl < 0) {
+                $losses++;
+                $grossLoss += abs($pnl);
+            }
+        }
+
+        return [
+            'session' => $session,
+            'total_trades' => $total,
+            'wins' => $wins,
+            'losses' => $losses,
+            'win_rate' => $total > 0 ? round($wins * 100.0 / $total, 2) : 0,
+            'total_pnl' => round($totalPnl, 2),
+            'avg_rr' => $total > 0 ? round($sumRr / $total, 2) : 0,
+            'profit_factor' => $grossLoss > 0 ? round($grossProfit / $grossLoss, 2) : null,
+        ];
     }
 
     public function getStatsByAccount(int $userId, array $filters = []): array

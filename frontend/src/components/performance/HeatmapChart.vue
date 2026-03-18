@@ -22,90 +22,74 @@ const dayLabels = computed(() => [
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
-// Get user's UTC offset in hours
-const userOffsetHours = computed(() => {
-  const tz = authStore.user?.timezone || 'UTC'
-  try {
-    const now = new Date()
-    const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' })
-    const localStr = now.toLocaleString('en-US', { timeZone: tz })
-    return Math.round((new Date(localStr) - new Date(utcStr)) / 3600000)
-  } catch {
-    return 0
-  }
-})
-
-// Session hours in UTC: Asia 0-6 (Tokyo 9-15), Europe 7-14 (Paris 8-14), US 14-22 (NY 9:30-16)
-// Shifted to user's local time for display
-const sessionsUtc = [
-  { name: 'ASIA', start: 0, end: 6 },
-  { name: 'EUROPE', start: 7, end: 14 },
-  { name: 'US', start: 14, end: 22 },
+// Session definitions: real market hours in their local timezone
+const sessionDefs = [
+  { name: 'ASIA', timezone: 'Asia/Tokyo', startHour: 9, startMin: 0, endHour: 15, endMin: 0 },
+  { name: 'EUROPE', timezone: 'Europe/Paris', startHour: 8, startMin: 0, endHour: 16, endMin: 30 },
+  { name: 'US', timezone: 'America/New_York', startHour: 9, startMin: 30, endHour: 16, endMin: 0 },
 ]
-const sessionStyles = {
-  ASIA: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
-  EUROPE: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
-  US: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+
+const sessionColors = {
+  ASIA: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-300' },
+  EUROPE: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300' },
+  US: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300' },
 }
 
-const sessions = computed(() => {
-  const off = userOffsetHours.value
-  function shift(h) { return ((h + off) % 24 + 24) % 24 }
+/**
+ * Get the UTC offset (in hours) for a given IANA timezone at a given date.
+ */
+function getTimezoneOffsetHours(timezone, date = new Date()) {
+  const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' })
+  const tzStr = date.toLocaleString('en-US', { timeZone: timezone })
+  return Math.round((new Date(tzStr) - new Date(utcStr)) / 3600000)
+}
 
-  const bands = []
+/**
+ * Get the start/end user-local hours for a session definition.
+ */
+function getSessionRange(def, userTz) {
+  const now = new Date()
+  const sessionOffset = getTimezoneOffsetHours(def.timezone, now)
+  const userOffset = getTimezoneOffsetHours(userTz, now)
+  const diff = userOffset - sessionOffset
 
-  function addBand(name, startUtc, endUtc) {
-    const color = sessionStyles[name]
-    // Expand UTC range to list of hours, then shift each
-    const utcHours = []
-    if (startUtc < endUtc) {
-      for (let h = startUtc; h < endUtc; h++) utcHours.push(h)
-    } else {
-      // wraps midnight
-      for (let h = startUtc; h < 24; h++) utcHours.push(h)
-      for (let h = 0; h < endUtc; h++) utcHours.push(h)
+  const start = ((def.startHour + diff) % 24 + 24) % 24
+  const endLocalHour = def.endMin > 0 ? def.endHour + 1 : def.endHour
+  const end = ((endLocalHour + diff) % 24 + 24) % 24
+  return { start, end }
+}
+
+/**
+ * Two rows of session bands: row1 (ASIA + EUROPE), row2 (US).
+ * Each row is a full 24-column grid. Sessions are positioned with grid-column.
+ * Where EUROPE and US overlap, both bands are visible (one per row).
+ */
+const sessionRows = computed(() => {
+  const userTz = authStore.user?.timezone || 'UTC'
+
+  const ranges = {}
+  for (const def of sessionDefs) {
+    ranges[def.name] = getSessionRange(def, userTz)
+  }
+
+  function buildBands(sessionName) {
+    const r = ranges[sessionName]
+    const colors = sessionColors[sessionName]
+    // gridColumn is 1-indexed, offset by 1 for the day-label column
+    if (r.start < r.end) {
+      return [{ name: sessionName, colStart: r.start + 2, colEnd: r.end + 2, ...colors }]
     }
-    const localHours = utcHours.map(shift).sort((a, b) => a - b)
-
-    // Group consecutive hours into bands
-    let bandStart = localHours[0]
-    let prev = localHours[0]
-    for (let i = 1; i <= localHours.length; i++) {
-      if (i < localHours.length && localHours[i] === prev + 1) {
-        prev = localHours[i]
-      } else {
-        bands.push({ name, start: bandStart, end: prev + 1, color, noLabel: bandStart !== localHours[0] })
-        if (i < localHours.length) {
-          bandStart = localHours[i]
-          prev = localHours[i]
-        }
-      }
-    }
+    // Wraps midnight: two segments
+    const bands = []
+    if (r.start < 24) bands.push({ name: sessionName, colStart: r.start + 2, colEnd: 26, ...colors, noLabel: false })
+    if (r.end > 0) bands.push({ name: sessionName, colStart: 2, colEnd: r.end + 2, ...colors, noLabel: true })
+    return bands
   }
 
-  for (const s of sessionsUtc) {
-    addBand(s.name, s.start, s.end)
+  return {
+    row1: [...buildBands('ASIA'), ...buildBands('EUROPE')],
+    row2: buildBands('US'),
   }
-
-  // Fill gaps with off-session
-  const covered = new Array(24).fill(false)
-  for (const b of bands) {
-    for (let h = b.start; h < b.end; h++) covered[h] = true
-  }
-  let gapStart = null
-  for (let h = 0; h <= 24; h++) {
-    if (h < 24 && !covered[h]) {
-      if (gapStart === null) gapStart = h
-    } else {
-      if (gapStart !== null) {
-        bands.push({ start: gapStart, end: h, off: true })
-        gapStart = null
-      }
-    }
-  }
-
-  bands.sort((a, b) => a.start - b.start)
-  return bands
 })
 
 const grid = computed(() => {
@@ -144,15 +128,31 @@ function cellTooltip(day, hour) {
     <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">{{ t('performance.heatmap_title') }}</h3>
     <div v-if="data.length > 0" class="overflow-x-auto">
       <div class="heatmap-grid">
-        <!-- Session bands row -->
+        <!-- Session band row 1: ASIA + EUROPE -->
         <div class="heatmap-corner"></div>
-        <div
-          v-for="(s, idx) in sessions"
-          :key="'s-' + idx"
-          :class="s.off ? '' : ['heatmap-session-band', s.color]"
-          :style="{ gridColumn: `span ${s.end - s.start}` }"
-        >
-          <template v-if="!s.off && !s.noLabel">{{ t(`performance.sessions.${s.name}`) }}</template>
+        <div class="heatmap-bands-row">
+          <div
+            v-for="(b, idx) in sessionRows.row1"
+            :key="'r1-' + idx"
+            class="heatmap-session-band"
+            :class="[b.bg, b.text]"
+            :style="{ gridColumn: `${b.colStart} / ${b.colEnd}` }"
+          >
+            <template v-if="!b.noLabel">{{ t(`performance.sessions.${b.name}`) }}</template>
+          </div>
+        </div>
+        <!-- Session band row 2: US -->
+        <div class="heatmap-corner"></div>
+        <div class="heatmap-bands-row">
+          <div
+            v-for="(b, idx) in sessionRows.row2"
+            :key="'r2-' + idx"
+            class="heatmap-session-band"
+            :class="[b.bg, b.text]"
+            :style="{ gridColumn: `${b.colStart} / ${b.colEnd}` }"
+          >
+            <template v-if="!b.noLabel">{{ t(`performance.sessions.${b.name}`) }}</template>
+          </div>
         </div>
         <!-- Header row: hours -->
         <div class="heatmap-corner"></div>
@@ -184,12 +184,19 @@ function cellTooltip(day, hour) {
 .heatmap-corner {
   /* empty top-left cell */
 }
+.heatmap-bands-row {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  min-height: 18px;
+}
 .heatmap-session-band {
   font-size: 10px;
   font-weight: 600;
   text-align: center;
   border-radius: 4px;
-  padding: 2px 0;
+  padding: 1px 0;
   display: flex;
   align-items: center;
   justify-content: center;

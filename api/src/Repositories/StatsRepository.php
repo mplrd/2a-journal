@@ -339,25 +339,18 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
-    public function getStatsBySession(int $userId, array $filters = []): array
+    /**
+     * Fetch closed trades with fields needed for session classification in PHP.
+     */
+    public function getTradesForSessionStats(int $userId, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
-        $select = $this->dimensionStatsSelect();
 
-        // Session hours in UTC: Asia 0-6 (Tokyo 9-15), Europe 7-13 (Paris 8-14), US 14-21 (NY 9:30-16)
-        $sql = "SELECT
-                    CASE
-                        WHEN HOUR(t.closed_at) <= 5 THEN 'ASIA'
-                        WHEN HOUR(t.closed_at) >= 7 AND HOUR(t.closed_at) <= 13 THEN 'EUROPE'
-                        WHEN HOUR(t.closed_at) >= 14 AND HOUR(t.closed_at) <= 21 THEN 'US'
-                        ELSE 'OFF'
-                    END AS session,
-                    {$select}
+        $sql = "SELECT t.closed_at, t.pnl, t.risk_reward
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 {$where}
-                GROUP BY session
-                ORDER BY FIELD(session, 'ASIA', 'EUROPE', 'US', 'OFF')";
+                ORDER BY t.closed_at";
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
@@ -425,7 +418,7 @@ class StatsRepository
     public function getOpenTrades(int $userId, int $limit = 5, array $filters = []): array
     {
         $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => 'OPEN'];
+        $params = ['user_id' => $userId, 'status' => TradeStatus::OPEN->value];
 
         if (!empty($filters['account_id'])) {
             $where .= ' AND p.account_id = :account_id';

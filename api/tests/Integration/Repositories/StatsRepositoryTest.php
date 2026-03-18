@@ -592,54 +592,40 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
     }
 
-    // ── getStatsBySession ──────────────────────────────────────
+    // ── getTradesForSessionStats ─────────────────────────────
 
-    public function testGetStatsBySessionReturnsGroupedByTradingSession(): void
+    public function testGetTradesForSessionStatsReturnsClosedTrades(): void
     {
-        // ASIA: 23-5h UTC → closed_at 03:00
         $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 03:00:00']);
-        // EUROPE: 7-13h UTC → closed_at 10:00
         $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
-        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-15 12:00:00']);
-        // US: 14-21h UTC → closed_at 16:00
-        $this->createClosedTrade(150.0, 'TP', ['closed_at' => '2026-01-15 16:00:00']);
 
-        $result = $this->repo->getStatsBySession($this->userId);
+        $result = $this->repo->getTradesForSessionStats($this->userId);
 
-        $indexed = [];
-        foreach ($result as $row) {
-            $indexed[$row['session']] = $row;
-        }
-
-        $this->assertCount(3, $result);
-        $this->assertSame(1, (int) $indexed['ASIA']['total_trades']);
-        $this->assertEquals(100.0, (float) $indexed['ASIA']['total_pnl']);
-        $this->assertSame(2, (int) $indexed['EUROPE']['total_trades']);
-        $this->assertEquals(150.0, (float) $indexed['EUROPE']['total_pnl']);
-        $this->assertSame(1, (int) $indexed['US']['total_trades']);
-        $this->assertEquals(150.0, (float) $indexed['US']['total_pnl']);
+        $this->assertCount(2, $result);
+        $this->assertArrayHasKey('closed_at', $result[0]);
+        $this->assertArrayHasKey('pnl', $result[0]);
+        $this->assertArrayHasKey('risk_reward', $result[0]);
     }
 
-    public function testGetStatsBySessionRespectsFilters(): void
+    public function testGetTradesForSessionStatsRespectsFilters(): void
     {
         $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00', 'symbol' => 'NASDAQ']);
         $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-15 10:00:00', 'symbol' => 'DAX']);
 
-        $result = $this->repo->getStatsBySession($this->userId, ['symbols' => ['NASDAQ']]);
+        $result = $this->repo->getTradesForSessionStats($this->userId, ['symbols' => ['NASDAQ']]);
 
         $this->assertCount(1, $result);
-        $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+        $this->assertEquals(100.0, (float) $result[0]['pnl']);
     }
 
-    public function testGetStatsBySessionExcludesOpenTrades(): void
+    public function testGetTradesForSessionStatsExcludesOpenTrades(): void
     {
         $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
         $this->createOpenTrade();
 
-        $result = $this->repo->getStatsBySession($this->userId);
+        $result = $this->repo->getTradesForSessionStats($this->userId);
 
-        $total = array_sum(array_column($result, 'total_trades'));
-        $this->assertSame(1, $total);
+        $this->assertCount(1, $result);
     }
 
     // ── getStatsByAccount ───────────────────────────────────────

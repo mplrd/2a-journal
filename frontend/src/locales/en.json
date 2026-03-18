@@ -171,6 +171,7 @@
     "sessions": {
       "ASIA": "Asia",
       "EUROPE": "Europe",
+      "EUROPE_US": "Overlap EU/US",
       "US": "US",
       "OFF": "Off-session"
     }

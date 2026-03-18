@@ -26,13 +26,19 @@ Statistiques groupées par période. Query param `group` = day | week | month (d
 
 ### GET /stats/by-session
 
-Statistiques groupées par session de trading. La session est dérivée de l'heure de clôture (`closed_at`) en UTC :
-- **ASIA** : 0h–6h UTC (Tokyo 9h–15h JST)
-- **EUROPE** : 7h–13h UTC (Paris 8h–14h CET)
-- **US** : 14h–21h UTC (New York 9h30–16h EST)
-- **OFF** : heures hors session (gaps entre sessions)
+Statistiques groupées par session de trading. La classification utilise les **vraies heures de marché dans leur fuseau horaire local**, avec gestion automatique de l'heure d'été (DST) :
 
-Enum backend : `TradingSession` (ASIA, EUROPE, US, OFF). Classification en UTC pur (pas de conversion timezone).
+- **ASIA** : Tokyo 9h00–15h00 (`Asia/Tokyo`, pas de DST)
+- **EUROPE** : Paris 8h00–16h30 (`Europe/Paris`, DST CET↔CEST)
+- **EUROPE_US** : chevauchement Europe + US (ouverture US → fermeture Europe)
+- **US** : New York 9h30–16h00 (`America/New_York`, DST EST↔EDT)
+- **OFF** : heures hors des 3 sessions
+
+**Chevauchement Europe/US** : quand les deux marchés sont ouverts simultanément, le trade est classifié `EUROPE_US`. Cette période est la plus volatile et mérite une analyse distincte. Sur la heatmap, la zone de chevauchement est affichée avec un dégradé bleu↔rouge et une bordure pointillée violette.
+
+**Architecture** : la classification est faite en PHP (pas en SQL) car les `CASE WHEN HOUR()` SQL ne gèrent pas le DST. Le repository retourne les trades bruts (`closed_at`, `pnl`, `risk_reward`), le service classifie chaque trade via `TradingSession::classify(DateTime)` puis agrège les statistiques en PHP.
+
+Enum backend : `TradingSession` (ASIA, EUROPE, EUROPE_US, US, OFF) avec méthodes `classify()` et `getSessionDefinitions()`.
 
 ### GET /stats/by-account
 
@@ -84,7 +90,7 @@ La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voi
 
 **Choix de visualisation** : les dimensions d'efficacité (symbole, setup, session, type de compte) utilisent un chart double axe (win rate % à gauche, R:R moyen à droite) plutôt que du P&L brut. Le P&L reste affiché pour le symbole (utile en absolu) et la période (évolution temporelle). Le composable `useChartOptions` expose `dualAxisChartOptions` pour ces charts.
 
-**Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades. Les heures sont converties dans le fuseau du user via `CONVERT_TZ` côté backend. Les bandes de session au-dessus des heures sont décalées côté frontend selon l'offset UTC du user.
+**Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades. Les heures sont converties dans le fuseau du user via `CONVERT_TZ` côté backend. Les bandes de session sont calculées côté frontend à partir des vraies timezones (`Asia/Tokyo`, `Europe/Paris`, `America/New_York`) et converties dans le fuseau du user via `Intl.DateTimeFormat`, avec prise en charge automatique du DST.
 
 **Dialog** (modale PrimeVue) : DataTable dynamique selon la dimension sélectionnée, colonnes adaptées (avg_rr et profit_factor masqués pour la dimension période).
 
@@ -114,13 +120,14 @@ Script `api/database/seed-demo.php` crée un compte demo pré-rempli :
 
 | Type | Fichier | Tests |
 |------|---------|-------|
-| Integration | `StatsRepositoryTest.php` | getStatsBySession (3), getStatsByAccount (2), getStatsByAccountType (3) |
-| Unit | `StatsServiceTest.php` | getStatsBySession (2), getStatsByAccount (1), getStatsByAccountType (1) |
+| Unit | `TradingSessionTest.php` | classify() : 25 tests (Asia/Europe/US/OFF, été/hiver, DST transition, overlaps) |
+| Integration | `StatsRepositoryTest.php` | getTradesForSessionStats (3), getStatsByAccount (2), getStatsByAccountType (3) |
+| Unit | `StatsServiceTest.php` | getStatsBySession (3), getStatsByAccount (1), getStatsByAccountType (1) |
 | Integration | `StatsFlowTest.php` | 6 tests HTTP dimension endpoints |
 | Frontend | `DashboardFilters.spec.js` | 4 tests |
 
 ## Clés i18n
 
 Namespace `performance.*` : 42 clés (en.json et fr.json).
-Ajouts : `perf_by_symbol`, `perf_by_setup`, `perf_by_session`, `perf_by_account_type`, `by_session`, `by_account_type`, `sessions.ASIA`, `sessions.EUROPE`, `sessions.US`.
+Ajouts : `perf_by_symbol`, `perf_by_setup`, `perf_by_session`, `perf_by_account_type`, `by_session`, `by_account_type`, `sessions.ASIA`, `sessions.EUROPE`, `sessions.EUROPE_US`, `sessions.US`, `sessions.OFF`.
 Clé `nav.performance` existante.
