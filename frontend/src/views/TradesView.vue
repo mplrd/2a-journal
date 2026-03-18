@@ -76,7 +76,14 @@ async function applyFilters() {
   if (filterAccountId.value) filters.account_id = filterAccountId.value
   if (filterStatus.value) filters.status = filterStatus.value
   store.setFilters(filters)
+  store.page = 1
   await store.fetchTrades()
+}
+
+function onPage(event) {
+  store.page = event.page + 1
+  store.perPage = event.rows
+  store.fetchTrades()
 }
 
 async function handleCreate(data) {
@@ -282,14 +289,16 @@ function pnlClass(pnl) {
       />
     </div>
 
-    <p v-if="!store.loading && store.trades.length === 0" class="text-gray-500">
-      {{ t('trades.empty') }}
-    </p>
-
     <DataTable
-      v-if="store.trades.length > 0"
       :value="store.trades"
       :loading="store.loading"
+      lazy
+      paginator
+      :rows="store.perPage"
+      :totalRecords="store.totalRecords"
+      :first="(store.page - 1) * store.perPage"
+      :rowsPerPageOptions="[10, 25, 50]"
+      @page="onPage"
       stripedRows
       class="mt-2"
     >

@@ -36,7 +36,14 @@ async function applyFilters() {
   const filters = {}
   if (filterAccountId.value) filters.account_id = filterAccountId.value
   store.setFilters(filters)
+  store.page = 1
   await store.fetchAggregated()
+}
+
+function onPage(event) {
+  store.page = event.page + 1
+  store.perPage = event.rows
+  store.fetchAggregated()
 }
 
 function directionSeverity(direction) {
@@ -62,14 +69,16 @@ function directionSeverity(direction) {
       />
     </div>
 
-    <p v-if="!store.loading && store.positions.length === 0" class="text-gray-500">
-      {{ t('positions.empty') }}
-    </p>
-
     <DataTable
-      v-if="store.positions.length > 0"
       :value="store.positions"
       :loading="store.loading"
+      lazy
+      paginator
+      :rows="store.perPage"
+      :totalRecords="store.totalRecords"
+      :first="(store.page - 1) * store.perPage"
+      :rowsPerPageOptions="[10, 25, 50]"
+      @page="onPage"
       stripedRows
       class="mt-2"
     >

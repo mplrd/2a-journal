@@ -7,13 +7,23 @@ export const useTradesStore = defineStore('trades', () => {
   const loading = ref(false)
   const error = ref(null)
   const filters = ref({})
+  const page = ref(1)
+  const perPage = ref(25)
+  const totalRecords = ref(0)
 
   async function fetchTrades() {
     loading.value = true
     error.value = null
     try {
-      const response = await tradesService.list(filters.value)
+      const response = await tradesService.list({
+        ...filters.value,
+        page: page.value,
+        per_page: perPage.value,
+      })
       trades.value = response.data
+      if (response.meta) {
+        totalRecords.value = response.meta.total || 0
+      }
       return response
     } catch (err) {
       error.value = err.messageKey || 'error.internal'
@@ -93,6 +103,9 @@ export const useTradesStore = defineStore('trades', () => {
     loading.value = false
     error.value = null
     filters.value = {}
+    page.value = 1
+    perPage.value = 25
+    totalRecords.value = 0
   }
 
   return {
@@ -100,6 +113,9 @@ export const useTradesStore = defineStore('trades', () => {
     loading,
     error,
     filters,
+    page,
+    perPage,
+    totalRecords,
     fetchTrades,
     createTrade,
     closeTrade,
