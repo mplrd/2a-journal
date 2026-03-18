@@ -82,6 +82,7 @@ async function fetchAll() {
 }
 
 onMounted(async () => {
+  statsStore.setFilters({})
   await Promise.all([
     accountsStore.fetchAccounts(),
     symbolsStore.fetchSymbols(),
@@ -199,11 +200,11 @@ const winLossChartData = computed(() => {
 
     <DashboardFilters @apply="onApplyFilters" @reset="onResetFilters" />
 
-    <div v-if="statsStore.dimensionsLoading" class="text-gray-500 py-8 text-center">
-      <i class="pi pi-spin pi-spinner text-2xl"></i>
-    </div>
+    <div class="relative">
+      <div v-if="statsStore.dimensionsLoading" class="absolute inset-0 bg-white/60 dark:bg-gray-900/60 z-10 flex items-center justify-center rounded-lg">
+        <i class="pi pi-spin pi-spinner text-3xl text-gray-400"></i>
+      </div>
 
-    <template v-else>
       <!-- Row 1: Cumulative P&L + Equity Curve -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
@@ -306,7 +307,7 @@ const winLossChartData = computed(() => {
       <div class="mb-6">
         <HeatmapChart :data="statsStore.heatmap" />
       </div>
-    </template>
+    </div>
 
     <StatsDetailDialog
       v-model:visible="dialogVisible"

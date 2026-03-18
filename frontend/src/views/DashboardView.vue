@@ -19,6 +19,7 @@ const accountsStore = useAccountsStore()
 const filterAccountId = ref(null)
 
 onMounted(async () => {
+  statsStore.setFilters({})
   await accountsStore.fetchAccounts()
   await Promise.all([
     statsStore.fetchDashboard(),
@@ -57,11 +58,11 @@ async function applyFilters() {
       />
     </div>
 
-    <div v-if="statsStore.loading" class="text-gray-500 py-8 text-center">
-      <i class="pi pi-spin pi-spinner text-2xl"></i>
-    </div>
+    <div class="relative">
+      <div v-if="statsStore.loading" class="absolute inset-0 bg-white/60 dark:bg-gray-900/60 z-10 flex items-center justify-center rounded-lg">
+        <i class="pi pi-spin pi-spinner text-3xl text-gray-400"></i>
+      </div>
 
-    <template v-else>
       <KpiCards :overview="statsStore.overview" class="mb-6" />
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -76,6 +77,6 @@ async function applyFilters() {
         </div>
         <PnlCalendar :dailyPnl="statsStore.dailyPnl" />
       </div>
-    </template>
+    </div>
   </div>
 </template>
