@@ -1,25 +1,22 @@
 #!/bin/sh
 set -e
 
-echo "==> PORT=${PORT}"
-
 # Substitute PORT in nginx config
 envsubst '${PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
-echo "==> Testing nginx config..."
-nginx -t 2>&1
-
-# Debug: show php-fpm listen config
-echo "==> PHP-FPM listen config:"
-grep -r "^listen" /usr/local/etc/php-fpm.d/ 2>&1 || true
-
-echo "==> Starting php-fpm..."
+# Start php-fpm
 php-fpm -D
 sleep 1
 
-# Debug: check what's listening
-echo "==> Listening ports:"
-ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null || true
+# Start nginx in background to self-test
+nginx
+sleep 1
 
-echo "==> Starting nginx on port ${PORT}..."
+# Self-test: hit the app internally
+echo "==> Self-test on http://127.0.0.1:${PORT}/"
+wget -q -O - --server-response http://127.0.0.1:${PORT}/ 2>&1 | head -20 || true
+
+# Stop temporary nginx, restart in foreground
+nginx -s stop 2>/dev/null || true
+sleep 0.5
 exec nginx -g 'daemon off;'
