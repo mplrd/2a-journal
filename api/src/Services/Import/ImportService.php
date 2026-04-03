@@ -145,8 +145,8 @@ class ImportService
                 }
 
                 try {
-                    // Resolve symbol
-                    $symbol = $this->resolveSymbol($userId, $posData['symbol'], $symbolMapping, $template['broker'] ?? null);
+                    // Resolve symbol (auto-creates in user assets if missing)
+                    $symbol = $this->resolveSymbol($userId, $posData['symbol'], $symbolMapping, $template['broker'] ?? null, $account['currency'] ?? 'EUR');
 
                     // Create position
                     $position = $this->positionRepo->create([
@@ -347,7 +347,7 @@ class ImportService
         return $stmt->fetchAll(PDO::FETCH_COLUMN);
     }
 
-    private function resolveSymbol(int $userId, string $brokerSymbol, array $symbolMapping, ?string $broker): string
+    private function resolveSymbol(int $userId, string $brokerSymbol, array $symbolMapping, ?string $broker, string $accountCurrency = 'EUR'): string
     {
         // First check explicit mapping from the confirm request
         if (isset($symbolMapping[$brokerSymbol])) {
@@ -363,12 +363,12 @@ class ImportService
         }
 
         // Auto-create symbol in user's assets if it doesn't exist
-        $this->ensureSymbolExists($userId, $resolved);
+        $this->ensureSymbolExists($userId, $resolved, $accountCurrency);
 
         return $resolved;
     }
 
-    private function ensureSymbolExists(int $userId, string $code): void
+    private function ensureSymbolExists(int $userId, string $code, string $currency): void
     {
         if ($this->symbolRepo->findByUserAndCode($userId, $code)) {
             return;
@@ -378,9 +378,9 @@ class ImportService
             'user_id' => $userId,
             'code' => $code,
             'name' => $code,
-            'type' => 'INDEX',
+            'type' => 'OTHER',
             'point_value' => 1.0,
-            'currency' => 'USD',
+            'currency' => $currency,
         ]);
     }
 

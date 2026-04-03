@@ -414,7 +414,8 @@
       "FOREX": "Forex",
       "CRYPTO": "Crypto",
       "STOCK": "Action",
-      "COMMODITY": "Matière première"
+      "COMMODITY": "Matière première",
+      "OTHER": "Autre"
     },
     "error": {
       "field_required": "Ce champ est requis",

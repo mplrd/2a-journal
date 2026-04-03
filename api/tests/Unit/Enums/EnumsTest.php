@@ -126,12 +126,13 @@ class EnumsTest extends TestCase
     public function testSymbolTypeCases(): void
     {
         $cases = SymbolType::cases();
-        $this->assertCount(5, $cases);
+        $this->assertCount(6, $cases);
         $this->assertSame('INDEX', SymbolType::INDEX->value);
         $this->assertSame('FOREX', SymbolType::FOREX->value);
         $this->assertSame('CRYPTO', SymbolType::CRYPTO->value);
         $this->assertSame('STOCK', SymbolType::STOCK->value);
         $this->assertSame('COMMODITY', SymbolType::COMMODITY->value);
+        $this->assertSame('OTHER', SymbolType::OTHER->value);
     }
 
     public function testSymbolTypeFromAndTryFrom(): void

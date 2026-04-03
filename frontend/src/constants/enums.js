@@ -34,6 +34,7 @@ export const SymbolType = {
   CRYPTO: 'CRYPTO',
   STOCK: 'STOCK',
   COMMODITY: 'COMMODITY',
+  OTHER: 'OTHER',
 }
 
 export const ExitType = {

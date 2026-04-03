@@ -414,7 +414,8 @@
       "FOREX": "Forex",
       "CRYPTO": "Crypto",
       "STOCK": "Stock",
-      "COMMODITY": "Commodity"
+      "COMMODITY": "Commodity",
+      "OTHER": "Other"
     },
     "error": {
       "field_required": "This field is required",

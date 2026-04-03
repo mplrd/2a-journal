@@ -9,4 +9,5 @@ enum SymbolType: string
     case CRYPTO = 'CRYPTO';
     case STOCK = 'STOCK';
     case COMMODITY = 'COMMODITY';
+    case OTHER = 'OTHER';
 }
