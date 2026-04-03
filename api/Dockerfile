@@ -33,8 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         opcache \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache modules
-RUN a2enmod rewrite headers env
+# Ensure only prefork MPM is active (required for mod_php)
+RUN a2dismod mpm_event mpm_worker 2>/dev/null; a2enmod mpm_prefork rewrite headers env
 
 # PHP production config
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
