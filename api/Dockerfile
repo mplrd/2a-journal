@@ -1,45 +1,30 @@
 # =============================================================================
-# Trading Journal — Production Dockerfile (Railway)
-# Single image: PHP/Apache serves API (/api) + Frontend static files (/)
+# Trading Journal — API Dockerfile (PHP/Apache)
 # =============================================================================
 
-# --- Stage 1: Build frontend ---
-FROM node:22-alpine AS frontend-build
-
-WORKDIR /build
-
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-COPY frontend/ .
-
-ARG VITE_API_URL=/api
-ENV VITE_API_URL=${VITE_API_URL}
-
-RUN npm run build
-
-# --- Stage 2: Install PHP dependencies ---
+# --- Stage 1: Install PHP dependencies ---
 FROM composer:2 AS composer-build
 
 WORKDIR /build
 
-COPY api/composer.json api/composer.lock* ./
+COPY composer.json composer.lock* ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 
-COPY api/ .
+COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative
 
-# --- Stage 3: Production image ---
+# --- Stage 2: Production image ---
 FROM php:8.4-apache
 
-# Install PHP extensions needed by the project
+# Install system libraries for PHP extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpng-dev \
         libjpeg-dev \
         libfreetype6-dev \
+        libwebp-dev \
         libzip-dev \
         libicu-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) \
         pdo_mysql \
         gd \
@@ -59,14 +44,11 @@ COPY docker/opcache.ini "$PHP_INI_DIR/conf.d/opcache.ini"
 # Apache config
 COPY docker/apache.conf /etc/apache2/sites-available/000-default.conf
 
-# Copy API (PHP backend)
+# Copy API
 COPY --from=composer-build /build /var/www/api
 
-# Copy frontend build
-COPY --from=frontend-build /build/dist /var/www/frontend
-
 # Set permissions
-RUN chown -R www-data:www-data /var/www/api /var/www/frontend
+RUN chown -R www-data:www-data /var/www/api
 
 # Railway uses PORT env var
 ENV PORT=8080
