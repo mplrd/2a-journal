@@ -40,10 +40,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY docker/php.ini "$PHP_INI_DIR/conf.d/99-app.ini"
 COPY docker/opcache.ini "$PHP_INI_DIR/conf.d/opcache.ini"
+RUN sed -i 's/\r$//' "$PHP_INI_DIR/conf.d/99-app.ini" "$PHP_INI_DIR/conf.d/opcache.ini"
 
 # Nginx config (full replacement, used as template for envsubst)
 COPY docker/nginx.conf /etc/nginx/nginx.conf.template
-RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
+RUN sed -i 's/\r$//' /etc/nginx/nginx.conf.template \
+    && rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
 
 # Copy API
 COPY --from=composer-build /build /var/www/api
