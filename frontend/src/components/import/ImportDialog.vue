@@ -56,6 +56,12 @@ const optionalFields = ['pips', 'comment']
 
 const isCustom = computed(() => selectedBroker.value === 'custom')
 
+const acceptedFileTypes = computed(() => {
+  const tpl = templates.value.find(t => t.broker === selectedBroker.value)
+  const types = tpl?.file_types || ['xlsx', 'csv']
+  return types.map(t => '.' + t).join(',')
+})
+
 const brokerOptions = computed(() => {
   const opts = templates.value.map((t) => ({ label: t.label, value: t.broker }))
   opts.push({ label: t('import.custom_mapping'), value: 'custom' })
@@ -222,7 +228,7 @@ function close() {
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('import.select_file') }}</label>
               <input
                 type="file"
-                accept=".xlsx,.csv"
+                :accept="acceptedFileTypes"
                 class="block w-full md:w-80 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
                 @change="onFileSelect"
               />

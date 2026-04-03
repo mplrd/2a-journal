@@ -7,7 +7,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class FileParserService
 {
-    private const ALLOWED_EXTENSIONS = ['xlsx', 'csv'];
+    private const ALLOWED_EXTENSIONS = ['xlsx', 'csv', 'xml'];
     private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
     /**
@@ -32,6 +32,10 @@ class FileParserService
 
         if ($extension === 'csv') {
             return $this->parseCsv($filePath);
+        }
+
+        if ($extension === 'xml') {
+            return $this->parseSpreadsheetMl($filePath);
         }
 
         return $this->parseSpreadsheet($filePath);
@@ -153,6 +157,125 @@ class FileParserService
         }
 
         fclose($handle);
+        return [$rows, $headers];
+    }
+
+    /**
+     * Parse a SpreadsheetML (XML) file, preserving raw cell values as strings.
+     * Auto-detects the header row by finding a row with ≥5 non-empty cells.
+     */
+    private function parseSpreadsheetMl(string $filePath): array
+    {
+        $xml = simplexml_load_file($filePath);
+        if ($xml === false) {
+            throw new ValidationException('import.error.file_not_found', 'file');
+        }
+
+        $ns = ['ss' => 'urn:schemas-microsoft-com:office:spreadsheet'];
+
+        $worksheet = $xml->children($ns['ss'])->Worksheet;
+        if (!$worksheet) {
+            throw new ValidationException('import.error.empty_file', 'file');
+        }
+
+        $table = $worksheet->children($ns['ss'])->Table;
+        if (!$table) {
+            throw new ValidationException('import.error.empty_file', 'file');
+        }
+
+        $allRows = $table->children($ns['ss'])->Row;
+        if (!$allRows || count($allRows) < 2) {
+            throw new ValidationException('import.error.empty_file', 'file');
+        }
+
+        // Extract all rows as arrays of cell values
+        $parsedRows = [];
+        foreach ($allRows as $xmlRow) {
+            $cells = [];
+            $colIndex = 0;
+
+            foreach ($xmlRow->children($ns['ss'])->Cell as $cell) {
+                // Handle ss:Index attribute (1-based column positioning)
+                $attrs = $cell->attributes($ns['ss']);
+                if (isset($attrs['Index'])) {
+                    $colIndex = (int) $attrs['Index'] - 1;
+                }
+
+                $data = $cell->children($ns['ss'])->Data;
+                $value = $data ? trim((string) $data) : '';
+
+                $cells[$colIndex] = $value;
+                $colIndex++;
+            }
+
+            $parsedRows[] = $cells;
+        }
+
+        // Find header row: first row with ≥5 non-empty cells
+        $headerRowIdx = null;
+        foreach ($parsedRows as $idx => $cells) {
+            $nonEmpty = count(array_filter($cells, fn($v) => $v !== ''));
+            if ($nonEmpty >= 5) {
+                $headerRowIdx = $idx;
+                break;
+            }
+        }
+
+        if ($headerRowIdx === null) {
+            throw new ValidationException('import.error.empty_file', 'file');
+        }
+
+        $rawHeaders = $parsedRows[$headerRowIdx];
+        // Build headers indexed by column position
+        $maxCol = max(array_keys($rawHeaders));
+        $headers = [];
+        for ($c = 0; $c <= $maxCol; $c++) {
+            $headers[$c] = $rawHeaders[$c] ?? '';
+        }
+        $headers = $this->deduplicateHeaders($headers);
+
+        // Parse data rows after header
+        $rows = [];
+        for ($i = $headerRowIdx + 1; $i < count($parsedRows); $i++) {
+            $row = [];
+            $hasData = false;
+            foreach ($headers as $colIdx => $header) {
+                if ($header === '') {
+                    continue;
+                }
+                $value = $parsedRows[$i][$colIdx] ?? null;
+                // Treat whitespace-only as empty
+                if (is_string($value) && trim($value) === '') {
+                    $value = null;
+                }
+                $row[$header] = $value;
+                if ($value !== null) {
+                    $hasData = true;
+                }
+            }
+
+            // Skip fully empty rows and summary rows (containing "Total:")
+            if (!$hasData) {
+                continue;
+            }
+            $isSummary = false;
+            foreach ($row as $v) {
+                if (is_string($v) && str_contains($v, 'Total:')) {
+                    $isSummary = true;
+                    break;
+                }
+            }
+            if ($isSummary) {
+                continue;
+            }
+
+            $rows[] = $row;
+        }
+
+        if (empty($rows)) {
+            throw new ValidationException('import.error.empty_file', 'file');
+        }
+
         return [$rows, $headers];
     }
 }

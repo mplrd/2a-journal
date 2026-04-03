@@ -55,6 +55,15 @@ class ImportService
     {
         [$rows, $headers] = $this->parser->parseWithHeaders($filePath, $originalFilename);
 
+        // Merge multi-row records if template requires it (e.g. FXCM: 2 rows per trade)
+        if (($template['multi_row'] ?? 1) > 1) {
+            $rows = $this->mapper->mergeMultiRows($rows, $template);
+            // Update headers from merged row keys
+            if (!empty($rows)) {
+                $headers = array_keys($rows[0]);
+            }
+        }
+
         $columnMapping = $this->mapper->mapColumns($headers, $template);
         $currency = $this->mapper->detectCurrency($headers, $template);
 

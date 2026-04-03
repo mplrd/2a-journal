@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAccountsStore } from '@/stores/accounts'
 import { importsService } from '@/services/imports'
@@ -37,6 +37,13 @@ const result = ref(null)
 // History
 const batches = ref([])
 const showHistory = ref(false)
+
+// Dynamic file accept based on selected broker template
+const acceptedFileTypes = computed(() => {
+  const tpl = templates.value.find(t => t.broker === selectedBroker.value)
+  const types = tpl?.file_types || ['xlsx', 'csv']
+  return types.map(t => '.' + t).join(',')
+})
 
 onMounted(async () => {
   await accountsStore.fetchAccounts()
@@ -230,7 +237,7 @@ function formatDate(dateStr) {
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('import.select_file') }}</label>
                 <input
                   type="file"
-                  accept=".xlsx,.csv"
+                  :accept="acceptedFileTypes"
                   class="block w-full md:w-80 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
                   @change="onFileSelect"
                 />

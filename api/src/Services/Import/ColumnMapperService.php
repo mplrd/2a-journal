@@ -129,8 +129,12 @@ class ColumnMapperService
                 $value = $this->parseDate((string) $value, $colDef['format']);
             }
 
-            // Cast numeric fields
+            // Cast numeric fields (strip thousands separator if configured)
             if (in_array($field, ['entry_price', 'exit_price', 'size', 'pnl', 'pips']) && $value !== null) {
+                $thousandsSep = $template['thousands_separator'] ?? null;
+                if ($thousandsSep !== null) {
+                    $value = str_replace($thousandsSep, '', (string) $value);
+                }
                 $value = (float) $value;
             }
 
@@ -138,6 +142,71 @@ class ColumnMapperService
         }
 
         return $normalized;
+    }
+
+    /**
+     * Merge multi-row records into single rows.
+     * Used for formats like FXCM where each trade spans 2 rows (open + close).
+     *
+     * @return array[] Merged rows with synthetic _direction, _entry_price, _exit_price, _opened_at, _closed_at fields
+     */
+    public function mergeMultiRows(array $rows, array $template): array
+    {
+        $multiRow = $template['multi_row'] ?? 1;
+        if ($multiRow <= 1) {
+            return $rows;
+        }
+
+        $mergeConfig = $template['multi_row_merge'] ?? [];
+        $merged = [];
+
+        for ($i = 0; $i + $multiRow - 1 < count($rows); $i += $multiRow) {
+            $openRow = $rows[$i];
+            $closeRow = $rows[$i + 1];
+
+            // Determine direction from which price column is filled on the open row
+            $sellCol = $mergeConfig['direction_from']['sell_column'] ?? null;
+            $buyCol = $mergeConfig['direction_from']['buy_column'] ?? null;
+
+            $sellPrice = $openRow[$sellCol] ?? null;
+            $buyPrice = $openRow[$buyCol] ?? null;
+
+            if ($sellPrice !== null) {
+                $direction = 'SELL';
+                $entryPrice = $sellPrice;
+                $exitPrice = $closeRow[$buyCol] ?? null;
+            } else {
+                $direction = 'BUY';
+                $entryPrice = $buyPrice;
+                $exitPrice = $closeRow[$sellCol] ?? null;
+            }
+
+            // Build merged row: keep open row data + add synthetic fields
+            $mergedRow = $openRow;
+            $mergedRow['_direction'] = $direction;
+            $mergedRow['_entry_price'] = $entryPrice;
+            $mergedRow['_exit_price'] = $exitPrice;
+
+            // Opened/closed dates
+            $openDateCol = $mergeConfig['opened_at']['column'] ?? 'Date';
+            $closeDateCol = $mergeConfig['closed_at']['column'] ?? 'Date';
+            $mergedRow['_opened_at'] = $openRow[$openDateCol] ?? null;
+            $mergedRow['_closed_at'] = $closeRow[$closeDateCol] ?? null;
+
+            // Carry over close-row-only fields (PnL, pips, etc.)
+            $pnlCol = $mergeConfig['pnl']['column'] ?? null;
+            if ($pnlCol && isset($closeRow[$pnlCol])) {
+                $mergedRow[$pnlCol] = $closeRow[$pnlCol];
+            }
+            $pipsCol = $mergeConfig['pips']['column'] ?? null;
+            if ($pipsCol && isset($closeRow[$pipsCol])) {
+                $mergedRow[$pipsCol] = $closeRow[$pipsCol];
+            }
+
+            $merged[] = $mergedRow;
+        }
+
+        return $merged;
     }
 
     /**
