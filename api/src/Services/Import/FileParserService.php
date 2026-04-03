@@ -60,6 +60,27 @@ class FileParserService
         return $extension;
     }
 
+    /**
+     * Deduplicate headers by appending _2, _3, etc. to repeated names.
+     */
+    private function deduplicateHeaders(array $headers): array
+    {
+        $counts = [];
+        $result = [];
+
+        foreach ($headers as $header) {
+            if (!isset($counts[$header])) {
+                $counts[$header] = 1;
+                $result[] = $header;
+            } else {
+                $counts[$header]++;
+                $result[] = $header . '_' . $counts[$header];
+            }
+        }
+
+        return $result;
+    }
+
     private function parseSpreadsheet(string $filePath): array
     {
         $spreadsheet = IOFactory::load($filePath);
@@ -70,7 +91,7 @@ class FileParserService
             throw new ValidationException('import.error.empty_file', 'file');
         }
 
-        $headers = array_map('trim', $data[0]);
+        $headers = $this->deduplicateHeaders(array_map('trim', $data[0]));
         $rows = [];
 
         for ($i = 1; $i < count($data); $i++) {
@@ -109,7 +130,7 @@ class FileParserService
             throw new ValidationException('import.error.empty_file', 'file');
         }
 
-        $headers = array_map('trim', $headerRow);
+        $headers = $this->deduplicateHeaders(array_map('trim', $headerRow));
         $rows = [];
 
         while (($line = fgetcsv($handle, 0, $delimiter)) !== false) {

@@ -22,8 +22,8 @@ class ColumnMapperService
             if ($found !== null) {
                 $mapping[$field] = $found;
             } else {
-                // pips and comment are optional
-                if (!in_array($field, ['pips', 'comment'])) {
+                // pips, comment and opened_at are optional
+                if (!in_array($field, ['pips', 'comment', 'opened_at'])) {
                     $missing[] = $field;
                 }
             }
@@ -125,7 +125,7 @@ class ColumnMapperService
             }
 
             // Parse dates
-            if ($field === 'closed_at' && $value !== null && isset($colDef['format'])) {
+            if (in_array($field, ['closed_at', 'opened_at']) && $value !== null && isset($colDef['format'])) {
                 $value = $this->parseDate((string) $value, $colDef['format']);
             }
 

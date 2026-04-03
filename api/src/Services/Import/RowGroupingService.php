@@ -106,7 +106,7 @@ class RowGroupingService
             'total_size' => round($totalSize, 5),
             'total_pnl' => round($totalPnl, 2),
             'avg_exit_price' => $avgExitPrice,
-            'opened_at' => $earliestClose, // best approximation: earliest exit
+            'opened_at' => $first['opened_at'] ?? $earliestClose, // use explicit opened_at if available
             'closed_at' => $latestClose,
             'comment' => $comment,
             'external_id' => $externalId,
