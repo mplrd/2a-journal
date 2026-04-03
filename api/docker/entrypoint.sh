@@ -10,10 +10,10 @@ nginx -t
 echo "==> Starting php-fpm..."
 php-fpm -D
 
-# Wait for php-fpm to be ready
+# Wait for php-fpm socket to be ready
 echo "==> Waiting for php-fpm..."
 for i in $(seq 1 30); do
-    if nc -z 127.0.0.1 9000 2>/dev/null; then
+    if [ -S /var/run/php-fpm.sock ]; then
         echo "==> php-fpm ready"
         break
     fi
