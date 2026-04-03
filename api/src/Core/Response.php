@@ -35,6 +35,13 @@ class Response
         return new self($status, ['success' => false, 'error' => $error]);
     }
 
+    public static function redirect(string $url, int $status = 302): self
+    {
+        $response = new self($status, []);
+        $response->headers['Location'] = $url;
+        return $response;
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $this->headers[$name] = $value;
@@ -64,10 +71,12 @@ class Response
     public function send(): void
     {
         http_response_code($this->statusCode);
-        header('Content-Type: application/json; charset=utf-8');
         foreach ($this->headers as $name => $value) {
             header("$name: $value");
         }
-        echo json_encode($this->body, JSON_UNESCAPED_UNICODE);
+        if (!isset($this->headers['Location'])) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($this->body, JSON_UNESCAPED_UNICODE);
+        }
     }
 }
