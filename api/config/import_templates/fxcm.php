@@ -5,6 +5,10 @@ return [
     'label' => 'FXCM',
     'file_types' => ['xml'],
     'thousands_separator' => ',',
+    'row_filter' => [
+        'column' => 'Ticket №',
+        'pattern' => '/^\s*\d*\s*$/', // Keep rows where Ticket is numeric or empty (open/close pairs)
+    ],
     'multi_row' => 2,
     'multi_row_merge' => [
         // Direction is determined by which price column is filled on the OPEN row

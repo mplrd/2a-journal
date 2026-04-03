@@ -211,13 +211,16 @@ class FileParserService
             $parsedRows[] = $cells;
         }
 
-        // Find header row: first row with ≥5 non-empty cells
+        // Find header row: the row with the most non-empty cells among the first 50 rows.
+        // This handles SpreadsheetML files with metadata rows before the actual headers.
         $headerRowIdx = null;
-        foreach ($parsedRows as $idx => $cells) {
-            $nonEmpty = count(array_filter($cells, fn($v) => $v !== ''));
-            if ($nonEmpty >= 5) {
+        $maxNonEmpty = 0;
+        $searchLimit = min(50, count($parsedRows));
+        for ($idx = 0; $idx < $searchLimit; $idx++) {
+            $nonEmpty = count(array_filter($parsedRows[$idx], fn($v) => $v !== ''));
+            if ($nonEmpty > $maxNonEmpty) {
+                $maxNonEmpty = $nonEmpty;
                 $headerRowIdx = $idx;
-                break;
             }
         }
 

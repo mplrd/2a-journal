@@ -514,7 +514,7 @@
     "step_result": "Résultat",
     "select_broker": "Sélectionner le broker",
     "select_account": "Sélectionner le compte",
-    "select_file": "Fichier d'export (.xlsx ou .csv)",
+    "select_file": "Fichier d'export",
     "analyze": "Analyser",
     "confirm_import": "Confirmer l'import",
     "new_import": "Nouvel import",

@@ -158,6 +158,21 @@ class ColumnMapperService
         }
 
         $mergeConfig = $template['multi_row_merge'] ?? [];
+
+        // Filter rows before merging if template defines a row_filter
+        if (isset($template['row_filter'])) {
+            $filterCol = $template['row_filter']['column'];
+            $filterPattern = $template['row_filter']['pattern'];
+            $filtered = [];
+            foreach ($rows as $row) {
+                $value = $row[$filterCol] ?? '';
+                if ($value === null || preg_match($filterPattern, (string) $value)) {
+                    $filtered[] = $row;
+                }
+            }
+            $rows = $filtered;
+        }
+
         $merged = [];
 
         for ($i = 0; $i + $multiRow - 1 < count($rows); $i += $multiRow) {
