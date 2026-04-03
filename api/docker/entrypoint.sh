@@ -8,15 +8,5 @@ envsubst '${PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 php-fpm -D
 sleep 1
 
-# Start nginx in background to self-test
-nginx
-sleep 1
-
-# Self-test: hit the app internally
-echo "==> Self-test on http://127.0.0.1:${PORT}/"
-php -r "echo file_get_contents('http://127.0.0.1:${PORT}/');" 2>&1 | head -20 || true
-
-# Stop temporary nginx, restart in foreground
-nginx -s stop 2>/dev/null || true
-sleep 0.5
+# Start nginx in foreground
 exec nginx -g 'daemon off;'
