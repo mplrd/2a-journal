@@ -19,6 +19,7 @@ FROM php:8.4-fpm
 # Install nginx and PHP extension dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
         nginx \
+        gettext-base \
         libpng-dev \
         libjpeg-dev \
         libfreetype6-dev \
