@@ -1,10 +1,14 @@
 #!/bin/sh
+set -e
 
-# Substitute PORT in nginx config
+echo "==> Substituting PORT..."
 envsubst '${PORT}' < /etc/nginx/sites-available/default > /etc/nginx/sites-enabled/default
 
-# Start php-fpm in background
+echo "==> Testing nginx config..."
+nginx -t
+
+echo "==> Starting php-fpm..."
 php-fpm -D
 
-# Start nginx in foreground
+echo "==> Starting nginx..."
 nginx -g 'daemon off;'
