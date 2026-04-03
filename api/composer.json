@@ -7,7 +7,8 @@
         "firebase/php-jwt": "^6.0",
         "respect/validation": "^2.0",
         "phpoffice/phpspreadsheet": "^5.5",
-        "guzzlehttp/guzzle": "^7.10"
+        "guzzlehttp/guzzle": "^7.10",
+        "textalk/websocket": "^1.5"
     },
     "require-dev": {
         "phpunit/phpunit": "^11.0"
