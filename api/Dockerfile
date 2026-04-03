@@ -34,8 +34,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Ensure only prefork MPM is active (required for mod_php)
-RUN rm -f /etc/apache2/mods-enabled/mpm_event.load /etc/apache2/mods-enabled/mpm_event.conf \
-          /etc/apache2/mods-enabled/mpm_worker.load /etc/apache2/mods-enabled/mpm_worker.conf \
+# Remove all MPM LoadModule lines from Apache config, then re-add only prefork
+RUN find /etc/apache2 -name "*.load" -exec grep -l "mpm_" {} \; | while read f; do \
+        sed -i '/LoadModule mpm_event_module/d; /LoadModule mpm_worker_module/d' "$f"; \
+    done \
+    && rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.* \
     && a2enmod mpm_prefork rewrite headers env
 
 # PHP production config
