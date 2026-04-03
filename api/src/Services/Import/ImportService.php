@@ -11,6 +11,7 @@ use App\Repositories\AccountRepository;
 use App\Repositories\ImportBatchRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\SymbolAliasRepository;
+use App\Repositories\SymbolRepository;
 use App\Repositories\TradeRepository;
 use PDO;
 
@@ -21,6 +22,7 @@ class ImportService
     private RowGroupingService $grouper;
     private ImportBatchRepository $batchRepo;
     private SymbolAliasRepository $aliasRepo;
+    private SymbolRepository $symbolRepo;
     private PositionRepository $positionRepo;
     private TradeRepository $tradeRepo;
     private AccountRepository $accountRepo;
@@ -32,6 +34,7 @@ class ImportService
         RowGroupingService $grouper,
         ImportBatchRepository $batchRepo,
         SymbolAliasRepository $aliasRepo,
+        SymbolRepository $symbolRepo,
         PositionRepository $positionRepo,
         TradeRepository $tradeRepo,
         AccountRepository $accountRepo,
@@ -42,6 +45,7 @@ class ImportService
         $this->grouper = $grouper;
         $this->batchRepo = $batchRepo;
         $this->aliasRepo = $aliasRepo;
+        $this->symbolRepo = $symbolRepo;
         $this->positionRepo = $positionRepo;
         $this->tradeRepo = $tradeRepo;
         $this->accountRepo = $accountRepo;
@@ -349,17 +353,35 @@ class ImportService
         if (isset($symbolMapping[$brokerSymbol])) {
             // Save alias for future imports
             $this->aliasRepo->upsert($userId, $brokerSymbol, $symbolMapping[$brokerSymbol], $broker);
-            return $symbolMapping[$brokerSymbol];
+            $resolved = $symbolMapping[$brokerSymbol];
+        } elseif ($alias = $this->aliasRepo->findByBrokerSymbol($userId, $brokerSymbol, $broker)) {
+            // Then check saved aliases
+            $resolved = $alias['journal_symbol'];
+        } else {
+            // Fallback: use broker symbol as-is
+            $resolved = $brokerSymbol;
         }
 
-        // Then check saved aliases
-        $alias = $this->aliasRepo->findByBrokerSymbol($userId, $brokerSymbol, $broker);
-        if ($alias) {
-            return $alias['journal_symbol'];
+        // Auto-create symbol in user's assets if it doesn't exist
+        $this->ensureSymbolExists($userId, $resolved);
+
+        return $resolved;
+    }
+
+    private function ensureSymbolExists(int $userId, string $code): void
+    {
+        if ($this->symbolRepo->findByUserAndCode($userId, $code)) {
+            return;
         }
 
-        // Fallback: use broker symbol as-is
-        return $brokerSymbol;
+        $this->symbolRepo->create([
+            'user_id' => $userId,
+            'code' => $code,
+            'name' => $code,
+            'type' => 'INDEX',
+            'point_value' => 1.0,
+            'currency' => 'USD',
+        ]);
     }
 
     private function createImportedTrade(int $positionId, array $posData): int

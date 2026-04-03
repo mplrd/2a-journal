@@ -194,6 +194,7 @@ $importService = new ImportService(
     new RowGroupingService(),
     $importBatchRepo,
     $symbolAliasRepo,
+    $symbolRepo,
     $positionRepo,
     $tradeRepo,
     $accountRepo,

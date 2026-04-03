@@ -8,6 +8,7 @@ use App\Services\Import\ColumnMapperService;
 use App\Services\Import\RowGroupingService;
 use App\Repositories\ImportBatchRepository;
 use App\Repositories\SymbolAliasRepository;
+use App\Repositories\SymbolRepository;
 use App\Repositories\AccountRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\TradeRepository;
@@ -33,6 +34,7 @@ class ImportServiceTest extends TestCase
         $pdo = $this->createMock(PDO::class);
         $batchRepo = $this->createMock(ImportBatchRepository::class);
         $aliasRepo = $this->createMock(SymbolAliasRepository::class);
+        $symbolRepo = $this->createMock(SymbolRepository::class);
         $posRepo = $this->createMock(PositionRepository::class);
         $tradeRepo = $this->createMock(TradeRepository::class);
         $accountRepo = $this->createMock(AccountRepository::class);
@@ -43,6 +45,7 @@ class ImportServiceTest extends TestCase
             $this->grouper,
             $batchRepo,
             $aliasRepo,
+            $symbolRepo,
             $posRepo,
             $tradeRepo,
             $accountRepo,
