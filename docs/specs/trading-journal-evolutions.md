@@ -82,14 +82,26 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 
 ## Import / Connecteurs broker
 
-### 18. Import de trades (fichier + API broker)
-- **Import fichier** (CSV/XLSX) : pour les brokers sans API, upload manuel avec templates de mapping par broker (cTrader, MT4, MT5...) + mode custom
-- **Import API** : connecteurs broker avec OAuth2, sync initial + incrémental (cTrader Open API en premier)
-- Preview avant import, détection de doublons (hash external_id), mapping symboles broker ↔ journal
-- Regroupement des exécutions en positions (même entry_price + direction + symbol = partial exits)
-- Tables : `import_batches` (audit trail), `symbol_aliases` (mapping symboles), `broker_connections` (tokens chiffrés)
-- Templates broker en JSON déclaratif (colonnes, format date, mapping direction FR/EN)
-- Priorité haute : prérequis d'adoption pour tout utilisateur avec un historique existant
+### ~~18. Import de trades (fichier)~~ ✅ (partiellement)
+- **Import fichier** : upload manuel avec templates de mapping par broker + mode custom
+- **Templates livrés** : cTrader (XLSX/CSV), FTMO (CSV/XLSX), FXCM (XML SpreadsheetML)
+- **Fonctionnalités génériques livrées** : déduplication headers, fusion multi-lignes, séparateur de milliers, `opened_at` optionnel, accept dynamique frontend
+- Preview avant import, détection de doublons (hash external_id), mapping symboles broker ↔ journal, rollback
+- Tables : `import_batches` (audit trail), `symbol_aliases` (mapping symboles)
+- Voir `docs/19-import-history.md`, `docs/20-import-ftmo.md`, `docs/21-import-fxcm.md`
+- **Reste à faire** : connecteurs API broker (OAuth2, sync incrémental — Phase 2), templates MT4/MT5
+
+### 20. Import "transaction log" (matching achats/ventes)
+- **Contexte** : certaines plateformes (brokers actions, exchanges crypto) exportent un historique de transactions individuelles (achat OU vente) et non des trades complets (entrée + sortie + PnL)
+- **Plateformes identifiées** : SwissBorg (XLSX), Fortuneo (CSV), Ouinex (CSV), BingX (à venir)
+- **Principe** : nouveau mode d'import qui reconstitue des positions à partir de transactions isolées
+  1. Parser le fichier et filtrer les opérations pertinentes (Achat/Vente, Buy/Sell — ignorer dividendes, dépôts, conversions, frais...)
+  2. Grouper par symbole/instrument
+  3. Matcher les entrées avec les sorties en FIFO (ou LIFO, configurable) pour reconstituer des positions avec PnL calculé
+  4. Gérer les positions partiellement fermées (partie encore ouverte)
+- **Différence avec l'import actuel** : l'import classique (cTrader, FTMO, FXCM) attend des trades complets avec entry_price + exit_price + PnL déjà calculés ; le mode transaction log calcule le PnL à partir des prix d'achat et de vente
+- **Fichiers de référence disponibles** dans `trading-journal-exports/` : ouinex, swissborg, fortuneo
+- **Priorité** : moyenne — à traiter après la stabilisation de l'import classique
 
 ## Architecture / UX
 
