@@ -163,10 +163,11 @@ class ColumnMapperService
         if (isset($template['row_filter'])) {
             $filterCol = $template['row_filter']['column'];
             $filterPattern = $template['row_filter']['pattern'];
+            $allowEmpty = $template['row_filter']['allow_empty'] ?? false;
             $filtered = [];
             foreach ($rows as $row) {
-                $value = $row[$filterCol] ?? '';
-                if ($value === null || preg_match($filterPattern, (string) $value)) {
+                $value = trim((string) ($row[$filterCol] ?? ''));
+                if (($allowEmpty && $value === '') || preg_match($filterPattern, $value)) {
                     $filtered[] = $row;
                 }
             }
@@ -178,6 +179,15 @@ class ColumnMapperService
         for ($i = 0; $i + $multiRow - 1 < count($rows); $i += $multiRow) {
             $openRow = $rows[$i];
             $closeRow = $rows[$i + 1];
+
+            // Skip pairs where the open row has no symbol (summary/footer rows)
+            $symbolCol = $mergeConfig['direction_from']['sell_column'] ?? null;
+            $buyCol2 = $mergeConfig['direction_from']['buy_column'] ?? null;
+            $hasSellPrice = isset($openRow[$symbolCol]) && $openRow[$symbolCol] !== null;
+            $hasBuyPrice = isset($openRow[$buyCol2]) && $openRow[$buyCol2] !== null;
+            if (!$hasSellPrice && !$hasBuyPrice) {
+                continue;
+            }
 
             // Determine direction from which price column is filled on the open row
             $sellCol = $mergeConfig['direction_from']['sell_column'] ?? null;

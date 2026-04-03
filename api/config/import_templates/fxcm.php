@@ -7,7 +7,8 @@ return [
     'thousands_separator' => ',',
     'row_filter' => [
         'column' => 'Ticket №',
-        'pattern' => '/^\s*\d*\s*$/', // Keep rows where Ticket is numeric or empty (open/close pairs)
+        'pattern' => '/^\d+$/', // Keep rows where Ticket is numeric (open rows = ticket ID, close rows filtered by pair validation)
+        'allow_empty' => true,  // Also keep rows where column is empty/null (close rows)
     ],
     'multi_row' => 2,
     'multi_row_merge' => [
