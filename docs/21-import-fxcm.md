@@ -90,4 +90,15 @@ Les inputs file dans `ImportView.vue` et `ImportDialog.vue` utilisent maintenant
 
 **Total : 16 tests, 148 assertions** — tous passent.
 
-Suite complète : **713 tests, 1969 assertions**, aucune régression.
+## Corrections post-livraison
+
+### Détection d'en-tête améliorée
+Le fichier réel FXCM contient des lignes de métadonnées (titre, période, nom d'utilisateur) avant les en-têtes. La détection a été améliorée : au lieu de prendre la première ligne avec ≥5 cellules, le parser prend la ligne avec le **maximum** de cellules non-vides parmi les 50 premières lignes.
+
+### Filtrage des lignes de résumé
+Le fichier réel contient des sections parasites ("RESUME DE L'ACTIVITE DU COMPTE", "Balance Initiale", "Marge Nécessaire"). Le `row_filter` du template FXCM exige un Ticket numérique pour les lignes d'ouverture, et le merge skip les paires sans prix d'entrée.
+
+### Limite upload PHP
+Le fichier FXCM (~3MB) dépasse la limite par défaut `upload_max_filesize = 2M`. Nécessite `upload_max_filesize = 16M` et `post_max_size = 20M` dans le php.ini **d'Apache** (pas celui du CLI).
+
+Suite complète : **713 tests, 1970 assertions**, aucune régression.

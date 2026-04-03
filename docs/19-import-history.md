@@ -6,6 +6,16 @@ Permettre l'import de l'historique de trading depuis un fichier d'export broker 
 
 ## Formats supportés
 
+### Templates broker disponibles
+
+| Template | Formats | Particularités |
+|----------|---------|----------------|
+| cTrader | XLSX, CSV | Colonnes FR/EN, sorties partielles |
+| FTMO | CSV, XLSX | Colonnes dupliquées "Prix", date d'ouverture explicite |
+| FXCM | XML (SpreadsheetML) | 2 lignes/trade, séparateur de milliers, direction par colonnes Vendu/Achete |
+
+Voir `docs/20-import-ftmo.md` et `docs/21-import-fxcm.md` pour les détails spécifiques.
+
 ### cTrader (template `ctrader`)
 
 Export XLSX depuis cTrader (Spotware). Colonnes détectées en FR et EN :
@@ -33,6 +43,7 @@ Les templates sont des fichiers PHP dans `api/config/import_templates/`. Chaque 
 - Le mapping des valeurs (Acheter → BUY, Vendre → SELL)
 - Le format de date
 - La clé de regroupement (symbol + direction + entry_price)
+- Options avancées : `multi_row` (fusion multi-lignes), `thousands_separator`, `row_filter` (filtrage lignes parasites)
 
 Extensible sans code : ajouter un fichier PHP pour un nouveau broker.
 
@@ -94,14 +105,14 @@ Annule un import : supprime toutes les positions du batch (CASCADE sur trades + 
 | Couche | Fichier | Rôle |
 |--------|---------|------|
 | Enum | `ImportStatus.php` | PENDING, PROCESSING, COMPLETED, FAILED, ROLLED_BACK |
-| Service | `FileParserService.php` | Lecture XLSX/CSV via PhpSpreadsheet |
-| Service | `ColumnMapperService.php` | Mapping colonnes via template, détection devise |
+| Service | `FileParserService.php` | Lecture XLSX/CSV/XML, déduplication headers |
+| Service | `ColumnMapperService.php` | Mapping colonnes, fusion multi-lignes, détection devise |
 | Service | `RowGroupingService.php` | Regroupement par position, calcul agrégés |
 | Service | `ImportService.php` | Orchestrateur : preview, confirm, rollback |
 | Repository | `ImportBatchRepository.php` | CRUD table `import_batches` |
 | Repository | `SymbolAliasRepository.php` | CRUD table `symbol_aliases` |
 | Controller | `ImportController.php` | 5 actions (templates, preview, confirm, batches, rollback) |
-| Config | `config/import_templates/ctrader.php` | Template cTrader (colonnes FR/EN) |
+| Config | `config/import_templates/*.php` | Templates broker (cTrader, FTMO, FXCM) |
 
 **Validation** : type/taille fichier, colonnes requises, ownership du compte, doublons external_id.
 
@@ -171,8 +182,32 @@ Ajout `common.close`.
 
 `phpoffice/phpspreadsheet` ^5.5 — lecture des fichiers XLSX. Nécessite `ext-zip` (activé dans php.ini).
 
+## Auto-création des symboles
+
+Lors de la confirmation d'import, si un symbole résolu n'existe pas dans "Mes actifs" de l'utilisateur, il est automatiquement créé avec :
+- **type** : `OTHER` (modifiable ensuite dans la page Symboles)
+- **devise** : celle du compte cible de l'import
+- **point_value** : 1.0 (valeur par défaut)
+
+## Présélection du broker
+
+Si le compte sélectionné a un champ `broker` renseigné et qu'il correspond à un template d'import disponible (comparaison case-insensitive), le broker est présélectionné automatiquement dans le dropdown. Fonctionne dans l'ImportView et l'ImportDialog.
+
+## Fonctionnalités génériques ajoutées
+
+| Fonctionnalité | Description | Utilisé par |
+|----------------|-------------|-------------|
+| Déduplication headers | Suffixe `_2`, `_3` aux colonnes dupliquées | FTMO (2 colonnes "Prix") |
+| `opened_at` optionnel | Date d'ouverture explicite au lieu de l'approximation | FTMO, FXCM |
+| Parser SpreadsheetML | Parsing XML natif préservant la précision | FXCM |
+| Fusion multi-lignes | `multi_row: N` fusionne N lignes en 1 trade | FXCM (2 lignes/trade) |
+| Séparateur de milliers | `thousands_separator` retiré avant cast numérique | FXCM (format `19,226.05`) |
+| Filtre de lignes | `row_filter` exclut les lignes parasites | FXCM (résumés, totaux) |
+| Accept dynamique | File input adapté aux formats du template sélectionné | Tous |
+
 ## Phase 2 (futur)
 
 - Connecteurs API broker (`BrokerConnectorInterface`) : OAuth2, sync automatique (cTrader Open API en premier)
 - Table `broker_connections` pour stocker les tokens chiffrés
 - Frontend : page de configuration des connexions broker
+- Import "transaction log" pour plateformes sans export trade complet (SwissBorg, Fortuneo, Ouinex) — voir évolution #20
