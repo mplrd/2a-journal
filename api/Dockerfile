@@ -34,12 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Ensure only prefork MPM is active (required for mod_php)
-# Remove all MPM LoadModule lines from Apache config, then re-add only prefork
-RUN find /etc/apache2 -name "*.load" -exec grep -l "mpm_" {} \; | while read f; do \
-        sed -i '/LoadModule mpm_event_module/d; /LoadModule mpm_worker_module/d' "$f"; \
-    done \
-    && rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.* \
-    && a2enmod mpm_prefork rewrite headers env
+# php:8.4-apache uses real files in mods-enabled (not symlinks), so a2dismod/a2enmod won't work
+RUN rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.* \
+    && rm -f /etc/apache2/mods-available/mpm_event.load /etc/apache2/mods-available/mpm_worker.load \
+    && sed -i '/LoadModule mpm_event_module/d; /LoadModule mpm_worker_module/d' /etc/apache2/apache2.conf 2>/dev/null || true
+
+# Enable Apache modules (skip mpm_prefork — already a real file in mods-enabled)
+RUN a2enmod rewrite headers env 2>/dev/null || true
 
 # PHP production config
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
