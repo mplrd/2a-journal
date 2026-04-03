@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Enums\ExitType;
 use App\Enums\ImportStatus;
+use App\Enums\SymbolType;
 use App\Enums\TradeStatus;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
@@ -378,7 +379,7 @@ class ImportService
             'user_id' => $userId,
             'code' => $code,
             'name' => $code,
-            'type' => 'OTHER',
+            'type' => SymbolType::OTHER->value,
             'point_value' => 1.0,
             'currency' => $currency,
         ]);
