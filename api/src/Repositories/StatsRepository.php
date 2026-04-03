@@ -117,11 +117,13 @@ class StatsRepository
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
 
-        $sql = "SELECT t.closed_at, t.pnl, p.symbol
-                FROM trades t
+        // Use partial_exits for granular chronological P&L (not trade-level which groups partial exits)
+        $sql = "SELECT pe.exited_at AS closed_at, pe.pnl, p.symbol
+                FROM partial_exits pe
+                INNER JOIN trades t ON t.id = pe.trade_id
                 INNER JOIN positions p ON p.id = t.position_id
                 $where
-                ORDER BY t.closed_at ASC";
+                ORDER BY pe.exited_at ASC";
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);

@@ -110,12 +110,26 @@ class StatsRepositoryTest extends TestCase
 
         $riskReward = $pnl > 0 ? abs($pnl) / 50.0 : ($pnl < 0 ? -abs($pnl) / 50.0 : 0);
 
+        $closedAt = $overrides['closed_at'] ?? '2026-01-15 11:00:00';
         $this->tradeRepo->update((int) $trade['id'], [
             'status' => 'CLOSED',
             'exit_type' => $exitType,
             'pnl' => $pnl,
             'risk_reward' => $riskReward,
-            'closed_at' => $overrides['closed_at'] ?? '2026-01-15 11:00:00',
+            'closed_at' => $closedAt,
+        ]);
+
+        // Create partial exit so cumulative PnL query (via partial_exits) works
+        $this->pdo->prepare(
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
+             VALUES (:trade_id, :exited_at, :exit_price, :size, :exit_type, :pnl)"
+        )->execute([
+            'trade_id' => (int) $trade['id'],
+            'exited_at' => $closedAt,
+            'exit_price' => 18550.00,
+            'size' => $overrides['size'] ?? 1.0,
+            'exit_type' => $exitType,
+            'pnl' => $pnl,
         ]);
 
         return $this->tradeRepo->findById((int) $trade['id']);
