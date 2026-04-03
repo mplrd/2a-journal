@@ -129,22 +129,48 @@ class ImportService
 
         // Parse and preview (with custom fields extraction)
         $preview = $this->preview($filePath, $template, $originalFilename, $customFieldsMapping);
-        $positions = $preview['positions'];
 
-        // Check for duplicates
+        return $this->importNormalizedPositions(
+            $userId,
+            $accountId,
+            $preview['positions'],
+            $originalFilename ?: basename($filePath),
+            $template['broker'] ?? null,
+            $symbolMapping,
+            $preview['total_rows'],
+            hash_file('sha256', $filePath),
+        );
+    }
+
+    /**
+     * Import pre-normalized positions into the database.
+     * Shared by file import (confirm) and broker API sync.
+     */
+    public function importNormalizedPositions(
+        int $userId,
+        int $accountId,
+        array $positions,
+        string $sourceLabel,
+        ?string $brokerTemplate = null,
+        array $symbolMapping = [],
+        int $totalRows = 0,
+        ?string $fileHash = null,
+    ): array {
+        $account = $this->accountRepo->findById($accountId);
+        $accountCurrency = $account['currency'] ?? 'EUR';
+
         $existingExternalIds = $this->getExistingExternalIds($userId);
 
         $this->pdo->beginTransaction();
 
         try {
-            // Create import batch
             $batchId = $this->batchRepo->create([
                 'user_id' => $userId,
                 'account_id' => $accountId,
-                'broker_template' => $template['broker'] ?? null,
-                'original_filename' => $originalFilename ?: basename($filePath),
-                'file_hash' => hash_file('sha256', $filePath),
-                'total_rows' => $preview['total_rows'],
+                'broker_template' => $brokerTemplate,
+                'original_filename' => $sourceLabel,
+                'file_hash' => $fileHash ?? hash('sha256', $sourceLabel . time()),
+                'total_rows' => $totalRows ?: count($positions),
                 'status' => ImportStatus::PROCESSING->value,
             ]);
 
@@ -154,17 +180,14 @@ class ImportService
             $errors = [];
 
             foreach ($positions as $posData) {
-                // Check duplicate
                 if (in_array($posData['external_id'], $existingExternalIds)) {
                     $skippedDuplicates++;
                     continue;
                 }
 
                 try {
-                    // Resolve symbol (auto-creates in user assets if missing)
-                    $symbol = $this->resolveSymbol($userId, $posData['symbol'], $symbolMapping, $template['broker'] ?? null, $account['currency'] ?? 'EUR');
+                    $symbol = $this->resolveSymbol($userId, $posData['symbol'], $symbolMapping, $brokerTemplate, $accountCurrency);
 
-                    // Create position
                     $position = $this->positionRepo->create([
                         'user_id' => $userId,
                         'account_id' => $accountId,
@@ -178,7 +201,7 @@ class ImportService
                         'notes' => $posData['comment'],
                         'import_batch_id' => $batchId,
                         'external_id' => $posData['external_id'],
-                        'position_type' => 'TRADE', // positions table ENUM, no PHP enum exists
+                        'position_type' => 'TRADE',
                     ]);
 
                     // Create trade — OPEN if no closed_at, CLOSED otherwise
@@ -216,7 +239,6 @@ class ImportService
                 }
             }
 
-            // Update batch
             $this->batchRepo->update($batchId, [
                 'status' => ImportStatus::COMPLETED->value,
                 'imported_positions' => $importedPositions,
