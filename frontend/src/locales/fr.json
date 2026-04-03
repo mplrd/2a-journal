@@ -638,5 +638,33 @@
       "updated": "Champ personnalisé mis à jour",
       "deleted": "Champ personnalisé supprimé"
     }
+  },
+  "broker": {
+    "connection": "Connexion broker",
+    "not_connected": "Aucune connexion API configurée pour ce compte.",
+    "connect_ctrader": "Connecter cTrader",
+    "connect_metaapi": "Connecter MT4/MT5",
+    "connect": "Connecter",
+    "disconnect": "Déconnecter",
+    "disconnected": "Connexion supprimée",
+    "sync_now": "Synchroniser",
+    "sync_success": "Synchronisation réussie",
+    "sync_failed": "Erreur de synchronisation",
+    "sync_detail": "{count} position(s) importée(s)",
+    "sync_imported": "{positions} importée(s), {skipped} doublon(s) ignoré(s)",
+    "last_sync": "Dernière sync",
+    "history": "Historique",
+    "sync_history": "Historique des synchronisations",
+    "sync_date": "Date",
+    "sync_status": "Statut",
+    "deals_fetched": "Récupérés",
+    "deals_imported": "Importés",
+    "deals_skipped": "Ignorés",
+    "error": "Erreur",
+    "metaapi_instructions": "Connectez votre compte MT4/MT5 via MetaApi. Vous aurez besoin de votre token API MetaApi et de l'ID du compte MetaApi.",
+    "metaapi_token": "Token API MetaApi",
+    "metaapi_token_placeholder": "Votre token MetaApi",
+    "metaapi_account_id": "ID du compte MetaApi",
+    "metaapi_account_id_placeholder": "ex: abc-def-123"
   }
 }

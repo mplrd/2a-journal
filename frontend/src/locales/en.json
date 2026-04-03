@@ -638,5 +638,33 @@
       "updated": "Custom field updated",
       "deleted": "Custom field deleted"
     }
+  },
+  "broker": {
+    "connection": "Broker connection",
+    "not_connected": "No API connection configured for this account.",
+    "connect_ctrader": "Connect cTrader",
+    "connect_metaapi": "Connect MT4/MT5",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "disconnected": "Connection removed",
+    "sync_now": "Sync",
+    "sync_success": "Sync successful",
+    "sync_failed": "Sync failed",
+    "sync_detail": "{count} position(s) imported",
+    "sync_imported": "{positions} imported, {skipped} duplicate(s) skipped",
+    "last_sync": "Last sync",
+    "history": "History",
+    "sync_history": "Sync history",
+    "sync_date": "Date",
+    "sync_status": "Status",
+    "deals_fetched": "Fetched",
+    "deals_imported": "Imported",
+    "deals_skipped": "Skipped",
+    "error": "Error",
+    "metaapi_instructions": "Connect your MT4/MT5 account via MetaApi. You will need your MetaApi API token and MetaApi account ID.",
+    "metaapi_token": "MetaApi API token",
+    "metaapi_token_placeholder": "Your MetaApi token",
+    "metaapi_account_id": "MetaApi account ID",
+    "metaapi_account_id_placeholder": "e.g. abc-def-123"
   }
 }
