@@ -89,7 +89,8 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Preview avant import, détection de doublons (hash external_id), mapping symboles broker ↔ journal, rollback
 - Tables : `import_batches` (audit trail), `symbol_aliases` (mapping symboles)
 - Voir `docs/19-import-history.md`, `docs/20-import-ftmo.md`, `docs/21-import-fxcm.md`
-- **Reste à faire** : connecteurs API broker (OAuth2, sync incrémental — Phase 2), templates MT4/MT5
+- **Connecteurs API** : cTrader (WebSocket JSON + OAuth2) et MetaApi (MT4/MT5 REST) livrés. Voir `docs/22-broker-connectors.md`
+- **Reste à faire** : templates MT4/MT5 pour import fichier, sync automatique planifiée (cron)
 
 ### 20. Import "transaction log" (matching achats/ventes)
 - **Contexte** : certaines plateformes (brokers actions, exchanges crypto) exportent un historique de transactions individuelles (achat OU vente) et non des trades complets (entrée + sortie + PnL)
