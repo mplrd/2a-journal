@@ -103,6 +103,12 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - **Fichiers de référence disponibles** dans `trading-journal-exports/` : ouinex, swissborg, fortuneo
 - **Priorité** : moyenne — à traiter après la stabilisation de l'import classique
 
+### 21. UFunded — export limité, à surveiller
+- UFunded (propfirm) n'exporte qu'un **PDF** (account statement), pas de CSV/XLSX
+- Plateforme custom avec intégration TradingView, ni cTrader ni MT4/MT5
+- Le PDF contient des trades complets (Transaction ID, Direction, Size, Symbol, Price, Settled PnL) mais le parsing PDF est trop fragile pour un import fiable
+- **À surveiller** : vérifier si UFunded propose une API ou un export CSV à l'avenir
+
 ## Architecture / UX
 
 ### 19. Widgets autonomes avec chargement indépendant
