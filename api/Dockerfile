@@ -41,11 +41,9 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY docker/php.ini "$PHP_INI_DIR/conf.d/99-app.ini"
 COPY docker/opcache.ini "$PHP_INI_DIR/conf.d/opcache.ini"
 
-# PHP-FPM pool config (unix socket)
-COPY docker/fpm-pool.conf /usr/local/etc/php-fpm.d/zz-docker.conf
-
-# Nginx config
-COPY docker/nginx.conf /etc/nginx/sites-available/default
+# Nginx config (full replacement, used as template for envsubst)
+COPY docker/nginx.conf /etc/nginx/nginx.conf.template
+RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
 
 # Copy API
 COPY --from=composer-build /build /var/www/api
