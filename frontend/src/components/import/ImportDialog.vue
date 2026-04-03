@@ -93,6 +93,14 @@ async function loadTemplates() {
   try {
     const resp = await importsService.getTemplates()
     templates.value = resp.data
+
+    // Auto-select broker if account broker matches a template
+    if (props.account?.broker) {
+      const match = resp.data.find(t => t.broker.toLowerCase() === props.account.broker.toLowerCase())
+      if (match) {
+        selectedBroker.value = match.broker
+      }
+    }
   } catch {
     // silent
   }

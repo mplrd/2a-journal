@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAccountsStore } from '@/stores/accounts'
 import { importsService } from '@/services/imports'
@@ -37,6 +37,17 @@ const result = ref(null)
 // History
 const batches = ref([])
 const showHistory = ref(false)
+
+// Auto-select broker when account changes (if account broker matches a template)
+watch(selectedAccountId, (accountId) => {
+  if (!accountId) return
+  const account = accountsStore.accounts.find(a => a.id === accountId)
+  if (!account?.broker) return
+  const match = templates.value.find(t => t.broker.toLowerCase() === account.broker.toLowerCase())
+  if (match) {
+    selectedBroker.value = match.broker
+  }
+})
 
 // Dynamic file accept based on selected broker template
 const acceptedFileTypes = computed(() => {
