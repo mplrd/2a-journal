@@ -153,7 +153,7 @@ class BrokerSyncController extends Controller
             'state' => $state,
         ]);
 
-        return Response::redirect($url);
+        return $this->jsonSuccess(['authorize_url' => $url]);
     }
 
     /**

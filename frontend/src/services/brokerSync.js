@@ -30,7 +30,7 @@ export const brokerSyncService = {
     return api.get(`/broker/connections/${connectionId}/logs`)
   },
 
-  getCtraderAuthorizeUrl(accountId) {
-    return `/api/broker/ctrader/authorize?account_id=${accountId}`
+  async getCtraderAuthorizeUrl(accountId) {
+    return api.get(`/broker/ctrader/authorize?account_id=${accountId}`)
   },
 }

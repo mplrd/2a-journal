@@ -85,8 +85,13 @@ async function disconnect() {
   }
 }
 
-function connectCtrader() {
-  window.location.href = brokerSyncService.getCtraderAuthorizeUrl(props.account.id)
+async function connectCtrader() {
+  try {
+    const resp = await brokerSyncService.getCtraderAuthorizeUrl(props.account.id)
+    window.location.href = resp.data.authorize_url
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: err.messageKey ? t(err.messageKey) : err.message, life: 5000 })
+  }
 }
 
 function onMetaApiConnected() {
