@@ -1,5 +1,5 @@
 # =============================================================================
-# Trading Journal — API Dockerfile (PHP-FPM + Nginx)
+# Trading Journal — API Dockerfile (PHP built-in server)
 # =============================================================================
 
 # --- Stage 1: Install PHP dependencies ---
@@ -14,13 +14,10 @@ COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 # --- Stage 2: Production image ---
-FROM php:8.4-fpm
+FROM php:8.4-cli
 
-# Install nginx and PHP extension dependencies
+# Install PHP extension dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        nginx \
-        gettext-base \
-        netcat-openbsd \
         libpng-dev \
         libjpeg-dev \
         libfreetype6-dev \
@@ -42,23 +39,16 @@ COPY docker/php.ini "$PHP_INI_DIR/conf.d/99-app.ini"
 COPY docker/opcache.ini "$PHP_INI_DIR/conf.d/opcache.ini"
 RUN sed -i 's/\r$//' "$PHP_INI_DIR/conf.d/99-app.ini" "$PHP_INI_DIR/conf.d/opcache.ini"
 
-# Nginx config (full replacement, used as template for envsubst)
-COPY docker/nginx.conf /etc/nginx/nginx.conf.template
-RUN sed -i 's/\r$//' /etc/nginx/nginx.conf.template \
-    && rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
-
 # Copy API
 COPY --from=composer-build /build /var/www/api
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/api
 
+WORKDIR /var/www/api/public
+
 # Railway uses PORT env var
 ENV PORT=8080
 EXPOSE 8080
 
-# Start both php-fpm and nginx
-COPY docker/entrypoint.sh /entrypoint.sh
-RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
-
-CMD ["/entrypoint.sh"]
+CMD php -S 0.0.0.0:${PORT} index.php
