@@ -674,6 +674,18 @@
     "ctrader_access_token": "Access Token",
     "ctrader_access_token_placeholder": "Your cTrader Access Token",
     "ctrader_account_id": "cTrader Account ID",
-    "ctrader_account_id_placeholder": "e.g. 12345678"
+    "ctrader_account_id_placeholder": "e.g. 12345678",
+    "error": {
+      "account_required": "Please select an account",
+      "already_connected": "This account is already connected to a broker",
+      "unsupported_provider": "Unsupported provider",
+      "connection_not_found": "Connection not found",
+      "credentials_required": "Please fill in all credentials",
+      "forbidden": "Unauthorized access to this connection",
+      "connection_not_active": "Connection is not active"
+    },
+    "success": {
+      "disconnected": "Connection removed successfully"
+    }
   }
 }

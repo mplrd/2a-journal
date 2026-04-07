@@ -14,13 +14,13 @@ Synchronisation automatique de l'historique des trades fermés depuis les platef
 ### Workflow utilisateur
 
 **cTrader** :
-1. Clic "Connecter cTrader" → redirection vers cTrader OAuth
-2. L'utilisateur autorise l'accès → callback avec tokens
-3. Clic "Synchroniser" → récupération automatique des trades fermés
+1. Clic "Connecter cTrader" → formulaire credentials
+2. L'utilisateur fournit : Client ID, Client Secret, Access Token, Account ID (depuis openapi.ctrader.com)
+3. Clic "Synchroniser" → récupération automatique des trades fermés via WebSocket JSON
 
 **MetaApi (MT4/MT5)** :
 1. Clic "Connecter MT4/MT5" → formulaire credentials
-2. L'utilisateur fournit son token MetaApi + ID compte MetaApi
+2. L'utilisateur fournit son token MetaApi + ID compte MetaApi (depuis metaapi.cloud)
 3. Clic "Synchroniser" → récupération via REST
 
 ### Fonctionnalités communes
@@ -60,24 +60,23 @@ cTrader n'a pas d'API REST pour les trades. Le protocole natif est Protobuf over
 
 AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'environnement `BROKER_ENCRYPTION_KEY`. Chaque connexion a son propre IV. Les credentials ne sont jamais exposés dans les réponses API.
 
-### OAuth2 cTrader
+### Credentials par utilisateur
 
-Flow Authorization Code standard :
-- `GET /broker/ctrader/authorize?account_id=X` → redirect vers cTrader
-- Callback : échange code → tokens → stockage chiffré → redirect vers le frontend
-- State parameter avec expiry 5min pour prévenir CSRF
+Chaque utilisateur fournit ses propres identifiants API :
+- **cTrader** : Client ID + Client Secret + Access Token + Account ID (depuis openapi.ctrader.com)
+- **MetaApi** : API Token + Account ID MetaApi (depuis metaapi.cloud)
+
+Pas de clés API partagées au niveau de l'application. Les credentials sont stockés chiffrés AES-256-CBC par utilisateur dans `broker_connections`.
 
 ## Endpoints API
 
 | Méthode | Route | Description |
 |---------|-------|-------------|
-| POST | `/broker/connections` | Créer connexion MetaApi |
+| POST | `/broker/connections` | Créer connexion (cTrader ou MetaApi) |
 | GET | `/broker/connections?account_id=X` | Statut connexion |
 | POST | `/broker/connections/{id}/sync` | Déclencher sync |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |
 | GET | `/broker/connections/{id}/logs` | Historique syncs |
-| GET | `/broker/ctrader/authorize?account_id=X` | OAuth cTrader |
-| GET | `/broker/ctrader/callback` | Callback OAuth |
 
 ## Tables
 
@@ -90,6 +89,7 @@ Audit trail : connexion, deals récupérés/importés/ignorés, erreurs, timesta
 ## Frontend
 
 - **BrokerConnectionPanel** : statut connexion, bouton sync, dernière sync, déconnexion
+- **CtraderConnectDialog** : formulaire Client ID, Client Secret, Access Token, Account ID
 - **MetaApiConnectDialog** : formulaire token + account ID
 - **SyncHistoryDialog** : DataTable des `sync_logs`
 - Bouton sync (pi-sync) dans la vue Comptes à côté de chaque compte
@@ -110,17 +110,16 @@ Suite complète : **740 tests, 2040 assertions**, aucune régression.
 
 ## Configuration requise
 
-Variables d'environnement :
+Variables d'environnement (serveur) :
 ```
 BROKER_ENCRYPTION_KEY=<base64 encoded 32-byte key>
-CTRADER_CLIENT_ID=<from openapi.ctrader.com>
-CTRADER_CLIENT_SECRET=<from openapi.ctrader.com>
-CTRADER_REDIRECT_URI=http://2a.journal.local/api/broker/ctrader/callback
 ```
 
-Pour MetaApi : le trader crée son compte sur metaapi.cloud et fournit son token + account ID.
+Credentials utilisateur (fournis par chaque trader dans l'UI) :
+- **cTrader** : Client ID, Client Secret, Access Token, Account ID (depuis openapi.ctrader.com)
+- **MetaApi** : API Token, Account ID MetaApi (depuis metaapi.cloud)
 
 ## Dépendances ajoutées
 
-- `guzzlehttp/guzzle` ^7.10 — client HTTP (MetaApi REST + cTrader OAuth)
+- `guzzlehttp/guzzle` ^7.10 — client HTTP (MetaApi REST)
 - `textalk/websocket` ^1.5 — client WebSocket synchrone (cTrader deals)
