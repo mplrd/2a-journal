@@ -1,12 +1,14 @@
 #!/bin/sh
 set -e
 
-# Substitute PORT in nginx config
-envsubst '${PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+# Run migrations (idempotent)
+echo "==> Running migrations..."
+php /var/www/api/database/migrate.php
 
-# Start php-fpm
-php-fpm -D
-sleep 1
+# Seed demo data (idempotent)
+echo "==> Seeding demo data..."
+php /var/www/api/database/seed-demo.php
 
-# Start nginx in foreground
-exec nginx -g 'daemon off;'
+# Start PHP built-in server
+echo "==> Starting PHP server on port ${PORT}..."
+exec php -S 0.0.0.0:${PORT} -t /var/www/api/public /var/www/api/public/index.php
