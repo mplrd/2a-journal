@@ -258,7 +258,6 @@ $brokerSyncController = new BrokerSyncController(
     $brokerConnectionRepo,
     $syncLogRepo,
     $cryptoService,
-    $brokerConfig,
 );
 
 $router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware]);
@@ -266,8 +265,6 @@ $router->get('/broker/connections', [$brokerSyncController, 'connections'], [$au
 $router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware]);
 $router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware]);
 $router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware]);
-$router->get('/broker/ctrader/authorize', [$brokerSyncController, 'ctraderAuthorize'], [$authMiddleware]);
-$router->get('/broker/ctrader/callback', [$brokerSyncController, 'ctraderCallback']);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

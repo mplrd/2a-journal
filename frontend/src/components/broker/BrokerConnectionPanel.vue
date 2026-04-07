@@ -6,6 +6,7 @@ import { brokerSyncService } from '@/services/brokerSync'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Message from 'primevue/message'
+import CtraderConnectDialog from './CtraderConnectDialog.vue'
 import MetaApiConnectDialog from './MetaApiConnectDialog.vue'
 import SyncHistoryDialog from './SyncHistoryDialog.vue'
 
@@ -22,6 +23,7 @@ const connection = ref(null)
 const loading = ref(false)
 const syncing = ref(false)
 const syncResult = ref(null)
+const showCtraderDialog = ref(false)
 const showMetaApiDialog = ref(false)
 const showHistory = ref(false)
 
@@ -85,13 +87,9 @@ async function disconnect() {
   }
 }
 
-async function connectCtrader() {
-  try {
-    const resp = await brokerSyncService.getCtraderAuthorizeUrl(props.account.id)
-    window.location.href = resp.data.authorize_url
-  } catch (err) {
-    toast.add({ severity: 'error', summary: t('common.error'), detail: err.messageKey ? t(err.messageKey) : err.message, life: 5000 })
-  }
+function onCtraderConnected() {
+  showCtraderDialog.value = false
+  loadConnection()
 }
 
 function onMetaApiConnected() {
@@ -136,12 +134,18 @@ function onMetaApiConnected() {
     <div v-else class="space-y-3">
       <p class="text-sm text-gray-500">{{ t('broker.not_connected') }}</p>
       <div class="flex gap-2">
-        <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="connectCtrader" />
+        <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="showCtraderDialog = true" />
         <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" severity="secondary" @click="showMetaApiDialog = true" />
       </div>
     </div>
 
     <!-- Dialogs -->
+    <CtraderConnectDialog
+      v-model:visible="showCtraderDialog"
+      :account="account"
+      @connected="onCtraderConnected"
+    />
+
     <MetaApiConnectDialog
       v-model:visible="showMetaApiDialog"
       :account="account"

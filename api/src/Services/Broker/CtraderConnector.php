@@ -23,10 +23,10 @@ class CtraderConnector implements ConnectorInterface
         $ws = $this->connectWebSocket();
 
         try {
-            // 1. Application auth
+            // 1. Application auth (credentials provided by user)
             $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
-                'clientId' => $this->config['client_id'],
-                'clientSecret' => $this->config['client_secret'],
+                'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
+                'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
             ]);
 
             // 2. Account auth
@@ -128,8 +128,8 @@ class CtraderConnector implements ConnectorInterface
         try {
             $ws = $this->connectWebSocket();
             $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
-                'clientId' => $this->config['client_id'],
-                'clientSecret' => $this->config['client_secret'],
+                'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
+                'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
             ]);
             $this->sendAndReceive($ws, 'ProtoOAAccountAuthReq', [
                 'ctidTraderAccountId' => $credentials['ctid_trader_account_id'],

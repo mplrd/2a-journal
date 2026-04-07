@@ -30,7 +30,14 @@ export const brokerSyncService = {
     return api.get(`/broker/connections/${connectionId}/logs`)
   },
 
-  async getCtraderAuthorizeUrl(accountId) {
-    return api.get(`/broker/ctrader/authorize?account_id=${accountId}`)
+  async createCtraderConnection(accountId, clientId, clientSecret, accessToken, accountIdCtrader) {
+    return api.post('/broker/connections', {
+      provider: 'CTRADER',
+      account_id: accountId,
+      client_id: clientId,
+      client_secret: clientSecret,
+      access_token: accessToken,
+      account_id_ctrader: accountIdCtrader,
+    })
   },
 }

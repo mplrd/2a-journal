@@ -665,6 +665,15 @@
     "metaapi_token": "MetaApi API token",
     "metaapi_token_placeholder": "Your MetaApi token",
     "metaapi_account_id": "MetaApi account ID",
-    "metaapi_account_id_placeholder": "e.g. abc-def-123"
+    "metaapi_account_id_placeholder": "e.g. abc-def-123",
+    "ctrader_instructions": "Connect your cTrader account. Create an application on openapi.ctrader.com to get your API credentials.",
+    "ctrader_client_id": "Client ID",
+    "ctrader_client_id_placeholder": "Your cTrader Client ID",
+    "ctrader_client_secret": "Client Secret",
+    "ctrader_client_secret_placeholder": "Your cTrader Client Secret",
+    "ctrader_access_token": "Access Token",
+    "ctrader_access_token_placeholder": "Your cTrader Access Token",
+    "ctrader_account_id": "cTrader Account ID",
+    "ctrader_account_id_placeholder": "e.g. 12345678"
   }
 }

@@ -20,7 +20,6 @@ class BrokerSyncController extends Controller
         private BrokerConnectionRepository $connectionRepo,
         private SyncLogRepository $syncLogRepo,
         private CredentialEncryptionService $crypto,
-        private array $brokerConfig,
     ) {}
 
     /**
@@ -46,6 +45,10 @@ class BrokerSyncController extends Controller
 
         if ($provider === BrokerProvider::METAAPI->value) {
             return $this->createMetaApiConnection($userId, $accountId, $body);
+        }
+
+        if ($provider === BrokerProvider::CTRADER->value) {
+            return $this->createCtraderConnection($userId, $accountId, $body);
         }
 
         throw new ValidationException('broker.error.unsupported_provider', 'provider');
@@ -120,92 +123,27 @@ class BrokerSyncController extends Controller
         return $this->jsonSuccess($logs);
     }
 
-    /**
-     * Redirect to cTrader OAuth authorization page.
-     */
-    public function ctraderAuthorize(Request $request): Response
+    private function createCtraderConnection(int $userId, int $accountId, array $body): Response
     {
-        $userId = $request->getAttribute('user_id');
-        $accountId = (int) ($request->getQuery()['account_id'] ?? 0);
+        $clientId = $body['client_id'] ?? '';
+        $clientSecret = $body['client_secret'] ?? '';
+        $accessToken = $body['access_token'] ?? '';
+        $accountNumber = $body['account_id_ctrader'] ?? '';
 
-        if (!$accountId) {
-            throw new ValidationException('broker.error.account_required', 'account_id');
+        if (!$clientId || !$clientSecret || !$accessToken || !$accountNumber) {
+            throw new ValidationException('broker.error.credentials_required', 'access_token');
         }
 
-        $existing = $this->connectionRepo->findByAccountId($accountId);
-        if ($existing) {
-            throw new ValidationException('broker.error.already_connected', 'account_id');
-        }
-
-        $config = $this->brokerConfig['ctrader'];
-        $state = base64_encode(json_encode([
-            'user_id' => $userId,
-            'account_id' => $accountId,
-            'nonce' => bin2hex(random_bytes(16)),
-            'exp' => time() + 300, // 5 min expiry
-        ]));
-
-        $url = $config['oauth_authorize_url'] . '?' . http_build_query([
-            'client_id' => $config['client_id'],
-            'redirect_uri' => $config['redirect_uri'],
-            'scope' => 'trading',
-            'response_type' => 'code',
-            'state' => $state,
-        ]);
-
-        return $this->jsonSuccess(['authorize_url' => $url]);
-    }
-
-    /**
-     * Handle cTrader OAuth callback.
-     */
-    public function ctraderCallback(Request $request): Response
-    {
-        $query = $request->getQuery();
-        $code = $query['code'] ?? '';
-        $stateRaw = $query['state'] ?? '';
-
-        if (!$code || !$stateRaw) {
-            throw new ValidationException('broker.error.oauth_failed', 'code');
-        }
-
-        $state = json_decode(base64_decode($stateRaw), true);
-        if (!$state || ($state['exp'] ?? 0) < time()) {
-            throw new ValidationException('broker.error.oauth_expired', 'state');
-        }
-
-        $userId = (int) ($state['user_id'] ?? 0);
-        $accountId = (int) ($state['account_id'] ?? 0);
-
-        // Exchange code for tokens
-        $config = $this->brokerConfig['ctrader'];
-        $client = new \GuzzleHttp\Client();
-
-        $response = $client->get($config['oauth_token_url'], [
-            'query' => [
-                'grant_type' => 'authorization_code',
-                'code' => $code,
-                'redirect_uri' => $config['redirect_uri'],
-                'client_id' => $config['client_id'],
-                'client_secret' => $config['client_secret'],
-            ],
-        ]);
-
-        $tokens = json_decode($response->getBody()->getContents(), true);
-        if (!isset($tokens['accessToken'])) {
-            throw new ValidationException('broker.error.oauth_failed', 'token');
-        }
-
-        // Store connection with encrypted credentials
         $credentials = [
-            'access_token' => $tokens['accessToken'],
-            'refresh_token' => $tokens['refreshToken'] ?? null,
-            'ctid_trader_account_id' => $tokens['ctidTraderAccountId'] ?? null,
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'access_token' => $accessToken,
+            'ctid_trader_account_id' => (int) $accountNumber,
         ];
 
         $encrypted = $this->crypto->encrypt($credentials);
 
-        $this->connectionRepo->create([
+        $connection = $this->connectionRepo->create([
             'user_id' => $userId,
             'account_id' => $accountId,
             'provider' => BrokerProvider::CTRADER->value,
@@ -214,8 +152,7 @@ class BrokerSyncController extends Controller
             'credentials_iv' => $encrypted['iv'],
         ]);
 
-        // Redirect to frontend
-        return Response::redirect('http://localhost:5173/#/accounts?connection=success');
+        return $this->jsonSuccess($this->sanitizeConnection($connection));
     }
 
     private function createMetaApiConnection(int $userId, int $accountId, array $body): Response
