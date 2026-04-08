@@ -26,6 +26,7 @@ class TradeService
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
     private ?SetupRepository $setupRepo;
+    private ?CustomFieldService $customFieldService;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -33,7 +34,8 @@ class TradeService
         PositionRepository $positionRepo,
         AccountRepository $accountRepo,
         StatusHistoryRepository $historyRepo,
-        ?SetupRepository $setupRepo = null
+        ?SetupRepository $setupRepo = null,
+        ?CustomFieldService $customFieldService = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -41,6 +43,7 @@ class TradeService
         $this->accountRepo = $accountRepo;
         $this->historyRepo = $historyRepo;
         $this->setupRepo = $setupRepo;
+        $this->customFieldService = $customFieldService;
     }
 
     public function create(int $userId, array $data): array
@@ -127,6 +130,14 @@ class TradeService
             'trigger_type' => TriggerType::MANUAL->value,
         ]);
 
+        // Save custom field values
+        if ($this->customFieldService && !empty($data['custom_fields'])) {
+            $this->customFieldService->validateAndSaveValues($userId, (int) $trade['id'], $data['custom_fields']);
+            $trade['custom_fields'] = $this->customFieldService->findByTradeId((int) $trade['id']);
+        } else {
+            $trade['custom_fields'] = [];
+        }
+
         return $trade;
     }
 
@@ -150,6 +161,16 @@ class TradeService
             $validFilters['symbol'] = $filters['symbol'];
         }
 
+        if (!empty($filters['custom_filter']) && is_array($filters['custom_filter'])) {
+            $cf = $filters['custom_filter'];
+            if (!empty($cf['field_id']) && isset($cf['value'])) {
+                $validFilters['custom_filter'] = [
+                    'field_id' => (int) $cf['field_id'],
+                    'value' => $cf['value'],
+                ];
+            }
+        }
+
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perPage = min(100, max(1, (int) ($filters['per_page'] ?? 50)));
         $offset = ($page - 1) * $perPage;
@@ -163,6 +184,21 @@ class TradeService
             $item['partial_exits'] = $this->partialExitRepo->findByTradeId((int) $item['id']);
         }
         unset($item);
+
+        // Batch load custom field values
+        if ($this->customFieldService && !empty($items)) {
+            $tradeIds = array_map(fn($item) => (int) $item['id'], $items);
+            $customFieldsByTrade = $this->customFieldService->findByTradeIds($tradeIds);
+            foreach ($items as &$item) {
+                $item['custom_fields'] = $customFieldsByTrade[(int) $item['id']] ?? [];
+            }
+            unset($item);
+        } else {
+            foreach ($items as &$item) {
+                $item['custom_fields'] = [];
+            }
+            unset($item);
+        }
 
         return [
             'data' => $items,
@@ -190,6 +226,12 @@ class TradeService
         }
 
         $trade['partial_exits'] = $this->partialExitRepo->findByTradeId($tradeId);
+
+        if ($this->customFieldService) {
+            $trade['custom_fields'] = $this->customFieldService->findByTradeId($tradeId);
+        } else {
+            $trade['custom_fields'] = [];
+        }
 
         return $trade;
     }

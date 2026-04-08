@@ -485,7 +485,8 @@
     "tabs": {
       "profile": "Profil",
       "assets": "Mes Actifs",
-      "setups": "Mes Setups"
+      "setups": "Mes Setups",
+      "custom_fields": "Champs personnalisés"
     }
   },
   "onboarding": {
@@ -577,6 +578,45 @@
     },
     "success": {
       "rolled_back": "Import annulé avec succès"
+    }
+  },
+  "custom_fields": {
+    "title": "Champs personnalisés",
+    "subtitle": "Définissez des champs supplémentaires pour enrichir vos trades",
+    "create": "Nouveau champ",
+    "edit": "Modifier le champ",
+    "name": "Nom du champ",
+    "field_type": "Type",
+    "options": "Options",
+    "options_help": "Une option par ligne",
+    "add_option": "Ajouter une option",
+    "sort_order": "Ordre",
+    "is_active": "Actif",
+    "no_fields": "Aucun champ personnalisé défini",
+    "confirm_delete": "Supprimer ce champ personnalisé ? Les valeurs associées aux trades seront également supprimées.",
+    "types": {
+      "BOOLEAN": "Oui/Non",
+      "TEXT": "Texte",
+      "NUMBER": "Nombre",
+      "SELECT": "Liste de choix"
+    },
+    "error": {
+      "field_required": "Ce champ est requis",
+      "name_too_long": "Le nom est trop long (100 caractères max)",
+      "duplicate_name": "Un champ avec ce nom existe déjà",
+      "invalid_field_type": "Type de champ invalide",
+      "select_options_required": "Au moins une option est requise pour un champ de type liste",
+      "field_not_found": "Champ personnalisé introuvable",
+      "field_inactive": "Ce champ personnalisé est désactivé",
+      "invalid_boolean": "Valeur booléenne invalide",
+      "text_too_long": "Le texte est trop long (5000 caractères max)",
+      "invalid_number": "Valeur numérique invalide",
+      "invalid_option": "Option invalide"
+    },
+    "success": {
+      "created": "Champ personnalisé créé",
+      "updated": "Champ personnalisé mis à jour",
+      "deleted": "Champ personnalisé supprimé"
     }
   }
 }

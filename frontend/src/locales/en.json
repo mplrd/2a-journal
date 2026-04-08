@@ -485,7 +485,8 @@
     "tabs": {
       "profile": "Profile",
       "assets": "My Assets",
-      "setups": "My Setups"
+      "setups": "My Setups",
+      "custom_fields": "Custom fields"
     }
   },
   "onboarding": {
@@ -577,6 +578,45 @@
     },
     "success": {
       "rolled_back": "Import rolled back successfully"
+    }
+  },
+  "custom_fields": {
+    "title": "Custom fields",
+    "subtitle": "Define additional fields to enrich your trades",
+    "create": "New field",
+    "edit": "Edit field",
+    "name": "Field name",
+    "field_type": "Type",
+    "options": "Options",
+    "options_help": "One option per line",
+    "add_option": "Add option",
+    "sort_order": "Order",
+    "is_active": "Active",
+    "no_fields": "No custom fields defined",
+    "confirm_delete": "Delete this custom field? Values associated with trades will also be deleted.",
+    "types": {
+      "BOOLEAN": "Yes/No",
+      "TEXT": "Text",
+      "NUMBER": "Number",
+      "SELECT": "Dropdown"
+    },
+    "error": {
+      "field_required": "This field is required",
+      "name_too_long": "Name is too long (100 characters max)",
+      "duplicate_name": "A field with this name already exists",
+      "invalid_field_type": "Invalid field type",
+      "select_options_required": "At least one option is required for dropdown fields",
+      "field_not_found": "Custom field not found",
+      "field_inactive": "This custom field is disabled",
+      "invalid_boolean": "Invalid boolean value",
+      "text_too_long": "Text is too long (5000 characters max)",
+      "invalid_number": "Invalid number value",
+      "invalid_option": "Invalid option"
+    },
+    "success": {
+      "created": "Custom field created",
+      "updated": "Custom field updated",
+      "deleted": "Custom field deleted"
     }
   }
 }

@@ -7,9 +7,10 @@ import InputNumber from 'primevue/inputnumber'
 import AutoComplete from 'primevue/autocomplete'
 import Textarea from 'primevue/textarea'
 import Select from 'primevue/select'
+import ToggleSwitch from 'primevue/toggleswitch'
 import DatePicker from 'primevue/datepicker'
 import Button from 'primevue/button'
-import { Direction } from '@/constants/enums'
+import { Direction, CustomFieldType } from '@/constants/enums'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useToast } from 'primevue/usetoast'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
@@ -24,6 +25,7 @@ const props = defineProps({
   accounts: { type: Array, default: () => [] },
   symbols: { type: Array, default: () => [] },
   setups: { type: Array, default: () => [] },
+  customFieldDefinitions: { type: Array, default: () => [] },
   loading: Boolean,
 })
 
@@ -63,6 +65,7 @@ function getDefaultForm() {
     notes: '',
     targets: [],
     opened_at: new Date(),
+    custom_fields: {},
   }
 }
 
@@ -141,6 +144,17 @@ function handleSave() {
     data.targets = null
   }
   data.opened_at = formatDateTime(data.opened_at)
+
+  // Build custom_fields array from the map
+  const cfMap = data.custom_fields || {}
+  data.custom_fields = Object.entries(cfMap)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([fieldId, value]) => {
+      // ToggleSwitch returns boolean, API expects "true"/"false"
+      const strValue = typeof value === 'boolean' ? String(value) : String(value)
+      return { field_id: parseInt(fieldId), value: strValue }
+    })
+
   emit('save', data)
 }
 
@@ -283,6 +297,43 @@ async function handleSymbolCreate(data) {
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.notes') }}</label>
         <Textarea v-model="form.notes" class="w-full" rows="3" :maxlength="10000" />
+      </div>
+
+      <!-- Custom fields -->
+      <div v-if="customFieldDefinitions.length > 0">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{{ t('custom_fields.title') }}</label>
+        <div class="flex flex-col gap-3">
+          <div v-for="def in customFieldDefinitions" :key="def.id">
+            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ def.name }}</label>
+
+            <ToggleSwitch
+              v-if="def.field_type === CustomFieldType.BOOLEAN"
+              v-model="form.custom_fields[def.id]"
+            />
+
+            <InputText
+              v-else-if="def.field_type === CustomFieldType.TEXT"
+              v-model="form.custom_fields[def.id]"
+              class="w-full"
+            />
+
+            <InputNumber
+              v-else-if="def.field_type === CustomFieldType.NUMBER"
+              v-model="form.custom_fields[def.id]"
+              class="w-full"
+              mode="decimal"
+              locale="en-US"
+              :maxFractionDigits="5"
+            />
+
+            <Select
+              v-else-if="def.field_type === CustomFieldType.SELECT"
+              v-model="form.custom_fields[def.id]"
+              :options="JSON.parse(def.options || '[]')"
+              class="w-full"
+            />
+          </div>
+        </div>
       </div>
 
       <div v-if="sharePreviewText" class="border border-gray-200 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-700">

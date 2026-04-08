@@ -6,6 +6,7 @@ import { useTradesStore } from '@/stores/trades'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
+import { useCustomFieldsStore } from '@/stores/customFields'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -17,7 +18,7 @@ import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
-import { Direction, ExitType, TradeStatus } from '@/constants/enums'
+import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/enums'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -25,6 +26,7 @@ const store = useTradesStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
+const customFieldsStore = useCustomFieldsStore()
 
 const positionsStore = usePositionsStore()
 
@@ -67,9 +69,22 @@ const statusOptions = [
 ]
 
 onMounted(async () => {
-  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
+  await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups(), customFieldsStore.fetchDefinitions()])
   await store.fetchTrades()
 })
+
+function getCustomFieldValue(trade, fieldId) {
+  const cf = (trade.custom_fields || []).find((f) => f.field_id === fieldId || f.field_id === String(fieldId))
+  return cf ? cf.value : null
+}
+
+function formatCustomFieldValue(value, fieldType) {
+  if (value === null || value === undefined) return '-'
+  if (fieldType === CustomFieldType.BOOLEAN) {
+    return value === 'true' ? '\u2714' : '\u2718'
+  }
+  return value
+}
 
 async function applyFilters() {
   const filters = {}
@@ -344,6 +359,19 @@ function pnlClass(pnl) {
           </span>
         </template>
       </Column>
+      <!-- Dynamic custom field columns -->
+      <Column
+        v-for="def in customFieldsStore.activeDefinitions"
+        :key="`cf-${def.id}`"
+        :header="def.name"
+      >
+        <template #body="{ data }">
+          <span :class="{ 'text-green-600': def.field_type === 'BOOLEAN' && getCustomFieldValue(data, def.id) === 'true', 'text-red-500': def.field_type === 'BOOLEAN' && getCustomFieldValue(data, def.id) === 'false' }">
+            {{ formatCustomFieldValue(getCustomFieldValue(data, def.id), def.field_type) }}
+          </span>
+        </template>
+      </Column>
+
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">
@@ -379,6 +407,7 @@ function pnlClass(pnl) {
       :accounts="accountsStore.accounts"
       :symbols="symbolsStore.symbolOptions"
       :setups="setupsStore.setupOptions"
+      :customFieldDefinitions="customFieldsStore.activeDefinitions"
       :loading="store.loading"
       @save="handleCreate"
     />

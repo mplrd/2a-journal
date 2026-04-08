@@ -11,6 +11,7 @@ import Button from 'primevue/button'
 import ProfileTab from '@/components/account/ProfileTab.vue'
 import AssetsTab from '@/components/account/AssetsTab.vue'
 import SetupsTab from '@/components/account/SetupsTab.vue'
+import CustomFieldsTab from '@/components/account/CustomFieldsTab.vue'
 import { useOnboarding } from '@/composables/useOnboarding'
 
 const { t } = useI18n()
@@ -18,7 +19,7 @@ const route = useRoute()
 const router = useRouter()
 const { isOnboarding, completeOnboarding } = useOnboarding()
 
-const VALID_TABS = ['profile', 'assets', 'setups']
+const VALID_TABS = ['profile', 'assets', 'setups', 'custom-fields']
 
 const initialTab = computed(() => {
   const tab = route.query.tab
@@ -52,6 +53,7 @@ async function handleStartTrading() {
         <Tab value="profile">{{ t('account.tabs.profile') }}</Tab>
         <Tab value="assets">{{ t('account.tabs.assets') }}</Tab>
         <Tab value="setups">{{ t('account.tabs.setups') }}</Tab>
+        <Tab value="custom-fields">{{ t('account.tabs.custom_fields') }}</Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="profile">
@@ -62,6 +64,9 @@ async function handleStartTrading() {
         </TabPanel>
         <TabPanel value="setups">
           <SetupsTab />
+        </TabPanel>
+        <TabPanel value="custom-fields">
+          <CustomFieldsTab />
         </TabPanel>
       </TabPanels>
     </Tabs>

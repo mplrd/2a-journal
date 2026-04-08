@@ -67,6 +67,7 @@ class TradeRepository
 
     public function findAllByUserId(int $userId, array $filters = [], int $limit = 50, int $offset = 0): array
     {
+        $joins = '';
         $where = 'WHERE p.user_id = :user_id';
         $params = ['user_id' => $userId];
 
@@ -90,7 +91,14 @@ class TradeRepository
             $params['direction'] = $filters['direction'];
         }
 
-        $countSql = "SELECT COUNT(*) FROM trades t INNER JOIN positions p ON p.id = t.position_id $where";
+        if (!empty($filters['custom_filter'])) {
+            $joins .= ' INNER JOIN custom_field_values cfv ON cfv.trade_id = t.id';
+            $where .= ' AND cfv.custom_field_id = :cf_field_id AND cfv.value = :cf_value';
+            $params['cf_field_id'] = $filters['custom_filter']['field_id'];
+            $params['cf_value'] = $filters['custom_filter']['value'];
+        }
+
+        $countSql = "SELECT COUNT(*) FROM trades t INNER JOIN positions p ON p.id = t.position_id $joins $where";
         $countStmt = $this->pdo->prepare($countSql);
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
@@ -103,6 +111,7 @@ class TradeRepository
                        p.position_type, p.created_at, p.updated_at
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
+                $joins
                 $where
                 ORDER BY t.opened_at DESC
                 LIMIT :limit OFFSET :offset";

@@ -4,6 +4,7 @@ use App\Controllers\AccountController;
 use App\Controllers\AuthController;
 use App\Controllers\OrderController;
 use App\Controllers\PositionController;
+use App\Controllers\CustomFieldController;
 use App\Controllers\SetupController;
 use App\Controllers\SymbolController;
 use App\Controllers\ImportController;
@@ -16,6 +17,8 @@ use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PartialExitRepository;
+use App\Repositories\CustomFieldDefinitionRepository;
+use App\Repositories\CustomFieldValueRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
@@ -35,6 +38,7 @@ use App\Services\EmailService;
 use App\Services\OrderService;
 use App\Services\PositionService;
 use App\Services\ShareService;
+use App\Services\CustomFieldService;
 use App\Services\SetupService;
 use App\Services\Import\ImportService;
 use App\Services\Import\FileParserService;
@@ -130,6 +134,18 @@ $router->get('/setups', [$setupController, 'index'], [$authMiddleware]);
 $router->post('/setups', [$setupController, 'store'], [$authMiddleware]);
 $router->delete('/setups/{id}', [$setupController, 'destroy'], [$authMiddleware]);
 
+// ── Custom Fields ──────────────────────────────────────────────
+$customFieldRepo = new CustomFieldDefinitionRepository($pdo);
+$customFieldValueRepo = new CustomFieldValueRepository($pdo);
+$customFieldService = new CustomFieldService($customFieldRepo, $customFieldValueRepo);
+$customFieldController = new CustomFieldController($customFieldService);
+
+$router->get('/custom-fields', [$customFieldController, 'index'], [$authMiddleware]);
+$router->post('/custom-fields', [$customFieldController, 'store'], [$authMiddleware]);
+$router->get('/custom-fields/{id}', [$customFieldController, 'show'], [$authMiddleware]);
+$router->put('/custom-fields/{id}', [$customFieldController, 'update'], [$authMiddleware]);
+$router->delete('/custom-fields/{id}', [$customFieldController, 'destroy'], [$authMiddleware]);
+
 // ── Accounts ────────────────────────────────────────────────────
 $accountRepo = new AccountRepository($pdo);
 $accountService = new AccountService($accountRepo);
@@ -175,7 +191,7 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware]);
 
 // ── Trades ─────────────────────────────────────────────────────
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware]);

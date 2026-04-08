@@ -43,3 +43,10 @@ export const ExitType = {
   SL: 'SL',
   MANUAL: 'MANUAL',
 }
+
+export const CustomFieldType = {
+  BOOLEAN: 'BOOLEAN',
+  TEXT: 'TEXT',
+  NUMBER: 'NUMBER',
+  SELECT: 'SELECT',
+}
