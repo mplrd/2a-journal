@@ -532,16 +532,6 @@ function close() {
               <Column :header="t('import.col_size')">
                 <template #body="{ data }">{{ data.total_size }}</template>
               </Column>
-              <Column :header="t('import.col_pnl')">
-                <template #body="{ data }">
-                  <template v-if="data.total_pnl !== 0">
-                    <span :class="data.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'">
-                      {{ Number(data.total_pnl).toFixed(2) }}
-                    </span>
-                  </template>
-                  <span v-else class="text-gray-400">—</span>
-                </template>
-              </Column>
               <Column :header="t('import.col_status')">
                 <template #body="{ data }">
                   <span v-if="data.closed_at" class="text-green-600">{{ t('import.status_closed') }}</span>

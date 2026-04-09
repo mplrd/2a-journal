@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Generic import template — covers standard CSV exports with common column names.
- * Supports French and English headers, multiple naming conventions.
+ * Standard import template — matches the downloadable CSV template exactly.
+ * Columns: Symbol, Direction, Entry Price, Size, Open Date, Close Date, Exit Price
  */
 return [
     'broker' => 'generic',
@@ -10,72 +10,31 @@ return [
     'file_types' => ['csv', 'xlsx'],
     'columns' => [
         'symbol' => [
-            'names' => [
-                'Symbol', 'Symbole', 'Instrument', 'Asset', 'Actif',
-                'Ticker', 'Market', 'Marché', 'Pair', 'Paire',
-            ],
+            'names' => ['Symbol'],
         ],
         'direction' => [
-            'names' => [
-                'Direction', 'Side', 'Type', 'Action',
-                'Sens', 'Sens d\'ouverture', 'Trade Type', 'Position',
-            ],
+            'names' => ['Direction'],
             'map' => [
-                'Buy' => 'BUY', 'BUY' => 'BUY', 'Long' => 'BUY', 'LONG' => 'BUY',
-                'Acheter' => 'BUY', 'Achat' => 'BUY',
-                'Sell' => 'SELL', 'SELL' => 'SELL', 'Short' => 'SELL', 'SHORT' => 'SELL',
-                'Vendre' => 'SELL', 'Vente' => 'SELL',
+                'BUY' => 'BUY', 'Buy' => 'BUY',
+                'SELL' => 'SELL', 'Sell' => 'SELL',
             ],
-        ],
-        'closed_at' => [
-            'names' => [
-                'Close Date', 'Close Time', 'Closing Time', 'Closed At',
-                'Date de clôture', 'Heure de clôture', 'Date clôture',
-                'Exit Date', 'Exit Time', 'Date de sortie',
-            ],
-            'format' => 'Y-m-d H:i:s',
-        ],
-        'opened_at' => [
-            'names' => [
-                'Open Date', 'Open Time', 'Opening Time', 'Opened At',
-                'Date d\'ouverture', 'Heure d\'ouverture', 'Date ouverture',
-                'Entry Date', 'Entry Time', 'Date d\'entrée',
-            ],
-            'format' => 'Y-m-d H:i:s',
         ],
         'entry_price' => [
-            'names' => [
-                'Entry Price', 'Open Price', 'Entry', 'Open',
-                'Prix d\'entrée', 'Cours d\'entrée', 'Prix ouverture',
-            ],
-        ],
-        'exit_price' => [
-            'names' => [
-                'Exit Price', 'Close Price', 'Closing Price', 'Exit', 'Close',
-                'Prix de sortie', 'Prix de clôture', 'Cours de clôture', 'Prix clôture',
-            ],
+            'names' => ['Entry Price'],
         ],
         'size' => [
-            'names' => [
-                'Size', 'Quantity', 'Volume', 'Lots', 'Qty',
-                'Taille', 'Quantité', 'Quantité de clôture',
-            ],
+            'names' => ['Size'],
         ],
-        'pnl' => [
-            'names' => [
-                'PnL', 'P&L', 'Profit', 'Profit/Loss', 'Net Profit',
-                'Résultat', 'Gain', 'Bénéfice',
-            ],
-            'names_pattern' => ['/P\s*&?\s*L/i', '/profit/i', '/nets$/i'],
+        'opened_at' => [
+            'names' => ['Open Date'],
+            'format' => 'Y-m-d H:i:s',
         ],
-        'pips' => [
-            'names' => ['Pips', 'Points'],
+        'closed_at' => [
+            'names' => ['Close Date'],
+            'format' => 'Y-m-d H:i:s',
         ],
-        'comment' => [
-            'names' => [
-                'Comment', 'Comments', 'Notes', 'Note',
-                'Commentaire', 'Commentaires',
-            ],
+        'exit_price' => [
+            'names' => ['Exit Price'],
         ],
     ],
     'grouping' => [

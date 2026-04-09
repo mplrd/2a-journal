@@ -168,7 +168,6 @@ class ImportServiceTest extends TestCase
         $this->assertNotNull($eurusd);
         $this->assertSame('BUY', $eurusd['direction']);
         $this->assertCount(2, $eurusd['exits']);
-        $this->assertEquals(65.00, $eurusd['total_pnl']);
         $this->assertEquals(1.5, $eurusd['total_size']);
     }
 
@@ -252,27 +251,4 @@ class ImportServiceTest extends TestCase
         $this->assertNull($nasdaq['closed_at']);
     }
 
-    public function testGenericTemplateMatchesCommonDirectionValues(): void
-    {
-        // Test that Long/Short, Achat/Vente are properly mapped
-        $template = require __DIR__ . '/../../../../config/import_templates/generic.php';
-
-        $csvContent = "Symbol,Direction,Close Date,Entry Price,Exit Price,Size,PnL\n"
-            . "EURUSD,Long,2024-01-15 10:00:00,1.1000,1.1050,1.0,50.00\n"
-            . "GBPUSD,Short,2024-01-15 11:00:00,1.2700,1.2650,0.5,25.00\n";
-
-        $tmpFile = tempnam(sys_get_temp_dir(), 'generic_test_');
-        file_put_contents($tmpFile, $csvContent);
-
-        try {
-            $result = $this->service->preview($tmpFile, $template, 'test.csv');
-            $this->assertSame(2, $result['total_positions']);
-
-            $directions = array_column($result['positions'], 'direction');
-            $this->assertContains('BUY', $directions);
-            $this->assertContains('SELL', $directions);
-        } finally {
-            unlink($tmpFile);
-        }
-    }
 }
