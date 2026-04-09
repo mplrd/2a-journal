@@ -37,6 +37,7 @@ return [
             'names' => ['Exit Price'],
         ],
     ],
+    'strict_headers' => true, // all defined columns must be present in the file
     'grouping' => [
         'key' => ['symbol', 'direction', 'entry_price'],
         'partial_exits' => true,

@@ -22,8 +22,9 @@ class ColumnMapperService
             if ($found !== null) {
                 $mapping[$field] = $found;
             } else {
-                // Only symbol, direction, closed_at, entry_price are strictly required
-                if (!in_array($field, ['pips', 'comment', 'opened_at', 'closed_at', 'exit_price', 'size', 'pnl'])) {
+                $isStrict = $template['strict_headers'] ?? false;
+                $optionalFields = ['pips', 'comment', 'opened_at', 'closed_at', 'exit_price', 'size', 'pnl', 'direction'];
+                if ($isStrict || !in_array($field, $optionalFields)) {
                     $missing[] = $field;
                 }
             }

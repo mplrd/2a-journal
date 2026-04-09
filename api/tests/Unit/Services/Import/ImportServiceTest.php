@@ -225,6 +225,19 @@ class ImportServiceTest extends TestCase
         }
     }
 
+    public function testGenericTemplateRejectsNonMatchingFile(): void
+    {
+        $template = require __DIR__ . '/../../../../config/import_templates/generic.php';
+
+        // custom_fields_sample.csv has different column names
+        $this->expectException(\App\Exceptions\ValidationException::class);
+        $this->service->preview(
+            $this->fixturesPath . '/custom_fields_sample.csv',
+            $template,
+            'custom_fields_sample.csv'
+        );
+    }
+
     public function testGenericTemplateImportsStandardCsv(): void
     {
         $template = require __DIR__ . '/../../../../config/import_templates/generic.php';
