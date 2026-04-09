@@ -78,10 +78,12 @@ class ImportService
         $columnMapping = $this->mapper->mapColumns($headers, $template);
         $currency = $this->mapper->detectCurrency($headers, $template);
 
-        // Normalize all rows
+        // Normalize all rows and fill defaults for missing fields
         $normalized = [];
         foreach ($rows as $row) {
-            $normalized[] = $this->mapper->mapRow($row, $columnMapping, $template);
+            $norm = $this->mapper->mapRow($row, $columnMapping, $template);
+            $norm = $this->fillRowDefaults($norm);
+            $normalized[] = $norm;
         }
 
         // Group into positions
@@ -322,8 +324,8 @@ class ImportService
         $dirSell = $options['direction_sell'] ?? 'Sell';
 
         $columns = [];
-        $requiredFields = ['symbol', 'direction', 'closed_at', 'entry_price', 'exit_price', 'size', 'pnl'];
-        $optionalFields = ['pips', 'comment'];
+        $requiredFields = ['symbol', 'direction', 'closed_at', 'entry_price'];
+        $optionalFields = ['exit_price', 'size', 'pnl', 'opened_at', 'pips', 'comment'];
 
         foreach (array_merge($requiredFields, $optionalFields) as $field) {
             if (!isset($columnMapping[$field]) || $columnMapping[$field] === '') {
@@ -342,7 +344,7 @@ class ImportService
                 ];
             }
 
-            if ($field === 'closed_at') {
+            if ($field === 'closed_at' || $field === 'opened_at') {
                 $colDef['format'] = $dateFormat;
             }
 
@@ -453,6 +455,56 @@ class ImportService
             'exit_type' => ExitType::MANUAL->value,
             'pnl' => $exit['pnl'],
         ]);
+    }
+
+    /**
+     * Fill default values for optional fields in a normalized row.
+     * - size: defaults to 1
+     * - pnl: calculated from entry/exit/size/direction if exit_price is present
+     * - exit_price: calculated from entry + pnl/(size) if pnl is present
+     */
+    private function fillRowDefaults(array $row): array
+    {
+        // Default size to 1
+        if (!isset($row['size']) || $row['size'] === null || $row['size'] === 0.0) {
+            $row['size'] = 1.0;
+        }
+
+        $hasExit = isset($row['exit_price']) && $row['exit_price'] !== null && $row['exit_price'] !== 0.0;
+        $hasPnl = isset($row['pnl']) && $row['pnl'] !== null;
+        $hasEntry = isset($row['entry_price']) && $row['entry_price'] !== null;
+        $direction = $row['direction'] ?? null;
+
+        // Calculate pnl from prices if not mapped
+        if (!$hasPnl && $hasExit && $hasEntry && $direction) {
+            $diff = $row['exit_price'] - $row['entry_price'];
+            if ($direction === 'SELL') {
+                $diff = -$diff;
+            }
+            $row['pnl'] = round($diff * $row['size'], 2);
+        }
+
+        // Calculate exit_price from pnl if not mapped
+        if (!$hasExit && $hasPnl && $hasEntry && $row['size'] > 0 && $direction) {
+            $pnlPerUnit = $row['pnl'] / $row['size'];
+            if ($direction === 'SELL') {
+                $row['exit_price'] = $row['entry_price'] - $pnlPerUnit;
+            } else {
+                $row['exit_price'] = $row['entry_price'] + $pnlPerUnit;
+            }
+        }
+
+        // Fallback: if still no exit_price, use entry_price (BE)
+        if (!isset($row['exit_price']) || $row['exit_price'] === null) {
+            $row['exit_price'] = $row['entry_price'] ?? 0;
+        }
+
+        // Fallback: if still no pnl, set to 0
+        if (!isset($row['pnl']) || $row['pnl'] === null) {
+            $row['pnl'] = 0.0;
+        }
+
+        return $row;
     }
 
     /**

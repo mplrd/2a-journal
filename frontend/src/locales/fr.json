@@ -557,6 +557,7 @@
     "field_symbol": "Symbole",
     "field_direction": "Direction",
     "field_closed_at": "Date de clôture",
+    "field_opened_at": "Date d'ouverture",
     "field_entry_price": "Prix d'entrée",
     "field_exit_price": "Prix de sortie",
     "field_size": "Taille",

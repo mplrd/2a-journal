@@ -38,7 +38,7 @@ const fileHeaders = ref([])
 const fileSample = ref({}) // first row sample: header → value
 const customMapping = ref({
   symbol: '', direction: '', closed_at: '', entry_price: '',
-  exit_price: '', size: '', pnl: '', pips: '', comment: '',
+  exit_price: '', size: '', pnl: '', opened_at: '', pips: '', comment: '',
 })
 const customOptions = ref({
   date_format: 'd/m/Y H:i:s',
@@ -57,14 +57,13 @@ const symbolMapping = ref({})
 // Result state
 const result = ref(null)
 
-const requiredFields = ['symbol', 'direction', 'closed_at', 'entry_price', 'exit_price', 'size', 'pnl']
-const optionalFields = ['pips', 'comment']
+const requiredFields = ['symbol', 'direction', 'closed_at', 'entry_price']
+const optionalFields = ['exit_price', 'size', 'pnl', 'opened_at', 'pips', 'comment']
 
 const isCustom = computed(() => selectedBroker.value === 'custom')
 
-const mappedFieldCount = computed(() => {
-  return [...requiredFields, ...optionalFields].filter(f => customMapping.value[f]).length
-})
+// Track which fields were auto-mapped (not manually set)
+const autoMappedFields = ref(new Set())
 
 function sampleValue(headerName) {
   if (!headerName) return null
@@ -74,7 +73,7 @@ function sampleValue(headerName) {
 }
 
 const acceptedFileTypes = computed(() => {
-  if (isCustom.value) return '.csv,.xlsx,.xlsm,.xml'
+  if (isCustom.value) return '.csv,.xlsx,.xls,.xlsm,.xml'
   const tpl = templates.value.find(tp => tp.broker === selectedBroker.value)
   const types = tpl?.file_types || ['xlsx', 'csv', 'xml']
   return types.map(ext => '.' + ext).join(',')
@@ -157,30 +156,38 @@ const autoMapPatterns = {
   exit_price: ['exit price', 'close price', 'closing price', 'exit', 'prix de sortie', 'prix de clôture'],
   size: ['size', 'quantity', 'volume', 'lots', 'qty', 'taille', 'quantité'],
   pnl: ['pnl', 'p&l', 'profit', 'profit/loss', 'net profit', 'résultat', 'gain'],
+  opened_at: ['open date', 'open time', 'opening time', 'opened at', 'date d\'ouverture', 'entry date', 'entry time'],
   pips: ['pips', 'points'],
   comment: ['comment', 'comments', 'notes', 'note', 'commentaire'],
 }
 
 function autoMapColumns(headers) {
+  autoMappedFields.value = new Set()
   const lowerHeaders = headers.map(h => h.toLowerCase().trim())
   for (const [field, patterns] of Object.entries(autoMapPatterns)) {
     if (customMapping.value[field]) continue // don't override existing
+    let matched = false
     for (const pattern of patterns) {
       const idx = lowerHeaders.findIndex(h => h === pattern)
       if (idx !== -1) {
         customMapping.value[field] = headers[idx]
+        matched = true
         break
       }
     }
     // Partial match fallback (header contains pattern)
-    if (!customMapping.value[field]) {
+    if (!matched) {
       for (const pattern of patterns) {
         const idx = lowerHeaders.findIndex(h => h.includes(pattern))
         if (idx !== -1) {
           customMapping.value[field] = headers[idx]
+          matched = true
           break
         }
       }
+    }
+    if (matched) {
+      autoMappedFields.value.add(field)
     }
   }
 }
@@ -275,8 +282,9 @@ function resetForm() {
   showMapping.value = false
   customMapping.value = {
     symbol: '', direction: '', closed_at: '', entry_price: '',
-    exit_price: '', size: '', pnl: '', pips: '', comment: '',
+    exit_price: '', size: '', pnl: '', opened_at: '', pips: '', comment: '',
   }
+  autoMappedFields.value = new Set()
   customFieldsMapping.value = {}
 }
 
@@ -336,8 +344,8 @@ function close() {
 
               <template v-if="showMapping">
                 <!-- Auto-mapped indicator -->
-                <Message v-if="mappedFieldCount > 0" severity="info" :closable="false" class="text-sm">
-                  {{ t('import.auto_mapped', { count: mappedFieldCount }) }}
+                <Message v-if="autoMappedFields.size > 0" severity="info" :closable="false" class="text-sm">
+                  {{ t('import.auto_mapped', { count: autoMappedFields.size }) }}
                 </Message>
 
                 <!-- Mapping table: field | file column | sample value -->
