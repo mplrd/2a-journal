@@ -560,6 +560,11 @@
     "field_pnl": "P&L",
     "field_pips": "Pips",
     "field_comment": "Comment",
+    "detecting_columns": "Detecting columns...",
+    "auto_mapped": "{count} field(s) auto-detected — please verify the mapping",
+    "required_fields": "Required fields",
+    "optional_fields": "Optional fields",
+    "options_section": "Import options",
     "custom_fields_section": "Custom fields",
     "custom_fields_hint": "Map your custom fields to file columns (optional)",
     "error": {

@@ -560,6 +560,11 @@
     "field_pnl": "P&L",
     "field_pips": "Pips",
     "field_comment": "Commentaire",
+    "detecting_columns": "Détection des colonnes en cours...",
+    "auto_mapped": "{count} champ(s) auto-détecté(s) — vérifiez le mapping",
+    "required_fields": "Champs requis",
+    "optional_fields": "Champs optionnels",
+    "options_section": "Options d'import",
     "custom_fields_section": "Champs personnalisés",
     "custom_fields_hint": "Associez vos champs personnalisés aux colonnes du fichier (optionnel)",
     "error": {

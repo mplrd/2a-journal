@@ -61,6 +61,10 @@ const optionalFields = ['pips', 'comment']
 
 const isCustom = computed(() => selectedBroker.value === 'custom')
 
+const mappedFieldCount = computed(() => {
+  return [...requiredFields, ...optionalFields].filter(f => customMapping.value[f]).length
+})
+
 const acceptedFileTypes = computed(() => {
   const tpl = templates.value.find(t => t.broker === selectedBroker.value)
   const types = tpl?.file_types || ['xlsx', 'csv']
@@ -68,7 +72,13 @@ const acceptedFileTypes = computed(() => {
 })
 
 const brokerOptions = computed(() => {
-  const opts = templates.value.map((t) => ({ label: t.label, value: t.broker }))
+  // Show generic template first, then broker-specific, then custom
+  const generic = templates.value.filter(t => t.broker === 'generic')
+  const brokers = templates.value.filter(t => t.broker !== 'generic')
+  const opts = [
+    ...generic.map(t => ({ label: t.label, value: t.broker })),
+    ...brokers.map(t => ({ label: t.label, value: t.broker })),
+  ]
   opts.push({ label: t('import.custom_mapping'), value: 'custom' })
   return opts
 })
@@ -121,6 +131,47 @@ function onFileSelect(event) {
     fileName.value = selected.name
     showMapping.value = false
     fileHeaders.value = []
+    // Auto-fetch headers in custom mode
+    if (isCustom.value) {
+      fetchHeaders()
+    }
+  }
+}
+
+// Common column name patterns for auto-mapping (lowercase)
+const autoMapPatterns = {
+  symbol: ['symbol', 'symbole', 'instrument', 'asset', 'actif', 'ticker', 'pair', 'paire'],
+  direction: ['direction', 'side', 'sens', 'type', 'action', 'trade type'],
+  closed_at: ['close date', 'close time', 'closing time', 'closed at', 'date de clôture', 'exit date', 'exit time'],
+  entry_price: ['entry price', 'open price', 'entry', 'prix d\'entrée', 'cours d\'entrée'],
+  exit_price: ['exit price', 'close price', 'closing price', 'exit', 'prix de sortie', 'prix de clôture'],
+  size: ['size', 'quantity', 'volume', 'lots', 'qty', 'taille', 'quantité'],
+  pnl: ['pnl', 'p&l', 'profit', 'profit/loss', 'net profit', 'résultat', 'gain'],
+  pips: ['pips', 'points'],
+  comment: ['comment', 'comments', 'notes', 'note', 'commentaire'],
+}
+
+function autoMapColumns(headers) {
+  const lowerHeaders = headers.map(h => h.toLowerCase().trim())
+  for (const [field, patterns] of Object.entries(autoMapPatterns)) {
+    if (customMapping.value[field]) continue // don't override existing
+    for (const pattern of patterns) {
+      const idx = lowerHeaders.findIndex(h => h === pattern)
+      if (idx !== -1) {
+        customMapping.value[field] = headers[idx]
+        break
+      }
+    }
+    // Partial match fallback (header contains pattern)
+    if (!customMapping.value[field]) {
+      for (const pattern of patterns) {
+        const idx = lowerHeaders.findIndex(h => h.includes(pattern))
+        if (idx !== -1) {
+          customMapping.value[field] = headers[idx]
+          break
+        }
+      }
+    }
   }
 }
 
@@ -132,6 +183,7 @@ async function fetchHeaders() {
     const resp = await importsService.getHeaders(file.value)
     fileHeaders.value = resp.data.headers
     showMapping.value = true
+    autoMapColumns(resp.data.headers)
   } catch (err) {
     error.value = err.messageKey || 'import.error.parse_failed'
   } finally {
@@ -263,62 +315,87 @@ function close() {
               />
             </div>
 
-            <!-- Custom mapping: fetch headers then show mapping -->
+            <!-- Custom mapping: auto-fetch headers then show mapping -->
             <template v-if="isCustom && file">
-              <Button
-                v-if="!showMapping"
-                :label="t('import.detect_columns')"
-                icon="pi pi-table"
-                severity="secondary"
-                size="small"
-                :loading="loading"
-                @click="fetchHeaders"
-              />
+              <div v-if="loading && !showMapping" class="flex items-center gap-2 text-sm text-gray-500">
+                <i class="pi pi-spin pi-spinner"></i>
+                {{ t('import.detecting_columns') }}
+              </div>
 
               <template v-if="showMapping">
-                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('import.map_columns') }}</h3>
-                <div class="grid grid-cols-2 gap-3">
-                  <div v-for="field in [...requiredFields, ...optionalFields]" :key="field">
-                    <label class="block text-xs text-gray-500 mb-1">
-                      {{ t(`import.field_${field}`) }}
-                      <span v-if="requiredFields.includes(field)" class="text-red-500">*</span>
-                    </label>
-                    <Select
-                      v-model="customMapping[field]"
-                      :options="headerOptions"
-                      optionLabel="label"
-                      optionValue="value"
-                      class="w-full"
-                      size="small"
-                    />
-                  </div>
-                </div>
+                <!-- Auto-mapped indicator -->
+                <Message v-if="mappedFieldCount > 0" severity="info" :closable="false" class="text-sm">
+                  {{ t('import.auto_mapped', { count: mappedFieldCount }) }}
+                </Message>
 
-                <div class="grid grid-cols-3 gap-3 mt-2">
-                  <div>
-                    <label class="block text-xs text-gray-500 mb-1">{{ t('import.date_format') }}</label>
-                    <Select
-                      v-model="customOptions.date_format"
-                      :options="dateFormatOptions"
-                      optionLabel="label"
-                      optionValue="value"
-                      class="w-full"
-                      size="small"
-                    />
+                <!-- Required fields -->
+                <fieldset class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
+                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.required_fields') }}</legend>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div v-for="field in requiredFields" :key="field">
+                      <label class="block text-xs text-gray-500 mb-1">
+                        {{ t(`import.field_${field}`) }}
+                        <span class="text-red-500">*</span>
+                      </label>
+                      <Select
+                        v-model="customMapping[field]"
+                        :options="headerOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                        size="small"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label class="block text-xs text-gray-500 mb-1">{{ t('import.direction_buy_label') }}</label>
-                    <InputText v-model="customOptions.direction_buy" class="w-full" size="small" />
+                </fieldset>
+
+                <!-- Options (date format, direction values) -->
+                <fieldset class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
+                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.options_section') }}</legend>
+                  <div class="grid grid-cols-3 gap-3">
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">{{ t('import.date_format') }}</label>
+                      <Select
+                        v-model="customOptions.date_format"
+                        :options="dateFormatOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                        size="small"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">{{ t('import.direction_buy_label') }}</label>
+                      <InputText v-model="customOptions.direction_buy" class="w-full" size="small" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">{{ t('import.direction_sell_label') }}</label>
+                      <InputText v-model="customOptions.direction_sell" class="w-full" size="small" />
+                    </div>
                   </div>
-                  <div>
-                    <label class="block text-xs text-gray-500 mb-1">{{ t('import.direction_sell_label') }}</label>
-                    <InputText v-model="customOptions.direction_sell" class="w-full" size="small" />
+                </fieldset>
+
+                <!-- Optional fields -->
+                <fieldset class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
+                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.optional_fields') }}</legend>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div v-for="field in optionalFields" :key="field">
+                      <label class="block text-xs text-gray-500 mb-1">{{ t(`import.field_${field}`) }}</label>
+                      <Select
+                        v-model="customMapping[field]"
+                        :options="headerOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                        size="small"
+                      />
+                    </div>
                   </div>
-                </div>
+                </fieldset>
 
                 <!-- Custom fields mapping -->
-                <template v-if="activeCustomFields.length > 0">
-                  <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mt-4">{{ t('import.custom_fields_section') }}</h3>
+                <fieldset v-if="activeCustomFields.length > 0" class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
+                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.custom_fields_section') }}</legend>
                   <p class="text-xs text-gray-500 mb-2">{{ t('import.custom_fields_hint') }}</p>
                   <div class="grid grid-cols-2 gap-3">
                     <div v-for="field in activeCustomFields" :key="field.id">
@@ -336,7 +413,7 @@ function close() {
                       />
                     </div>
                   </div>
-                </template>
+                </fieldset>
               </template>
             </template>
 
