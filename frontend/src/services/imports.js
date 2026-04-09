@@ -49,6 +49,22 @@ export const importsService = {
     return api.upload('/imports/confirm', formData)
   },
 
+  async downloadTemplate() {
+    const token = api.getAccessToken()
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost/api'
+    const resp = await fetch(`${baseUrl}/imports/template-file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    })
+    const blob = await resp.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'import-template.csv'
+    link.click()
+    window.URL.revokeObjectURL(url)
+  },
+
   async getBatches() {
     return api.get('/imports/batches')
   },

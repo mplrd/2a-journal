@@ -181,12 +181,17 @@ class ImportService
                         'position_type' => 'TRADE', // positions table ENUM, no PHP enum exists
                     ]);
 
-                    // Create trade with all fields (TradeRepo::create only handles OPEN trades)
-                    $tradeId = $this->createImportedTrade($position['id'], $posData);
+                    // Create trade — OPEN if no closed_at, CLOSED otherwise
+                    $isOpen = $this->isOpenPosition($posData);
+                    $tradeId = $isOpen
+                        ? $this->createOpenImportedTrade($position['id'], $posData)
+                        : $this->createImportedTrade($position['id'], $posData);
 
-                    // Create partial exits
-                    foreach ($posData['exits'] as $exit) {
-                        $this->createPartialExit($tradeId, $exit);
+                    // Create partial exits only for closed trades
+                    if (!$isOpen) {
+                        foreach ($posData['exits'] as $exit) {
+                            $this->createPartialExit($tradeId, $exit);
+                        }
                     }
 
                     // Save custom field values if mapping provided
@@ -441,6 +446,22 @@ class ImportService
         return (int) $this->pdo->lastInsertId();
     }
 
+    private function createOpenImportedTrade(int $positionId, array $posData): int
+    {
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status)
+             VALUES (:position_id, :opened_at, :remaining_size, :status)"
+        );
+        $stmt->execute([
+            'position_id' => $positionId,
+            'opened_at' => $posData['opened_at'] ?? date('Y-m-d H:i:s'),
+            'remaining_size' => $posData['total_size'],
+            'status' => TradeStatus::OPEN->value,
+        ]);
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
     private function createPartialExit(int $tradeId, array $exit): void
     {
         $stmt = $this->pdo->prepare(
@@ -459,9 +480,7 @@ class ImportService
 
     /**
      * Fill default values for optional fields in a normalized row.
-     * - size: defaults to 1
-     * - pnl: calculated from entry/exit/size/direction if exit_price is present
-     * - exit_price: calculated from entry + pnl/(size) if pnl is present
+     * Only size is defaulted. Missing closed_at/exit_price/pnl = trade is OPEN.
      */
     private function fillRowDefaults(array $row): array
     {
@@ -470,46 +489,15 @@ class ImportService
             $row['size'] = 1.0;
         }
 
-        $hasExit = isset($row['exit_price']) && $row['exit_price'] !== null && $row['exit_price'] !== 0.0;
-        $hasPnl = isset($row['pnl']) && $row['pnl'] !== null;
-        $hasEntry = isset($row['entry_price']) && $row['entry_price'] !== null;
-        $direction = $row['direction'] ?? null;
-
-        // Calculate pnl from prices if not mapped
-        if (!$hasPnl && $hasExit && $hasEntry && $direction) {
-            $diff = $row['exit_price'] - $row['entry_price'];
-            if ($direction === 'SELL') {
-                $diff = -$diff;
-            }
-            $row['pnl'] = round($diff * $row['size'], 2);
-        }
-
-        // Calculate exit_price from pnl if not mapped
-        if (!$hasExit && $hasPnl && $hasEntry && $row['size'] > 0 && $direction) {
-            $pnlPerUnit = $row['pnl'] / $row['size'];
-            if ($direction === 'SELL') {
-                $row['exit_price'] = $row['entry_price'] - $pnlPerUnit;
-            } else {
-                $row['exit_price'] = $row['entry_price'] + $pnlPerUnit;
-            }
-        }
-
-        // Fallback: if still no exit_price, use entry_price (BE)
-        if (!isset($row['exit_price']) || $row['exit_price'] === null) {
-            $row['exit_price'] = $row['entry_price'] ?? 0;
-        }
-
-        // Fallback: if still no pnl, set to 0
-        if (!isset($row['pnl']) || $row['pnl'] === null) {
-            $row['pnl'] = 0.0;
-        }
-
-        // Default closed_at: use opened_at if available, otherwise current date
-        if (!isset($row['closed_at']) || $row['closed_at'] === null) {
-            $row['closed_at'] = $row['opened_at'] ?? date('Y-m-d H:i:s');
-        }
-
         return $row;
+    }
+
+    /**
+     * Determine if a position should be imported as OPEN or CLOSED.
+     */
+    private function isOpenPosition(array $posData): bool
+    {
+        return !isset($posData['closed_at']) || $posData['closed_at'] === null;
     }
 
     /**

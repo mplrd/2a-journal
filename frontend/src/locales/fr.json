@@ -549,6 +549,8 @@
     "date": "Date",
     "rollback": "Annuler cet import",
     "custom_mapping": "Autre (mapping manuel)",
+    "download_template": "Télécharger le template",
+    "template_hint": "Vous pouvez utiliser notre template CSV pour préparer vos données.",
     "detect_columns": "Détecter les colonnes",
     "map_columns": "Associer les colonnes du fichier",
     "date_format": "Format de date",

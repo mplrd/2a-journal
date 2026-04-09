@@ -114,6 +114,15 @@ class ImportController extends Controller
         return $this->importService->buildCustomTemplate($columnMapping, $body);
     }
 
+    public function downloadTemplate(Request $request): never
+    {
+        $filePath = __DIR__ . '/../../public/templates/import-template.csv';
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="import-template.csv"');
+        readfile($filePath);
+        exit;
+    }
+
     public function batches(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

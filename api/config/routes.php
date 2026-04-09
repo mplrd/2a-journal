@@ -220,6 +220,7 @@ $importService = new ImportService(
 $importController = new ImportController($importService);
 
 $router->get('/imports/templates', [$importController, 'templates'], [$authMiddleware]);
+$router->get('/imports/template-file', [$importController, 'downloadTemplate'], [$authMiddleware]);
 $router->post('/imports/headers', [$importController, 'headers'], [$authMiddleware]);
 $router->post('/imports/preview', [$importController, 'preview'], [$authMiddleware]);
 $router->post('/imports/confirm', [$importController, 'confirm'], [$authMiddleware]);
