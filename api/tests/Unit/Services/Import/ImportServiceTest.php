@@ -226,11 +226,10 @@ class ImportServiceTest extends TestCase
         }
     }
 
-    public function testGenericTemplateImportsMinimalCsv(): void
+    public function testGenericTemplateImportsStandardCsv(): void
     {
         $template = require __DIR__ . '/../../../../config/import_templates/generic.php';
 
-        // Use the actual import template file (minimal: Symbol, Direction, Entry Price)
         $result = $this->service->preview(
             __DIR__ . '/../../../../public/templates/import-template.csv',
             $template,
@@ -239,10 +238,18 @@ class ImportServiceTest extends TestCase
 
         $this->assertSame(2, $result['total_positions']);
 
-        // All trades are open (no closed_at column)
+        // EURUSD: closed trade with exit price
+        $eurusd = null;
+        $nasdaq = null;
         foreach ($result['positions'] as $pos) {
-            $this->assertNull($pos['closed_at']);
+            if ($pos['symbol'] === 'EURUSD') $eurusd = $pos;
+            if ($pos['symbol'] === 'NASDAQ') $nasdaq = $pos;
         }
+        $this->assertNotNull($eurusd['closed_at']);
+        $this->assertEquals(1.1050, $eurusd['avg_exit_price']);
+
+        // NASDAQ: open trade (no close date, no exit price)
+        $this->assertNull($nasdaq['closed_at']);
     }
 
     public function testGenericTemplateMatchesCommonDirectionValues(): void
