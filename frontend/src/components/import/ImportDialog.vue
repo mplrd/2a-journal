@@ -142,13 +142,44 @@ function onFileSelect(event) {
   if (selected) {
     file.value = selected
     fileName.value = selected.name
+    preview.value = null
+    error.value = null
     showMapping.value = false
     fileHeaders.value = []
     fileSample.value = {}
-    // Auto-fetch headers in custom mode
     if (isCustom.value) {
       fetchHeaders()
+    } else if (selectedBroker.value) {
+      autoAnalyze()
     }
+  }
+}
+
+// Re-analyze when broker changes with a file already selected
+watch(selectedBroker, () => {
+  preview.value = null
+  error.value = null
+  if (file.value && selectedBroker.value && !isCustom.value) {
+    autoAnalyze()
+  }
+})
+
+async function autoAnalyze() {
+  if (!file.value || !selectedBroker.value || isCustom.value) return
+  loading.value = true
+  error.value = null
+  try {
+    const resp = await importsService.preview(file.value, selectedBroker.value)
+    preview.value = resp.data
+    const mapping = {}
+    for (const s of resp.data.unknown_symbols) {
+      mapping[s] = s
+    }
+    symbolMapping.value = mapping
+  } catch (err) {
+    error.value = err.messageKey || err.message || 'import.error.parse_failed'
+  } finally {
+    loading.value = false
   }
 }
 
@@ -225,6 +256,13 @@ function getActiveCfMapping() {
 
 async function doPreview(nextCallback) {
   if (!file.value || !selectedBroker.value) return
+
+  // If preview already loaded (auto-analyze), just advance
+  if (preview.value && !isCustom.value) {
+    nextCallback()
+    return
+  }
+
   loading.value = true
   error.value = null
   try {
@@ -475,10 +513,18 @@ function close() {
 
             <Message v-if="error" severity="error" :closable="false">{{ t(error) }}</Message>
 
+            <!-- Preview summary when auto-analyzed -->
+            <div v-if="preview && !isCustom" class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 flex items-center gap-3">
+              <i class="pi pi-check-circle text-green-500"></i>
+              <span class="text-sm text-green-700 dark:text-green-300">
+                {{ t('import.auto_analyzed', { rows: preview.total_rows, positions: preview.total_positions }) }}
+              </span>
+            </div>
+
             <div class="pt-2">
               <Button
-                :label="t('import.analyze')"
-                icon="pi pi-search"
+                :label="preview && !isCustom ? t('common.next') : t('import.analyze')"
+                :icon="preview && !isCustom ? 'pi pi-arrow-right' : 'pi pi-search'"
                 :loading="loading"
                 :disabled="!file || !selectedBroker"
                 @click="doPreview(activateCallback.bind(null, '2'))"
