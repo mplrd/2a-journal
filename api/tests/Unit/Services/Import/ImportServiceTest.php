@@ -226,6 +226,32 @@ class ImportServiceTest extends TestCase
         }
     }
 
+    public function testGenericTemplateHandlesOpenTrades(): void
+    {
+        $template = require __DIR__ . '/../../../../config/import_templates/generic.php';
+
+        // Use the actual import template file
+        $result = $this->service->preview(
+            __DIR__ . '/../../../../public/templates/import-template.csv',
+            $template,
+            'import-template.csv'
+        );
+
+        $this->assertSame(3, $result['total_positions']);
+
+        // BTCUSD has no exit price and no close date → should be treated as open
+        $btc = null;
+        foreach ($result['positions'] as $pos) {
+            if ($pos['symbol'] === 'BTCUSD') {
+                $btc = $pos;
+                break;
+            }
+        }
+        $this->assertNotNull($btc);
+        $this->assertNull($btc['closed_at']); // open trade
+        $this->assertEquals(42000, $btc['entry_price']);
+    }
+
     public function testGenericTemplateMatchesCommonDirectionValues(): void
     {
         // Test that Long/Short, Achat/Vente are properly mapped

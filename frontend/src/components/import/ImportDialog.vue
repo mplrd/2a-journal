@@ -325,7 +325,7 @@ function close() {
               />
             </div>
 
-            <div v-if="isCustom" class="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+            <div v-if="selectedBroker === 'generic'" class="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
               <i class="pi pi-info-circle text-blue-500"></i>
               <span class="text-sm text-blue-700 dark:text-blue-300">{{ t('import.template_hint') }}</span>
               <Button

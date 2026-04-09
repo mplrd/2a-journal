@@ -119,18 +119,24 @@ class ColumnMapperService
             $colDef = $template['columns'][$field] ?? [];
             $value = $rawRow[$headerName] ?? null;
 
+            // Treat empty strings as null
+            if ($value === '' || $value === null) {
+                $normalized[$field] = null;
+                continue;
+            }
+
             // Apply value mapping (e.g. direction)
-            if (isset($colDef['map']) && $value !== null) {
+            if (isset($colDef['map'])) {
                 $value = $colDef['map'][$value] ?? $value;
             }
 
             // Parse dates
-            if (in_array($field, ['closed_at', 'opened_at']) && $value !== null && isset($colDef['format'])) {
+            if (in_array($field, ['closed_at', 'opened_at']) && isset($colDef['format'])) {
                 $value = $this->parseDate((string) $value, $colDef['format']);
             }
 
             // Cast numeric fields (strip thousands separator if configured)
-            if (in_array($field, ['entry_price', 'exit_price', 'size', 'pnl', 'pips']) && $value !== null) {
+            if (in_array($field, ['entry_price', 'exit_price', 'size', 'pnl', 'pips'])) {
                 $thousandsSep = $template['thousands_separator'] ?? null;
                 if ($thousandsSep !== null) {
                     $value = str_replace($thousandsSep, '', (string) $value);
