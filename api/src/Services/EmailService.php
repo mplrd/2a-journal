@@ -4,11 +4,22 @@ namespace App\Services;
 
 class EmailService
 {
+    private const VALID_DRIVERS = ['log', 'resend'];
+    private const RESEND_API_URL = 'https://api.resend.com/emails';
+
     private array $config;
     private string $templateDir;
 
     public function __construct(array $config)
     {
+        $driver = $config['driver'] ?? 'log';
+        if (!in_array($driver, self::VALID_DRIVERS, true)) {
+            throw new \InvalidArgumentException("Invalid mail driver '$driver'. Valid: " . implode(', ', self::VALID_DRIVERS));
+        }
+        if ($driver === 'resend' && empty($config['resend_api_key'])) {
+            throw new \InvalidArgumentException('RESEND_API_KEY is required when using the resend mail driver');
+        }
+
         $this->config = $config;
         $this->templateDir = dirname(__DIR__, 2) . '/templates/emails';
     }
@@ -53,13 +64,54 @@ class EmailService
             return;
         }
 
-        $headers = implode("\r\n", [
-            'MIME-Version: 1.0',
-            'Content-Type: text/html; charset=UTF-8',
-            "From: {$this->config['from_name']} <{$this->config['from_address']}>",
+        $driver = $this->config['driver'] ?? 'log';
+
+        if ($driver === 'resend') {
+            $this->sendViaResend($to, $subject, $htmlBody);
+        } else {
+            error_log("[EmailService] To: $to | Subject: $subject");
+        }
+    }
+
+    private function sendViaResend(string $to, string $subject, string $htmlBody): void
+    {
+        $payload = $this->buildResendPayload($to, $subject, $htmlBody);
+
+        $ch = curl_init(self::RESEND_API_URL);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $this->config['resend_api_key'],
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 10,
         ]);
 
-        @mail($to, $subject, $htmlBody, $headers);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            error_log("[EmailService] Resend cURL error: $error");
+            return;
+        }
+
+        if ($httpCode >= 400) {
+            error_log("[EmailService] Resend API error ($httpCode): $response");
+        }
+    }
+
+    private function buildResendPayload(string $to, string $subject, string $htmlBody): array
+    {
+        return [
+            'from' => "{$this->config['from_name']} <{$this->config['from_address']}>",
+            'to' => [$to],
+            'subject' => $subject,
+            'html' => $htmlBody,
+        ];
     }
 
     private function loadTemplate(string $name, string $locale, array $variables = []): string
