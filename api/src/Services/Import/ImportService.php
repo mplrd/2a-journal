@@ -14,6 +14,7 @@ use App\Repositories\PositionRepository;
 use App\Repositories\SymbolAliasRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\TradeRepository;
+use App\Services\CustomFieldService;
 use PDO;
 
 class ImportService
@@ -28,6 +29,7 @@ class ImportService
     private TradeRepository $tradeRepo;
     private AccountRepository $accountRepo;
     private PDO $pdo;
+    private ?CustomFieldService $customFieldService;
 
     public function __construct(
         FileParserService $parser,
@@ -39,7 +41,8 @@ class ImportService
         PositionRepository $positionRepo,
         TradeRepository $tradeRepo,
         AccountRepository $accountRepo,
-        PDO $pdo
+        PDO $pdo,
+        ?CustomFieldService $customFieldService = null
     ) {
         $this->parser = $parser;
         $this->mapper = $mapper;
@@ -51,12 +54,15 @@ class ImportService
         $this->tradeRepo = $tradeRepo;
         $this->accountRepo = $accountRepo;
         $this->pdo = $pdo;
+        $this->customFieldService = $customFieldService;
     }
 
     /**
      * Parse a file and return a preview without persisting anything.
+     *
+     * @param array $customFieldsMapping Optional mapping: field_id => file column header name
      */
-    public function preview(string $filePath, array $template, ?string $originalFilename = null): array
+    public function preview(string $filePath, array $template, ?string $originalFilename = null, array $customFieldsMapping = []): array
     {
         [$rows, $headers] = $this->parser->parseWithHeaders($filePath, $originalFilename);
 
@@ -82,6 +88,9 @@ class ImportService
         $groupKey = $template['grouping']['key'] ?? ['symbol', 'direction', 'entry_price'];
         $positions = $this->grouper->group($normalized, $groupKey);
 
+        // Attach custom field values from raw rows
+        $this->attachCustomFieldValues($positions, $rows, $normalized, $groupKey, $customFieldsMapping);
+
         // Collect unknown symbols (all broker symbols for now — resolve during confirm)
         $brokerSymbols = array_unique(array_column($positions, 'symbol'));
         sort($brokerSymbols);
@@ -98,13 +107,17 @@ class ImportService
     /**
      * Confirm an import: persist positions, trades, and partial exits.
      */
+    /**
+     * @param array $customFieldsMapping Optional mapping: field_id => file column header name
+     */
     public function confirm(
         int $userId,
         int $accountId,
         string $filePath,
         array $template,
         array $symbolMapping = [],
-        string $originalFilename = ''
+        string $originalFilename = '',
+        array $customFieldsMapping = []
     ): array {
         // Validate account ownership
         $account = $this->accountRepo->findById($accountId);
@@ -112,8 +125,8 @@ class ImportService
             throw new ForbiddenException('import.error.account_required');
         }
 
-        // Parse and preview
-        $preview = $this->preview($filePath, $template, $originalFilename);
+        // Parse and preview (with custom fields extraction)
+        $preview = $this->preview($filePath, $template, $originalFilename, $customFieldsMapping);
         $positions = $preview['positions'];
 
         // Check for duplicates
@@ -172,6 +185,18 @@ class ImportService
                     // Create partial exits
                     foreach ($posData['exits'] as $exit) {
                         $this->createPartialExit($tradeId, $exit);
+                    }
+
+                    // Save custom field values if mapping provided
+                    if ($this->customFieldService && !empty($posData['custom_fields'])) {
+                        try {
+                            $this->customFieldService->validateAndSaveValues($userId, $tradeId, $posData['custom_fields']);
+                        } catch (\Throwable $e) {
+                            $errors[] = [
+                                'symbol' => $posData['symbol'],
+                                'error' => 'custom_fields: ' . $e->getMessage(),
+                            ];
+                        }
                     }
 
                     $importedPositions++;
@@ -419,5 +444,49 @@ class ImportService
             'exit_type' => ExitType::MANUAL->value,
             'pnl' => $exit['pnl'],
         ]);
+    }
+
+    /**
+     * Attach custom field values from raw rows to grouped positions.
+     * Uses the same grouping key to match positions back to their raw rows,
+     * taking the first non-empty value per custom field per group.
+     */
+    private function attachCustomFieldValues(array &$positions, array $rawRows, array $normalizedRows, array $groupKey, array $customFieldsMapping): void
+    {
+        if (empty($customFieldsMapping)) {
+            foreach ($positions as &$pos) {
+                $pos['custom_fields'] = [];
+            }
+            return;
+        }
+
+        // Build lookup: groupKey → custom field values (first row wins)
+        $cfByGroup = [];
+        foreach ($rawRows as $i => $rawRow) {
+            $norm = $normalizedRows[$i];
+            $key = implode('|', array_map(fn($f) => (string) ($norm[$f] ?? ''), $groupKey));
+
+            if (isset($cfByGroup[$key])) {
+                continue; // first row wins
+            }
+
+            $cfValues = [];
+            foreach ($customFieldsMapping as $fieldId => $headerName) {
+                $value = $rawRow[$headerName] ?? null;
+                if ($value !== null && $value !== '') {
+                    $cfValues[] = [
+                        'field_id' => (int) $fieldId,
+                        'value' => (string) $value,
+                    ];
+                }
+            }
+            $cfByGroup[$key] = $cfValues;
+        }
+
+        // Attach to positions
+        foreach ($positions as &$pos) {
+            $key = implode('|', array_map(fn($f) => (string) ($pos[$f] ?? ''), $groupKey));
+            $pos['custom_fields'] = $cfByGroup[$key] ?? [];
+        }
     }
 }

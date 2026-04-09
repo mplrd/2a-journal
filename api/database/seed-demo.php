@@ -276,7 +276,31 @@ foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $opened
     $openCount++;
 }
 
-// ── 7. Update account capitals ─────────────────────────────
+// ── 7. Create custom field "Tendance" ──────────────────────
+$pdo->prepare("INSERT INTO custom_field_definitions (user_id, name, field_type, options, sort_order, is_active)
+    VALUES (:uid, 'Tendance', 'SELECT', :options, 0, 1)")
+    ->execute(['uid' => $userId, 'options' => json_encode(['Bullish', 'Bearish'])]);
+$tendanceFieldId = (int) $pdo->lastInsertId();
+echo "Created custom field 'Tendance' (id={$tendanceFieldId})\n";
+
+// Assign tendance values to some trades (alternating based on direction)
+$stmt = $pdo->prepare("SELECT t.id, p.direction FROM trades t INNER JOIN positions p ON p.id = t.position_id WHERE p.user_id = :uid AND t.status = 'CLOSED' ORDER BY t.opened_at");
+$stmt->execute(['uid' => $userId]);
+$closedTrades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$cfCount = 0;
+foreach ($closedTrades as $i => $trade) {
+    // Assign to ~70% of trades for realistic demo
+    if ($i % 10 >= 7) continue;
+
+    $tendance = $trade['direction'] === 'BUY' ? 'Bullish' : 'Bearish';
+    $pdo->prepare("INSERT INTO custom_field_values (custom_field_id, trade_id, value) VALUES (:fid, :tid, :val)")
+        ->execute(['fid' => $tendanceFieldId, 'tid' => $trade['id'], 'val' => $tendance]);
+    $cfCount++;
+}
+echo "Assigned 'Tendance' to {$cfCount} trades\n";
+
+// ── 8. Update account capitals ─────────────────────────────
 foreach ([$accountId, $accountId2, $accountId3] as $aid) {
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(t.pnl), 0) FROM trades t INNER JOIN positions p ON p.id = t.position_id WHERE p.account_id = :aid AND t.status = 'CLOSED'");
     $stmt->execute(['aid' => $aid]);

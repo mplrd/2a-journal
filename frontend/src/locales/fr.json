@@ -560,6 +560,8 @@
     "field_pnl": "P&L",
     "field_pips": "Pips",
     "field_comment": "Commentaire",
+    "custom_fields_section": "Champs personnalisés",
+    "custom_fields_hint": "Associez vos champs personnalisés aux colonnes du fichier (optionnel)",
     "error": {
       "no_file": "Veuillez sélectionner un fichier",
       "unknown_broker": "Template broker inconnu",

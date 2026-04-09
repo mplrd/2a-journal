@@ -214,7 +214,8 @@ $importService = new ImportService(
     $positionRepo,
     $tradeRepo,
     $accountRepo,
-    $pdo
+    $pdo,
+    $customFieldService
 );
 $importController = new ImportController($importService);
 

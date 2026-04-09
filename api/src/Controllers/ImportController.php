@@ -49,8 +49,9 @@ class ImportController extends Controller
         }
 
         $template = $this->resolveTemplate($body);
+        $customFieldsMapping = json_decode($body['custom_fields_mapping'] ?? '{}', true) ?: [];
 
-        $result = $this->importService->preview($file['tmp_name'], $template, $file['name']);
+        $result = $this->importService->preview($file['tmp_name'], $template, $file['name'], $customFieldsMapping);
         $result['original_filename'] = $file['name'];
 
         return $this->jsonSuccess($result);
@@ -74,6 +75,7 @@ class ImportController extends Controller
         }
 
         $template = $this->resolveTemplate($body);
+        $customFieldsMapping = json_decode($body['custom_fields_mapping'] ?? '{}', true) ?: [];
 
         $result = $this->importService->confirm(
             $userId,
@@ -81,7 +83,8 @@ class ImportController extends Controller
             $file['tmp_name'],
             $template,
             $symbolMapping,
-            $file['name']
+            $file['name'],
+            $customFieldsMapping
         );
 
         return $this->jsonSuccess($result);

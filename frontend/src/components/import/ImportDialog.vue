@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { importsService } from '@/services/imports'
+import { useCustomFieldsStore } from '@/stores/customFields'
 import Dialog from 'primevue/dialog'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
@@ -16,6 +17,7 @@ import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
 
 const { t } = useI18n()
+const customFieldsStore = useCustomFieldsStore()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -43,6 +45,9 @@ const customOptions = ref({
   direction_sell: 'Sell',
 })
 const showMapping = ref(false)
+
+// Custom fields mapping: field_id → file column header
+const customFieldsMapping = ref({})
 
 // Preview state
 const preview = ref(null)
@@ -104,7 +109,10 @@ async function loadTemplates() {
   } catch {
     // silent
   }
+  customFieldsStore.fetchDefinitions()
 }
+
+const activeCustomFields = computed(() => customFieldsStore.activeDefinitions)
 
 function onFileSelect(event) {
   const selected = event.target.files[0]
@@ -131,6 +139,15 @@ async function fetchHeaders() {
   }
 }
 
+function getActiveCfMapping() {
+  // Filter out empty mappings
+  const cfMap = {}
+  for (const [fieldId, headerName] of Object.entries(customFieldsMapping.value)) {
+    if (headerName) cfMap[fieldId] = headerName
+  }
+  return Object.keys(cfMap).length > 0 ? cfMap : null
+}
+
 async function doPreview(nextCallback) {
   if (!file.value || !selectedBroker.value) return
   loading.value = true
@@ -138,7 +155,8 @@ async function doPreview(nextCallback) {
   try {
     const colMap = isCustom.value ? customMapping.value : null
     const opts = isCustom.value ? customOptions.value : null
-    const resp = await importsService.preview(file.value, selectedBroker.value, colMap, opts)
+    const cfMap = isCustom.value ? getActiveCfMapping() : null
+    const resp = await importsService.preview(file.value, selectedBroker.value, colMap, opts, cfMap)
     preview.value = resp.data
 
     const mapping = {}
@@ -162,6 +180,7 @@ async function doConfirm(nextCallback) {
   try {
     const colMap = isCustom.value ? customMapping.value : null
     const opts = isCustom.value ? customOptions.value : null
+    const cfMap = isCustom.value ? getActiveCfMapping() : null
     const resp = await importsService.confirm(
       file.value,
       selectedBroker.value,
@@ -169,6 +188,7 @@ async function doConfirm(nextCallback) {
       symbolMapping.value,
       colMap,
       opts,
+      cfMap,
     )
     result.value = resp.data
     nextCallback()
@@ -193,6 +213,7 @@ function resetForm() {
     symbol: '', direction: '', closed_at: '', entry_price: '',
     exit_price: '', size: '', pnl: '', pips: '', comment: '',
   }
+  customFieldsMapping.value = {}
 }
 
 function close() {
@@ -294,6 +315,28 @@ function close() {
                     <InputText v-model="customOptions.direction_sell" class="w-full" size="small" />
                   </div>
                 </div>
+
+                <!-- Custom fields mapping -->
+                <template v-if="activeCustomFields.length > 0">
+                  <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mt-4">{{ t('import.custom_fields_section') }}</h3>
+                  <p class="text-xs text-gray-500 mb-2">{{ t('import.custom_fields_hint') }}</p>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div v-for="field in activeCustomFields" :key="field.id">
+                      <label class="block text-xs text-gray-500 mb-1">
+                        {{ field.name }}
+                        <span class="text-gray-400">({{ t(`custom_fields.types.${field.field_type}`) }})</span>
+                      </label>
+                      <Select
+                        v-model="customFieldsMapping[field.id]"
+                        :options="headerOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                        size="small"
+                      />
+                    </div>
+                  </div>
+                </template>
               </template>
             </template>
 

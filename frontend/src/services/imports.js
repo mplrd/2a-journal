@@ -11,7 +11,7 @@ export const importsService = {
     return api.upload('/imports/headers', formData)
   },
 
-  async preview(file, broker, columnMapping = null, customOptions = null) {
+  async preview(file, broker, columnMapping = null, customOptions = null, customFieldsMapping = null) {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('broker', broker)
@@ -23,10 +23,13 @@ export const importsService = {
       if (customOptions.direction_buy) formData.append('direction_buy', customOptions.direction_buy)
       if (customOptions.direction_sell) formData.append('direction_sell', customOptions.direction_sell)
     }
+    if (customFieldsMapping && Object.keys(customFieldsMapping).length > 0) {
+      formData.append('custom_fields_mapping', JSON.stringify(customFieldsMapping))
+    }
     return api.upload('/imports/preview', formData)
   },
 
-  async confirm(file, broker, accountId, symbolMapping = {}, columnMapping = null, customOptions = null) {
+  async confirm(file, broker, accountId, symbolMapping = {}, columnMapping = null, customOptions = null, customFieldsMapping = null) {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('broker', broker)
@@ -39,6 +42,9 @@ export const importsService = {
       if (customOptions.date_format) formData.append('date_format', customOptions.date_format)
       if (customOptions.direction_buy) formData.append('direction_buy', customOptions.direction_buy)
       if (customOptions.direction_sell) formData.append('direction_sell', customOptions.direction_sell)
+    }
+    if (customFieldsMapping && Object.keys(customFieldsMapping).length > 0) {
+      formData.append('custom_fields_mapping', JSON.stringify(customFieldsMapping))
     }
     return api.upload('/imports/confirm', formData)
   },

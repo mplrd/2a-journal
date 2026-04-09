@@ -560,6 +560,8 @@
     "field_pnl": "P&L",
     "field_pips": "Pips",
     "field_comment": "Comment",
+    "custom_fields_section": "Custom fields",
+    "custom_fields_hint": "Map your custom fields to file columns (optional)",
     "error": {
       "no_file": "Please select a file",
       "unknown_broker": "Unknown broker template",
