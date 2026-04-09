@@ -33,9 +33,9 @@ class ImportController extends Controller
             throw new ValidationException('import.error.no_file', 'file');
         }
 
-        $headers = $this->importService->getFileHeaders($file['tmp_name'], $file['name']);
+        $result = $this->importService->getFileHeaders($file['tmp_name'], $file['name']);
 
-        return $this->jsonSuccess(['headers' => $headers]);
+        return $this->jsonSuccess($result);
     }
 
     public function preview(Request $request): Response

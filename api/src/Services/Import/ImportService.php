@@ -292,12 +292,21 @@ class ImportService
     }
 
     /**
-     * Get file headers without parsing the full content.
+     * Get file headers and first data row for mapping preview.
      */
     public function getFileHeaders(string $filePath, ?string $originalFilename = null): array
     {
-        [, $headers] = $this->parser->parseWithHeaders($filePath, $originalFilename);
-        return $headers;
+        [$rows, $headers] = $this->parser->parseWithHeaders($filePath, $originalFilename);
+
+        // Build sample: header → first row value
+        $sample = [];
+        if (!empty($rows)) {
+            foreach ($headers as $header) {
+                $sample[$header] = $rows[0][$header] ?? null;
+            }
+        }
+
+        return ['headers' => $headers, 'sample' => $sample];
     }
 
     /**

@@ -35,6 +35,7 @@ const error = ref(null)
 
 // Custom mapping state
 const fileHeaders = ref([])
+const fileSample = ref({}) // first row sample: header → value
 const customMapping = ref({
   symbol: '', direction: '', closed_at: '', entry_price: '',
   exit_price: '', size: '', pnl: '', pips: '', comment: '',
@@ -65,10 +66,18 @@ const mappedFieldCount = computed(() => {
   return [...requiredFields, ...optionalFields].filter(f => customMapping.value[f]).length
 })
 
+function sampleValue(headerName) {
+  if (!headerName) return null
+  const val = fileSample.value[headerName]
+  if (val === null || val === undefined || val === '') return null
+  return String(val)
+}
+
 const acceptedFileTypes = computed(() => {
-  const tpl = templates.value.find(t => t.broker === selectedBroker.value)
-  const types = tpl?.file_types || ['xlsx', 'csv']
-  return types.map(t => '.' + t).join(',')
+  if (isCustom.value) return '.csv,.xlsx,.xlsm,.xml'
+  const tpl = templates.value.find(tp => tp.broker === selectedBroker.value)
+  const types = tpl?.file_types || ['xlsx', 'csv', 'xml']
+  return types.map(ext => '.' + ext).join(',')
 })
 
 const brokerOptions = computed(() => {
@@ -131,6 +140,7 @@ function onFileSelect(event) {
     fileName.value = selected.name
     showMapping.value = false
     fileHeaders.value = []
+    fileSample.value = {}
     // Auto-fetch headers in custom mode
     if (isCustom.value) {
       fetchHeaders()
@@ -182,6 +192,7 @@ async function fetchHeaders() {
   try {
     const resp = await importsService.getHeaders(file.value)
     fileHeaders.value = resp.data.headers
+    fileSample.value = resp.data.sample || {}
     showMapping.value = true
     autoMapColumns(resp.data.headers)
   } catch (err) {
@@ -260,6 +271,7 @@ function resetForm() {
   error.value = null
   symbolMapping.value = {}
   fileHeaders.value = []
+  fileSample.value = {}
   showMapping.value = false
   customMapping.value = {
     symbol: '', direction: '', closed_at: '', entry_price: '',
@@ -328,28 +340,89 @@ function close() {
                   {{ t('import.auto_mapped', { count: mappedFieldCount }) }}
                 </Message>
 
-                <!-- Required fields -->
-                <fieldset class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
-                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.required_fields') }}</legend>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div v-for="field in requiredFields" :key="field">
-                      <label class="block text-xs text-gray-500 mb-1">
-                        {{ t(`import.field_${field}`) }}
-                        <span class="text-red-500">*</span>
-                      </label>
-                      <Select
-                        v-model="customMapping[field]"
-                        :options="headerOptions"
-                        optionLabel="label"
-                        optionValue="value"
-                        class="w-full"
-                        size="small"
-                      />
-                    </div>
-                  </div>
-                </fieldset>
+                <!-- Mapping table: field | file column | sample value -->
+                <div class="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                  <table class="w-full text-sm">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase w-1/4">{{ t('import.col_field') }}</th>
+                        <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase w-2/5">{{ t('import.col_file_column') }}</th>
+                        <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase w-1/3">{{ t('import.col_sample') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                      <!-- Required fields -->
+                      <tr v-for="field in requiredFields" :key="field" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        <td class="px-3 py-2">
+                          <span class="font-medium text-gray-700 dark:text-gray-300">{{ t(`import.field_${field}`) }}</span>
+                          <span class="text-red-500 ml-0.5">*</span>
+                        </td>
+                        <td class="px-3 py-1.5">
+                          <Select
+                            v-model="customMapping[field]"
+                            :options="headerOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            class="w-full"
+                            size="small"
+                          />
+                        </td>
+                        <td class="px-3 py-2">
+                          <code v-if="sampleValue(customMapping[field])" class="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">{{ sampleValue(customMapping[field]) }}</code>
+                          <span v-else class="text-xs text-gray-400">—</span>
+                        </td>
+                      </tr>
+                      <!-- Optional fields -->
+                      <tr v-for="field in optionalFields" :key="field" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                        <td class="px-3 py-2">
+                          <span class="text-gray-500 dark:text-gray-400">{{ t(`import.field_${field}`) }}</span>
+                        </td>
+                        <td class="px-3 py-1.5">
+                          <Select
+                            v-model="customMapping[field]"
+                            :options="headerOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            class="w-full"
+                            size="small"
+                          />
+                        </td>
+                        <td class="px-3 py-2">
+                          <code v-if="sampleValue(customMapping[field])" class="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">{{ sampleValue(customMapping[field]) }}</code>
+                          <span v-else class="text-xs text-gray-400">—</span>
+                        </td>
+                      </tr>
+                      <!-- Custom fields -->
+                      <template v-if="activeCustomFields.length > 0">
+                        <tr class="bg-gray-50/50 dark:bg-gray-800/30">
+                          <td colspan="3" class="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase">{{ t('import.custom_fields_section') }}</td>
+                        </tr>
+                        <tr v-for="field in activeCustomFields" :key="'cf-' + field.id" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                          <td class="px-3 py-2">
+                            <span class="text-gray-500 dark:text-gray-400">{{ field.name }}</span>
+                            <span class="text-xs text-gray-400 ml-1">({{ t(`custom_fields.types.${field.field_type}`) }})</span>
+                          </td>
+                          <td class="px-3 py-1.5">
+                            <Select
+                              v-model="customFieldsMapping[field.id]"
+                              :options="headerOptions"
+                              optionLabel="label"
+                              optionValue="value"
+                              class="w-full"
+                              size="small"
+                            />
+                          </td>
+                          <td class="px-3 py-2">
+                            <code v-if="sampleValue(customFieldsMapping[field.id])" class="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300">{{ sampleValue(customFieldsMapping[field.id]) }}</code>
+                            <span v-else class="text-xs text-gray-400">—</span>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
 
-                <!-- Options (date format, direction values) -->
+                <!-- Import options -->
                 <fieldset class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
                   <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.options_section') }}</legend>
                   <div class="grid grid-cols-3 gap-3">
@@ -371,46 +444,6 @@ function close() {
                     <div>
                       <label class="block text-xs text-gray-500 mb-1">{{ t('import.direction_sell_label') }}</label>
                       <InputText v-model="customOptions.direction_sell" class="w-full" size="small" />
-                    </div>
-                  </div>
-                </fieldset>
-
-                <!-- Optional fields -->
-                <fieldset class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
-                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.optional_fields') }}</legend>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div v-for="field in optionalFields" :key="field">
-                      <label class="block text-xs text-gray-500 mb-1">{{ t(`import.field_${field}`) }}</label>
-                      <Select
-                        v-model="customMapping[field]"
-                        :options="headerOptions"
-                        optionLabel="label"
-                        optionValue="value"
-                        class="w-full"
-                        size="small"
-                      />
-                    </div>
-                  </div>
-                </fieldset>
-
-                <!-- Custom fields mapping -->
-                <fieldset v-if="activeCustomFields.length > 0" class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
-                  <legend class="text-sm font-medium text-gray-700 dark:text-gray-300 px-2">{{ t('import.custom_fields_section') }}</legend>
-                  <p class="text-xs text-gray-500 mb-2">{{ t('import.custom_fields_hint') }}</p>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div v-for="field in activeCustomFields" :key="field.id">
-                      <label class="block text-xs text-gray-500 mb-1">
-                        {{ field.name }}
-                        <span class="text-gray-400">({{ t(`custom_fields.types.${field.field_type}`) }})</span>
-                      </label>
-                      <Select
-                        v-model="customFieldsMapping[field.id]"
-                        :options="headerOptions"
-                        optionLabel="label"
-                        optionValue="value"
-                        class="w-full"
-                        size="small"
-                      />
                     </div>
                   </div>
                 </fieldset>
