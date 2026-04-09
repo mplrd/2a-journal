@@ -226,30 +226,23 @@ class ImportServiceTest extends TestCase
         }
     }
 
-    public function testGenericTemplateHandlesOpenTrades(): void
+    public function testGenericTemplateImportsMinimalCsv(): void
     {
         $template = require __DIR__ . '/../../../../config/import_templates/generic.php';
 
-        // Use the actual import template file
+        // Use the actual import template file (minimal: Symbol, Direction, Entry Price)
         $result = $this->service->preview(
             __DIR__ . '/../../../../public/templates/import-template.csv',
             $template,
             'import-template.csv'
         );
 
-        $this->assertSame(3, $result['total_positions']);
+        $this->assertSame(2, $result['total_positions']);
 
-        // BTCUSD has no exit price and no close date → should be treated as open
-        $btc = null;
+        // All trades are open (no closed_at column)
         foreach ($result['positions'] as $pos) {
-            if ($pos['symbol'] === 'BTCUSD') {
-                $btc = $pos;
-                break;
-            }
+            $this->assertNull($pos['closed_at']);
         }
-        $this->assertNotNull($btc);
-        $this->assertNull($btc['closed_at']); // open trade
-        $this->assertEquals(42000, $btc['entry_price']);
     }
 
     public function testGenericTemplateMatchesCommonDirectionValues(): void

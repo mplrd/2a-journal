@@ -1,4 +1,3 @@
-Symbol,Direction,Entry Price,Exit Price,Size,PnL,Open Date,Close Date,Comment
-EURUSD,BUY,1.1000,1.1050,1.0,50.00,2024-01-15 09:30:00,2024-01-15 10:00:00,
-NASDAQ,SELL,18500,18420,1,80.00,,2024-01-16 15:30:00,Breakout setup
-BTCUSD,BUY,42000,,0.5,,,,,Still open
+Symbol,Direction,Entry Price
+EURUSD,BUY,1.1000
+NASDAQ,SELL,18500
