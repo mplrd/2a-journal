@@ -65,6 +65,11 @@ const isCustom = computed(() => selectedBroker.value === 'custom')
 // Track which fields were auto-mapped (not manually set)
 const autoMappedFields = ref(new Set())
 
+function formatPrice(value) {
+  if (value === null || value === undefined || value === 0) return '—'
+  return Number(value).toFixed(2)
+}
+
 function sampleValue(headerName) {
   if (!headerName) return null
   const val = fileSample.value[headerName]
@@ -519,25 +524,33 @@ function close() {
               <Column field="symbol" :header="t('import.col_symbol')" />
               <Column field="direction" :header="t('import.col_direction')" />
               <Column :header="t('import.col_entry_price')">
-                <template #body="{ data }">{{ Number(data.entry_price).toFixed(2) }}</template>
+                <template #body="{ data }">{{ formatPrice(data.entry_price) }}</template>
               </Column>
               <Column :header="t('import.col_avg_exit')">
-                <template #body="{ data }">{{ Number(data.avg_exit_price).toFixed(2) }}</template>
+                <template #body="{ data }">{{ formatPrice(data.avg_exit_price) }}</template>
               </Column>
               <Column :header="t('import.col_size')">
                 <template #body="{ data }">{{ data.total_size }}</template>
               </Column>
               <Column :header="t('import.col_pnl')">
                 <template #body="{ data }">
-                  <span :class="data.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'">
-                    {{ Number(data.total_pnl).toFixed(2) }}
-                  </span>
+                  <template v-if="data.total_pnl !== 0">
+                    <span :class="data.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'">
+                      {{ Number(data.total_pnl).toFixed(2) }}
+                    </span>
+                  </template>
+                  <span v-else class="text-gray-400">—</span>
                 </template>
               </Column>
-              <Column :header="t('import.col_exits')">
-                <template #body="{ data }">{{ data.exits.length }}</template>
+              <Column :header="t('import.col_status')">
+                <template #body="{ data }">
+                  <span v-if="data.closed_at" class="text-green-600">{{ t('import.status_closed') }}</span>
+                  <span v-else class="text-amber-600">{{ t('import.status_open') }}</span>
+                </template>
               </Column>
-              <Column field="closed_at" :header="t('import.col_closed_at')" />
+              <Column :header="t('import.col_closed_at')">
+                <template #body="{ data }">{{ data.closed_at || '—' }}</template>
+              </Column>
             </DataTable>
 
             <Message v-if="error" severity="error" :closable="false">{{ t(error) }}</Message>
