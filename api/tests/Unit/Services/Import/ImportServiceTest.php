@@ -266,6 +266,33 @@ class ImportServiceTest extends TestCase
         }
     }
 
+    public function testCustomImportWithoutClosedAt(): void
+    {
+        $csvContent = "Symbol,Side,Entry,Exit,PnL\n"
+            . "EURUSD,Buy,1.1000,1.1050,50.00\n";
+
+        $tmpFile = tempnam(sys_get_temp_dir(), 'no_date_test_');
+        file_put_contents($tmpFile, $csvContent);
+
+        try {
+            $template = $this->service->buildCustomTemplate(
+                ['symbol' => 'Symbol', 'direction' => 'Side', 'entry_price' => 'Entry',
+                 'exit_price' => 'Exit', 'pnl' => 'PnL'],
+                ['direction_buy' => 'Buy', 'direction_sell' => 'Sell']
+            );
+
+            $result = $this->service->preview($tmpFile, $template, 'test.csv');
+            $this->assertSame(1, $result['total_positions']);
+
+            $pos = $result['positions'][0];
+            $this->assertSame('EURUSD', $pos['symbol']);
+            // closed_at should be set to current date (not null)
+            $this->assertNotNull($pos['closed_at']);
+        } finally {
+            unlink($tmpFile);
+        }
+    }
+
     public function testGenericTemplateMatchesCommonDirectionValues(): void
     {
         // Test that Long/Short, Achat/Vente are properly mapped

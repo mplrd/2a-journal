@@ -324,8 +324,8 @@ class ImportService
         $dirSell = $options['direction_sell'] ?? 'Sell';
 
         $columns = [];
-        $requiredFields = ['symbol', 'direction', 'closed_at', 'entry_price'];
-        $optionalFields = ['exit_price', 'size', 'pnl', 'opened_at', 'pips', 'comment'];
+        $requiredFields = ['symbol', 'direction', 'entry_price'];
+        $optionalFields = ['closed_at', 'exit_price', 'size', 'pnl', 'opened_at', 'pips', 'comment'];
 
         foreach (array_merge($requiredFields, $optionalFields) as $field) {
             if (!isset($columnMapping[$field]) || $columnMapping[$field] === '') {
@@ -502,6 +502,11 @@ class ImportService
         // Fallback: if still no pnl, set to 0
         if (!isset($row['pnl']) || $row['pnl'] === null) {
             $row['pnl'] = 0.0;
+        }
+
+        // Default closed_at: use opened_at if available, otherwise current date
+        if (!isset($row['closed_at']) || $row['closed_at'] === null) {
+            $row['closed_at'] = $row['opened_at'] ?? date('Y-m-d H:i:s');
         }
 
         return $row;

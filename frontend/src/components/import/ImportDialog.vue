@@ -57,8 +57,8 @@ const symbolMapping = ref({})
 // Result state
 const result = ref(null)
 
-const requiredFields = ['symbol', 'direction', 'closed_at', 'entry_price']
-const optionalFields = ['exit_price', 'size', 'pnl', 'opened_at', 'pips', 'comment']
+const requiredFields = ['symbol', 'direction', 'entry_price']
+const optionalFields = ['exit_price', 'size', 'pnl', 'closed_at', 'opened_at', 'pips', 'comment']
 
 const isCustom = computed(() => selectedBroker.value === 'custom')
 
