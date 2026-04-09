@@ -16,13 +16,13 @@ class ColumnMapperService
     {
         $mapping = [];
         $missing = [];
+        $isStrict = $template['strict_headers'] ?? false;
 
         foreach ($template['columns'] as $field => $colDef) {
             $found = $this->findColumn($headers, $colDef);
             if ($found !== null) {
                 $mapping[$field] = $found;
             } else {
-                $isStrict = $template['strict_headers'] ?? false;
                 $optionalFields = ['pips', 'comment', 'opened_at', 'closed_at', 'exit_price', 'size', 'pnl', 'direction'];
                 if ($isStrict || !in_array($field, $optionalFields)) {
                     $missing[] = $field;
@@ -35,6 +35,18 @@ class ColumnMapperService
                 'import.error.missing_columns',
                 'columns',
             );
+        }
+
+        // Strict mode: reject files with extra columns not defined in the template
+        if ($isStrict) {
+            $mappedHeaders = array_values($mapping);
+            $extraHeaders = array_diff($headers, $mappedHeaders);
+            if (!empty($extraHeaders)) {
+                throw new ValidationException(
+                    'import.error.unexpected_columns',
+                    'columns',
+                );
+            }
         }
 
         return $mapping;

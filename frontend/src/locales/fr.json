@@ -588,6 +588,7 @@
       "file_too_large": "Le fichier est trop volumineux (max 10 Mo)",
       "empty_file": "Le fichier est vide",
       "missing_columns": "Colonnes requises manquantes dans le fichier",
+      "unexpected_columns": "Le fichier ne correspond pas au template standard. Utilisez le template téléchargeable ou passez en import personnalisé.",
       "invalid_date": "Format de date invalide",
       "parse_failed": "Erreur lors de l'analyse du fichier",
       "confirm_failed": "Erreur lors de l'import",

@@ -588,6 +588,7 @@
       "file_too_large": "File is too large (max 10 MB)",
       "empty_file": "File is empty",
       "missing_columns": "Required columns missing from file",
+      "unexpected_columns": "File does not match the standard template. Use the downloadable template or switch to custom import.",
       "invalid_date": "Invalid date format",
       "parse_failed": "Error parsing file",
       "confirm_failed": "Error during import",
