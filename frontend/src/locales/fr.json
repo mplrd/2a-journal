@@ -516,6 +516,7 @@
     "step_preview": "Aperçu",
     "step_result": "Résultat",
     "select_broker": "Sélectionner le broker",
+    "select_format": "Format d'import",
     "select_account": "Sélectionner le compte",
     "select_file": "Fichier d'export",
     "analyze": "Analyser",

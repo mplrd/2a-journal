@@ -356,34 +356,28 @@ function close() {
         <!-- Step 1: Upload + optional custom mapping -->
         <StepPanel v-slot="{ activateCallback }" value="1">
           <div class="space-y-4 py-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('import.select_broker') }}</label>
-              <div class="flex items-center gap-3">
-                <Select
-                  v-model="selectedBroker"
-                  :options="brokerOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  :placeholder="t('import.select_broker')"
-                  class="w-full md:w-80"
-                />
-                <Button
-                  v-if="selectedBroker === 'generic'"
-                  :label="t('import.download_template')"
-                  icon="pi pi-download"
-                  severity="secondary"
-                  size="small"
-                  @click="importsService.downloadTemplate()"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('import.select_file') }}</label>
+            <div class="flex items-center gap-3 flex-wrap">
+              <Select
+                v-model="selectedBroker"
+                :options="brokerOptions"
+                optionLabel="label"
+                optionValue="value"
+                :placeholder="t('import.select_format')"
+                class="w-52"
+                size="small"
+              />
+              <Button
+                v-if="selectedBroker === 'generic'"
+                :label="t('import.download_template')"
+                icon="pi pi-download"
+                severity="secondary"
+                size="small"
+                @click="importsService.downloadTemplate()"
+              />
               <input
                 type="file"
                 :accept="acceptedFileTypes"
-                class="block w-full md:w-80 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
+                class="text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
                 @change="onFileSelect"
               />
             </div>
