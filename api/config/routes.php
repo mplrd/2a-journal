@@ -14,6 +14,7 @@ use App\Controllers\TradeController;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
+use App\Middlewares\FeatureFlagMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
@@ -63,6 +64,14 @@ $router->get('/health', function (App\Core\Request $request) {
         'status' => 'ok',
         'timestamp' => date('c'),
         'version' => '1.0.0',
+    ]);
+});
+
+// ── Features (public) ────────────────────────────────────────────
+$brokerConfigForFeatures = require __DIR__ . '/broker.php';
+$router->get('/features', function (App\Core\Request $request) use ($brokerConfigForFeatures) {
+    return App\Core\Response::success([
+        'broker_auto_sync' => (bool) $brokerConfigForFeatures['auto_sync_enabled'],
     ]);
 });
 
@@ -236,6 +245,10 @@ $router->post('/imports/batches/{id}/rollback', [$importController, 'rollback'],
 
 // ── Broker Sync ──────────────────────────────────────────────
 $brokerConfig = require __DIR__ . '/broker.php';
+$brokerFeatureFlag = new FeatureFlagMiddleware(
+    (bool) $brokerConfig['auto_sync_enabled'],
+    'broker.error.auto_sync_disabled'
+);
 $brokerConnectionRepo = new BrokerConnectionRepository($pdo);
 $syncLogRepo = new SyncLogRepository($pdo);
 $cryptoService = new CredentialEncryptionService($brokerConfig['encryption_key']);
@@ -260,11 +273,11 @@ $brokerSyncController = new BrokerSyncController(
     $cryptoService,
 );
 
-$router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware]);
-$router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware]);
-$router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware]);
-$router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware]);
-$router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware]);
+$router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $brokerFeatureFlag]);
+$router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $brokerFeatureFlag]);
+$router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $brokerFeatureFlag]);
+$router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $brokerFeatureFlag]);
+$router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware, $brokerFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

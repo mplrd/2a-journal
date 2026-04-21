@@ -507,7 +507,8 @@
     "not_found": "Page non trouvée",
     "network": "Erreur de connexion au serveur",
     "invalid_id": "Identifiant invalide",
-    "rate_limit_exceeded": "Trop de tentatives, veuillez réessayer plus tard"
+    "rate_limit_exceeded": "Trop de tentatives, veuillez réessayer plus tard",
+    "feature_disabled": "Cette fonctionnalité est désactivée sur ce serveur"
   },
   "import": {
     "title": "Import d'historique",
@@ -682,7 +683,8 @@
       "connection_not_found": "Connexion introuvable",
       "credentials_required": "Veuillez renseigner tous les identifiants",
       "forbidden": "Accès non autorisé à cette connexion",
-      "connection_not_active": "La connexion n'est pas active"
+      "connection_not_active": "La connexion n'est pas active",
+      "auto_sync_disabled": "La synchronisation automatique avec les brokers est désactivée sur ce serveur"
     },
     "success": {
       "disconnected": "Connexion supprimée avec succès"

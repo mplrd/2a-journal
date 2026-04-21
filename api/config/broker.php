@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'auto_sync_enabled' => filter_var(getenv('BROKER_AUTO_SYNC_ENABLED'), FILTER_VALIDATE_BOOLEAN),
     'encryption_key' => base64_decode(getenv('BROKER_ENCRYPTION_KEY') ?: base64_encode(str_repeat('0', 32))),
     'ctrader' => [
         'ws_host' => getenv('CTRADER_WS_HOST') ?: 'live.ctraderapi.com',

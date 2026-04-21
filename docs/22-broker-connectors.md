@@ -112,8 +112,20 @@ Suite complète : **740 tests, 2040 assertions**, aucune régression.
 
 Variables d'environnement (serveur) :
 ```
+BROKER_AUTO_SYNC_ENABLED=true        # active la feature (défaut: false)
 BROKER_ENCRYPTION_KEY=<base64 encoded 32-byte key>
 ```
+
+### Feature flag `BROKER_AUTO_SYNC_ENABLED`
+
+La synchronisation automatique est désactivée par défaut. Elle doit être activée explicitement via la variable d'environnement `BROKER_AUTO_SYNC_ENABLED=true` (sur Railway : variable sur le service API, puis redémarrage).
+
+Comportement quand le flag est `false` :
+- Les routes `/broker/*` renvoient **403 FORBIDDEN** (`broker.error.auto_sync_disabled`) via `FeatureFlagMiddleware`
+- Le bouton "Synchroniser" et la dialog de connexion sont masqués dans `AccountsView.vue`
+- L'endpoint public `GET /features` expose `{ broker_auto_sync: false }`, consommé au boot par `useFeaturesStore` (Pinia)
+
+Cela permet de livrer le code en production tout en gardant la feature inactive tant qu'elle n'est pas validée en environnement de test.
 
 Credentials utilisateur (fournis par chaque trader dans l'UI) :
 - **cTrader** : Client ID, Client Secret, Access Token, Account ID (depuis openapi.ctrader.com)
