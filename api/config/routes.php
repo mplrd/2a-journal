@@ -7,12 +7,14 @@ use App\Controllers\PositionController;
 use App\Controllers\CustomFieldController;
 use App\Controllers\SetupController;
 use App\Controllers\SymbolController;
+use App\Controllers\BrokerSyncController;
 use App\Controllers\ImportController;
 use App\Controllers\StatsController;
 use App\Controllers\TradeController;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
+use App\Middlewares\FeatureFlagMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Repositories\AccountRepository;
 use App\Repositories\OrderRepository;
@@ -23,9 +25,11 @@ use App\Repositories\SetupRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
+use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\ImportBatchRepository;
 use App\Repositories\StatsRepository;
 use App\Repositories\SymbolAliasRepository;
+use App\Repositories\SyncLogRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
@@ -40,6 +44,10 @@ use App\Services\PositionService;
 use App\Services\ShareService;
 use App\Services\CustomFieldService;
 use App\Services\SetupService;
+use App\Services\Broker\BrokerSyncService;
+use App\Services\Broker\CredentialEncryptionService;
+use App\Services\Broker\CtraderConnector;
+use App\Services\Broker\MetaApiConnector;
 use App\Services\Import\ImportService;
 use App\Services\Import\FileParserService;
 use App\Services\Import\ColumnMapperService;
@@ -56,6 +64,14 @@ $router->get('/health', function (App\Core\Request $request) {
         'status' => 'ok',
         'timestamp' => date('c'),
         'version' => '1.0.0',
+    ]);
+});
+
+// ── Features (public) ────────────────────────────────────────────
+$brokerConfigForFeatures = require __DIR__ . '/broker.php';
+$router->get('/features', function (App\Core\Request $request) use ($brokerConfigForFeatures) {
+    return App\Core\Response::success([
+        'broker_auto_sync' => (bool) $brokerConfigForFeatures['auto_sync_enabled'],
     ]);
 });
 
@@ -226,6 +242,42 @@ $router->post('/imports/preview', [$importController, 'preview'], [$authMiddlewa
 $router->post('/imports/confirm', [$importController, 'confirm'], [$authMiddleware]);
 $router->get('/imports/batches', [$importController, 'batches'], [$authMiddleware]);
 $router->post('/imports/batches/{id}/rollback', [$importController, 'rollback'], [$authMiddleware]);
+
+// ── Broker Sync ──────────────────────────────────────────────
+$brokerConfig = require __DIR__ . '/broker.php';
+$brokerFeatureFlag = new FeatureFlagMiddleware(
+    (bool) $brokerConfig['auto_sync_enabled'],
+    'broker.error.auto_sync_disabled'
+);
+$brokerConnectionRepo = new BrokerConnectionRepository($pdo);
+$syncLogRepo = new SyncLogRepository($pdo);
+$cryptoService = new CredentialEncryptionService($brokerConfig['encryption_key']);
+$metaApiConnector = new MetaApiConnector(
+    new \GuzzleHttp\Client(),
+    $brokerConfig['metaapi']['base_url']
+);
+$ctraderConnector = new CtraderConnector($brokerConfig['ctrader']);
+$brokerSyncService = new BrokerSyncService(
+    $brokerConnectionRepo,
+    $syncLogRepo,
+    $importService,
+    new RowGroupingService(),
+    $cryptoService,
+    $ctraderConnector,
+    $metaApiConnector,
+);
+$brokerSyncController = new BrokerSyncController(
+    $brokerSyncService,
+    $brokerConnectionRepo,
+    $syncLogRepo,
+    $cryptoService,
+);
+
+$router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $brokerFeatureFlag]);
+$router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $brokerFeatureFlag]);
+$router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $brokerFeatureFlag]);
+$router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $brokerFeatureFlag]);
+$router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware, $brokerFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

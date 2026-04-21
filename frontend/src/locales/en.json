@@ -507,7 +507,8 @@
     "not_found": "Page not found",
     "network": "Server connection error",
     "invalid_id": "Invalid identifier",
-    "rate_limit_exceeded": "Too many attempts, please try again later"
+    "rate_limit_exceeded": "Too many attempts, please try again later",
+    "feature_disabled": "This feature is disabled on this server"
   },
   "import": {
     "title": "Import History",
@@ -637,6 +638,56 @@
       "created": "Custom field created",
       "updated": "Custom field updated",
       "deleted": "Custom field deleted"
+    }
+  },
+  "broker": {
+    "connection": "Broker connection",
+    "not_connected": "No API connection configured for this account.",
+    "connect_ctrader": "Connect cTrader",
+    "connect_metaapi": "Connect MT4/MT5",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "disconnected": "Connection removed",
+    "sync_now": "Sync",
+    "sync_success": "Sync successful",
+    "sync_failed": "Sync failed",
+    "sync_detail": "{count} position(s) imported",
+    "sync_imported": "{positions} imported, {skipped} duplicate(s) skipped",
+    "last_sync": "Last sync",
+    "history": "History",
+    "sync_history": "Sync history",
+    "sync_date": "Date",
+    "sync_status": "Status",
+    "deals_fetched": "Fetched",
+    "deals_imported": "Imported",
+    "deals_skipped": "Skipped",
+    "error": "Error",
+    "metaapi_instructions": "Connect your MT4/MT5 account via MetaApi. You will need your MetaApi API token and MetaApi account ID.",
+    "metaapi_token": "MetaApi API token",
+    "metaapi_token_placeholder": "Your MetaApi token",
+    "metaapi_account_id": "MetaApi account ID",
+    "metaapi_account_id_placeholder": "e.g. abc-def-123",
+    "ctrader_instructions": "Connect your cTrader account. Create an application on openapi.ctrader.com to get your API credentials.",
+    "ctrader_client_id": "Client ID",
+    "ctrader_client_id_placeholder": "Your cTrader Client ID",
+    "ctrader_client_secret": "Client Secret",
+    "ctrader_client_secret_placeholder": "Your cTrader Client Secret",
+    "ctrader_access_token": "Access Token",
+    "ctrader_access_token_placeholder": "Your cTrader Access Token",
+    "ctrader_account_id": "cTrader Account ID",
+    "ctrader_account_id_placeholder": "e.g. 12345678",
+    "error": {
+      "account_required": "Please select an account",
+      "already_connected": "This account is already connected to a broker",
+      "unsupported_provider": "Unsupported provider",
+      "connection_not_found": "Connection not found",
+      "credentials_required": "Please fill in all credentials",
+      "forbidden": "Unauthorized access to this connection",
+      "connection_not_active": "Connection is not active",
+      "auto_sync_disabled": "Broker auto-sync is disabled on this server"
+    },
+    "success": {
+      "disconnected": "Connection removed successfully"
     }
   }
 }

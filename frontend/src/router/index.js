@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '@/services/api'
 import pinia from '@/stores'
 import { useAuthStore } from '@/stores/auth'
+import { useFeaturesStore } from '@/stores/features'
 import { useOnboarding } from '@/composables/useOnboarding'
 
 const router = createRouter({
@@ -85,11 +86,12 @@ let initPromise = null
 
 router.beforeEach(async (to) => {
   const authStore = useAuthStore(pinia)
+  const featuresStore = useFeaturesStore(pinia)
 
   // On first navigation, attempt silent refresh to restore session
   if (!authStore.initialized) {
     if (!initPromise) {
-      initPromise = authStore.initSession()
+      initPromise = Promise.all([authStore.initSession(), featuresStore.load()])
     }
     await initPromise
   }

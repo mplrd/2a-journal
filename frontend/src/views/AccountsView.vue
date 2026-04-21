@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import { useAccountsStore } from '@/stores/accounts'
+import { useFeaturesStore } from '@/stores/features'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -11,6 +12,7 @@ import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import AccountForm from '@/components/account/AccountForm.vue'
 import ImportDialog from '@/components/import/ImportDialog.vue'
+import BrokerConnectionPanel from '@/components/broker/BrokerConnectionPanel.vue'
 import { AccountType, AccountStage } from '@/constants/enums'
 import { useOnboarding } from '@/composables/useOnboarding'
 
@@ -19,16 +21,24 @@ const router = useRouter()
 const { isOnboarding, currentStep, completeOnboarding } = useOnboarding()
 const toast = useToast()
 const store = useAccountsStore()
+const features = useFeaturesStore()
 
 const showForm = ref(false)
 const editingAccount = ref(null)
 const showOnboardingChoice = ref(false)
 const showImport = ref(false)
 const importAccount = ref(null)
+const showBrokerSync = ref(false)
+const brokerSyncAccount = ref(null)
 
 function openImport(account) {
   importAccount.value = account
   showImport.value = true
+}
+
+function openBrokerSync(account) {
+  brokerSyncAccount.value = account
+  showBrokerSync.value = true
 }
 
 onMounted(() => {
@@ -154,6 +164,7 @@ function stageSeverity(stage) {
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">
+            <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
@@ -173,6 +184,14 @@ function stageSeverity(stage) {
       v-model:visible="showImport"
       :account="importAccount"
     />
+
+    <Dialog v-if="features.brokerAutoSync" v-model:visible="showBrokerSync" :header="t('broker.connection')" modal class="w-full max-w-lg">
+      <BrokerConnectionPanel
+        v-if="brokerSyncAccount"
+        :account="brokerSyncAccount"
+        @synced="store.fetchAccounts()"
+      />
+    </Dialog>
 
     <!-- Onboarding choice dialog after first account creation -->
     <Dialog
