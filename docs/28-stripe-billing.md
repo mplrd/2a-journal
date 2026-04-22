@@ -295,3 +295,81 @@ Stripe peut redélivrer un event. On stocke chaque `stripe_event_id` traité dan
 | `FRONTEND_URL` | `http://2a.journal.local` | `https://...` |
 
 **Note sur les webhooks en local** : pour tester localement, utiliser `stripe listen --forward-to http://2a.journal.local/api/billing/webhook` (Stripe CLI), qui génère un `whsec_...` temporaire à mettre dans `.env`.
+
+## Setup Stripe Dashboard (test et prod)
+
+### Test vs Live
+
+Stripe sépare entièrement les deux environnements. Chacun a :
+- ses propres clés API (`sk_test_...` / `pk_test_...` vs `sk_live_...` / `pk_live_...`)
+- ses propres products, prices, coupons, customers, subscriptions
+- ses propres webhook endpoints (et donc ses propres `whsec_...`)
+
+Basculer via le toggle en haut du Dashboard (ou URL `dashboard.stripe.com/test/...` pour forcer test).
+
+### Ce qu'il faut créer côté Stripe
+
+À faire **deux fois** : une fois en Test (pour dev/staging), une fois en Live (pour prod).
+
+#### 1. Product + Price
+
+`Products → Add product` :
+- Name : "Trading Journal"
+- Pricing : 5 € / mois, recurring
+- Noter le `price_...` (le Price ID, pas le Product ID `prod_...`) → va dans `STRIPE_PRICE_ID`
+
+#### 2. Coupon + Promotion Code (pour les codes de réduction)
+
+`Products → Coupons → Create coupon` :
+- Percent off : 100 % (ou autre valeur)
+- Duration : **`forever`** (reste appliqué sur toutes les factures tant que la subscription vit)
+- Save
+
+Puis `Products → Promotion codes → Create` :
+- Code : le code user-facing (ex. `LAUNCH2026`)
+- Coupon : sélectionner celui créé
+- Restrictions : `max_redemptions` = 1 pour un code perso, restreindre à un email, etc.
+
+Les utilisateurs saisissent ce code directement sur la page Stripe Checkout (notre `allow_promotion_codes: true` active le champ).
+
+#### 3. Billing Portal
+
+`Settings → Billing → Customer portal → Activate` :
+- Choisir ce que le user peut faire : annuler (on le gère aussi in-app), changer la carte, voir les factures…
+- Activer l'accès anonyme par URL (requis pour notre `createPortalSession`)
+
+#### 4. Webhook endpoint
+
+**En dev local** : **rien à créer dans le Dashboard**. La Stripe CLI (`stripe listen --forward-to ...`) crée un endpoint éphémère et forwarde les events vers ton localhost via un tunnel sécurisé. Son `whsec_...` change à chaque lancement → à remettre dans `.env`.
+
+**En prod / preview accessible publiquement** :
+
+`Developers → Webhooks → Add endpoint` :
+- **Destination** : "Votre compte" (PAS "Comptes connectés et v2" qui est pour Stripe Connect)
+- **Endpoint URL** : `https://<url-publique>/api/billing/webhook`
+- **Events to send** (les 5 que notre backend écoute) :
+  - `checkout.session.completed`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+  - `invoice.payment_succeeded`
+  - `invoice.payment_failed`
+- Add endpoint
+- Sur la page de l'endpoint créé → `Signing secret` → **Reveal** → copier le `whsec_...` → va dans `STRIPE_WEBHOOK_SECRET` (env var Railway ou équivalent)
+
+**Piège classique** : créer un webhook Dashboard pointant vers `http://localhost:...` ou `http://2a.journal.local/...` ne recevra jamais rien — Stripe doit pouvoir joindre l'URL depuis Internet. Pour du dev local, toujours passer par la CLI.
+
+### Checklist Railway Production (en mode Live côté Stripe)
+
+Variables à renseigner dans Railway (mode Live Stripe) :
+- `STRIPE_SECRET_KEY=sk_live_...`
+- `STRIPE_WEBHOOK_SECRET=whsec_...` (issu de l'endpoint Live que tu as créé)
+- `STRIPE_PRICE_ID=price_...` (le Price Live recréé)
+- `FRONTEND_URL=https://<url-prod>`
+- `BILLING_GRACE_DAYS=14`
+- `APP_DEBUG=false` (impératif en prod pour éviter de leaker les stack traces)
+
+### Rotation / revocation de clés
+
+- `Developers → API keys → Roll key` révoque immédiatement la clé existante et en émet une nouvelle. Le service backend tombe tant que la nouvelle n'est pas en env.
+- `Developers → Webhooks → [endpoint] → Roll signing secret` révoque le `whsec_...` existant — à faire si soupçon de fuite.
+- **Ne jamais commiter** une clé ou un webhook secret dans le repo. Les valeurs vivent uniquement dans `.env` (gitignore) en local et dans les variables d'environnement Railway en prod.
