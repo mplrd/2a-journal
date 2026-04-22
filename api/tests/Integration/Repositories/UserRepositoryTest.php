@@ -154,4 +154,31 @@ class UserRepositoryTest extends TestCase
             'password' => password_hash('Test1234', PASSWORD_BCRYPT),
         ]);
     }
+
+    public function testFindByIdReturnsBeThresholdPercent(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'thr@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $user = $this->repo->findById((int) $created['id']);
+
+        $this->assertArrayHasKey('be_threshold_percent', $user);
+        $this->assertEquals(0, (float) $user['be_threshold_percent']);
+    }
+
+    public function testUpdateProfileAcceptsBeThresholdPercent(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'thr-up@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $updated = $this->repo->updateProfile((int) $created['id'], [
+            'be_threshold_percent' => 0.0500,
+        ]);
+
+        $this->assertEquals(0.0500, (float) $updated['be_threshold_percent']);
+    }
 }

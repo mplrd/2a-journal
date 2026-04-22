@@ -88,13 +88,16 @@ class StatsRepositoryTest extends TestCase
 
     private function createClosedTrade(float $pnl, string $exitType = 'TP', array $overrides = []): array
     {
+        $entryPrice = (float) ($overrides['entry_price'] ?? 18500);
+        $size = (float) ($overrides['size'] ?? 1);
+
         $position = $this->positionRepo->create(array_merge([
             'user_id' => $this->userId,
             'account_id' => $overrides['account_id'] ?? $this->accountId,
             'direction' => 'BUY',
             'symbol' => $overrides['symbol'] ?? 'NASDAQ',
-            'entry_price' => '18500.00000',
-            'size' => '1.00000',
+            'entry_price' => $entryPrice,
+            'size' => $size,
             'setup' => '["Breakout"]',
             'sl_points' => '50.00',
             'sl_price' => '18450.00000',
@@ -110,11 +113,17 @@ class StatsRepositoryTest extends TestCase
 
         $riskReward = $pnl > 0 ? abs($pnl) / 50.0 : ($pnl < 0 ? -abs($pnl) / 50.0 : 0);
 
+        $entryValue = $entryPrice * $size;
+        $pnlPercent = array_key_exists('pnl_percent', $overrides)
+            ? (float) $overrides['pnl_percent']
+            : ($entryValue > 0 ? round($pnl / $entryValue * 100, 4) : 0.0);
+
         $closedAt = $overrides['closed_at'] ?? '2026-01-15 11:00:00';
         $this->tradeRepo->update((int) $trade['id'], [
             'status' => 'CLOSED',
             'exit_type' => $exitType,
             'pnl' => $pnl,
+            'pnl_percent' => $pnlPercent,
             'risk_reward' => $riskReward,
             'closed_at' => $closedAt,
         ]);
@@ -835,5 +844,208 @@ class StatsRepositoryTest extends TestCase
         $result = $this->repo->getDailyPnl($this->userId);
 
         $this->assertCount(1, $result);
+    }
+
+    // ── BE threshold classification ─────────────────────────────
+    // Fixtures: entry_price=18500, size=1 → entry_value=18500.
+    // pnl_percent = pnl / 18500 * 100
+    //   pnl=1     → 0.0054 %
+    //   pnl=-2    → -0.0108 %
+    //   pnl=3.7   → 0.02 %   (pile seuil 0.02)
+    //   pnl=100   → 0.5405 %
+    //   pnl=-50   → -0.2703 %
+
+    public function testGetOverviewClassifiesSmallProfitAsBeWhenThresholdApplied(): void
+    {
+        // +1€ de profit (spread), sans seuil = win. Avec seuil 0.02% = BE.
+        $this->createClosedTrade(1.0, 'MANUAL');
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(-50.0, 'SL');
+
+        $overview = $this->repo->getOverview($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertSame(3, $overview['total_trades']);
+        $this->assertSame(1, $overview['winning_trades']);
+        $this->assertSame(1, $overview['losing_trades']);
+        $this->assertSame(1, $overview['be_trades']);
+    }
+
+    public function testGetOverviewClassifiesSmallLossAsBeWhenThresholdApplied(): void
+    {
+        // -2€ de perte (spread), sans seuil = loss. Avec seuil 0.02% = BE.
+        $this->createClosedTrade(-2.0, 'MANUAL');
+        $this->createClosedTrade(100.0, 'TP');
+
+        $overview = $this->repo->getOverview($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertSame(2, $overview['total_trades']);
+        $this->assertSame(1, $overview['winning_trades']);
+        $this->assertSame(0, $overview['losing_trades']);
+        $this->assertSame(1, $overview['be_trades']);
+    }
+
+    public function testGetOverviewKeepsClearWinOutsideThreshold(): void
+    {
+        $this->createClosedTrade(100.0, 'TP'); // 0.54% > 0.02%
+        $this->createClosedTrade(-50.0, 'SL'); // -0.27% < -0.02%
+
+        $overview = $this->repo->getOverview($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertSame(1, $overview['winning_trades']);
+        $this->assertSame(1, $overview['losing_trades']);
+        $this->assertSame(0, $overview['be_trades']);
+    }
+
+    public function testGetOverviewThresholdBoundaryIsInclusive(): void
+    {
+        // pnl_percent = 0.02 exactement → BE
+        $this->createClosedTrade(3.7, 'MANUAL'); // 3.7/18500*100 = 0.02 pile
+        $this->createClosedTrade(-3.7, 'MANUAL'); // -0.02 pile
+
+        $overview = $this->repo->getOverview($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertSame(2, $overview['total_trades']);
+        $this->assertSame(2, $overview['be_trades']);
+        $this->assertSame(0, $overview['winning_trades']);
+        $this->assertSame(0, $overview['losing_trades']);
+    }
+
+    public function testGetOverviewThresholdZeroMatchesLegacyBehavior(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL');   // win
+        $this->createClosedTrade(-2.0, 'MANUAL');  // loss
+        $this->createClosedTrade(0.0, 'BE');       // be
+
+        $overview = $this->repo->getOverview($this->userId, ['be_threshold_percent' => 0]);
+
+        $this->assertSame(1, $overview['winning_trades']);
+        $this->assertSame(1, $overview['losing_trades']);
+        $this->assertSame(1, $overview['be_trades']);
+    }
+
+    public function testGetOverviewThresholdDefaultsToZero(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL');
+        $this->createClosedTrade(-2.0, 'MANUAL');
+
+        $overview = $this->repo->getOverview($this->userId); // no threshold → legacy
+
+        $this->assertSame(1, $overview['winning_trades']);
+        $this->assertSame(1, $overview['losing_trades']);
+    }
+
+    public function testGetOverviewProfitFactorIgnoresBeTrades(): void
+    {
+        // Avec seuil, les quasi-BE ne doivent pas biaiser le profit factor.
+        $this->createClosedTrade(1.0, 'MANUAL');   // BE avec seuil
+        $this->createClosedTrade(-2.0, 'MANUAL');  // BE avec seuil
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(-50.0, 'SL');
+
+        $overview = $this->repo->getOverview($this->userId, ['be_threshold_percent' => 0.02]);
+
+        // PF = 100 / 50 = 2.0 (quasi-BE exclus)
+        $this->assertEquals(2.0, (float) $overview['profit_factor']);
+    }
+
+    public function testGetWinLossDistributionAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL');
+        $this->createClosedTrade(-2.0, 'MANUAL');
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(-50.0, 'SL');
+
+        $dist = $this->repo->getWinLossDistribution($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertSame(1, $dist['win']);
+        $this->assertSame(1, $dist['loss']);
+        $this->assertSame(2, $dist['be']);
+    }
+
+    public function testGetStatsBySymbolAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL', ['symbol' => 'NASDAQ']);
+        $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ']);
+        $this->createClosedTrade(-50.0, 'SL', ['symbol' => 'DAX']);
+
+        $result = $this->repo->getStatsBySymbol($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['symbol']] = $row;
+        }
+        // NASDAQ: 1 win, 0 loss (le +1€ est BE, pas win)
+        $this->assertSame(1, (int) $indexed['NASDAQ']['wins']);
+        $this->assertSame(0, (int) $indexed['NASDAQ']['losses']);
+    }
+
+    public function testGetStatsByDirectionAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL', ['direction' => 'BUY']);
+        $this->createClosedTrade(100.0, 'TP', ['direction' => 'BUY']);
+        $this->createClosedTrade(-2.0, 'MANUAL', ['direction' => 'SELL']);
+        $this->createClosedTrade(-50.0, 'SL', ['direction' => 'SELL']);
+
+        $result = $this->repo->getStatsByDirection($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['direction']] = $row;
+        }
+        $this->assertSame(1, (int) $indexed['BUY']['wins']);
+        $this->assertSame(0, (int) $indexed['BUY']['losses']);
+        $this->assertSame(0, (int) $indexed['SELL']['wins']);
+        $this->assertSame(1, (int) $indexed['SELL']['losses']);
+    }
+
+    public function testGetStatsBySetupAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL', ['setup' => '["Breakout"]']);
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["Breakout"]']);
+
+        $result = $this->repo->getStatsBySetup($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, (int) $result[0]['wins']);
+        $this->assertSame(0, (int) $result[0]['losses']);
+    }
+
+    public function testGetStatsByPeriodAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-20 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'month', ['be_threshold_percent' => 0.02]);
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, (int) $result[0]['wins']);
+        $this->assertSame(0, (int) $result[0]['losses']);
+    }
+
+    public function testGetStatsByAccountAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(100.0, 'TP', ['account_id' => $this->accountId]);
+
+        $result = $this->repo->getStatsByAccount($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, (int) $result[0]['wins']);
+        $this->assertSame(0, (int) $result[0]['losses']);
+    }
+
+    public function testGetStatsByAccountTypeAppliesThreshold(): void
+    {
+        $this->createClosedTrade(1.0, 'MANUAL', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(100.0, 'TP', ['account_id' => $this->accountId]);
+
+        $result = $this->repo->getStatsByAccountType($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['account_type']] = $row;
+        }
+        $this->assertSame(1, (int) $indexed['BROKER_DEMO']['wins']);
+        $this->assertSame(0, (int) $indexed['BROKER_DEMO']['losses']);
     }
 }

@@ -131,3 +131,24 @@ Script `api/database/seed-demo.php` crée un compte demo pré-rempli :
 Namespace `performance.*` : 42 clés (en.json et fr.json).
 Ajouts : `perf_by_symbol`, `perf_by_setup`, `perf_by_session`, `perf_by_account_type`, `by_session`, `by_account_type`, `sessions.ASIA`, `sessions.EUROPE`, `sessions.EUROPE_US`, `sessions.US`, `sessions.OFF`.
 Clé `nav.performance` existante.
+
+## Classification Win / Loss / BE (seuil configurable)
+
+Depuis la mise en place du **seuil BE** (préférence utilisateur `be_threshold_percent`, en % du prix d'entrée — cf. [25-stats-be-threshold.md](25-stats-be-threshold.md)), toutes les statistiques qui classent un trade en **win / loss / break-even** s'appuient sur la colonne `trades.pnl_percent` et non plus directement sur `trades.pnl`.
+
+Soit `tol = users.be_threshold_percent` :
+
+- **BE** : `-tol ≤ pnl_percent ≤ tol` (inclusif)
+- **Win** : `pnl_percent > tol`
+- **Loss** : `pnl_percent < -tol`
+
+Quand `tol = 0` (valeur par défaut), la classification est rigoureusement identique à l'ancienne (sign de `pnl`). Plus `tol` est grand, plus les trades proches de zéro basculent en BE au lieu d'être comptés comme micro-wins ou micro-losses — ce qui assainit les stats quand le spread broker ou un import auto génère des sorties "à peine" gagnantes/perdantes.
+
+### Propagation
+
+- `StatsService::validateFilters()` lit `be_threshold_percent` depuis le profil utilisateur (via `UserRepository`) et l'injecte dans les filtres.
+- `StatsRepository::buildWhereClause()` l'expose au repo, qui l'ajoute via `withBeThreshold()` uniquement aux requêtes qui en ont besoin (paramètres nommés PDO, émulation off).
+- Méthodes concernées : `getOverview`, `getWinLossDistribution`, et via `dimensionStatsSelect()` : `getStatsBySymbol`, `getStatsByDirection`, `getStatsBySetup`, `getStatsByPeriod`, `getStatsByAccount`, `getStatsByAccountType`.
+- Méthodes **non concernées** (pas de classification binaire) : `getCumulativePnl`, `getPnlBySymbol`, `getRrDistribution`, `getHeatmap`, `getDailyPnl`, `getRecentTrades`, `getOpenTrades`, `getTradesForSessionStats`.
+
+La donnée brute (`pnl`, `exit_type`) n'est jamais réécrite : le seuil agit uniquement à la lecture, et modifier la préférence met à jour les stats à la requête suivante sans recalcul en base.

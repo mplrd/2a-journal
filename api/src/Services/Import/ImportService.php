@@ -450,9 +450,14 @@ class ImportService
 
     private function createImportedTrade(int $positionId, array $posData): int
     {
+        $entryValue = (float) ($posData['entry_price'] ?? 0) * (float) ($posData['total_size'] ?? 0);
+        $pnlPercent = $entryValue > 0
+            ? round((float) $posData['total_pnl'] / $entryValue * 100, 4)
+            : null;
+
         $stmt = $this->pdo->prepare(
-            "INSERT INTO trades (position_id, opened_at, closed_at, remaining_size, avg_exit_price, pnl, status, exit_type)
-             VALUES (:position_id, :opened_at, :closed_at, :remaining_size, :avg_exit_price, :pnl, :status, :exit_type)"
+            "INSERT INTO trades (position_id, opened_at, closed_at, remaining_size, avg_exit_price, pnl, pnl_percent, status, exit_type)
+             VALUES (:position_id, :opened_at, :closed_at, :remaining_size, :avg_exit_price, :pnl, :pnl_percent, :status, :exit_type)"
         );
         $stmt->execute([
             'position_id' => $positionId,
@@ -461,6 +466,7 @@ class ImportService
             'remaining_size' => 0,
             'avg_exit_price' => $posData['avg_exit_price'],
             'pnl' => $posData['total_pnl'],
+            'pnl_percent' => $pnlPercent,
             'status' => TradeStatus::CLOSED->value,
             'exit_type' => ExitType::MANUAL->value,
         ]);

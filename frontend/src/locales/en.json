@@ -72,6 +72,7 @@
       "invalid_timezone": "Invalid timezone",
       "invalid_currency": "Invalid currency",
       "invalid_theme": "Invalid theme",
+      "invalid_be_threshold": "BE threshold must be a number between 0 and 5 (%)",
       "password_too_long": "Password is too long (72 characters maximum)",
       "invalid_image_type": "Unsupported image format (JPG, PNG or WebP only)",
       "image_too_large": "Image is too large (2 MB maximum)",
@@ -483,6 +484,9 @@
     "theme_light": "Light",
     "theme_dark": "Dark",
     "save": "Save",
+    "stats_preferences": "Stats preferences",
+    "be_threshold": "BE threshold (%)",
+    "be_threshold_hint": "A trade closed within this % of the entry price will be classified as break-even in stats (to absorb the spread). 0 = disabled.",
     "tabs": {
       "profile": "Profile",
       "assets": "My Assets",
