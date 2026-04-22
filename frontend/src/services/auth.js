@@ -46,4 +46,12 @@ export const authService = {
   async resetPassword(token, password) {
     return api.post('/auth/reset-password', { token, password }, { auth: false })
   },
+
+  async changePassword(data) {
+    return api.post('/auth/change-password', data)
+  },
+
+  async deleteAccount(data) {
+    return api.delete('/auth/me', data)
+  },
 }

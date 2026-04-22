@@ -124,6 +124,27 @@ class AuthController extends Controller
         return $this->jsonSuccess(['message_key' => 'auth.success.password_reset']);
     }
 
+    public function changePassword(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $this->authService->changePassword($userId, $request->getBody());
+
+        return $this->jsonSuccess(['message_key' => 'auth.success.password_changed']);
+    }
+
+    public function deleteAccount(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $result = $this->authService->deleteAccount($userId, $request->getBody());
+
+        $response = $this->jsonSuccess(['message_key' => 'auth.success.account_deleted']);
+        if (isset($result['refresh_cookie'])) {
+            $response->withHeader('Set-Cookie', $result['refresh_cookie']);
+        }
+
+        return $response;
+    }
+
     private function respondWithCookie(array $result, int $status = 200): Response
     {
         $cookie = $result['refresh_cookie'] ?? null;

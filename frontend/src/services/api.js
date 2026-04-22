@@ -120,7 +120,7 @@ export const api = {
   post: (path, body, options) => request('POST', path, body, options),
   put: (path, body, options) => request('PUT', path, body, options),
   patch: (path, body, options) => request('PATCH', path, body, options),
-  delete: (path, options) => request('DELETE', path, null, options),
+  delete: (path, body = null, options) => request('DELETE', path, body, options),
   upload,
   setTokens,
   clearTokens,

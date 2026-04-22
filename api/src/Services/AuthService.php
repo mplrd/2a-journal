@@ -299,6 +299,65 @@ class AuthService
         $this->tokenRepo->deleteAllByUserId($userId);
     }
 
+    // ── Danger zone: change password & delete account ──────────
+
+    public function changePassword(int $userId, array $data): void
+    {
+        if (empty($data['current_password'])) {
+            throw new ValidationException('auth.error.field_required', 'current_password');
+        }
+        if (empty($data['new_password'])) {
+            throw new ValidationException('auth.error.field_required', 'new_password');
+        }
+
+        $this->validatePassword($data['new_password']);
+
+        $user = $this->userRepo->findById($userId);
+        if (!$user) {
+            throw new UnauthorizedException('auth.error.token_invalid', 'TOKEN_INVALID');
+        }
+
+        // findById omits the password hash, fetch it explicitly
+        $withHash = $this->userRepo->findByEmail($user['email']);
+        if (!$withHash || !password_verify($data['current_password'], $withHash['password'])) {
+            throw new UnauthorizedException('auth.error.invalid_current_password', 'INVALID_CURRENT_PASSWORD');
+        }
+
+        $hashed = password_hash($data['new_password'], PASSWORD_BCRYPT, ['cost' => $this->config['bcrypt_cost']]);
+        $this->userRepo->updatePassword($userId, $hashed);
+
+        // The user just proved their identity with current_password — keep existing sessions active.
+    }
+
+    public function deleteAccount(int $userId, array $data): array
+    {
+        if (empty($data['password'])) {
+            throw new ValidationException('auth.error.field_required', 'password');
+        }
+        if (empty($data['email_confirmation'])) {
+            throw new ValidationException('auth.error.field_required', 'email_confirmation');
+        }
+
+        $user = $this->userRepo->findById($userId);
+        if (!$user) {
+            throw new UnauthorizedException('auth.error.token_invalid', 'TOKEN_INVALID');
+        }
+
+        if ($data['email_confirmation'] !== $user['email']) {
+            throw new ValidationException('auth.error.email_confirmation_mismatch', 'email_confirmation');
+        }
+
+        $withHash = $this->userRepo->findByEmail($user['email']);
+        if (!$withHash || !password_verify($data['password'], $withHash['password'])) {
+            throw new UnauthorizedException('auth.error.invalid_credentials', 'INVALID_CREDENTIALS');
+        }
+
+        $this->userRepo->softDelete($userId);
+        $this->tokenRepo->deleteAllByUserId($userId);
+
+        return ['refresh_cookie' => $this->buildClearCookie()];
+    }
+
     // ── Profile ─────────────────────────────────────────────────
 
     private const SUPPORTED_LOCALES = ['fr', 'en'];
