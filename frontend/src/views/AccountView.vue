@@ -9,6 +9,7 @@ import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import Button from 'primevue/button'
 import ProfileTab from '@/components/account/ProfileTab.vue'
+import PreferencesTab from '@/components/account/PreferencesTab.vue'
 import AssetsTab from '@/components/account/AssetsTab.vue'
 import SetupsTab from '@/components/account/SetupsTab.vue'
 import CustomFieldsTab from '@/components/account/CustomFieldsTab.vue'
@@ -19,7 +20,7 @@ const route = useRoute()
 const router = useRouter()
 const { isOnboarding, completeOnboarding } = useOnboarding()
 
-const VALID_TABS = ['profile', 'assets', 'setups', 'custom-fields']
+const VALID_TABS = ['profile', 'preferences', 'assets', 'setups', 'custom-fields']
 
 const initialTab = computed(() => {
   const tab = route.query.tab
@@ -51,6 +52,7 @@ async function handleStartTrading() {
     <Tabs v-model:value="activeTab">
       <TabList>
         <Tab value="profile">{{ t('account.tabs.profile') }}</Tab>
+        <Tab value="preferences">{{ t('account.tabs.preferences') }}</Tab>
         <Tab value="assets">{{ t('account.tabs.assets') }}</Tab>
         <Tab value="setups">{{ t('account.tabs.setups') }}</Tab>
         <Tab value="custom-fields">{{ t('account.tabs.custom_fields') }}</Tab>
@@ -58,6 +60,9 @@ async function handleStartTrading() {
       <TabPanels>
         <TabPanel value="profile">
           <ProfileTab />
+        </TabPanel>
+        <TabPanel value="preferences">
+          <PreferencesTab />
         </TabPanel>
         <TabPanel value="assets">
           <AssetsTab />

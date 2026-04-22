@@ -489,6 +489,7 @@
     "be_threshold_hint": "Un trade clôturé à moins de ce % du prix d'entrée sera classé break-even dans les stats (pour absorber le spread). 0 = désactivé.",
     "tabs": {
       "profile": "Profil",
+      "preferences": "Préférences",
       "assets": "Mes Actifs",
       "setups": "Mes Setups",
       "custom_fields": "Champs personnalisés"
