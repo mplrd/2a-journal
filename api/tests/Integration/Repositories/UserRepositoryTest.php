@@ -203,4 +203,48 @@ class UserRepositoryTest extends TestCase
         $this->assertNotFalse($row);
         $this->assertNotNull($row['deleted_at']);
     }
+
+    public function testFindByIdExposesBillingColumns(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'bill@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $user = $this->repo->findById((int) $created['id']);
+
+        $this->assertArrayHasKey('bypass_subscription', $user);
+        $this->assertArrayHasKey('grace_period_end', $user);
+        $this->assertArrayHasKey('stripe_customer_id', $user);
+        $this->assertSame(0, (int) $user['bypass_subscription']);
+    }
+
+    public function testSetGracePeriodEnd(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'grace@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $id = (int) $created['id'];
+        $end = date('Y-m-d H:i:s', time() + 14 * 86400);
+
+        $this->repo->setGracePeriodEnd($id, $end);
+
+        $user = $this->repo->findById($id);
+        $this->assertSame($end, $user['grace_period_end']);
+    }
+
+    public function testSetStripeCustomerId(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'cust@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $id = (int) $created['id'];
+
+        $this->repo->setStripeCustomerId($id, 'cus_test_ABC');
+
+        $user = $this->repo->findById($id);
+        $this->assertSame('cus_test_ABC', $user['stripe_customer_id']);
+    }
 }

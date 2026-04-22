@@ -1,5 +1,6 @@
 # Dependencies
 /api/vendor/
+/api/composer.phar
 /frontend/node_modules/
 
 # Environment

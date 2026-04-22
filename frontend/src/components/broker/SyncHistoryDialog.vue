@@ -59,7 +59,7 @@ function statusSeverity(status) {
       <Column field="deals_fetched" :header="t('broker.deals_fetched')" />
       <Column field="deals_imported" :header="t('broker.deals_imported')" />
       <Column field="deals_skipped" :header="t('broker.deals_skipped')" />
-      <Column field="error_message" :header="t('broker.error')">
+      <Column field="error_message" :header="t('common.error')">
         <template #body="{ data }">
           <span v-if="data.error_message" class="text-xs text-red-500">{{ data.error_message }}</span>
         </template>

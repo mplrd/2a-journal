@@ -64,6 +64,7 @@ vi.mock('@/services/symbols', () => ({
 const stubs = {
   ProfileTab: { template: '<div data-testid="profile-tab">Profile</div>' },
   PreferencesTab: { template: '<div data-testid="preferences-tab">Preferences</div>' },
+  BillingTab: { template: '<div data-testid="billing-tab">Billing</div>' },
   AssetsTab: { template: '<div data-testid="assets-tab">Assets</div>' },
   SetupsTab: { template: '<div data-testid="setups-tab">Setups</div>' },
   Tabs: {
@@ -134,11 +135,12 @@ describe('AccountView', () => {
     mockRoute.query = {}
   })
 
-  it('renders Tabs with all tab panels including preferences', () => {
+  it('renders Tabs with all tab panels including preferences and billing', () => {
     const wrapper = createWrapper()
     expect(wrapper.find('[data-testid="tabs"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tab-panel-profile"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tab-panel-preferences"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-panel-billing"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tab-panel-assets"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(true)
   })
@@ -156,6 +158,11 @@ describe('AccountView', () => {
   it('activates preferences tab from query param', () => {
     const wrapper = createWrapper({ tab: 'preferences' })
     expect(wrapper.vm.activeTab).toBe('preferences')
+  })
+
+  it('activates billing tab from query param', () => {
+    const wrapper = createWrapper({ tab: 'billing' })
+    expect(wrapper.vm.activeTab).toBe('billing')
   })
 
   it('activates assets tab from query param', () => {

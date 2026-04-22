@@ -75,6 +75,7 @@
       "invalid_be_threshold": "Le seuil BE doit être un nombre entre 0 et 5 (%)",
       "invalid_current_password": "Le mot de passe actuel est incorrect",
       "email_confirmation_mismatch": "L'email saisi ne correspond pas à celui de votre compte",
+      "user_not_found": "Utilisateur introuvable",
       "password_too_long": "Le mot de passe est trop long (72 caractères maximum)",
       "invalid_image_type": "Format d'image non supporté (JPG, PNG ou WebP uniquement)",
       "image_too_large": "L'image est trop volumineuse (2 Mo maximum)",
@@ -182,6 +183,13 @@
       "EUROPE_US": "Overlap EU/US",
       "US": "US",
       "OFF": "Hors session"
+    }
+  },
+  "stats": {
+    "error": {
+      "invalid_period_group": "Regroupement de période invalide",
+      "invalid_date": "Date invalide",
+      "invalid_direction": "Direction invalide"
     }
   },
   "accounts": {
@@ -494,9 +502,31 @@
     "tabs": {
       "profile": "Profil",
       "preferences": "Préférences",
+      "billing": "Abonnement",
       "assets": "Mes Actifs",
       "setups": "Mes Setups",
       "custom_fields": "Champs personnalisés"
+    },
+    "billing": {
+      "status_title": "Statut de l'abonnement",
+      "status_active": "Ton abonnement est actif. Prochain prélèvement le {date}.",
+      "status_cancel_scheduled": "Ton abonnement sera résilié le {date}. Tu peux le réactiver à tout moment.",
+      "status_grace": "Période d'essai en cours jusqu'au {date}.",
+      "status_no_access": "Aucun abonnement actif. Tu dois t'abonner pour accéder à l'application.",
+      "status_bypass": "Compte exempté d'abonnement.",
+      "plan_label": "Plan",
+      "plan_description": "Accès complet à l'application. Sans engagement.",
+      "manage_button": "Gérer mon abonnement",
+      "manage_hint": "Le bouton Gérer ouvre l'espace sécurisé Stripe (carte, factures) dans un nouvel onglet.",
+      "subscribe_button": "S'abonner",
+      "cancel_button": "Résilier mon abonnement",
+      "reactivate_button": "Réactiver mon abonnement",
+      "cancel_dialog_title": "Résilier l'abonnement ?",
+      "cancel_dialog_line1": "Tu gardes accès à l'application jusqu'à la fin de ta période en cours. Aucun nouveau prélèvement ne sera effectué.",
+      "cancel_dialog_line2": "Fin d'accès prévue le {date}.",
+      "cancel_confirm_button": "Oui, résilier",
+      "cancel_success": "Résiliation programmée. Tu gardes accès jusqu'à la fin de la période.",
+      "reactivate_success": "Ton abonnement est de nouveau actif."
     },
     "danger_zone": {
       "title": "Zone dangereuse",
@@ -522,6 +552,39 @@
       "password": "Mot de passe",
       "confirm_button": "Supprimer définitivement",
       "email_mismatch": "L'email ne correspond pas"
+    }
+  },
+  "billing": {
+    "title": "Abonnement",
+    "tagline": "Conserve ton accès au journal de trading après la période d'essai.",
+    "price": "5 €",
+    "per_month": "/ mois",
+    "cancel_anytime": "Sans engagement, annulable à tout moment depuis l'espace de gestion.",
+    "subscribe_cta": "S'abonner",
+    "manage_subscription": "Gérer mon abonnement",
+    "promo_hint": "Un code promo ? Tu pourras le saisir sur la page Stripe.",
+    "grace_info": "Tu as accès à l'application jusqu'au {date}. Pense à t'abonner avant pour ne pas perdre l'accès.",
+    "cancel_scheduled": "Ton abonnement sera résilié le {date}. Tu peux le réactiver à tout moment.",
+    "subscription_active": "Ton abonnement est actif.",
+    "bypass_active": "Compte exempté d'abonnement.",
+    "no_access": "Ta période d'essai est terminée. Abonne-toi pour continuer à utiliser l'application.",
+    "success": {
+      "polling_title": "Confirmation du paiement…",
+      "polling_description": "Ça ne devrait prendre que quelques secondes.",
+      "confirmed_title": "Merci, ton abonnement est actif !",
+      "confirmed_description": "Redirection vers le tableau de bord…",
+      "timeout_title": "Paiement en cours de traitement",
+      "timeout_description": "Le paiement peut mettre un peu de temps à être confirmé. Tu peux continuer vers le dashboard.",
+      "go_dashboard": "Aller au tableau de bord",
+      "cancellation_scheduled": "Résiliation programmée. Tu gardes accès jusqu'à la fin de la période.",
+      "subscription_reactivated": "Abonnement réactivé avec succès."
+    },
+    "error": {
+      "subscription_required": "Un abonnement actif est requis pour utiliser cette fonctionnalité.",
+      "no_stripe_customer": "Aucun abonnement n'a encore été créé pour ce compte.",
+      "webhook_invalid": "Signature de webhook invalide.",
+      "no_active_subscription": "Aucun abonnement actif à modifier.",
+      "not_cancelled": "Cet abonnement n'est pas en cours de résiliation."
     }
   },
   "onboarding": {
@@ -666,7 +729,9 @@
       "invalid_boolean": "Valeur booléenne invalide",
       "text_too_long": "Le texte est trop long (5000 caractères max)",
       "invalid_number": "Valeur numérique invalide",
-      "invalid_option": "Option invalide"
+      "invalid_option": "Option invalide",
+      "not_found": "Champ personnalisé introuvable",
+      "forbidden": "Accès refusé à ce champ personnalisé"
     },
     "success": {
       "created": "Champ personnalisé créé",
@@ -695,7 +760,6 @@
     "deals_fetched": "Récupérés",
     "deals_imported": "Importés",
     "deals_skipped": "Ignorés",
-    "error": "Erreur",
     "metaapi_instructions": "Connectez votre compte MT4/MT5 via MetaApi. Vous aurez besoin de votre token API MetaApi et de l'ID du compte MetaApi.",
     "metaapi_token": "Token API MetaApi",
     "metaapi_token_placeholder": "Votre token MetaApi",
