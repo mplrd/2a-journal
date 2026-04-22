@@ -2,11 +2,18 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth'
 import { api } from '@/services/api'
+import { useAccountsStore } from '@/stores/accounts'
+import { useSymbolsStore } from '@/stores/symbols'
+import { usePositionsStore } from '@/stores/positions'
+import { useOrdersStore } from '@/stores/orders'
+import { useTradesStore } from '@/stores/trades'
+import { useBillingStore } from '@/stores/billing'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const loading = ref(false)
   const error = ref(null)
+  const initialized = ref(false)
 
   const isAuthenticated = computed(() => !!api.getAccessToken())
   const fullName = computed(() => {
@@ -15,7 +22,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   function setAuthData(data) {
-    api.setTokens(data.access_token, data.refresh_token)
+    api.setTokens(data.access_token)
     if (data.user) {
       user.value = data.user
     }
@@ -69,12 +76,72 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       user.value = null
       api.clearTokens()
+      useAccountsStore().$reset()
+      useSymbolsStore().$reset()
+      usePositionsStore().$reset()
+      useOrdersStore().$reset()
+      useTradesStore().$reset()
+      useBillingStore().reset()
     }
   }
 
-  function initFromStorage() {
-    if (api.getAccessToken()) {
-      fetchProfile()
+  async function updateLocale(locale) {
+    try {
+      const response = await authService.updateLocale(locale)
+      user.value = response.data
+    } catch {
+      // Non-blocking — locale is still applied client-side
+    }
+  }
+
+  async function updateProfile(data) {
+    try {
+      const response = await authService.updateProfile(data)
+      user.value = response.data
+    } catch {
+      // Non-blocking — settings are still applied client-side
+    }
+  }
+
+  async function uploadProfilePicture(file) {
+    const response = await authService.uploadProfilePicture(file)
+    user.value = response.data
+    return response
+  }
+
+  async function resendVerification() {
+    return authService.resendVerification()
+  }
+
+  async function changePassword(data) {
+    return authService.changePassword(data)
+  }
+
+  async function deleteAccount(data) {
+    const response = await authService.deleteAccount(data)
+    user.value = null
+    api.clearTokens()
+    useAccountsStore().$reset()
+    useSymbolsStore().$reset()
+    usePositionsStore().$reset()
+    useOrdersStore().$reset()
+    useTradesStore().$reset()
+    useBillingStore().reset()
+    return response
+  }
+
+  async function initSession() {
+    try {
+      const response = await api.refreshAccessToken()
+      if (response) {
+        await fetchProfile()
+      }
+    } catch {
+      // No valid session — user stays unauthenticated
+      user.value = null
+      api.clearTokens()
+    } finally {
+      initialized.value = true
     }
   }
 
@@ -82,12 +149,19 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     error,
+    initialized,
     isAuthenticated,
     fullName,
     register,
     login,
     logout,
     fetchProfile,
-    initFromStorage,
+    updateLocale,
+    updateProfile,
+    uploadProfilePicture,
+    resendVerification,
+    changePassword,
+    deleteAccount,
+    initSession,
   }
 })

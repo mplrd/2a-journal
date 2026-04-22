@@ -1,0 +1,52 @@
+export const AccountType = {
+  BROKER_DEMO: 'BROKER_DEMO',
+  BROKER_LIVE: 'BROKER_LIVE',
+  PROP_FIRM: 'PROP_FIRM',
+}
+
+export const AccountStage = {
+  CHALLENGE: 'CHALLENGE',
+  VERIFICATION: 'VERIFICATION',
+  FUNDED: 'FUNDED',
+}
+
+export const Direction = {
+  BUY: 'BUY',
+  SELL: 'SELL',
+}
+
+export const OrderStatus = {
+  PENDING: 'PENDING',
+  EXECUTED: 'EXECUTED',
+  CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED',
+}
+
+export const TradeStatus = {
+  OPEN: 'OPEN',
+  SECURED: 'SECURED',
+  CLOSED: 'CLOSED',
+}
+
+export const SymbolType = {
+  INDEX: 'INDEX',
+  FOREX: 'FOREX',
+  CRYPTO: 'CRYPTO',
+  STOCK: 'STOCK',
+  COMMODITY: 'COMMODITY',
+  OTHER: 'OTHER',
+}
+
+export const ExitType = {
+  BE: 'BE',
+  TP: 'TP',
+  SL: 'SL',
+  MANUAL: 'MANUAL',
+}
+
+export const CustomFieldType = {
+  BOOLEAN: 'BOOLEAN',
+  TEXT: 'TEXT',
+  NUMBER: 'NUMBER',
+  SELECT: 'SELECT',
+}

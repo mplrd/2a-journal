@@ -9,15 +9,49 @@ export const authService = {
     return api.post('/auth/login', data, { auth: false })
   },
 
-  async refresh(refreshToken) {
-    return api.post('/auth/refresh', { refresh_token: refreshToken }, { auth: false })
-  },
-
   async logout() {
     return api.post('/auth/logout')
   },
 
   async me() {
     return api.get('/auth/me')
+  },
+
+  async updateLocale(locale) {
+    return api.patch('/auth/locale', { locale })
+  },
+
+  async updateProfile(data) {
+    return api.patch('/auth/profile', data)
+  },
+
+  async uploadProfilePicture(file) {
+    const formData = new FormData()
+    formData.append('profile_picture', file)
+    return api.upload('/auth/profile-picture', formData)
+  },
+
+  async completeOnboarding() {
+    return api.post('/auth/complete-onboarding')
+  },
+
+  async resendVerification() {
+    return api.post('/auth/resend-verification')
+  },
+
+  async forgotPassword(email) {
+    return api.post('/auth/forgot-password', { email }, { auth: false })
+  },
+
+  async resetPassword(token, password) {
+    return api.post('/auth/reset-password', { token, password }, { auth: false })
+  },
+
+  async changePassword(data) {
+    return api.post('/auth/change-password', data)
+  },
+
+  async deleteAccount(data) {
+    return api.delete('/auth/me', data)
   },
 }

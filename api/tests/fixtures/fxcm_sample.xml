@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><ss:Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:of="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+    <ss:Styles>
+        <ss:Style ss:ID="Default" ss:Name="Normal"/>
+        <ss:Style ss:ID="header" ss:Parent="Default"/>
+        <ss:Style ss:ID="cell" ss:Parent="Default"/>
+    </ss:Styles>
+    <ss:Worksheet ss:Name="Releve de Compte Global"><ss:Table>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String">Releve de Compte Global</ss:Data></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String">Periode du releve: </ss:Data></ss:Cell><ss:Cell ss:Index="2"><ss:Data ss:Type="String">de 21 nov. 2024 jusqu'au 20 mars 2026</ss:Data></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String"/></ss:Cell></ss:Row>
+        <ss:Row ss:Height="18">
+            <ss:Cell ss:StyleID="header" ss:Index="1"><ss:Data ss:Type="String">Ticket &#x2116;</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="2"><ss:Data ss:Type="String">Monnaie</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="3"><ss:Data ss:Type="String">Volume</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="4"><ss:Data ss:Type="String">Date</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="5"><ss:Data ss:Type="String">Vendu</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="6"><ss:Data ss:Type="String">Achete</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="7"><ss:Data ss:Type="String">G/P Brut</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="8"><ss:Data ss:Type="String">Marges (pips)</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="9"><ss:Data ss:Type="String">Com</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="10"><ss:Data ss:Type="String">Dividendes</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="11"><ss:Data ss:Type="String">Prorogation</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="12"><ss:Data ss:Type="String">Aju</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="13"><ss:Data ss:Type="String">G/P Net</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="14"><ss:Data ss:Type="String">Condition</ss:Data></ss:Cell>
+            <ss:Cell ss:StyleID="header" ss:Index="15"><ss:Data ss:Type="String">Cree par</ss:Data></ss:Cell>
+        </ss:Row>
+        <!-- Trade 1: SELL GER30 @ 19,226.05 → 19,222.56 = +0.35 -->
+        <ss:Row ss:Height="12">
+            <ss:Cell ss:Index="1"><ss:Data ss:Type="String">70054784</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="2"><ss:Data ss:Type="String">GER30</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="3"><ss:Data ss:Type="Number">1.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="4"><ss:Data ss:Type="String">22/11/2024 7:43 </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="5"><ss:Data ss:Type="Number">19,226.05</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="6"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="7"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="8"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="9"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="10"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="11"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="12"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="13"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="14"><ss:Data ss:Type="String">Mkt</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="15"><ss:Data ss:Type="String">87060649</ss:Data></ss:Cell>
+        </ss:Row>
+        <ss:Row ss:Height="12">
+            <ss:Cell ss:Index="1"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="2"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="3"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="4"><ss:Data ss:Type="String">22/11/2024 7:44 </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="5"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="6"><ss:Data ss:Type="Number">19,222.56</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="7"><ss:Data ss:Type="Number">0.35</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="8"><ss:Data ss:Type="Number">0.50</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="9"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="10"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="11"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="12"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="13"><ss:Data ss:Type="Number">0.35</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="14"><ss:Data ss:Type="String">C</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="15"><ss:Data ss:Type="String">87060649</ss:Data></ss:Cell>
+        </ss:Row>
+        <!-- Trade 2: SELL GER30 @ 19,247.39 → 19,242.20 = +0.52 -->
+        <ss:Row ss:Height="12">
+            <ss:Cell ss:Index="1"><ss:Data ss:Type="String">70056470</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="2"><ss:Data ss:Type="String">GER30</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="3"><ss:Data ss:Type="Number">1.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="4"><ss:Data ss:Type="String">22/11/2024 13:39 </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="5"><ss:Data ss:Type="Number">19,247.39</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="6"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="7"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="8"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="9"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="10"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="11"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="12"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="13"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="14"><ss:Data ss:Type="String">Mkt</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="15"><ss:Data ss:Type="String">87060649</ss:Data></ss:Cell>
+        </ss:Row>
+        <ss:Row ss:Height="12">
+            <ss:Cell ss:Index="1"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="2"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="3"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="4"><ss:Data ss:Type="String">22/11/2024 14:09 </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="5"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="6"><ss:Data ss:Type="Number">19,242.20</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="7"><ss:Data ss:Type="Number">0.52</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="8"><ss:Data ss:Type="Number">0.50</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="9"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="10"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="11"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="12"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="13"><ss:Data ss:Type="Number">0.52</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="14"><ss:Data ss:Type="String">S</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="15"><ss:Data ss:Type="String">87060649</ss:Data></ss:Cell>
+        </ss:Row>
+        <!-- Trade 3: BUY GER30 @ 20,362.29 → 20,323.49 = -3.88 -->
+        <ss:Row ss:Height="12">
+            <ss:Cell ss:Index="1"><ss:Data ss:Type="String">70168990</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="2"><ss:Data ss:Type="String">GER30</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="3"><ss:Data ss:Type="Number">1.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="4"><ss:Data ss:Type="String">16/12/2024 9:40 </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="5"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="6"><ss:Data ss:Type="Number">20,362.29</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="7"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="8"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="9"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="10"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="11"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="12"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="13"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="14"><ss:Data ss:Type="String">Mkt</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="15"><ss:Data ss:Type="String">87060649</ss:Data></ss:Cell>
+        </ss:Row>
+        <ss:Row ss:Height="12">
+            <ss:Cell ss:Index="1"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="2"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="3"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="4"><ss:Data ss:Type="String">16/12/2024 10:20 </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="5"><ss:Data ss:Type="Number">20,323.49</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="6"><ss:Data ss:Type="String"> </ss:Data></ss:Cell>
+            <ss:Cell ss:Index="7"><ss:Data ss:Type="Number">-3.88</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="8"><ss:Data ss:Type="Number">0.50</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="9"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="10"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="11"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="12"><ss:Data ss:Type="Number">0.00</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="13"><ss:Data ss:Type="Number">-3.88</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="14"><ss:Data ss:Type="String">S</ss:Data></ss:Cell>
+            <ss:Cell ss:Index="15"><ss:Data ss:Type="String">87060649</ss:Data></ss:Cell>
+        </ss:Row>
+        <!-- Summary row -->
+        <ss:Row><ss:Cell ss:Index="1"><ss:Data ss:Type="String">Total:</ss:Data></ss:Cell><ss:Cell ss:Index="7"><ss:Data ss:Type="Number">-3.01</ss:Data></ss:Cell></ss:Row>
+    </ss:Table></ss:Worksheet>
+</ss:Workbook>

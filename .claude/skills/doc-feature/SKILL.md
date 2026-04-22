@@ -1,6 +1,6 @@
 ---
 name: doc-feature
-description: Generate or update feature documentation in French in the docs/ directory. Use after completing a feature to deliver its documentation.
+description: Generate or update feature documentation in French in the docs/ directory. Use after completing any feature implementation, after all tests pass, or when the user asks to document, write docs, or update docs for a feature.
 argument-hint: "[feature-name]"
 allowed-tools: "Read, Write, Edit, Grep, Glob"
 ---

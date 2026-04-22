@@ -28,6 +28,11 @@ class Router
         $this->addRoute('DELETE', $path, $handler, $middleware);
     }
 
+    public function patch(string $path, callable|array $handler, array $middleware = []): void
+    {
+        $this->addRoute('PATCH', $path, $handler, $middleware);
+    }
+
     private function addRoute(string $method, string $path, callable|array $handler, array $middleware = []): void
     {
         $this->routes[] = [

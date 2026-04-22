@@ -1,6 +1,6 @@
 ---
 name: check-quality
-description: Review code quality and conventions compliance. Use to verify the codebase follows project standards (naming, enums, i18n, security).
+description: Review code quality and conventions compliance. Use when the user asks to review code quality, check conventions, audit standards, or verify naming/enum/i18n compliance.
 allowed-tools: "Read, Grep, Glob"
 ---
 

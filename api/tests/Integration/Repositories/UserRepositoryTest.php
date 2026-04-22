@@ -79,6 +79,24 @@ class UserRepositoryTest extends TestCase
         $this->assertArrayHasKey('password', $user);
     }
 
+    public function testFindByEmailReturnsExplicitColumnsOnly(): void
+    {
+        $this->repo->create([
+            'email' => 'cols@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+        ]);
+
+        $user = $this->repo->findByEmail('cols@example.com');
+
+        $expectedKeys = ['id', 'email', 'password', 'first_name', 'last_name', 'timezone', 'default_currency', 'locale', 'theme', 'created_at', 'updated_at'];
+        foreach ($expectedKeys as $key) {
+            $this->assertArrayHasKey($key, $user);
+        }
+        $this->assertArrayNotHasKey('deleted_at', $user);
+    }
+
     public function testFindByEmailReturnsNullWhenNotFound(): void
     {
         $user = $this->repo->findByEmail('nobody@example.com');
@@ -135,5 +153,98 @@ class UserRepositoryTest extends TestCase
             'email' => 'unique@example.com',
             'password' => password_hash('Test1234', PASSWORD_BCRYPT),
         ]);
+    }
+
+    public function testFindByIdReturnsBeThresholdPercent(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'thr@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $user = $this->repo->findById((int) $created['id']);
+
+        $this->assertArrayHasKey('be_threshold_percent', $user);
+        $this->assertEquals(0, (float) $user['be_threshold_percent']);
+    }
+
+    public function testUpdateProfileAcceptsBeThresholdPercent(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'thr-up@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $updated = $this->repo->updateProfile((int) $created['id'], [
+            'be_threshold_percent' => 0.0500,
+        ]);
+
+        $this->assertEquals(0.0500, (float) $updated['be_threshold_percent']);
+    }
+
+    public function testSoftDeleteSetsDeletedAtAndHidesFromFinders(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'todelete@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $id = (int) $created['id'];
+
+        $this->repo->softDelete($id);
+
+        $this->assertNull($this->repo->findById($id));
+        $this->assertNull($this->repo->findByEmail('todelete@example.com'));
+        $this->assertFalse($this->repo->existsByEmail('todelete@example.com'));
+
+        // Row still exists physically (soft delete)
+        $stmt = $this->pdo->prepare('SELECT deleted_at FROM users WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        $this->assertNotFalse($row);
+        $this->assertNotNull($row['deleted_at']);
+    }
+
+    public function testFindByIdExposesBillingColumns(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'bill@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $user = $this->repo->findById((int) $created['id']);
+
+        $this->assertArrayHasKey('bypass_subscription', $user);
+        $this->assertArrayHasKey('grace_period_end', $user);
+        $this->assertArrayHasKey('stripe_customer_id', $user);
+        $this->assertSame(0, (int) $user['bypass_subscription']);
+    }
+
+    public function testSetGracePeriodEnd(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'grace@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $id = (int) $created['id'];
+        $end = date('Y-m-d H:i:s', time() + 14 * 86400);
+
+        $this->repo->setGracePeriodEnd($id, $end);
+
+        $user = $this->repo->findById($id);
+        $this->assertSame($end, $user['grace_period_end']);
+    }
+
+    public function testSetStripeCustomerId(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'cust@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $id = (int) $created['id'];
+
+        $this->repo->setStripeCustomerId($id, 'cus_test_ABC');
+
+        $user = $this->repo->findById($id);
+        $this->assertSame('cus_test_ABC', $user['stripe_customer_id']);
     }
 }

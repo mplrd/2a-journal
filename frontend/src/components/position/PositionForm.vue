@@ -1,0 +1,281 @@
+<script setup>
+import { ref, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import Dialog from 'primevue/dialog'
+import InputText from 'primevue/inputtext'
+import InputNumber from 'primevue/inputnumber'
+import AutoComplete from 'primevue/autocomplete'
+import Textarea from 'primevue/textarea'
+import Select from 'primevue/select'
+import Button from 'primevue/button'
+import { Direction } from '@/constants/enums'
+import { useSymbolsStore } from '@/stores/symbols'
+import { useToast } from 'primevue/usetoast'
+import SymbolForm from '@/components/symbol/SymbolForm.vue'
+
+const { t } = useI18n()
+const symbolsStore = useSymbolsStore()
+const toast = useToast()
+
+const props = defineProps({
+  visible: Boolean,
+  position: { type: Object, default: null },
+  symbols: { type: Array, default: () => [] },
+  setups: { type: Array, default: () => [] },
+  loading: Boolean,
+})
+
+const emit = defineEmits(['update:visible', 'save'])
+
+const showSymbolForm = ref(false)
+const filteredSetups = ref([])
+
+function searchSetups(event) {
+  const query = event.query.trim()
+  const queryLower = query.toLowerCase()
+  const matches = props.setups.filter((s) => s.toLowerCase().includes(queryLower))
+  if (query && !matches.some((s) => s.toLowerCase() === queryLower)) {
+    matches.unshift(query)
+  }
+  filteredSetups.value = matches
+}
+
+function parseSetup(setup) {
+  if (Array.isArray(setup)) return setup
+  if (!setup) return []
+  try { return JSON.parse(setup) } catch { return [setup] }
+}
+
+const form = ref(getDefaultForm())
+
+const directionOptions = Object.values(Direction).map((value) => ({
+  label: t(`positions.directions.${value}`),
+  value,
+}))
+
+function getDefaultForm() {
+  return {
+    entry_price: 0,
+    size: 1,
+    sl_points: 0,
+    be_points: null,
+    be_size: null,
+    direction: Direction.BUY,
+    symbol: '',
+    setup: [],
+    notes: '',
+    targets: [],
+  }
+}
+
+watch(
+  () => props.visible,
+  (val) => {
+    if (val && props.position) {
+      const targets = props.position.targets
+        ? typeof props.position.targets === 'string'
+          ? JSON.parse(props.position.targets)
+          : props.position.targets
+        : []
+      form.value = {
+        entry_price: Number(props.position.entry_price),
+        size: Number(props.position.size),
+        sl_points: Number(props.position.sl_points),
+        be_points: props.position.be_points ? Number(props.position.be_points) : null,
+        be_size: props.position.be_size ? Number(props.position.be_size) : null,
+        direction: props.position.direction,
+        symbol: props.position.symbol,
+        setup: parseSetup(props.position.setup),
+        notes: props.position.notes || '',
+        targets: targets || [],
+      }
+    }
+  },
+)
+
+const calculatedSlPrice = computed(() => {
+  if (!form.value.entry_price || !form.value.sl_points) return null
+  if (form.value.direction === Direction.BUY) {
+    return form.value.entry_price - form.value.sl_points
+  }
+  return form.value.entry_price + form.value.sl_points
+})
+
+const calculatedBePrice = computed(() => {
+  if (!form.value.entry_price || !form.value.be_points) return null
+  if (form.value.direction === Direction.BUY) {
+    return form.value.entry_price + form.value.be_points
+  }
+  return form.value.entry_price - form.value.be_points
+})
+
+const calculatedTargets = computed(() => {
+  if (!form.value.entry_price || !form.value.targets?.length) return []
+  return form.value.targets.map((target) => ({
+    ...target,
+    price:
+      form.value.direction === Direction.BUY
+        ? form.value.entry_price + (target.points || 0)
+        : form.value.entry_price - (target.points || 0),
+  }))
+})
+
+function addTarget() {
+  form.value.targets.push({
+    id: `tp${form.value.targets.length + 1}`,
+    label: `TP${form.value.targets.length + 1}`,
+    points: 0,
+    size: 0,
+  })
+}
+
+function removeTarget(index) {
+  form.value.targets.splice(index, 1)
+}
+
+function handleSave() {
+  const data = { ...form.value }
+  if (data.targets.length > 0) {
+    data.targets = calculatedTargets.value
+  } else {
+    data.targets = null
+  }
+  emit('save', data)
+}
+
+function handleClose() {
+  emit('update:visible', false)
+}
+
+async function handleSymbolCreate(data) {
+  try {
+    const created = await symbolsStore.createSymbol(data)
+    form.value.symbol = created.code
+    showSymbolForm.value = false
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('symbols.success.created'), life: 3000 })
+  } catch {
+    // error in store
+  }
+}
+</script>
+
+<template>
+  <Dialog
+    :visible="visible"
+    :header="t('positions.edit')"
+    :modal="true"
+    :closable="true"
+    :style="{ width: '600px' }"
+    :contentStyle="{ overflowY: 'auto', maxHeight: '70vh' }"
+    @update:visible="handleClose"
+  >
+    <div class="flex flex-col gap-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.symbol') }} *</label>
+          <div class="flex gap-1">
+            <Select
+              v-model="form.symbol"
+              :options="symbols"
+              optionLabel="label"
+              optionValue="value"
+              :placeholder="t('positions.symbol')"
+              :emptyMessage="t('common.no_options')"
+              class="w-full"
+            />
+            <Button icon="pi pi-plus" severity="secondary" size="small" v-tooltip.top="t('symbols.add_symbol')" @click="showSymbolForm = true" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.direction') }} *</label>
+          <Select v-model="form.direction" :options="directionOptions" optionLabel="label" optionValue="value" class="w-full" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.entry_price') }} *</label>
+          <InputNumber v-model="form.entry_price" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.size') }} *</label>
+          <InputNumber v-model="form.size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.setup') }} *</label>
+        <AutoComplete
+          v-model="form.setup"
+          :suggestions="filteredSetups"
+          multiple
+          dropdown
+          class="w-full"
+          @complete="searchSetups"
+        />
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.sl_points') }} *</label>
+          <InputNumber v-model="form.sl_points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.sl_price') }}</label>
+          <div class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600 text-sm dark:text-gray-300 flex items-center min-h-[38px]">
+            {{ calculatedSlPrice != null ? calculatedSlPrice.toLocaleString() : '-' }}
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_points') }}</label>
+          <InputNumber v-model="form.be_points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_price') }}</label>
+          <div class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600 text-sm dark:text-gray-300 flex items-center min-h-[38px]">
+            {{ calculatedBePrice != null ? calculatedBePrice.toLocaleString() : '-' }}
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_size') }}</label>
+          <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('positions.targets') }}</label>
+          <Button :label="t('positions.add_target')" icon="pi pi-plus" size="small" severity="secondary" text @click="addTarget" />
+        </div>
+        <div v-for="(target, index) in form.targets" :key="index" class="grid grid-cols-[64px_1fr_1fr_80px_32px] gap-2 mb-2 items-center">
+          <InputText v-model="target.label" class="w-full" :placeholder="t('positions.target_label')" />
+          <InputNumber v-model="target.points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" :placeholder="t('positions.target_points')" />
+          <InputNumber v-model="target.size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" :placeholder="t('positions.target_size')" />
+          <span class="text-sm text-gray-500 dark:text-gray-400 text-right">
+            {{ calculatedTargets[index]?.price != null ? calculatedTargets[index].price.toLocaleString() : '-' }}
+          </span>
+          <Button icon="pi pi-times" severity="danger" size="small" text @click="removeTarget(index)" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.notes') }}</label>
+        <Textarea v-model="form.notes" class="w-full" rows="3" :maxlength="10000" />
+      </div>
+    </div>
+
+    <template #footer>
+      <Button :label="t('common.cancel')" severity="secondary" @click="handleClose" />
+      <Button :label="t('common.save')" :loading="loading" @click="handleSave" />
+    </template>
+
+    <SymbolForm
+      v-model:visible="showSymbolForm"
+      :loading="symbolsStore.loading"
+      @save="handleSymbolCreate"
+    />
+  </Dialog>
+</template>

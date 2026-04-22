@@ -1,6 +1,6 @@
 ---
 name: run-tests
-description: Run backend (PHPUnit) and/or frontend (Vitest) tests with clear reporting. Use when you need to verify tests pass.
+description: Run backend (PHPUnit) and/or frontend (Vitest) tests with clear reporting. Use after writing or modifying code, before considering a task complete, or when the user asks to run tests, check tests, or verify tests pass.
 argument-hint: "[backend|frontend|all]"
 allowed-tools: "Bash, Read"
 ---
@@ -27,3 +27,9 @@ cd frontend && npx vitest run
 - If all pass: report green summary
 - If failures: list each failing test with the reason, suggest fixes
 - Never mark a feature as complete if tests are failing
+
+## Re-seed demo data
+After backend tests, always re-seed the demo account (tests clean all tables):
+```bash
+cd api && php database/seed-demo.php
+```

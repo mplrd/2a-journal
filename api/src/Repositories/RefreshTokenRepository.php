@@ -27,7 +27,9 @@ class RefreshTokenRepository
 
     public function findByToken(string $token): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM refresh_tokens WHERE token = :token');
+        $stmt = $this->pdo->prepare(
+            'SELECT id, user_id, token, expires_at, created_at FROM refresh_tokens WHERE token = :token'
+        );
         $stmt->execute(['token' => $token]);
         $row = $stmt->fetch();
 

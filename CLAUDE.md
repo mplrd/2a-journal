@@ -10,15 +10,27 @@ Specs completes dans `docs/specs/trading-journal-specs-v5.md`.
 - **Database**: MariaDB `2ai_tools_journal` (utf8mb4_unicode_ci), root/no password (dev)
 - **Tests**: PHPUnit (backend), Vitest (frontend) - TDD obligatoire
 - **Methodology**: TDD - tests first, then code, then refactor, then doc
-- **Domain**: journal.2ai-tools.local
-- **API URL**: http://journal.2ai-tools.local/api
+- **Domain**: 2a.journal.local
+- **API URL**: http://2a.journal.local/api
 - **Frontend dev**: http://localhost:5173
 
 ## Conventions
 - Code & DB: English
 - Docs: French
 - Commits: English, conventional (feat:, fix:, refactor:, docs:, test:, chore:)
+- Commits: no Co-Authored-By, no author/committer mention (human or AI)
 - camelCase (vars/functions), PascalCase (classes), snake_case (DB), UPPER_SNAKE_CASE (enums)
+
+## Methodology — TDD strict
+- Always write tests BEFORE implementation code
+- Strict cycle: tests (red) → code (green) → refactor → doc
+- Never consider a feature complete without passing tests
+- Use `/tdd-feature` skill for any non-trivial feature implementation
+
+## Documentation — Systematic
+- Every feature produces or updates a doc in `docs/` (French)
+- Doc is delivered IN the same flow as implementation, not as an afterthought
+- Update existing docs when a feature modifies already-documented behavior
 
 ## Git Workflow
 - Never push, commit, or run destructive git commands without explicit user request
@@ -64,8 +76,8 @@ journal/
 
 ## Skills
 - If the user requests something that should be a reusable skill, propose creating one
-- Available: /tdd-feature, /new-endpoint, /new-component, /run-tests, /doc-feature, /check-quality
+- Available: /tdd-feature, /new-endpoint, /new-component, /run-tests, /doc-feature, /check-quality, /audit-security, /audit-privacy
 
 ## Apache Config
-- VHost: journal.2ai-tools.local -> E:/2A-tools/journal
+- VHost: 2a.journal.local -> E:/2A-tools/journal
 - Alias /api -> api/public/ (PHP router strips /api prefix from REQUEST_URI)

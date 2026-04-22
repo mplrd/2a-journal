@@ -25,12 +25,18 @@ class AuthServiceTest extends TestCase
             'access_token_ttl' => 900,
             'refresh_token_ttl' => 604800,
             'password_min_length' => 8,
+            'bcrypt_cost' => 12,
+            'cookie_name' => 'refresh_token',
+            'cookie_path' => '/api/auth',
+            'cookie_httponly' => true,
+            'cookie_samesite' => 'Lax',
+            'cookie_secure' => false,
         ];
 
         $this->userRepo = $this->createMock(UserRepository::class);
         $this->tokenRepo = $this->createMock(RefreshTokenRepository::class);
 
-        $this->service = new AuthService($this->userRepo, $this->tokenRepo, $this->config);
+        $this->service = new AuthService($this->userRepo, $this->tokenRepo, null, null, $this->config);
     }
 
     // ── Register validation ──────────────────────────────────────
@@ -108,15 +114,19 @@ class AuthServiceTest extends TestCase
 
     public function testRegisterSuccess(): void
     {
-        $this->userRepo->method('existsByEmail')->willReturn(false);
-        $this->userRepo->method('create')->willReturn([
+        $userData = [
             'id' => 1,
             'email' => 'new@test.com',
             'first_name' => 'John',
             'last_name' => 'Doe',
+            'email_verified' => true,
+            'email_verified_at' => '2026-01-01 00:00:00',
             'created_at' => '2026-01-01 00:00:00',
             'updated_at' => '2026-01-01 00:00:00',
-        ]);
+        ];
+        $this->userRepo->method('existsByEmail')->willReturn(false);
+        $this->userRepo->method('create')->willReturn($userData);
+        $this->userRepo->method('findById')->willReturn($userData);
 
         $result = $this->service->register([
             'email' => 'new@test.com',
@@ -126,9 +136,13 @@ class AuthServiceTest extends TestCase
         ]);
 
         $this->assertArrayHasKey('access_token', $result);
-        $this->assertArrayHasKey('refresh_token', $result);
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertArrayNotHasKey('refresh_token', $result);
         $this->assertArrayHasKey('user', $result);
         $this->assertSame('new@test.com', $result['user']['email']);
+        $this->assertStringContainsString('refresh_token=', $result['refresh_cookie']);
+        $this->assertStringContainsString('HttpOnly', $result['refresh_cookie']);
+        $this->assertStringContainsString('Path=/api/auth', $result['refresh_cookie']);
     }
 
     // ── Login ────────────────────────────────────────────────────
@@ -165,6 +179,8 @@ class AuthServiceTest extends TestCase
             'id' => 1,
             'email' => 'test@test.com',
             'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+            'locked_until' => null,
+            'failed_login_attempts' => 0,
         ]);
 
         $this->expectException(UnauthorizedException::class);
@@ -182,6 +198,8 @@ class AuthServiceTest extends TestCase
             'password' => $hashedPassword,
             'first_name' => 'John',
             'last_name' => 'Doe',
+            'locked_until' => null,
+            'failed_login_attempts' => 0,
         ]);
         $this->userRepo->method('findById')->willReturn([
             'id' => 1,
@@ -193,7 +211,8 @@ class AuthServiceTest extends TestCase
         $result = $this->service->login(['email' => 'test@test.com', 'password' => 'Test1234']);
 
         $this->assertArrayHasKey('access_token', $result);
-        $this->assertArrayHasKey('refresh_token', $result);
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertArrayNotHasKey('refresh_token', $result);
         $this->assertArrayHasKey('user', $result);
     }
 
@@ -250,19 +269,25 @@ class AuthServiceTest extends TestCase
         $result = $this->service->refresh(['refresh_token' => 'valid-token']);
 
         $this->assertArrayHasKey('access_token', $result);
-        $this->assertArrayHasKey('refresh_token', $result);
-        $this->assertNotSame('valid-token', $result['refresh_token']);
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertArrayNotHasKey('refresh_token', $result);
+        $this->assertStringContainsString('refresh_token=', $result['refresh_cookie']);
+        $this->assertStringNotContainsString('refresh_token=valid-token', $result['refresh_cookie']);
     }
 
     // ── Logout ───────────────────────────────────────────────────
 
-    public function testLogoutDeletesAllTokens(): void
+    public function testLogoutDeletesAllTokensAndReturnsClearCookie(): void
     {
         $this->tokenRepo->expects($this->once())
             ->method('deleteAllByUserId')
             ->with(42);
 
-        $this->service->logout(42);
+        $result = $this->service->logout(42);
+
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertStringContainsString('refresh_token=;', $result['refresh_cookie']);
+        $this->assertStringContainsString('Max-Age=0', $result['refresh_cookie']);
     }
 
     // ── Profile ──────────────────────────────────────────────────
@@ -291,6 +316,174 @@ class AuthServiceTest extends TestCase
         $this->service->getProfile(999);
     }
 
+    public function testUpdateProfileAcceptsValidBeThresholdPercent(): void
+    {
+        $this->userRepo
+            ->expects($this->once())
+            ->method('updateProfile')
+            ->with(1, ['be_threshold_percent' => 0.05])
+            ->willReturn(['id' => 1, 'be_threshold_percent' => 0.05]);
+
+        $result = $this->service->updateProfile(1, ['be_threshold_percent' => 0.05]);
+
+        $this->assertEquals(0.05, (float) $result['be_threshold_percent']);
+    }
+
+    public function testUpdateProfileAcceptsZeroBeThresholdPercent(): void
+    {
+        $this->userRepo
+            ->expects($this->once())
+            ->method('updateProfile')
+            ->with(1, ['be_threshold_percent' => 0])
+            ->willReturn(['id' => 1, 'be_threshold_percent' => 0]);
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => 0]);
+    }
+
+    public function testUpdateProfileRejectsNegativeBeThresholdPercent(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_be_threshold');
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => -0.01]);
+    }
+
+    public function testUpdateProfileRejectsBeThresholdPercentAboveMax(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_be_threshold');
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => 5.01]);
+    }
+
+    public function testUpdateProfileRejectsNonNumericBeThresholdPercent(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_be_threshold');
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => 'abc']);
+    }
+
+    // ── Change password ──────────────────────────────────────────
+
+    public function testChangePasswordThrowsWhenCurrentMissing(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_required');
+
+        $this->service->changePassword(1, ['new_password' => 'NewPass1']);
+    }
+
+    public function testChangePasswordThrowsWhenNewMissing(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_required');
+
+        $this->service->changePassword(1, ['current_password' => 'OldPass1']);
+    }
+
+    public function testChangePasswordThrowsWhenNewTooWeak(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.password_too_weak');
+
+        $this->service->changePassword(1, [
+            'current_password' => 'OldPass1',
+            'new_password' => 'weak',
+        ]);
+    }
+
+    public function testChangePasswordThrowsWhenCurrentWrong(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->expectException(UnauthorizedException::class);
+        $this->expectExceptionMessage('auth.error.invalid_current_password');
+
+        $this->service->changePassword(1, [
+            'current_password' => 'Wrong123',
+            'new_password' => 'NewPass1',
+        ]);
+    }
+
+    public function testChangePasswordSuccessKeepsRefreshTokens(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->userRepo->expects($this->once())->method('updatePassword')->with(1, $this->isType('string'));
+        // Must NOT revoke refresh tokens (user just proved their identity with current password).
+        $this->tokenRepo->expects($this->never())->method('deleteAllByUserId');
+
+        $this->service->changePassword(1, [
+            'current_password' => 'Correct1',
+            'new_password' => 'NewPass1',
+        ]);
+    }
+
+    // ── Delete account ───────────────────────────────────────────
+
+    public function testDeleteAccountThrowsWhenEmailMismatch(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.email_confirmation_mismatch');
+
+        $this->service->deleteAccount(1, [
+            'password' => 'Pass1234',
+            'email_confirmation' => 'wrong@test.com',
+        ]);
+    }
+
+    public function testDeleteAccountThrowsWhenPasswordWrong(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->expectException(UnauthorizedException::class);
+        $this->expectExceptionMessage('auth.error.invalid_credentials');
+
+        $this->service->deleteAccount(1, [
+            'password' => 'Wrong123',
+            'email_confirmation' => 'u@test.com',
+        ]);
+    }
+
+    public function testDeleteAccountSoftDeletesAndRevokesTokens(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->userRepo->expects($this->once())->method('softDelete')->with(1);
+        $this->tokenRepo->expects($this->once())->method('deleteAllByUserId')->with(1);
+
+        $result = $this->service->deleteAccount(1, [
+            'password' => 'Correct1',
+            'email_confirmation' => 'u@test.com',
+        ]);
+
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertStringContainsString('Max-Age=0', $result['refresh_cookie']);
+    }
+
     // ── Token generation ─────────────────────────────────────────
 
     public function testGenerateAccessTokenIsValidJwt(): void
@@ -313,7 +506,7 @@ class AuthServiceTest extends TestCase
         $this->assertArrayHasKey('iat', $payload);
     }
 
-    public function testRefreshTokenIsOpaque(): void
+    public function testRefreshTokenInCookieIsOpaque(): void
     {
         $this->userRepo->method('existsByEmail')->willReturn(false);
         $this->userRepo->method('create')->willReturn([
@@ -323,7 +516,125 @@ class AuthServiceTest extends TestCase
 
         $result = $this->service->register(['email' => 'tok@test.com', 'password' => 'Test1234']);
 
+        // Extract token value from Set-Cookie string
+        preg_match('/refresh_token=([^;]+)/', $result['refresh_cookie'], $matches);
+        $this->assertNotEmpty($matches[1]);
         // Refresh token should be a hex string (64 chars = 32 bytes)
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $result['refresh_token']);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $matches[1]);
+    }
+
+    // ── Cookie format ────────────────────────────────────────────
+
+    public function testRefreshCookieContainsSecurityAttributes(): void
+    {
+        $this->userRepo->method('existsByEmail')->willReturn(false);
+        $this->userRepo->method('create')->willReturn([
+            'id' => 1,
+            'email' => 'cookie@test.com',
+        ]);
+
+        $result = $this->service->register(['email' => 'cookie@test.com', 'password' => 'Test1234']);
+
+        $cookie = $result['refresh_cookie'];
+        $this->assertStringContainsString('HttpOnly', $cookie);
+        $this->assertStringContainsString('SameSite=Lax', $cookie);
+        $this->assertStringContainsString('Path=/api/auth', $cookie);
+        $this->assertStringContainsString('Max-Age=604800', $cookie);
+        // Secure flag should NOT be present in dev (cookie_secure=false)
+        $this->assertStringNotContainsString('Secure', $cookie);
+    }
+
+    // ── Bcrypt cost ─────────────────────────────────────────────
+
+    public function testRegisterUsesBcryptCostFromConfig(): void
+    {
+        $capturedPassword = null;
+        $this->userRepo->method('existsByEmail')->willReturn(false);
+        $this->userRepo->method('create')->willReturnCallback(function (array $data) use (&$capturedPassword) {
+            $capturedPassword = $data['password'];
+            return ['id' => 1, 'email' => $data['email']];
+        });
+
+        $this->service->register(['email' => 'cost@test.com', 'password' => 'Test1234']);
+
+        $this->assertNotNull($capturedPassword);
+        $info = password_get_info($capturedPassword);
+        $this->assertSame('bcrypt', $info['algoName']);
+        $this->assertSame(12, $info['options']['cost']);
+    }
+
+    // ── Length validations ───────────────────────────────────────
+
+    public function testRegisterThrowsWhenEmailTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.email_too_long');
+
+        $longEmail = str_repeat('a', 247) . '@test.com'; // 256 chars
+        $this->service->register(['email' => $longEmail, 'password' => 'Test1234']);
+    }
+
+    public function testRegisterThrowsWhenFirstNameTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_too_long');
+
+        $this->service->register([
+            'email' => 'long@test.com',
+            'password' => 'Test1234',
+            'first_name' => str_repeat('a', 101),
+        ]);
+    }
+
+    public function testRegisterThrowsWhenLastNameTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_too_long');
+
+        $this->service->register([
+            'email' => 'long@test.com',
+            'password' => 'Test1234',
+            'last_name' => str_repeat('a', 101),
+        ]);
+    }
+
+    public function testRegisterThrowsWhenPasswordTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.password_too_long');
+
+        $longPassword = 'Aa1' . str_repeat('x', 70); // 73 bytes > 72
+        $this->service->register(['email' => 'long@test.com', 'password' => $longPassword]);
+    }
+
+    // ── Update locale ───────────────────────────────────────────
+
+    public function testUpdateLocaleSuccess(): void
+    {
+        $this->userRepo->method('updateLocale')->willReturn([
+            'id' => 1,
+            'email' => 'test@test.com',
+            'locale' => 'en',
+        ]);
+
+        $result = $this->service->updateLocale(1, 'en');
+
+        $this->assertSame('en', $result['locale']);
+    }
+
+    public function testUpdateLocaleThrowsWhenEmpty(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_required');
+
+        $this->service->updateLocale(1, '');
+    }
+
+    public function testUpdateLocaleThrowsWhenInvalid(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_locale');
+
+        $this->service->updateLocale(1, 'de');
     }
 }

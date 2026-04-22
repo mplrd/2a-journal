@@ -1,31 +1,24 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
 
+let accessToken = null
+
 function getAccessToken() {
-  return localStorage.getItem('access_token')
+  return accessToken
 }
 
-function setTokens(accessToken, refreshToken) {
-  localStorage.setItem('access_token', accessToken)
-  if (refreshToken) {
-    localStorage.setItem('refresh_token', refreshToken)
-  }
+function setTokens(at) {
+  accessToken = at
 }
 
 function clearTokens() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
+  accessToken = null
 }
 
 async function refreshAccessToken() {
-  const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) {
-    throw new Error('No refresh token')
-  }
-
   const response = await fetch(`${BASE_URL}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    credentials: 'include',
   })
 
   if (!response.ok) {
@@ -34,7 +27,7 @@ async function refreshAccessToken() {
   }
 
   const data = await response.json()
-  setTokens(data.data.access_token, data.data.refresh_token)
+  setTokens(data.data.access_token)
   return data.data.access_token
 }
 
@@ -48,7 +41,7 @@ async function request(method, path, body = null, { auth = true, retry = true } 
     }
   }
 
-  const options = { method, headers }
+  const options = { method, headers, credentials: 'include' }
   if (body !== null) {
     options.body = JSON.stringify(body)
   }
@@ -62,14 +55,64 @@ async function request(method, path, body = null, { auth = true, retry = true } 
       try {
         const newToken = await refreshAccessToken()
         headers['Authorization'] = `Bearer ${newToken}`
-        response = await fetch(`${BASE_URL}${path}`, { method, headers, body: options.body })
+        response = await fetch(`${BASE_URL}${path}`, { method, headers, body: options.body, credentials: 'include' })
       } catch {
         clearTokens()
         window.location.href = '/login'
         throw new Error('Session expired')
       }
+    } else {
+      // Body already consumed — throw directly with parsed data
+      if (response.status === 402 && !path.startsWith('/billing')) {
+        redirectToSubscribe()
+      }
+      const error = new Error(errorData?.error?.message_key || 'error.internal')
+      error.status = response.status
+      error.code = errorData?.error?.code
+      error.field = errorData?.error?.field
+      error.messageKey = errorData?.error?.message_key
+      throw error
     }
   }
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    if (response.status === 402 && !path.startsWith('/billing')) {
+      redirectToSubscribe()
+    }
+    const error = new Error(data.error?.message_key || 'error.internal')
+    error.status = response.status
+    error.code = data.error?.code
+    error.field = data.error?.field
+    error.messageKey = data.error?.message_key
+    throw error
+  }
+
+  return data
+}
+
+function redirectToSubscribe() {
+  // Avoid loop if already on the subscribe page
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/subscribe')) {
+    window.location.href = '/subscribe'
+  }
+}
+
+async function upload(path, formData) {
+  const headers = {}
+
+  const token = getAccessToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    credentials: 'include',
+  })
 
   const data = await response.json()
 
@@ -89,8 +132,11 @@ export const api = {
   get: (path, options) => request('GET', path, null, options),
   post: (path, body, options) => request('POST', path, body, options),
   put: (path, body, options) => request('PUT', path, body, options),
-  delete: (path, options) => request('DELETE', path, null, options),
+  patch: (path, body, options) => request('PATCH', path, body, options),
+  delete: (path, body = null, options) => request('DELETE', path, body, options),
+  upload,
   setTokens,
   clearTokens,
   getAccessToken,
+  refreshAccessToken,
 }

@@ -1,5 +1,6 @@
 # Dependencies
 /api/vendor/
+/api/composer.phar
 /frontend/node_modules/
 
 # Environment
@@ -9,6 +10,10 @@
 # IDE
 .idea/
 .vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/CLAUDE.local.md
 
 # Build
 /frontend/dist/

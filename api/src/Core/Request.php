@@ -11,8 +11,12 @@ class Request
     private array $headers;
     private array $routeParams;
     private array $attributes;
+    private string $clientIp;
+    private array $cookies;
+    private array $files;
+    private string $rawBody = '';
 
-    private function __construct(string $method, string $uri, array $body, array $query, array $headers)
+    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [], array $files = [], string $rawBody = '')
     {
         $this->method = $method;
         $this->uri = $uri;
@@ -21,6 +25,10 @@ class Request
         $this->headers = $headers;
         $this->routeParams = [];
         $this->attributes = [];
+        $this->clientIp = $clientIp;
+        $this->cookies = $cookies;
+        $this->files = $files;
+        $this->rawBody = $rawBody;
     }
 
     public static function capture(): self
@@ -40,11 +48,19 @@ class Request
 
         // Parse body
         $body = [];
-        $rawBody = file_get_contents('php://input');
-        if ($rawBody !== false && $rawBody !== '') {
-            $decoded = json_decode($rawBody, true);
-            if (is_array($decoded)) {
-                $body = $decoded;
+        $rawBodyString = '';
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        if (str_contains($contentType, 'multipart/form-data')) {
+            // multipart/form-data: fields are in $_POST, files in $_FILES
+            $body = $_POST;
+        } else {
+            $rawBody = file_get_contents('php://input');
+            if ($rawBody !== false && $rawBody !== '') {
+                $rawBodyString = $rawBody;
+                $decoded = json_decode($rawBody, true);
+                if (is_array($decoded)) {
+                    $body = $decoded;
+                }
             }
         }
 
@@ -59,18 +75,33 @@ class Request
         if (isset($_SERVER['CONTENT_TYPE'])) {
             $headers['CONTENT-TYPE'] = $_SERVER['CONTENT_TYPE'];
         }
+        // Apache may strip Authorization and expose it via REDIRECT_ prefix after rewrite
+        if (!isset($headers['AUTHORIZATION']) && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $headers['AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
 
-        return new self($method, $uri, $body, $_GET, $headers);
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES, $rawBodyString);
     }
 
-    public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = []): self
+    public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = [], array $cookies = [], string $rawBody = ''): self
     {
         // Normalize header keys to uppercase
         $normalized = [];
         foreach ($headers as $key => $value) {
             $normalized[strtoupper(str_replace('_', '-', $key))] = $value;
         }
-        return new self($method, $uri, $body, $query, $normalized);
+        // If no explicit rawBody is provided but we have a body array, encode it — matches production behavior
+        if ($rawBody === '' && !empty($body)) {
+            $rawBody = json_encode($body);
+        }
+        return new self($method, $uri, $body, $query, $normalized, '127.0.0.1', $cookies, [], $rawBody);
+    }
+
+    public function getRawBody(): string
+    {
+        return $this->rawBody;
     }
 
     public function getMethod(): string
@@ -105,6 +136,11 @@ class Request
         return $this->headers[$name] ?? null;
     }
 
+    public function getCookie(string $name): ?string
+    {
+        return $this->cookies[$name] ?? null;
+    }
+
     public function getRouteParams(): array
     {
         return $this->routeParams;
@@ -128,5 +164,20 @@ class Request
     public function getAttribute(string $name, mixed $default = null): mixed
     {
         return $this->attributes[$name] ?? $default;
+    }
+
+    public function getClientIp(): string
+    {
+        return $this->clientIp;
+    }
+
+    public function getFile(string $name): ?array
+    {
+        return $this->files[$name] ?? null;
+    }
+
+    public function setFiles(array $files): void
+    {
+        $this->files = $files;
     }
 }

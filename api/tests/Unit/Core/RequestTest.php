@@ -85,4 +85,11 @@ class RequestTest extends TestCase
         $this->assertNull($request->getRouteParam('missing'));
         $this->assertSame('default', $request->getRouteParam('missing', 'default'));
     }
+
+    public function testGetClientIpDefaultsTo127(): void
+    {
+        $request = Request::create('GET', '/test');
+
+        $this->assertSame('127.0.0.1', $request->getClientIp());
+    }
 }

@@ -1,5 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '@/services/api'
+import pinia from '@/stores'
+import { useAuthStore } from '@/stores/auth'
+import { useFeaturesStore } from '@/stores/features'
+import { useBillingStore } from '@/stores/billing'
+import { useOnboarding } from '@/composables/useOnboarding'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,6 +22,35 @@ const router = createRouter({
       meta: { guest: true },
     },
     {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('@/views/ForgotPasswordView.vue'),
+      meta: { guest: true },
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('@/views/ResetPasswordView.vue'),
+      meta: { guest: true },
+    },
+    {
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('@/views/VerifyEmailView.vue'),
+    },
+    {
+      path: '/subscribe',
+      name: 'subscribe',
+      component: () => import('@/views/SubscribeView.vue'),
+      meta: { auth: true, bypassBilling: true },
+    },
+    {
+      path: '/subscribe/success',
+      name: 'subscribe-success',
+      component: () => import('@/views/SubscribeSuccessView.vue'),
+      meta: { auth: true, bypassBilling: true },
+    },
+    {
       path: '/',
       component: () => import('@/components/layout/AppLayout.vue'),
       meta: { auth: true },
@@ -26,19 +60,94 @@ const router = createRouter({
           name: 'dashboard',
           component: () => import('@/views/DashboardView.vue'),
         },
+        {
+          path: 'accounts',
+          name: 'accounts',
+          component: () => import('@/views/AccountsView.vue'),
+        },
+        {
+          path: 'positions',
+          name: 'positions',
+          component: () => import('@/views/PositionsView.vue'),
+        },
+        {
+          path: 'orders',
+          name: 'orders',
+          component: () => import('@/views/OrdersView.vue'),
+        },
+        {
+          path: 'trades',
+          name: 'trades',
+          component: () => import('@/views/TradesView.vue'),
+        },
+        {
+          path: 'performance',
+          name: 'performance',
+          component: () => import('@/views/PerformanceView.vue'),
+        },
+        {
+          path: 'account',
+          name: 'account',
+          component: () => import('@/views/AccountView.vue'),
+        },
       ],
     },
   ],
 })
 
-router.beforeEach((to) => {
+let initPromise = null
+
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore(pinia)
+  const featuresStore = useFeaturesStore(pinia)
+
+  // On first navigation, attempt silent refresh to restore session
+  if (!authStore.initialized) {
+    if (!initPromise) {
+      initPromise = Promise.all([authStore.initSession(), featuresStore.load()])
+    }
+    await initPromise
+  }
+
   const token = api.getAccessToken()
 
   if (to.meta.auth && !token) {
     return { name: 'login' }
   }
 
+  if (to.meta.auth && token) {
+    // Routes that explicitly opt out of billing/onboarding gating (/subscribe, /subscribe/success)
+    if (to.meta.bypassBilling) {
+      return
+    }
+
+    // Billing gate
+    const billingStore = useBillingStore(pinia)
+    if (billingStore.status === null) {
+      try {
+        await billingStore.fetchStatus()
+      } catch {
+        // fallthrough: the 402 interceptor will handle redirect if subsequent calls fail
+      }
+    }
+    if (billingStore.status !== null && !billingStore.hasAccess) {
+      return { name: 'subscribe' }
+    }
+
+    // Onboarding gate (only for users who have active billing)
+    const { ensureAccountsLoaded, isOnboarding, isRouteAllowed, onboardingRoute } = useOnboarding()
+    await ensureAccountsLoaded()
+
+    if (isOnboarding.value && !isRouteAllowed(to.name)) {
+      return onboardingRoute.value
+    }
+  }
+
   if (to.meta.guest && token) {
+    const { isOnboarding, onboardingRoute } = useOnboarding()
+    if (isOnboarding.value && onboardingRoute.value) {
+      return onboardingRoute.value
+    }
     return { name: 'dashboard' }
   }
 })

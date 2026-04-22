@@ -1,6 +1,10 @@
 RewriteEngine On
 RewriteBase /api/
 
+# Pass Authorization header to PHP (Apache strips it by default)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Redirect everything to index.php (front controller)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
