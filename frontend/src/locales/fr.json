@@ -422,6 +422,8 @@
     "point_value": "Valeur du point",
     "currency": "Devise",
     "confirm_delete": "Êtes-vous sûr de vouloir supprimer cet actif ?",
+    "confirm_delete_title": "Supprimer cet actif ?",
+    "confirm_delete_line": "L'actif \"{code}\" sera supprimé. Cette action est irréversible.",
     "add_symbol": "Nouvel actif",
     "types": {
       "INDEX": "Indice",

@@ -422,6 +422,8 @@
     "point_value": "Point value",
     "currency": "Currency",
     "confirm_delete": "Are you sure you want to delete this asset?",
+    "confirm_delete_title": "Delete this asset?",
+    "confirm_delete_line": "The \"{code}\" asset will be deleted. This action cannot be undone.",
     "add_symbol": "New asset",
     "types": {
       "INDEX": "Index",

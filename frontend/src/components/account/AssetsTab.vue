@@ -7,6 +7,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import Dialog from 'primevue/dialog'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import { SymbolType } from '@/constants/enums'
 const { t } = useI18n()
@@ -15,6 +16,9 @@ const store = useSymbolsStore()
 
 const showForm = ref(false)
 const editingSymbol = ref(null)
+const deleteDialogVisible = ref(false)
+const symbolToDelete = ref(null)
+const deleting = ref(false)
 
 onMounted(() => {
   store.fetchSymbols(true)
@@ -45,14 +49,23 @@ async function handleSave(data) {
   }
 }
 
-async function handleDelete(symbol) {
-  if (confirm(t('symbols.confirm_delete'))) {
-    try {
-      await store.deleteSymbol(symbol.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('symbols.success.deleted'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
+function handleDelete(symbol) {
+  symbolToDelete.value = symbol
+  deleteDialogVisible.value = true
+}
+
+async function confirmDelete() {
+  if (!symbolToDelete.value) return
+  deleting.value = true
+  try {
+    await store.deleteSymbol(symbolToDelete.value.id)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('symbols.success.deleted'), life: 3000 })
+    deleteDialogVisible.value = false
+    symbolToDelete.value = null
+  } catch {
+    // error is set in the store
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -115,5 +128,27 @@ function typeSeverity(type) {
       :loading="store.loading"
       @save="handleSave"
     />
+
+    <Dialog
+      v-model:visible="deleteDialogVisible"
+      :header="t('symbols.confirm_delete_title')"
+      :modal="true"
+      :closable="true"
+      :style="{ width: '420px' }"
+    >
+      <p class="text-gray-700 dark:text-gray-300">
+        {{ t('symbols.confirm_delete_line', { code: symbolToDelete?.code }) }}
+      </p>
+      <template #footer>
+        <Button :label="t('common.cancel')" severity="secondary" @click="deleteDialogVisible = false" />
+        <Button
+          :label="t('common.delete')"
+          severity="danger"
+          :loading="deleting"
+          data-testid="confirm-delete-symbol"
+          @click="confirmDelete"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
