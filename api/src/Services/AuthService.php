@@ -303,7 +303,8 @@ class AuthService
 
     private const SUPPORTED_LOCALES = ['fr', 'en'];
     private const SUPPORTED_THEMES = ['light', 'dark'];
-    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale'];
+    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent'];
+    private const BE_THRESHOLD_MAX = 5.0;
     private const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     private const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2 MB
     private const IMAGE_EXTENSIONS = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
@@ -346,6 +347,19 @@ class AuthService
             if (!in_array($filtered['locale'], self::SUPPORTED_LOCALES, true)) {
                 throw new ValidationException('auth.error.invalid_locale', 'locale');
             }
+        }
+
+        // Validate BE threshold (% of entry price, 0 disables the rule)
+        if (array_key_exists('be_threshold_percent', $filtered)) {
+            $raw = $filtered['be_threshold_percent'];
+            if (!is_numeric($raw)) {
+                throw new ValidationException('auth.error.invalid_be_threshold', 'be_threshold_percent');
+            }
+            $value = (float) $raw;
+            if ($value < 0 || $value > self::BE_THRESHOLD_MAX) {
+                throw new ValidationException('auth.error.invalid_be_threshold', 'be_threshold_percent');
+            }
+            $filtered['be_threshold_percent'] = $value;
         }
 
         return $this->userRepo->updateProfile($userId, $filtered);

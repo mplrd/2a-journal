@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
     default_currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
     locale VARCHAR(5) NOT NULL DEFAULT 'fr',
     theme VARCHAR(20) NOT NULL DEFAULT 'light',
+    be_threshold_percent DECIMAL(6,4) NOT NULL DEFAULT 0,
     profile_picture VARCHAR(255) NULL DEFAULT NULL,
     onboarding_completed_at TIMESTAMP NULL DEFAULT NULL,
     email_verified_at TIMESTAMP NULL DEFAULT NULL,

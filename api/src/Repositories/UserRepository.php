@@ -32,7 +32,7 @@ class UserRepository
     public function findByEmail(string $email): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, password, first_name, last_name, timezone, default_currency, locale, theme, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
+            'SELECT id, email, password, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
         );
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch();
@@ -43,7 +43,7 @@ class UserRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
+            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
         $user = $stmt->fetch();
@@ -125,7 +125,7 @@ class UserRepository
         $stmt->execute(['id' => $id, 'password' => $hashedPassword]);
     }
 
-    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'profile_picture'];
+    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'profile_picture'];
 
     public function updateProfile(int $id, array $data): ?array
     {

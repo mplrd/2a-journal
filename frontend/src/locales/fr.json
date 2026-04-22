@@ -72,6 +72,7 @@
       "invalid_timezone": "Fuseau horaire invalide",
       "invalid_currency": "Devise invalide",
       "invalid_theme": "Thème invalide",
+      "invalid_be_threshold": "Le seuil BE doit être un nombre entre 0 et 5 (%)",
       "password_too_long": "Le mot de passe est trop long (72 caractères maximum)",
       "invalid_image_type": "Format d'image non supporté (JPG, PNG ou WebP uniquement)",
       "image_too_large": "L'image est trop volumineuse (2 Mo maximum)",
@@ -483,6 +484,9 @@
     "theme_light": "Clair",
     "theme_dark": "Sombre",
     "save": "Enregistrer",
+    "stats_preferences": "Préférences statistiques",
+    "be_threshold": "Seuil BE (%)",
+    "be_threshold_hint": "Un trade clôturé à moins de ce % du prix d'entrée sera classé break-even dans les stats (pour absorber le spread). 0 = désactivé.",
     "tabs": {
       "profile": "Profil",
       "assets": "Mes Actifs",

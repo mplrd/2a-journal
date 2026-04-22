@@ -21,7 +21,7 @@ class StatsServiceTest extends TestCase
         $this->statsRepo = $this->createMock(StatsRepository::class);
         $this->accountRepo = $this->createMock(AccountRepository::class);
         $this->userRepo = $this->createMock(UserRepository::class);
-        $this->userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris']);
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris', 'be_threshold_percent' => 0]);
         $this->service = new StatsService($this->statsRepo, $this->accountRepo, $this->userRepo);
     }
 
@@ -79,12 +79,12 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getOverview')
-            ->with(1, ['account_id' => 5])
+            ->with(1, ['account_id' => 5, 'be_threshold_percent' => 0.0])
             ->willReturn($this->fakeOverview());
 
         $this->statsRepo->expects($this->once())
             ->method('getRecentTrades')
-            ->with(1, 5, ['account_id' => 5])
+            ->with(1, 5, ['account_id' => 5, 'be_threshold_percent' => 0.0])
             ->willReturn($this->fakeRecentTrades());
 
         $result = $this->service->getDashboard(1, ['account_id' => 5]);
@@ -146,7 +146,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getOverview')
-            ->with(1, ['date_from' => '2026-01-01', 'date_to' => '2026-01-31']);
+            ->with(1, ['date_from' => '2026-01-01', 'date_to' => '2026-01-31', 'be_threshold_percent' => 0.0]);
 
         $this->service->getDashboard(1, ['date_from' => '2026-01-01', 'date_to' => '2026-01-31']);
     }
@@ -176,7 +176,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getOverview')
-            ->with(1, ['direction' => 'BUY']);
+            ->with(1, ['direction' => 'BUY', 'be_threshold_percent' => 0.0]);
 
         $this->service->getDashboard(1, ['direction' => 'BUY']);
     }
@@ -188,7 +188,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getOverview')
-            ->with(1, ['symbols' => ['NASDAQ', 'DAX']]);
+            ->with(1, ['symbols' => ['NASDAQ', 'DAX'], 'be_threshold_percent' => 0.0]);
 
         $this->service->getDashboard(1, ['symbols' => ['NASDAQ', 'DAX']]);
     }
@@ -200,7 +200,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getOverview')
-            ->with(1, ['setups' => ['Breakout', 'Pullback']]);
+            ->with(1, ['setups' => ['Breakout', 'Pullback'], 'be_threshold_percent' => 0.0]);
 
         $this->service->getDashboard(1, ['setups' => ['Breakout', 'Pullback']]);
     }
@@ -222,7 +222,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getTradesForSessionStats')
-            ->with(1, [])
+            ->with(1, ['be_threshold_percent' => 0.0])
             ->willReturn($trades);
 
         $result = $this->service->getStatsBySession(1);
@@ -283,7 +283,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getStatsByAccount')
-            ->with(1, [])
+            ->with(1, ['be_threshold_percent' => 0.0])
             ->willReturn($expected);
 
         $result = $this->service->getStatsByAccount(1);
@@ -303,7 +303,7 @@ class StatsServiceTest extends TestCase
 
         $this->statsRepo->expects($this->once())
             ->method('getStatsByAccountType')
-            ->with(1, [])
+            ->with(1, ['be_threshold_percent' => 0.0])
             ->willReturn($expected);
 
         $result = $this->service->getStatsByAccountType(1);
@@ -323,5 +323,71 @@ class StatsServiceTest extends TestCase
         $this->assertCount(0, $result['cumulative_pnl']);
         $this->assertSame(0, $result['win_loss']['win']);
         $this->assertCount(0, $result['pnl_by_symbol']);
+    }
+
+    // ── BE threshold propagation ────────────────────────────────
+
+    public function testGetDashboardPropagatesUserBeThreshold(): void
+    {
+        $statsRepo = $this->createMock(StatsRepository::class);
+        $userRepo = $this->createMock(UserRepository::class);
+        $userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris', 'be_threshold_percent' => 0.05]);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+
+        $statsRepo->expects($this->once())
+            ->method('getOverview')
+            ->with(1, ['be_threshold_percent' => 0.05])
+            ->willReturn($this->fakeOverview());
+        $statsRepo->method('getRecentTrades')->willReturn([]);
+
+        $service->getDashboard(1);
+    }
+
+    public function testGetStatsBySymbolPropagatesUserBeThreshold(): void
+    {
+        $statsRepo = $this->createMock(StatsRepository::class);
+        $userRepo = $this->createMock(UserRepository::class);
+        $userRepo->method('findById')->willReturn(['id' => 1, 'be_threshold_percent' => 0.02]);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+
+        $statsRepo->expects($this->once())
+            ->method('getStatsBySymbol')
+            ->with(1, ['be_threshold_percent' => 0.02])
+            ->willReturn([]);
+
+        $service->getStatsBySymbol(1);
+    }
+
+    public function testBeThresholdDefaultsToZeroWhenUserFieldMissing(): void
+    {
+        // Robustesse : si le user n'a pas encore la colonne (migration partielle), on tombe sur 0 (legacy).
+        $statsRepo = $this->createMock(StatsRepository::class);
+        $userRepo = $this->createMock(UserRepository::class);
+        $userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'UTC']);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+
+        $statsRepo->expects($this->once())
+            ->method('getStatsBySymbol')
+            ->with(1, ['be_threshold_percent' => 0.0])
+            ->willReturn([]);
+
+        $service->getStatsBySymbol(1);
+    }
+
+    public function testGetChartsPropagatesBeThreshold(): void
+    {
+        $statsRepo = $this->createMock(StatsRepository::class);
+        $userRepo = $this->createMock(UserRepository::class);
+        $userRepo->method('findById')->willReturn(['id' => 1, 'be_threshold_percent' => 0.03]);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+
+        $statsRepo->expects($this->once())
+            ->method('getWinLossDistribution')
+            ->with(1, ['be_threshold_percent' => 0.03])
+            ->willReturn(['win' => 0, 'loss' => 0, 'be' => 0]);
+        $statsRepo->method('getCumulativePnl')->willReturn([]);
+        $statsRepo->method('getPnlBySymbol')->willReturn([]);
+
+        $service->getCharts(1);
     }
 }

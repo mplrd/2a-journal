@@ -194,6 +194,10 @@ foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitTy
     }
     $pnl = round($pnl, 2);
 
+    // Calculate pnl_percent (required for BE threshold classification in stats)
+    $entryValue = $entry * $size;
+    $pnlPercent = $entryValue > 0 ? round($pnl / $entryValue * 100, 4) : 0;
+
     // Calculate risk_reward
     $risk = $slPoints * $size;
     if ($risk > 0) {
@@ -208,14 +212,15 @@ foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitTy
     $durationMinutes = (int) (($closed->getTimestamp() - $opened->getTimestamp()) / 60);
 
     // Create trade
-    $pdo->prepare("INSERT INTO trades (position_id, opened_at, closed_at, remaining_size, status, exit_type, pnl, risk_reward, duration_minutes, avg_exit_price)
-        VALUES (:pid, :opened, :closed, 0, 'CLOSED', :exit_type, :pnl, :rr, :dur, :exit_price)")
+    $pdo->prepare("INSERT INTO trades (position_id, opened_at, closed_at, remaining_size, status, exit_type, pnl, pnl_percent, risk_reward, duration_minutes, avg_exit_price)
+        VALUES (:pid, :opened, :closed, 0, 'CLOSED', :exit_type, :pnl, :pnl_percent, :rr, :dur, :exit_price)")
         ->execute([
             'pid' => $positionId,
             'opened' => $openedAt,
             'closed' => $closedAt,
             'exit_type' => $exitType,
             'pnl' => $pnl,
+            'pnl_percent' => $pnlPercent,
             'rr' => $rr,
             'dur' => $durationMinutes,
             'exit_price' => $exitPrice,

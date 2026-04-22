@@ -228,7 +228,15 @@ class StatsService
             $validated['setups'] = array_values(array_filter($filters['setups'], 'is_string'));
         }
 
+        $validated['be_threshold_percent'] = $this->getUserBeThreshold($userId);
+
         return $validated;
+    }
+
+    private function getUserBeThreshold(int $userId): float
+    {
+        $user = $this->userRepo->findById($userId);
+        return isset($user['be_threshold_percent']) ? (float) $user['be_threshold_percent'] : 0.0;
     }
 
     private function isValidDate(string $date): bool

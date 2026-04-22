@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from 'primevue/usetoast'
 import InputText from 'primevue/inputtext'
+import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 
@@ -23,6 +24,7 @@ const form = ref({
   default_currency: '',
   theme: '',
   locale: '',
+  be_threshold_percent: 0,
 })
 
 const timezones = Intl.supportedValuesOf('timeZone')
@@ -68,6 +70,7 @@ onMounted(() => {
       default_currency: authStore.user.default_currency || 'EUR',
       theme: authStore.user.theme || 'light',
       locale: authStore.user.locale || 'fr',
+      be_threshold_percent: Number(authStore.user.be_threshold_percent) || 0,
     }
   }
 })
@@ -243,6 +246,23 @@ async function handleSave() {
           data-testid="select-locale"
           class="w-full"
         />
+      </div>
+
+      <!-- Stats preferences -->
+      <div class="pt-4 mt-2 border-t border-gray-200 dark:border-gray-700">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ t('account.stats_preferences') }}</h3>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.be_threshold') }}</label>
+        <InputNumber
+          v-model="form.be_threshold_percent"
+          :min="0"
+          :max="5"
+          :maxFractionDigits="4"
+          mode="decimal"
+          locale="en-US"
+          data-testid="input-be-threshold"
+          class="w-full"
+        />
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.be_threshold_hint') }}</p>
       </div>
 
       <!-- Save button -->

@@ -316,6 +316,54 @@ class AuthServiceTest extends TestCase
         $this->service->getProfile(999);
     }
 
+    public function testUpdateProfileAcceptsValidBeThresholdPercent(): void
+    {
+        $this->userRepo
+            ->expects($this->once())
+            ->method('updateProfile')
+            ->with(1, ['be_threshold_percent' => 0.05])
+            ->willReturn(['id' => 1, 'be_threshold_percent' => 0.05]);
+
+        $result = $this->service->updateProfile(1, ['be_threshold_percent' => 0.05]);
+
+        $this->assertEquals(0.05, (float) $result['be_threshold_percent']);
+    }
+
+    public function testUpdateProfileAcceptsZeroBeThresholdPercent(): void
+    {
+        $this->userRepo
+            ->expects($this->once())
+            ->method('updateProfile')
+            ->with(1, ['be_threshold_percent' => 0])
+            ->willReturn(['id' => 1, 'be_threshold_percent' => 0]);
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => 0]);
+    }
+
+    public function testUpdateProfileRejectsNegativeBeThresholdPercent(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_be_threshold');
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => -0.01]);
+    }
+
+    public function testUpdateProfileRejectsBeThresholdPercentAboveMax(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_be_threshold');
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => 5.01]);
+    }
+
+    public function testUpdateProfileRejectsNonNumericBeThresholdPercent(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_be_threshold');
+
+        $this->service->updateProfile(1, ['be_threshold_percent' => 'abc']);
+    }
+
     // ── Token generation ─────────────────────────────────────────
 
     public function testGenerateAccessTokenIsValidJwt(): void

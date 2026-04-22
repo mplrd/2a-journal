@@ -16,6 +16,8 @@ class StatsRepository
 
     /**
      * Build WHERE clause and params from filters.
+     * BE threshold classification is injected via `injectBeThreshold()` into the SQL itself,
+     * not via bound param (emulated prepares are OFF and named placeholders cannot be repeated).
      * @return array{0: string, 1: array}
      */
     private function buildWhereClause(int $userId, array $filters = []): array
@@ -66,6 +68,26 @@ class StatsRepository
         return [$where, $params];
     }
 
+    /**
+     * Inject the BE threshold (% of entry price) as a safe numeric literal into the SQL.
+     * The value is validated upstream (AuthService: 0..5 float) and read from the user's profile,
+     * never directly from user input — safe to format into SQL.
+     * Prefer this over bound params because named placeholders cannot be repeated when
+     * ATTR_EMULATE_PREPARES is off, and the classification SQL uses the threshold in multiple CASE WHEN.
+     */
+    private function injectBeThreshold(string $sql, array $filters): string
+    {
+        $threshold = isset($filters['be_threshold_percent']) ? (float) $filters['be_threshold_percent'] : 0.0;
+        // Clamp to the documented range to defend against any unvalidated path
+        if ($threshold < 0) {
+            $threshold = 0.0;
+        } elseif ($threshold > 100) {
+            $threshold = 100.0;
+        }
+        $literal = number_format($threshold, 4, '.', '');
+        return str_replace(':be_threshold', $literal, $sql);
+    }
+
     public function getOverview(int $userId, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
@@ -73,17 +95,17 @@ class StatsRepository
         $sql = "SELECT
                     COUNT(*) AS total_trades,
                     COALESCE(SUM(t.pnl), 0) AS total_pnl,
-                    SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS winning_trades,
-                    SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) AS losing_trades,
-                    SUM(CASE WHEN t.pnl = 0 THEN 1 ELSE 0 END) AS be_trades,
+                    SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) AS winning_trades,
+                    SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN 1 ELSE 0 END) AS losing_trades,
+                    SUM(CASE WHEN t.pnl_percent BETWEEN -:be_threshold AND :be_threshold THEN 1 ELSE 0 END) AS be_trades,
                     CASE WHEN COUNT(*) > 0
-                        THEN ROUND(SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+                        THEN ROUND(SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
                         ELSE 0
                     END AS win_rate,
-                    CASE WHEN SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END) > 0
+                    CASE WHEN SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END) > 0
                         THEN ROUND(
-                            SUM(CASE WHEN t.pnl > 0 THEN t.pnl ELSE 0 END)
-                            / SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END),
+                            SUM(CASE WHEN t.pnl_percent > :be_threshold THEN t.pnl ELSE 0 END)
+                            / SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END),
                             2
                         )
                         ELSE NULL
@@ -95,7 +117,7 @@ class StatsRepository
                 INNER JOIN positions p ON p.id = t.position_id
                 $where";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         $row = $stmt->fetch();
 
@@ -149,14 +171,14 @@ class StatsRepository
         [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT
-                    SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS win,
-                    SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) AS loss,
-                    SUM(CASE WHEN t.pnl = 0 THEN 1 ELSE 0 END) AS be
+                    SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) AS win,
+                    SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN 1 ELSE 0 END) AS loss,
+                    SUM(CASE WHEN t.pnl_percent BETWEEN -:be_threshold AND :be_threshold THEN 1 ELSE 0 END) AS be
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 $where";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         $row = $stmt->fetch();
 
@@ -189,18 +211,18 @@ class StatsRepository
     private function dimensionStatsSelect(): string
     {
         return "COUNT(*) AS total_trades,
-                SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) AS wins,
-                SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) AS losses,
+                SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN 1 ELSE 0 END) AS losses,
                 CASE WHEN COUNT(*) > 0
-                    THEN ROUND(SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+                    THEN ROUND(SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
                     ELSE 0
                 END AS win_rate,
                 COALESCE(SUM(t.pnl), 0) AS total_pnl,
                 ROUND(AVG(t.risk_reward), 2) AS avg_rr,
-                CASE WHEN SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END) > 0
+                CASE WHEN SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END) > 0
                     THEN ROUND(
-                        SUM(CASE WHEN t.pnl > 0 THEN t.pnl ELSE 0 END)
-                        / SUM(CASE WHEN t.pnl < 0 THEN ABS(t.pnl) ELSE 0 END),
+                        SUM(CASE WHEN t.pnl_percent > :be_threshold THEN t.pnl ELSE 0 END)
+                        / SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END),
                         2
                     )
                     ELSE NULL
@@ -219,7 +241,7 @@ class StatsRepository
                 GROUP BY p.symbol
                 ORDER BY total_pnl DESC";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
@@ -236,7 +258,7 @@ class StatsRepository
                 GROUP BY p.direction
                 ORDER BY total_pnl DESC";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
@@ -255,7 +277,7 @@ class StatsRepository
                 GROUP BY s.setup
                 ORDER BY total_pnl DESC";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
@@ -279,7 +301,7 @@ class StatsRepository
                 GROUP BY period
                 ORDER BY period ASC";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
@@ -372,7 +394,7 @@ class StatsRepository
                 GROUP BY p.account_id, a.name, a.account_type
                 ORDER BY total_pnl DESC";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
@@ -390,7 +412,7 @@ class StatsRepository
                 GROUP BY a.account_type
                 ORDER BY total_pnl DESC";
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
