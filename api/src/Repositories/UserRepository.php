@@ -125,6 +125,14 @@ class UserRepository
         $stmt->execute(['id' => $id, 'password' => $hashedPassword]);
     }
 
+    public function softDelete(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
     private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'profile_picture'];
 
     public function updateProfile(int $id, array $data): ?array

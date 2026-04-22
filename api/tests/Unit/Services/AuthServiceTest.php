@@ -364,6 +364,126 @@ class AuthServiceTest extends TestCase
         $this->service->updateProfile(1, ['be_threshold_percent' => 'abc']);
     }
 
+    // ── Change password ──────────────────────────────────────────
+
+    public function testChangePasswordThrowsWhenCurrentMissing(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_required');
+
+        $this->service->changePassword(1, ['new_password' => 'NewPass1']);
+    }
+
+    public function testChangePasswordThrowsWhenNewMissing(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.field_required');
+
+        $this->service->changePassword(1, ['current_password' => 'OldPass1']);
+    }
+
+    public function testChangePasswordThrowsWhenNewTooWeak(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.password_too_weak');
+
+        $this->service->changePassword(1, [
+            'current_password' => 'OldPass1',
+            'new_password' => 'weak',
+        ]);
+    }
+
+    public function testChangePasswordThrowsWhenCurrentWrong(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->expectException(UnauthorizedException::class);
+        $this->expectExceptionMessage('auth.error.invalid_current_password');
+
+        $this->service->changePassword(1, [
+            'current_password' => 'Wrong123',
+            'new_password' => 'NewPass1',
+        ]);
+    }
+
+    public function testChangePasswordSuccessKeepsRefreshTokens(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->userRepo->expects($this->once())->method('updatePassword')->with(1, $this->isType('string'));
+        // Must NOT revoke refresh tokens (user just proved their identity with current password).
+        $this->tokenRepo->expects($this->never())->method('deleteAllByUserId');
+
+        $this->service->changePassword(1, [
+            'current_password' => 'Correct1',
+            'new_password' => 'NewPass1',
+        ]);
+    }
+
+    // ── Delete account ───────────────────────────────────────────
+
+    public function testDeleteAccountThrowsWhenEmailMismatch(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.email_confirmation_mismatch');
+
+        $this->service->deleteAccount(1, [
+            'password' => 'Pass1234',
+            'email_confirmation' => 'wrong@test.com',
+        ]);
+    }
+
+    public function testDeleteAccountThrowsWhenPasswordWrong(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->expectException(UnauthorizedException::class);
+        $this->expectExceptionMessage('auth.error.invalid_credentials');
+
+        $this->service->deleteAccount(1, [
+            'password' => 'Wrong123',
+            'email_confirmation' => 'u@test.com',
+        ]);
+    }
+
+    public function testDeleteAccountSoftDeletesAndRevokesTokens(): void
+    {
+        $this->userRepo->method('findById')->willReturn(['id' => 1, 'email' => 'u@test.com']);
+        $this->userRepo->method('findByEmail')->willReturn([
+            'id' => 1,
+            'email' => 'u@test.com',
+            'password' => password_hash('Correct1', PASSWORD_BCRYPT),
+        ]);
+
+        $this->userRepo->expects($this->once())->method('softDelete')->with(1);
+        $this->tokenRepo->expects($this->once())->method('deleteAllByUserId')->with(1);
+
+        $result = $this->service->deleteAccount(1, [
+            'password' => 'Correct1',
+            'email_confirmation' => 'u@test.com',
+        ]);
+
+        $this->assertArrayHasKey('refresh_cookie', $result);
+        $this->assertStringContainsString('Max-Age=0', $result['refresh_cookie']);
+    }
+
     // ── Token generation ─────────────────────────────────────────
 
     public function testGenerateAccessTokenIsValidJwt(): void

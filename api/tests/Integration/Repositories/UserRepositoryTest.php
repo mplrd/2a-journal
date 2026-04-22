@@ -181,4 +181,26 @@ class UserRepositoryTest extends TestCase
 
         $this->assertEquals(0.0500, (float) $updated['be_threshold_percent']);
     }
+
+    public function testSoftDeleteSetsDeletedAtAndHidesFromFinders(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'todelete@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $id = (int) $created['id'];
+
+        $this->repo->softDelete($id);
+
+        $this->assertNull($this->repo->findById($id));
+        $this->assertNull($this->repo->findByEmail('todelete@example.com'));
+        $this->assertFalse($this->repo->existsByEmail('todelete@example.com'));
+
+        // Row still exists physically (soft delete)
+        $stmt = $this->pdo->prepare('SELECT deleted_at FROM users WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        $this->assertNotFalse($row);
+        $this->assertNotNull($row['deleted_at']);
+    }
 }

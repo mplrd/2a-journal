@@ -38,15 +38,17 @@ $pdo = Database::getConnection();
 $email = 'demo@2a.journal';
 $password = 'Demo*123';
 
-// Check if demo user already exists
-$stmt = $pdo->prepare('SELECT id FROM users WHERE email = :email AND deleted_at IS NULL');
+// Check if demo user exists (including soft-deleted rows — the email UNIQUE index
+// ignores deleted_at, so we must clean up any prior row before re-inserting).
+$stmt = $pdo->prepare('SELECT id, deleted_at FROM users WHERE email = :email');
 $stmt->execute(['email' => $email]);
-$existingId = $stmt->fetchColumn();
+$existing = $stmt->fetch();
 
-if ($existingId) {
-    echo "Demo user already exists (id={$existingId}). Cleaning up...\n";
+if ($existing) {
+    $state = $existing['deleted_at'] ? 'soft-deleted' : 'active';
+    echo "Demo user already exists (id={$existing['id']}, {$state}). Cleaning up...\n";
     // Delete cascades take care of accounts, positions, trades, etc.
-    $pdo->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $existingId]);
+    $pdo->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $existing['id']]);
 }
 
 // ── 1. Create user ──────────────────────────────────────────

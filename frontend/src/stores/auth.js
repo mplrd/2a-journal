@@ -111,6 +111,22 @@ export const useAuthStore = defineStore('auth', () => {
     return authService.resendVerification()
   }
 
+  async function changePassword(data) {
+    return authService.changePassword(data)
+  }
+
+  async function deleteAccount(data) {
+    const response = await authService.deleteAccount(data)
+    user.value = null
+    api.clearTokens()
+    useAccountsStore().$reset()
+    useSymbolsStore().$reset()
+    usePositionsStore().$reset()
+    useOrdersStore().$reset()
+    useTradesStore().$reset()
+    return response
+  }
+
   async function initSession() {
     try {
       const response = await api.refreshAccessToken()
@@ -141,6 +157,8 @@ export const useAuthStore = defineStore('auth', () => {
     updateProfile,
     uploadProfilePicture,
     resendVerification,
+    changePassword,
+    deleteAccount,
     initSession,
   }
 })

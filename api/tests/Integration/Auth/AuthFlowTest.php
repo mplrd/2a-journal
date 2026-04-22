@@ -992,4 +992,177 @@ class AuthFlowTest extends TestCase
         }
         @unlink($tmpFile);
     }
+
+    // ── Change password ──────────────────────────────────────────
+
+    public function testChangePasswordRequiresAuth(): void
+    {
+        $request = Request::create('POST', '/auth/change-password', [
+            'current_password' => 'Test1234',
+            'new_password' => 'NewPass1',
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    public function testChangePasswordRejectsWrongCurrent(): void
+    {
+        $accessToken = $this->registerAndGetToken('changepwd-wrong@test.com');
+
+        $request = Request::create('POST', '/auth/change-password', [
+            'current_password' => 'Wrong999',
+            'new_password' => 'NewPass1',
+        ], [], ['Authorization' => "Bearer $accessToken"]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+            $this->assertSame('auth.error.invalid_current_password', $e->getMessageKey());
+        }
+    }
+
+    public function testChangePasswordRejectsWeakNew(): void
+    {
+        $accessToken = $this->registerAndGetToken('changepwd-weak@test.com');
+
+        $request = Request::create('POST', '/auth/change-password', [
+            'current_password' => 'Test1234',
+            'new_password' => 'weak',
+        ], [], ['Authorization' => "Bearer $accessToken"]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.password_too_weak', $e->getMessageKey());
+        }
+    }
+
+    public function testChangePasswordSuccessAndLoginWithNew(): void
+    {
+        $accessToken = $this->registerAndGetToken('changepwd-ok@test.com');
+
+        $request = Request::create('POST', '/auth/change-password', [
+            'current_password' => 'Test1234',
+            'new_password' => 'BrandNew1',
+        ], [], ['Authorization' => "Bearer $accessToken"]);
+        $response = $this->router->dispatch($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+
+        // Login with new password works
+        $request = Request::create('POST', '/auth/login', [
+            'email' => 'changepwd-ok@test.com',
+            'password' => 'BrandNew1',
+        ]);
+        $response = $this->router->dispatch($request);
+        $this->assertSame(200, $response->getStatusCode());
+
+        // Login with old password fails
+        $request = Request::create('POST', '/auth/login', [
+            'email' => 'changepwd-ok@test.com',
+            'password' => 'Test1234',
+        ]);
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    // ── Delete account ───────────────────────────────────────────
+
+    public function testDeleteAccountRequiresAuth(): void
+    {
+        $request = Request::create('DELETE', '/auth/me', [
+            'password' => 'Test1234',
+            'email_confirmation' => 'somebody@test.com',
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    public function testDeleteAccountRejectsEmailMismatch(): void
+    {
+        $accessToken = $this->registerAndGetToken('del-mismatch@test.com');
+
+        $request = Request::create('DELETE', '/auth/me', [
+            'password' => 'Test1234',
+            'email_confirmation' => 'wrong@test.com',
+        ], [], ['Authorization' => "Bearer $accessToken"]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('auth.error.email_confirmation_mismatch', $e->getMessageKey());
+        }
+    }
+
+    public function testDeleteAccountRejectsWrongPassword(): void
+    {
+        $accessToken = $this->registerAndGetToken('del-pwd@test.com');
+
+        $request = Request::create('DELETE', '/auth/me', [
+            'password' => 'Wrong999',
+            'email_confirmation' => 'del-pwd@test.com',
+        ], [], ['Authorization' => "Bearer $accessToken"]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    public function testDeleteAccountSuccessThenLoginFails(): void
+    {
+        $accessToken = $this->registerAndGetToken('del-ok@test.com');
+
+        $request = Request::create('DELETE', '/auth/me', [
+            'password' => 'Test1234',
+            'email_confirmation' => 'del-ok@test.com',
+        ], [], ['Authorization' => "Bearer $accessToken"]);
+        $response = $this->router->dispatch($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $cookie = $response->getHeader('Set-Cookie');
+        $this->assertNotNull($cookie);
+        $this->assertStringContainsString('Max-Age=0', $cookie);
+
+        // Deleted user can no longer log in
+        $request = Request::create('POST', '/auth/login', [
+            'email' => 'del-ok@test.com',
+            'password' => 'Test1234',
+        ]);
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+
+        // Row still exists in DB (soft delete)
+        $stmt = $this->pdo->prepare('SELECT deleted_at FROM users WHERE email = :e');
+        $stmt->execute(['e' => 'del-ok@test.com']);
+        $row = $stmt->fetch();
+        $this->assertNotFalse($row, 'User row should still exist after soft delete');
+        $this->assertNotNull($row['deleted_at']);
+    }
 }

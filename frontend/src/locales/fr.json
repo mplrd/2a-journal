@@ -73,6 +73,8 @@
       "invalid_currency": "Devise invalide",
       "invalid_theme": "Thème invalide",
       "invalid_be_threshold": "Le seuil BE doit être un nombre entre 0 et 5 (%)",
+      "invalid_current_password": "Le mot de passe actuel est incorrect",
+      "email_confirmation_mismatch": "L'email saisi ne correspond pas à celui de votre compte",
       "password_too_long": "Le mot de passe est trop long (72 caractères maximum)",
       "invalid_image_type": "Format d'image non supporté (JPG, PNG ou WebP uniquement)",
       "image_too_large": "L'image est trop volumineuse (2 Mo maximum)",
@@ -92,7 +94,9 @@
       "email_verified": "Votre adresse email a été vérifiée avec succès !",
       "verification_resent": "Email de vérification renvoyé",
       "reset_email_sent": "Email de réinitialisation envoyé",
-      "password_reset": "Mot de passe réinitialisé avec succès"
+      "password_reset": "Mot de passe réinitialisé avec succès",
+      "password_changed": "Mot de passe modifié avec succès",
+      "account_deleted": "Compte supprimé avec succès"
     }
   },
   "dashboard": {
@@ -493,6 +497,31 @@
       "assets": "Mes Actifs",
       "setups": "Mes Setups",
       "custom_fields": "Champs personnalisés"
+    },
+    "danger_zone": {
+      "title": "Zone dangereuse",
+      "change_password": "Changer de mot de passe",
+      "change_password_description": "Modifier le mot de passe de votre compte. Vos autres sessions restent connectées.",
+      "delete_account": "Supprimer mon compte",
+      "delete_account_description": "Supprime définitivement votre accès au compte. Action irréversible."
+    },
+    "change_password": {
+      "title": "Changer de mot de passe",
+      "current_password": "Mot de passe actuel",
+      "new_password": "Nouveau mot de passe",
+      "confirm_password": "Confirmer le nouveau mot de passe",
+      "submit": "Changer le mot de passe",
+      "mismatch": "La confirmation ne correspond pas au nouveau mot de passe"
+    },
+    "delete_account": {
+      "title": "Supprimer mon compte",
+      "warning_title": "Cette action est irréversible",
+      "warning_line1": "Votre accès au compte sera immédiatement révoqué et vous ne pourrez plus vous reconnecter.",
+      "warning_line2": "Pour confirmer, tape ton email ci-dessous et entre ton mot de passe.",
+      "type_email": "Tape {email} pour confirmer",
+      "password": "Mot de passe",
+      "confirm_button": "Supprimer définitivement",
+      "email_mismatch": "L'email ne correspond pas"
     }
   },
   "onboarding": {
