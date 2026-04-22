@@ -63,6 +63,9 @@ async function request(method, path, body = null, { auth = true, retry = true } 
       }
     } else {
       // Body already consumed — throw directly with parsed data
+      if (response.status === 402 && !path.startsWith('/billing')) {
+        redirectToSubscribe()
+      }
       const error = new Error(errorData?.error?.message_key || 'error.internal')
       error.status = response.status
       error.code = errorData?.error?.code
@@ -75,6 +78,9 @@ async function request(method, path, body = null, { auth = true, retry = true } 
   const data = await response.json()
 
   if (!response.ok) {
+    if (response.status === 402 && !path.startsWith('/billing')) {
+      redirectToSubscribe()
+    }
     const error = new Error(data.error?.message_key || 'error.internal')
     error.status = response.status
     error.code = data.error?.code
@@ -84,6 +90,13 @@ async function request(method, path, body = null, { auth = true, retry = true } 
   }
 
   return data
+}
+
+function redirectToSubscribe() {
+  // Avoid loop if already on the subscribe page
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/subscribe')) {
+    window.location.href = '/subscribe'
+  }
 }
 
 async function upload(path, formData) {

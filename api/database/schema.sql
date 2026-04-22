@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
     locale VARCHAR(5) NOT NULL DEFAULT 'fr',
     theme VARCHAR(20) NOT NULL DEFAULT 'light',
     be_threshold_percent DECIMAL(6,4) NOT NULL DEFAULT 0,
+    bypass_subscription TINYINT(1) NOT NULL DEFAULT 0,
+    grace_period_end TIMESTAMP NULL DEFAULT NULL,
+    stripe_customer_id VARCHAR(255) NULL DEFAULT NULL,
     profile_picture VARCHAR(255) NULL DEFAULT NULL,
     onboarding_completed_at TIMESTAMP NULL DEFAULT NULL,
     email_verified_at TIMESTAMP NULL DEFAULT NULL,
@@ -30,7 +33,8 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
 
-    UNIQUE KEY uk_users_email (email)
+    UNIQUE KEY uk_users_email (email),
+    UNIQUE KEY uk_users_stripe_customer (stripe_customer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -427,6 +431,37 @@ CREATE TABLE IF NOT EXISTS sync_logs (
     KEY idx_sync_logs_conn (broker_connection_id),
     CONSTRAINT fk_sync_logs_conn FOREIGN KEY (broker_connection_id)
         REFERENCES broker_connections (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 20. SUBSCRIPTIONS (Stripe billing, 1-1 with users)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    stripe_subscription_id VARCHAR(255) NOT NULL,
+    status ENUM('incomplete','incomplete_expired','trialing','active','past_due','canceled','unpaid','paused') NOT NULL,
+    current_period_end TIMESTAMP NULL DEFAULT NULL,
+    cancel_at_period_end TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_subscriptions_user (user_id),
+    UNIQUE KEY uk_subscriptions_stripe (stripe_subscription_id),
+    CONSTRAINT fk_subscriptions_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 21. STRIPE_WEBHOOK_EVENTS (idempotency ledger)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    stripe_event_id VARCHAR(255) NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_webhook_stripe_event (stripe_event_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

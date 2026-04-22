@@ -2,6 +2,7 @@
 
 use App\Controllers\AccountController;
 use App\Controllers\AuthController;
+use App\Controllers\BillingController;
 use App\Controllers\OrderController;
 use App\Controllers\PositionController;
 use App\Controllers\CustomFieldController;
@@ -16,7 +17,10 @@ use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
 use App\Middlewares\FeatureFlagMiddleware;
 use App\Middlewares\RateLimitMiddleware;
+use App\Middlewares\RequireActiveSubscriptionMiddleware;
 use App\Repositories\AccountRepository;
+use App\Repositories\SubscriptionRepository;
+use App\Repositories\WebhookEventRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PartialExitRepository;
 use App\Repositories\CustomFieldDefinitionRepository;
@@ -38,6 +42,7 @@ use App\Repositories\EmailVerificationTokenRepository;
 use App\Repositories\PasswordResetTokenRepository;
 use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\BillingService;
 use App\Services\EmailService;
 use App\Services\OrderService;
 use App\Services\PositionService;
@@ -134,23 +139,43 @@ $router->post('/auth/resend-verification', [$authController, 'resendVerification
 $router->post('/auth/forgot-password', [$authController, 'forgotPassword'], [$forgotPasswordRateLimit]);
 $router->post('/auth/reset-password', [$authController, 'resetPassword']);
 
+// ── Billing (Stripe) ────────────────────────────────────────────
+$billingConfig = require __DIR__ . '/billing.php';
+$subscriptionRepo = new SubscriptionRepository($pdo);
+$webhookEventRepo = new WebhookEventRepository($pdo);
+$stripeClient = new \Stripe\StripeClient($billingConfig['secret_key']);
+$billingService = new BillingService(
+    $userRepo,
+    $subscriptionRepo,
+    $webhookEventRepo,
+    $stripeClient,
+    $billingConfig
+);
+$billingController = new BillingController($billingService);
+$requireSubscription = new RequireActiveSubscriptionMiddleware($billingService);
+
+$router->get('/billing/status', [$billingController, 'status'], [$authMiddleware]);
+$router->post('/billing/checkout', [$billingController, 'checkout'], [$authMiddleware]);
+$router->post('/billing/portal', [$billingController, 'portal'], [$authMiddleware]);
+$router->post('/billing/webhook', [$billingController, 'webhook']);
+
 // ── Symbols ─────────────────────────────────────────────────────
 $symbolService = new SymbolService($symbolRepo);
 $symbolController = new SymbolController($symbolService);
 
-$router->get('/symbols', [$symbolController, 'index'], [$authMiddleware]);
-$router->post('/symbols', [$symbolController, 'store'], [$authMiddleware]);
-$router->get('/symbols/{id}', [$symbolController, 'show'], [$authMiddleware]);
-$router->put('/symbols/{id}', [$symbolController, 'update'], [$authMiddleware]);
-$router->delete('/symbols/{id}', [$symbolController, 'destroy'], [$authMiddleware]);
+$router->get('/symbols', [$symbolController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/symbols', [$symbolController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/symbols/{id}', [$symbolController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->put('/symbols/{id}', [$symbolController, 'update'], [$authMiddleware, $requireSubscription]);
+$router->delete('/symbols/{id}', [$symbolController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Setups ──────────────────────────────────────────────────────
 $setupService = new SetupService($setupRepo);
 $setupController = new SetupController($setupService);
 
-$router->get('/setups', [$setupController, 'index'], [$authMiddleware]);
-$router->post('/setups', [$setupController, 'store'], [$authMiddleware]);
-$router->delete('/setups/{id}', [$setupController, 'destroy'], [$authMiddleware]);
+$router->get('/setups', [$setupController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/setups', [$setupController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->delete('/setups/{id}', [$setupController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Custom Fields ──────────────────────────────────────────────
 $customFieldRepo = new CustomFieldDefinitionRepository($pdo);
@@ -158,22 +183,22 @@ $customFieldValueRepo = new CustomFieldValueRepository($pdo);
 $customFieldService = new CustomFieldService($customFieldRepo, $customFieldValueRepo);
 $customFieldController = new CustomFieldController($customFieldService);
 
-$router->get('/custom-fields', [$customFieldController, 'index'], [$authMiddleware]);
-$router->post('/custom-fields', [$customFieldController, 'store'], [$authMiddleware]);
-$router->get('/custom-fields/{id}', [$customFieldController, 'show'], [$authMiddleware]);
-$router->put('/custom-fields/{id}', [$customFieldController, 'update'], [$authMiddleware]);
-$router->delete('/custom-fields/{id}', [$customFieldController, 'destroy'], [$authMiddleware]);
+$router->get('/custom-fields', [$customFieldController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/custom-fields', [$customFieldController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/custom-fields/{id}', [$customFieldController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->put('/custom-fields/{id}', [$customFieldController, 'update'], [$authMiddleware, $requireSubscription]);
+$router->delete('/custom-fields/{id}', [$customFieldController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Accounts ────────────────────────────────────────────────────
 $accountRepo = new AccountRepository($pdo);
 $accountService = new AccountService($accountRepo);
 $accountController = new AccountController($accountService);
 
-$router->get('/accounts', [$accountController, 'index'], [$authMiddleware]);
-$router->post('/accounts', [$accountController, 'store'], [$authMiddleware]);
-$router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware]);
-$router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware]);
-$router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware]);
+$router->get('/accounts', [$accountController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/accounts', [$accountController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware, $requireSubscription]);
+$router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Shared repos for Orders, Trades & Share ──────────────────
 $tradeRepo = new TradeRepository($pdo);
@@ -186,38 +211,38 @@ $positionService = new PositionService($positionRepo, $accountRepo, $historyRepo
 $shareService = new ShareService($positionRepo, $tradeRepo);
 $positionController = new PositionController($positionService, $shareService);
 
-$router->get('/positions', [$positionController, 'index'], [$authMiddleware]);
-$router->get('/positions/aggregated', [$positionController, 'aggregated'], [$authMiddleware]);
-$router->get('/positions/{id}', [$positionController, 'show'], [$authMiddleware]);
-$router->put('/positions/{id}', [$positionController, 'update'], [$authMiddleware]);
-$router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddleware]);
-$router->post('/positions/{id}/transfer', [$positionController, 'transfer'], [$authMiddleware]);
-$router->get('/positions/{id}/history', [$positionController, 'history'], [$authMiddleware]);
-$router->get('/positions/{id}/share/text', [$positionController, 'shareText'], [$authMiddleware]);
-$router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTextPlain'], [$authMiddleware]);
+$router->get('/positions', [$positionController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->get('/positions/aggregated', [$positionController, 'aggregated'], [$authMiddleware, $requireSubscription]);
+$router->get('/positions/{id}', [$positionController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->put('/positions/{id}', [$positionController, 'update'], [$authMiddleware, $requireSubscription]);
+$router->delete('/positions/{id}', [$positionController, 'destroy'], [$authMiddleware, $requireSubscription]);
+$router->post('/positions/{id}/transfer', [$positionController, 'transfer'], [$authMiddleware, $requireSubscription]);
+$router->get('/positions/{id}/history', [$positionController, 'history'], [$authMiddleware, $requireSubscription]);
+$router->get('/positions/{id}/share/text', [$positionController, 'shareText'], [$authMiddleware, $requireSubscription]);
+$router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTextPlain'], [$authMiddleware, $requireSubscription]);
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
 $orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo);
 $orderController = new OrderController($orderService);
 
-$router->get('/orders', [$orderController, 'index'], [$authMiddleware]);
-$router->post('/orders', [$orderController, 'store'], [$authMiddleware]);
-$router->get('/orders/{id}', [$orderController, 'show'], [$authMiddleware]);
-$router->delete('/orders/{id}', [$orderController, 'destroy'], [$authMiddleware]);
-$router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddleware]);
-$router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware]);
+$router->get('/orders', [$orderController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/orders', [$orderController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/orders/{id}', [$orderController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->delete('/orders/{id}', [$orderController, 'destroy'], [$authMiddleware, $requireSubscription]);
+$router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddleware, $requireSubscription]);
+$router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware, $requireSubscription]);
 
 // ── Trades ─────────────────────────────────────────────────────
 $tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService);
 $tradeController = new TradeController($tradeService);
 
-$router->get('/trades', [$tradeController, 'index'], [$authMiddleware]);
-$router->post('/trades', [$tradeController, 'store'], [$authMiddleware]);
-$router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware]);
-$router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware]);
-$router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware]);
-$router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware]);
+$router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/trades', [$tradeController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware, $requireSubscription]);
+$router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware, $requireSubscription]);
+$router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Import ────────────────────────────────────────────────────
 $importBatchRepo = new ImportBatchRepository($pdo);
@@ -237,13 +262,13 @@ $importService = new ImportService(
 );
 $importController = new ImportController($importService);
 
-$router->get('/imports/templates', [$importController, 'templates'], [$authMiddleware]);
-$router->get('/imports/template-file', [$importController, 'downloadTemplate'], [$authMiddleware]);
-$router->post('/imports/headers', [$importController, 'headers'], [$authMiddleware]);
-$router->post('/imports/preview', [$importController, 'preview'], [$authMiddleware]);
-$router->post('/imports/confirm', [$importController, 'confirm'], [$authMiddleware]);
-$router->get('/imports/batches', [$importController, 'batches'], [$authMiddleware]);
-$router->post('/imports/batches/{id}/rollback', [$importController, 'rollback'], [$authMiddleware]);
+$router->get('/imports/templates', [$importController, 'templates'], [$authMiddleware, $requireSubscription]);
+$router->get('/imports/template-file', [$importController, 'downloadTemplate'], [$authMiddleware, $requireSubscription]);
+$router->post('/imports/headers', [$importController, 'headers'], [$authMiddleware, $requireSubscription]);
+$router->post('/imports/preview', [$importController, 'preview'], [$authMiddleware, $requireSubscription]);
+$router->post('/imports/confirm', [$importController, 'confirm'], [$authMiddleware, $requireSubscription]);
+$router->get('/imports/batches', [$importController, 'batches'], [$authMiddleware, $requireSubscription]);
+$router->post('/imports/batches/{id}/rollback', [$importController, 'rollback'], [$authMiddleware, $requireSubscription]);
 
 // ── Broker Sync ──────────────────────────────────────────────
 $brokerConfig = require __DIR__ . '/broker.php';
@@ -275,27 +300,27 @@ $brokerSyncController = new BrokerSyncController(
     $cryptoService,
 );
 
-$router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $brokerFeatureFlag]);
-$router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $brokerFeatureFlag]);
-$router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $brokerFeatureFlag]);
-$router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $brokerFeatureFlag]);
-$router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware, $brokerFeatureFlag]);
+$router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);
 $statsService = new StatsService($statsRepo, $accountRepo, $userRepo);
 $statsController = new StatsController($statsService);
 
-$router->get('/stats/overview', [$statsController, 'dashboard'], [$authMiddleware]);
-$router->get('/stats/charts', [$statsController, 'charts'], [$authMiddleware]);
-$router->get('/stats/by-symbol', [$statsController, 'bySymbol'], [$authMiddleware]);
-$router->get('/stats/by-direction', [$statsController, 'byDirection'], [$authMiddleware]);
-$router->get('/stats/by-setup', [$statsController, 'bySetup'], [$authMiddleware]);
-$router->get('/stats/by-period', [$statsController, 'byPeriod'], [$authMiddleware]);
-$router->get('/stats/rr-distribution', [$statsController, 'rrDistribution'], [$authMiddleware]);
-$router->get('/stats/heatmap', [$statsController, 'heatmap'], [$authMiddleware]);
-$router->get('/stats/open-trades', [$statsController, 'openTrades'], [$authMiddleware]);
-$router->get('/stats/daily-pnl', [$statsController, 'dailyPnl'], [$authMiddleware]);
-$router->get('/stats/by-session', [$statsController, 'bySession'], [$authMiddleware]);
-$router->get('/stats/by-account', [$statsController, 'byAccount'], [$authMiddleware]);
-$router->get('/stats/by-account-type', [$statsController, 'byAccountType'], [$authMiddleware]);
+$router->get('/stats/overview', [$statsController, 'dashboard'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/charts', [$statsController, 'charts'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-symbol', [$statsController, 'bySymbol'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-direction', [$statsController, 'byDirection'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-setup', [$statsController, 'bySetup'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-period', [$statsController, 'byPeriod'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/rr-distribution', [$statsController, 'rrDistribution'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/heatmap', [$statsController, 'heatmap'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/open-trades', [$statsController, 'openTrades'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/daily-pnl', [$statsController, 'dailyPnl'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-session', [$statsController, 'bySession'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-account', [$statsController, 'byAccount'], [$authMiddleware, $requireSubscription]);
+$router->get('/stats/by-account-type', [$statsController, 'byAccountType'], [$authMiddleware, $requireSubscription]);

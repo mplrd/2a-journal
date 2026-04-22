@@ -75,6 +75,7 @@
       "invalid_be_threshold": "BE threshold must be a number between 0 and 5 (%)",
       "invalid_current_password": "Current password is incorrect",
       "email_confirmation_mismatch": "The email you entered does not match your account",
+      "user_not_found": "User not found",
       "password_too_long": "Password is too long (72 characters maximum)",
       "invalid_image_type": "Unsupported image format (JPG, PNG or WebP only)",
       "image_too_large": "Image is too large (2 MB maximum)",
@@ -182,6 +183,13 @@
       "EUROPE_US": "Overlap EU/US",
       "US": "US",
       "OFF": "Off-session"
+    }
+  },
+  "stats": {
+    "error": {
+      "invalid_period_group": "Invalid period grouping",
+      "invalid_date": "Invalid date",
+      "invalid_direction": "Invalid direction"
     }
   },
   "accounts": {
@@ -524,6 +532,35 @@
       "email_mismatch": "Email does not match"
     }
   },
+  "billing": {
+    "title": "Subscription",
+    "tagline": "Keep access to your trading journal after the trial period.",
+    "price": "€5",
+    "per_month": "/ month",
+    "cancel_anytime": "No commitment, cancel anytime from the management area.",
+    "subscribe_cta": "Subscribe",
+    "manage_subscription": "Manage subscription",
+    "promo_hint": "Got a promo code? You'll be able to enter it on the Stripe page.",
+    "grace_info": "You have access until {date}. Subscribe before then to keep your access.",
+    "cancel_scheduled": "Your subscription will end on {date}. You can reactivate it from the management area until then.",
+    "subscription_active": "Your subscription is active.",
+    "bypass_active": "Account exempt from subscription.",
+    "no_access": "Your trial period has ended. Subscribe to keep using the app.",
+    "success": {
+      "polling_title": "Confirming your payment…",
+      "polling_description": "This should only take a few seconds.",
+      "confirmed_title": "Thanks, your subscription is active!",
+      "confirmed_description": "Redirecting to your dashboard…",
+      "timeout_title": "Payment still processing",
+      "timeout_description": "Payment can take a little while to be confirmed. You can continue to the dashboard.",
+      "go_dashboard": "Go to dashboard"
+    },
+    "error": {
+      "subscription_required": "An active subscription is required for this feature.",
+      "no_stripe_customer": "No subscription has been created yet for this account.",
+      "webhook_invalid": "Invalid webhook signature."
+    }
+  },
   "onboarding": {
     "welcome": "Welcome! Start by adding your trading accounts.",
     "step_accounts_description": "Add your trading accounts to get started.",
@@ -666,7 +703,9 @@
       "invalid_boolean": "Invalid boolean value",
       "text_too_long": "Text is too long (5000 characters max)",
       "invalid_number": "Invalid number value",
-      "invalid_option": "Invalid option"
+      "invalid_option": "Invalid option",
+      "not_found": "Custom field not found",
+      "forbidden": "Access denied to this custom field"
     },
     "success": {
       "created": "Custom field created",
@@ -695,7 +734,6 @@
     "deals_fetched": "Fetched",
     "deals_imported": "Imported",
     "deals_skipped": "Skipped",
-    "error": "Error",
     "metaapi_instructions": "Connect your MT4/MT5 account via MetaApi. You will need your MetaApi API token and MetaApi account ID.",
     "metaapi_token": "MetaApi API token",
     "metaapi_token_placeholder": "Your MetaApi token",

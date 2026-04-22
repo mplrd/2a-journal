@@ -14,8 +14,9 @@ class Request
     private string $clientIp;
     private array $cookies;
     private array $files;
+    private string $rawBody = '';
 
-    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [], array $files = [])
+    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [], array $files = [], string $rawBody = '')
     {
         $this->method = $method;
         $this->uri = $uri;
@@ -27,6 +28,7 @@ class Request
         $this->clientIp = $clientIp;
         $this->cookies = $cookies;
         $this->files = $files;
+        $this->rawBody = $rawBody;
     }
 
     public static function capture(): self
@@ -46,6 +48,7 @@ class Request
 
         // Parse body
         $body = [];
+        $rawBodyString = '';
         $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
         if (str_contains($contentType, 'multipart/form-data')) {
             // multipart/form-data: fields are in $_POST, files in $_FILES
@@ -53,6 +56,7 @@ class Request
         } else {
             $rawBody = file_get_contents('php://input');
             if ($rawBody !== false && $rawBody !== '') {
+                $rawBodyString = $rawBody;
                 $decoded = json_decode($rawBody, true);
                 if (is_array($decoded)) {
                     $body = $decoded;
@@ -78,17 +82,26 @@ class Request
 
         $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
-        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES);
+        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES, $rawBodyString);
     }
 
-    public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = [], array $cookies = []): self
+    public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = [], array $cookies = [], string $rawBody = ''): self
     {
         // Normalize header keys to uppercase
         $normalized = [];
         foreach ($headers as $key => $value) {
             $normalized[strtoupper(str_replace('_', '-', $key))] = $value;
         }
-        return new self($method, $uri, $body, $query, $normalized, '127.0.0.1', $cookies);
+        // If no explicit rawBody is provided but we have a body array, encode it — matches production behavior
+        if ($rawBody === '' && !empty($body)) {
+            $rawBody = json_encode($body);
+        }
+        return new self($method, $uri, $body, $query, $normalized, '127.0.0.1', $cookies, [], $rawBody);
+    }
+
+    public function getRawBody(): string
+    {
+        return $this->rawBody;
     }
 
     public function getMethod(): string

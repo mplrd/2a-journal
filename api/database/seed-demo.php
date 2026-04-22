@@ -52,12 +52,13 @@ if ($existing) {
 }
 
 // ── 1. Create user ──────────────────────────────────────────
+// bypass_subscription=1 so the demo account is exempt from the Stripe paywall.
 $hashedPassword = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-$pdo->prepare("INSERT INTO users (email, password, first_name, last_name, timezone, default_currency, locale, theme, onboarding_completed_at, email_verified_at)
-    VALUES (:email, :password, 'Demo', 'Trader', 'Europe/Paris', 'EUR', 'fr', 'light', NOW(), NOW())")
+$pdo->prepare("INSERT INTO users (email, password, first_name, last_name, timezone, default_currency, locale, theme, bypass_subscription, onboarding_completed_at, email_verified_at)
+    VALUES (:email, :password, 'Demo', 'Trader', 'Europe/Paris', 'EUR', 'fr', 'light', 1, NOW(), NOW())")
     ->execute(['email' => $email, 'password' => $hashedPassword]);
 $userId = (int) $pdo->lastInsertId();
-echo "Created user: {$email} (id={$userId})\n";
+echo "Created user: {$email} (id={$userId}, bypass_subscription=1)\n";
 
 // ── 2. Create account ───────────────────────────────────────
 $pdo->prepare("INSERT INTO accounts (user_id, name, account_type, broker, currency, initial_capital, current_capital)

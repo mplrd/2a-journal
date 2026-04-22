@@ -3,6 +3,7 @@ import { api } from '@/services/api'
 import pinia from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useFeaturesStore } from '@/stores/features'
+import { useBillingStore } from '@/stores/billing'
 import { useOnboarding } from '@/composables/useOnboarding'
 
 const router = createRouter({
@@ -36,6 +37,18 @@ const router = createRouter({
       path: '/verify-email',
       name: 'verify-email',
       component: () => import('@/views/VerifyEmailView.vue'),
+    },
+    {
+      path: '/subscribe',
+      name: 'subscribe',
+      component: () => import('@/views/SubscribeView.vue'),
+      meta: { auth: true, bypassBilling: true },
+    },
+    {
+      path: '/subscribe/success',
+      name: 'subscribe-success',
+      component: () => import('@/views/SubscribeSuccessView.vue'),
+      meta: { auth: true, bypassBilling: true },
     },
     {
       path: '/',
@@ -103,6 +116,25 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.auth && token) {
+    // Routes that explicitly opt out of billing/onboarding gating (/subscribe, /subscribe/success)
+    if (to.meta.bypassBilling) {
+      return
+    }
+
+    // Billing gate
+    const billingStore = useBillingStore(pinia)
+    if (billingStore.status === null) {
+      try {
+        await billingStore.fetchStatus()
+      } catch {
+        // fallthrough: the 402 interceptor will handle redirect if subsequent calls fail
+      }
+    }
+    if (billingStore.status !== null && !billingStore.hasAccess) {
+      return { name: 'subscribe' }
+    }
+
+    // Onboarding gate (only for users who have active billing)
     const { ensureAccountsLoaded, isOnboarding, isRouteAllowed, onboardingRoute } = useOnboarding()
     await ensureAccountsLoaded()
 

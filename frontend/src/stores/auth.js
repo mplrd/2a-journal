@@ -7,6 +7,7 @@ import { useSymbolsStore } from '@/stores/symbols'
 import { usePositionsStore } from '@/stores/positions'
 import { useOrdersStore } from '@/stores/orders'
 import { useTradesStore } from '@/stores/trades'
+import { useBillingStore } from '@/stores/billing'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -80,6 +81,7 @@ export const useAuthStore = defineStore('auth', () => {
       usePositionsStore().$reset()
       useOrdersStore().$reset()
       useTradesStore().$reset()
+      useBillingStore().reset()
     }
   }
 
@@ -124,6 +126,7 @@ export const useAuthStore = defineStore('auth', () => {
     usePositionsStore().$reset()
     useOrdersStore().$reset()
     useTradesStore().$reset()
+    useBillingStore().reset()
     return response
   }
 

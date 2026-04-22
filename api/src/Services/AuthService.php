@@ -69,6 +69,11 @@ class AuthService
 
         $userId = (int)$user['id'];
 
+        // Give the new user a billing grace period (configurable, default 14 days).
+        $graceDays = (int) ($this->config['billing_grace_days'] ?? 14);
+        $graceEnd = date('Y-m-d H:i:s', time() + $graceDays * 86400);
+        $this->userRepo->setGracePeriodEnd($userId, $graceEnd);
+
         // Seed default symbols for new user
         if ($this->symbolRepo) {
             $this->symbolRepo->seedForUser($userId);
