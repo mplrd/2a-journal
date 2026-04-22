@@ -489,6 +489,7 @@
     "be_threshold_hint": "A trade closed within this % of the entry price will be classified as break-even in stats (to absorb the spread). 0 = disabled.",
     "tabs": {
       "profile": "Profile",
+      "preferences": "Preferences",
       "assets": "My Assets",
       "setups": "My Setups",
       "custom_fields": "Custom fields"
