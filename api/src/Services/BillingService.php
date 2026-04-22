@@ -230,7 +230,7 @@ class BillingService
             $userId,
             $subscription->id,
             'canceled',
-            $this->formatTimestamp($subscription->current_period_end ?? null),
+            $this->formatTimestamp($this->extractCurrentPeriodEnd($subscription)),
             false
         );
     }
@@ -254,9 +254,24 @@ class BillingService
             $userId,
             $subscription->id,
             $subscription->status,
-            $this->formatTimestamp($subscription->current_period_end ?? null),
+            $this->formatTimestamp($this->extractCurrentPeriodEnd($subscription)),
             (bool) ($subscription->cancel_at_period_end ?? false)
         );
+    }
+
+    /**
+     * Read current_period_end from a subscription object, supporting both the legacy shape
+     * (pre-2025-08-27, field on the subscription root) and the new shape (field on items[0]).
+     */
+    private function extractCurrentPeriodEnd(object $subscription): ?int
+    {
+        if (!empty($subscription->current_period_end)) {
+            return (int) $subscription->current_period_end;
+        }
+        if (!empty($subscription->items->data[0]->current_period_end)) {
+            return (int) $subscription->items->data[0]->current_period_end;
+        }
+        return null;
     }
 
     private function resolveUserIdFromSubscription(object $subscription): ?int
