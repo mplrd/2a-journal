@@ -29,10 +29,22 @@ export const useBillingStore = defineStore('billing', () => {
   }
 
   async function openPortal() {
+    // Open in a new tab — Stripe blocks iframing via X-Frame-Options, and opening in a new tab
+    // lets the user come back to our app without losing context.
     const response = await billingService.createPortalSession()
     if (response.data?.url) {
-      window.location.href = response.data.url
+      window.open(response.data.url, '_blank', 'noopener,noreferrer')
     }
+  }
+
+  async function cancel() {
+    await billingService.cancel()
+    await fetchStatus()
+  }
+
+  async function reactivate() {
+    await billingService.reactivate()
+    await fetchStatus()
   }
 
   function reset() {
@@ -49,6 +61,8 @@ export const useBillingStore = defineStore('billing', () => {
     fetchStatus,
     startCheckout,
     openPortal,
+    cancel,
+    reactivate,
     reset,
   }
 })

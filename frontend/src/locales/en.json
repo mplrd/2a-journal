@@ -502,9 +502,31 @@
     "tabs": {
       "profile": "Profile",
       "preferences": "Preferences",
+      "billing": "Subscription",
       "assets": "My Assets",
       "setups": "My Setups",
       "custom_fields": "Custom fields"
+    },
+    "billing": {
+      "status_title": "Subscription status",
+      "status_active": "Your subscription is active. Next charge on {date}.",
+      "status_cancel_scheduled": "Your subscription will end on {date}. You can reactivate it anytime.",
+      "status_grace": "Trial period until {date}.",
+      "status_no_access": "No active subscription. You need to subscribe to use the app.",
+      "status_bypass": "Account exempt from subscription.",
+      "plan_label": "Plan",
+      "plan_description": "Full access to the app. No commitment.",
+      "manage_button": "Manage subscription",
+      "manage_hint": "The Manage button opens Stripe's secure area (card, invoices) in a new tab.",
+      "subscribe_button": "Subscribe",
+      "cancel_button": "Cancel my subscription",
+      "reactivate_button": "Reactivate my subscription",
+      "cancel_dialog_title": "Cancel subscription?",
+      "cancel_dialog_line1": "You keep access until the end of your current period. No new charge will be made.",
+      "cancel_dialog_line2": "Access ends on {date}.",
+      "cancel_confirm_button": "Yes, cancel",
+      "cancel_success": "Cancellation scheduled. You keep access until the end of the period.",
+      "reactivate_success": "Your subscription is active again."
     },
     "danger_zone": {
       "title": "Danger zone",
@@ -542,7 +564,7 @@
     "manage_subscription": "Manage subscription",
     "promo_hint": "Got a promo code? You'll be able to enter it on the Stripe page.",
     "grace_info": "You have access until {date}. Subscribe before then to keep your access.",
-    "cancel_scheduled": "Your subscription will end on {date}. You can reactivate it from the management area until then.",
+    "cancel_scheduled": "Your subscription will end on {date}. You can reactivate it anytime.",
     "subscription_active": "Your subscription is active.",
     "bypass_active": "Account exempt from subscription.",
     "no_access": "Your trial period has ended. Subscribe to keep using the app.",
@@ -553,12 +575,16 @@
       "confirmed_description": "Redirecting to your dashboard…",
       "timeout_title": "Payment still processing",
       "timeout_description": "Payment can take a little while to be confirmed. You can continue to the dashboard.",
-      "go_dashboard": "Go to dashboard"
+      "go_dashboard": "Go to dashboard",
+      "cancellation_scheduled": "Cancellation scheduled. You keep access until the end of the period.",
+      "subscription_reactivated": "Subscription reactivated successfully."
     },
     "error": {
       "subscription_required": "An active subscription is required for this feature.",
       "no_stripe_customer": "No subscription has been created yet for this account.",
-      "webhook_invalid": "Invalid webhook signature."
+      "webhook_invalid": "Invalid webhook signature.",
+      "no_active_subscription": "No active subscription to modify.",
+      "not_cancelled": "This subscription is not pending cancellation."
     }
   },
   "onboarding": {

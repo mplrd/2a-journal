@@ -502,9 +502,31 @@
     "tabs": {
       "profile": "Profil",
       "preferences": "Préférences",
+      "billing": "Abonnement",
       "assets": "Mes Actifs",
       "setups": "Mes Setups",
       "custom_fields": "Champs personnalisés"
+    },
+    "billing": {
+      "status_title": "Statut de l'abonnement",
+      "status_active": "Ton abonnement est actif. Prochain prélèvement le {date}.",
+      "status_cancel_scheduled": "Ton abonnement sera résilié le {date}. Tu peux le réactiver à tout moment.",
+      "status_grace": "Période d'essai en cours jusqu'au {date}.",
+      "status_no_access": "Aucun abonnement actif. Tu dois t'abonner pour accéder à l'application.",
+      "status_bypass": "Compte exempté d'abonnement.",
+      "plan_label": "Plan",
+      "plan_description": "Accès complet à l'application. Sans engagement.",
+      "manage_button": "Gérer mon abonnement",
+      "manage_hint": "Le bouton Gérer ouvre l'espace sécurisé Stripe (carte, factures) dans un nouvel onglet.",
+      "subscribe_button": "S'abonner",
+      "cancel_button": "Résilier mon abonnement",
+      "reactivate_button": "Réactiver mon abonnement",
+      "cancel_dialog_title": "Résilier l'abonnement ?",
+      "cancel_dialog_line1": "Tu gardes accès à l'application jusqu'à la fin de ta période en cours. Aucun nouveau prélèvement ne sera effectué.",
+      "cancel_dialog_line2": "Fin d'accès prévue le {date}.",
+      "cancel_confirm_button": "Oui, résilier",
+      "cancel_success": "Résiliation programmée. Tu gardes accès jusqu'à la fin de la période.",
+      "reactivate_success": "Ton abonnement est de nouveau actif."
     },
     "danger_zone": {
       "title": "Zone dangereuse",
@@ -542,7 +564,7 @@
     "manage_subscription": "Gérer mon abonnement",
     "promo_hint": "Un code promo ? Tu pourras le saisir sur la page Stripe.",
     "grace_info": "Tu as accès à l'application jusqu'au {date}. Pense à t'abonner avant pour ne pas perdre l'accès.",
-    "cancel_scheduled": "Ton abonnement sera résilié le {date}. Tu peux le réactiver d'ici là depuis l'espace de gestion.",
+    "cancel_scheduled": "Ton abonnement sera résilié le {date}. Tu peux le réactiver à tout moment.",
     "subscription_active": "Ton abonnement est actif.",
     "bypass_active": "Compte exempté d'abonnement.",
     "no_access": "Ta période d'essai est terminée. Abonne-toi pour continuer à utiliser l'application.",
@@ -553,12 +575,16 @@
       "confirmed_description": "Redirection vers le tableau de bord…",
       "timeout_title": "Paiement en cours de traitement",
       "timeout_description": "Le paiement peut mettre un peu de temps à être confirmé. Tu peux continuer vers le dashboard.",
-      "go_dashboard": "Aller au tableau de bord"
+      "go_dashboard": "Aller au tableau de bord",
+      "cancellation_scheduled": "Résiliation programmée. Tu gardes accès jusqu'à la fin de la période.",
+      "subscription_reactivated": "Abonnement réactivé avec succès."
     },
     "error": {
       "subscription_required": "Un abonnement actif est requis pour utiliser cette fonctionnalité.",
       "no_stripe_customer": "Aucun abonnement n'a encore été créé pour ce compte.",
-      "webhook_invalid": "Signature de webhook invalide."
+      "webhook_invalid": "Signature de webhook invalide.",
+      "no_active_subscription": "Aucun abonnement actif à modifier.",
+      "not_cancelled": "Cet abonnement n'est pas en cours de résiliation."
     }
   },
   "onboarding": {

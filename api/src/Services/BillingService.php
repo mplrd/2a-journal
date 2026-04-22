@@ -147,6 +147,37 @@ class BillingService
         return $session->url;
     }
 
+    public function cancelSubscription(int $userId): void
+    {
+        $subscription = $this->subscriptionRepo->findByUserId($userId);
+        if (!$subscription || !in_array($subscription['status'], self::ACCESS_GRANTING_STATUSES, true)) {
+            throw new HttpException('NO_ACTIVE_SUBSCRIPTION', 'billing.error.no_active_subscription', null, 400);
+        }
+
+        $updated = $this->stripeClient->subscriptions->update(
+            $subscription['stripe_subscription_id'],
+            ['cancel_at_period_end' => true]
+        );
+        $this->persistSubscription($userId, $updated);
+    }
+
+    public function reactivateSubscription(int $userId): void
+    {
+        $subscription = $this->subscriptionRepo->findByUserId($userId);
+        if (!$subscription || !in_array($subscription['status'], self::ACCESS_GRANTING_STATUSES, true)) {
+            throw new HttpException('NO_ACTIVE_SUBSCRIPTION', 'billing.error.no_active_subscription', null, 400);
+        }
+        if ((int) $subscription['cancel_at_period_end'] !== 1) {
+            throw new HttpException('NOT_CANCELLED', 'billing.error.not_cancelled', null, 400);
+        }
+
+        $updated = $this->stripeClient->subscriptions->update(
+            $subscription['stripe_subscription_id'],
+            ['cancel_at_period_end' => false]
+        );
+        $this->persistSubscription($userId, $updated);
+    }
+
     public function handleWebhook(string $payload, string $signature): void
     {
         if ($signature === '') {

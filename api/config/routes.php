@@ -157,6 +157,8 @@ $requireSubscription = new RequireActiveSubscriptionMiddleware($billingService);
 $router->get('/billing/status', [$billingController, 'status'], [$authMiddleware]);
 $router->post('/billing/checkout', [$billingController, 'checkout'], [$authMiddleware]);
 $router->post('/billing/portal', [$billingController, 'portal'], [$authMiddleware]);
+$router->post('/billing/cancel', [$billingController, 'cancel'], [$authMiddleware]);
+$router->post('/billing/reactivate', [$billingController, 'reactivate'], [$authMiddleware]);
 $router->post('/billing/webhook', [$billingController, 'webhook']);
 
 // ── Symbols ─────────────────────────────────────────────────────

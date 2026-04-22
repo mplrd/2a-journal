@@ -45,4 +45,20 @@ class BillingController extends Controller
 
         return $this->jsonSuccess(['received' => true]);
     }
+
+    public function cancel(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $this->billingService->cancelSubscription($userId);
+
+        return $this->jsonSuccess(['message_key' => 'billing.success.cancellation_scheduled']);
+    }
+
+    public function reactivate(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $this->billingService->reactivateSubscription($userId);
+
+        return $this->jsonSuccess(['message_key' => 'billing.success.subscription_reactivated']);
+    }
 }

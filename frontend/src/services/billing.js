@@ -12,4 +12,12 @@ export const billingService = {
   async createPortalSession() {
     return api.post('/billing/portal')
   },
+
+  async cancel() {
+    return api.post('/billing/cancel')
+  },
+
+  async reactivate() {
+    return api.post('/billing/reactivate')
+  },
 }
