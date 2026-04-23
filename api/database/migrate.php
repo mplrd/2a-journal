@@ -36,6 +36,21 @@ if (file_exists($envFile)) {
     }
 }
 
+// ── 0. Bootstrap: create database if it does not exist ─────────
+$dbConfig = require __DIR__ . '/../config/database.php';
+$bootstrapDsn = sprintf(
+    'mysql:host=%s;port=%s;charset=%s',
+    $dbConfig['host'],
+    $dbConfig['port'],
+    $dbConfig['charset']
+);
+$bootstrap = new PDO($bootstrapDsn, $dbConfig['user'], $dbConfig['password'], $dbConfig['options']);
+$bootstrap->exec(sprintf(
+    'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+    str_replace('`', '', $dbConfig['name'])
+));
+$bootstrap = null;
+
 Database::reset();
 $pdo = Database::getConnection();
 
