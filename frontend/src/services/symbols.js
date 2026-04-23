@@ -21,4 +21,16 @@ export const symbolsService = {
   async remove(id) {
     return api.delete(`/symbols/${id}`)
   },
+
+  async settings() {
+    return api.get('/symbols/settings')
+  },
+
+  async setSetting(symbolId, accountId, pointValue) {
+    return api.put(`/symbols/${symbolId}/settings/${accountId}`, { point_value: pointValue })
+  },
+
+  async clearSetting(symbolId, accountId) {
+    return api.delete(`/symbols/${symbolId}/settings/${accountId}`)
+  },
 }

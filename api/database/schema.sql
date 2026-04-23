@@ -464,4 +464,22 @@ CREATE TABLE IF NOT EXISTS stripe_webhook_events (
     UNIQUE KEY uk_webhook_stripe_event (stripe_event_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ============================================================================
+-- 22. SYMBOL_ACCOUNT_SETTINGS (point_value + default lot size per (symbol, account))
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS symbol_account_settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol_id INT UNSIGNED NOT NULL,
+    account_id INT UNSIGNED NOT NULL,
+    point_value DECIMAL(10,5) NOT NULL DEFAULT 1.00000,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_sas_symbol_account (symbol_id, account_id),
+    KEY idx_sas_symbol (symbol_id),
+    KEY idx_sas_account (account_id),
+    CONSTRAINT fk_sas_symbol FOREIGN KEY (symbol_id) REFERENCES symbols (id) ON DELETE CASCADE,
+    CONSTRAINT fk_sas_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

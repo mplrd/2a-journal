@@ -5,6 +5,8 @@ namespace Tests\Unit\Services;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountRepository;
+use App\Repositories\SymbolAccountSettingsRepository;
 use App\Repositories\SymbolRepository;
 use App\Services\SymbolService;
 use PHPUnit\Framework\TestCase;
@@ -13,11 +15,15 @@ class SymbolServiceTest extends TestCase
 {
     private SymbolService $service;
     private SymbolRepository $repo;
+    private SymbolAccountSettingsRepository $settingsRepo;
+    private AccountRepository $accountRepo;
 
     protected function setUp(): void
     {
         $this->repo = $this->createMock(SymbolRepository::class);
-        $this->service = new SymbolService($this->repo);
+        $this->settingsRepo = $this->createMock(SymbolAccountSettingsRepository::class);
+        $this->accountRepo = $this->createMock(AccountRepository::class);
+        $this->service = new SymbolService($this->repo, $this->settingsRepo, $this->accountRepo);
     }
 
     private function validData(array $overrides = []): array
@@ -260,5 +266,100 @@ class SymbolServiceTest extends TestCase
         $this->expectExceptionMessage('error.invalid_id');
 
         $this->service->delete(1, 0);
+    }
+
+    // ── setSetting / clearSetting / getSettingsMatrix ──────────
+
+    public function testSetSettingUpsertsWhenOwnershipOk(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 1]);
+        $this->accountRepo->method('findById')->willReturn(['id' => 20, 'user_id' => 1]);
+
+        $this->settingsRepo->expects($this->once())->method('upsert')->with(10, 20, 2.5);
+
+        $this->service->setSetting(1, 10, 20, 2.5);
+    }
+
+    public function testSetSettingThrows404WhenSymbolNotFound(): void
+    {
+        $this->repo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+        $this->service->setSetting(1, 10, 20, 2.5);
+    }
+
+    public function testSetSettingThrows404WhenSymbolForeign(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 99]);
+
+        $this->expectException(NotFoundException::class);
+        $this->service->setSetting(1, 10, 20, 2.5);
+    }
+
+    public function testSetSettingThrows404WhenAccountNotFound(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 1]);
+        $this->accountRepo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+        $this->service->setSetting(1, 10, 20, 2.5);
+    }
+
+    public function testSetSettingThrows404WhenAccountForeign(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 1]);
+        $this->accountRepo->method('findById')->willReturn(['id' => 20, 'user_id' => 99]);
+
+        $this->expectException(NotFoundException::class);
+        $this->service->setSetting(1, 10, 20, 2.5);
+    }
+
+    public function testSetSettingThrows422WhenPointValueZero(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 1]);
+        $this->accountRepo->method('findById')->willReturn(['id' => 20, 'user_id' => 1]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('symbols.error.invalid_point_value');
+
+        $this->service->setSetting(1, 10, 20, 0);
+    }
+
+    public function testSetSettingThrows422WhenPointValueNegative(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 1]);
+        $this->accountRepo->method('findById')->willReturn(['id' => 20, 'user_id' => 1]);
+
+        $this->expectException(ValidationException::class);
+        $this->service->setSetting(1, 10, 20, -1.0);
+    }
+
+    public function testClearSettingDelegatesWhenOwnershipOk(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 1]);
+        $this->accountRepo->method('findById')->willReturn(['id' => 20, 'user_id' => 1]);
+
+        $this->settingsRepo->expects($this->once())->method('delete')->with(10, 20);
+
+        $this->service->clearSetting(1, 10, 20);
+    }
+
+    public function testClearSettingThrows404WhenSymbolForeign(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 10, 'user_id' => 99]);
+
+        $this->expectException(NotFoundException::class);
+        $this->service->clearSetting(1, 10, 20);
+    }
+
+    public function testGetSettingsMatrixAutoMaterializesAndReturnsRows(): void
+    {
+        $settings = [['symbol_id' => 1, 'account_id' => 2, 'point_value' => 2.5]];
+        $this->settingsRepo->expects($this->once())->method('autoMaterializeForUser')->with(1);
+        $this->settingsRepo->method('findAllByUserId')->with(1)->willReturn($settings);
+
+        $result = $this->service->getSettingsMatrix(1);
+
+        $this->assertSame($settings, $result['settings']);
     }
 }
