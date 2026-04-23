@@ -114,6 +114,14 @@ function stageSeverity(stage) {
   }
   return map[stage] || 'secondary'
 }
+
+function balanceClass(account) {
+  const current = Number(account.current_capital)
+  const initial = Number(account.initial_capital)
+  if (current > initial) return 'text-green-600 dark:text-green-400 font-medium'
+  if (current < initial) return 'text-red-600 dark:text-red-400 font-medium'
+  return ''
+}
 </script>
 
 <template>
@@ -158,6 +166,13 @@ function stageSeverity(stage) {
       <Column field="initial_capital" :header="t('accounts.initial_capital')">
         <template #body="{ data }">
           {{ Number(data.initial_capital).toLocaleString() }}
+        </template>
+      </Column>
+      <Column field="current_capital" :header="t('accounts.balance')">
+        <template #body="{ data }">
+          <span :class="balanceClass(data)">
+            {{ Number(data.current_capital).toLocaleString() }}
+          </span>
         </template>
       </Column>
       <Column field="broker" :header="t('accounts.broker')" />
