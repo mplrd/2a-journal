@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\TradeStatus;
 use PDO;
 
 class AccountRepository
@@ -41,11 +42,23 @@ class AccountRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, name, account_type, stage, broker, currency, initial_capital, current_capital,
-                    max_drawdown, daily_drawdown, profit_target, profit_split, is_active, created_at, updated_at
-             FROM accounts WHERE id = :id AND deleted_at IS NULL'
+            'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
+                    (a.initial_capital + COALESCE(pnl.total, 0)) AS current_capital,
+                    a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split, a.is_active, a.created_at, a.updated_at
+             FROM accounts a
+             LEFT JOIN (
+                 SELECT p.account_id, SUM(t.pnl) AS total
+                 FROM trades t
+                 INNER JOIN positions p ON p.id = t.position_id
+                 WHERE t.status = :closed_status
+                 GROUP BY p.account_id
+             ) pnl ON pnl.account_id = a.id
+             WHERE a.id = :id AND a.deleted_at IS NULL'
         );
-        $stmt->execute(['id' => $id]);
+        $stmt->execute([
+            'id' => $id,
+            'closed_status' => TradeStatus::CLOSED->value,
+        ]);
         $row = $stmt->fetch();
 
         return $row ?: null;
@@ -60,12 +73,23 @@ class AccountRepository
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, name, account_type, stage, broker, currency, initial_capital, current_capital,
-                    max_drawdown, daily_drawdown, profit_target, profit_split, is_active, created_at, updated_at
-             FROM accounts WHERE user_id = :user_id AND deleted_at IS NULL ORDER BY created_at DESC
+            'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
+                    (a.initial_capital + COALESCE(pnl.total, 0)) AS current_capital,
+                    a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split, a.is_active, a.created_at, a.updated_at
+             FROM accounts a
+             LEFT JOIN (
+                 SELECT p.account_id, SUM(t.pnl) AS total
+                 FROM trades t
+                 INNER JOIN positions p ON p.id = t.position_id
+                 WHERE t.status = :closed_status
+                 GROUP BY p.account_id
+             ) pnl ON pnl.account_id = a.id
+             WHERE a.user_id = :user_id AND a.deleted_at IS NULL
+             ORDER BY a.created_at DESC
              LIMIT :limit OFFSET :offset'
         );
         $stmt->bindValue('user_id', $userId, PDO::PARAM_INT);
+        $stmt->bindValue('closed_status', TradeStatus::CLOSED->value, PDO::PARAM_STR);
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue('offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
