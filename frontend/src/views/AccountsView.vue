@@ -122,6 +122,15 @@ function balanceClass(account) {
   if (current < initial) return 'text-red-600 dark:text-red-400 font-medium'
   return ''
 }
+
+function balanceVariation(account) {
+  const current = Number(account.current_capital)
+  const initial = Number(account.initial_capital)
+  if (!initial) return null
+  const pct = ((current - initial) / initial) * 100
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(2)}%`
+}
 </script>
 
 <template>
@@ -172,6 +181,9 @@ function balanceClass(account) {
         <template #body="{ data }">
           <span :class="balanceClass(data)">
             {{ Number(data.current_capital).toLocaleString() }}
+            <span v-if="balanceVariation(data) !== null" class="text-xs ml-1">
+              ({{ balanceVariation(data) }})
+            </span>
           </span>
         </template>
       </Column>
