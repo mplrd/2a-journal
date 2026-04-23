@@ -6,15 +6,24 @@ use App\Enums\SymbolType;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountRepository;
+use App\Repositories\SymbolAccountSettingsRepository;
 use App\Repositories\SymbolRepository;
 
 class SymbolService
 {
     private SymbolRepository $repo;
+    private ?SymbolAccountSettingsRepository $settingsRepo;
+    private ?AccountRepository $accountRepo;
 
-    public function __construct(SymbolRepository $repo)
-    {
+    public function __construct(
+        SymbolRepository $repo,
+        ?SymbolAccountSettingsRepository $settingsRepo = null,
+        ?AccountRepository $accountRepo = null
+    ) {
         $this->repo = $repo;
+        $this->settingsRepo = $settingsRepo;
+        $this->accountRepo = $accountRepo;
     }
 
     public function list(int $userId, array $params = []): array
@@ -137,6 +146,10 @@ class SymbolService
             throw new ValidationException('symbols.error.invalid_type', 'type');
         }
 
+        // point_value and currency are legacy on the symbols table; the UI no longer
+        // exposes them. We still accept them for backwards compatibility with callers
+        // that haven't been updated (and for the import flow which uses point_value=1.0
+        // as a safe default).
         if (isset($data['point_value']) && (float)$data['point_value'] <= 0) {
             throw new ValidationException('symbols.error.invalid_point_value', 'point_value');
         }
@@ -150,6 +163,65 @@ class SymbolService
     {
         if ($id <= 0) {
             throw new ValidationException('error.invalid_id', 'id');
+        }
+    }
+
+    // ── Per-(symbol, account) point value ───────────────────────
+
+    /**
+     * Return the settings matrix for the user. Auto-materializes missing rows
+     * (one per (symbol, account) owned by the user, inheriting point_value from
+     * the symbol). Idempotent.
+     */
+    public function getSettingsMatrix(int $userId): array
+    {
+        $this->ensureSettingsRepo();
+        $this->settingsRepo->autoMaterializeForUser($userId);
+        return [
+            'settings' => $this->settingsRepo->findAllByUserId($userId),
+        ];
+    }
+
+    public function setSetting(int $userId, int $symbolId, int $accountId, float $pointValue): void
+    {
+        $this->ensureSettingsRepo();
+        $this->assertOwnership($userId, $symbolId, $accountId);
+
+        if ($pointValue <= 0) {
+            throw new ValidationException('symbols.error.invalid_point_value', 'point_value');
+        }
+
+        $this->settingsRepo->upsert($symbolId, $accountId, $pointValue);
+    }
+
+    public function clearSetting(int $userId, int $symbolId, int $accountId): void
+    {
+        $this->ensureSettingsRepo();
+        $this->assertOwnership($userId, $symbolId, $accountId);
+        $this->settingsRepo->delete($symbolId, $accountId);
+    }
+
+    private function assertOwnership(int $userId, int $symbolId, int $accountId): void
+    {
+        $this->validateId($symbolId);
+        $this->validateId($accountId);
+
+        $symbol = $this->repo->findById($symbolId);
+        if (!$symbol || (int) $symbol['user_id'] !== $userId) {
+            // Hide existence (return 404) to avoid leaking which IDs belong to another user.
+            throw new NotFoundException('symbols.error.not_found');
+        }
+
+        $account = $this->accountRepo?->findById($accountId);
+        if (!$account || (int) $account['user_id'] !== $userId) {
+            throw new NotFoundException('accounts.error.not_found');
+        }
+    }
+
+    private function ensureSettingsRepo(): void
+    {
+        if (!$this->settingsRepo || !$this->accountRepo) {
+            throw new \LogicException('SymbolService requires settingsRepo and accountRepo for settings operations');
         }
     }
 }

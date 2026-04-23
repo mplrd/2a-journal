@@ -440,13 +440,18 @@
       "invalid_currency": "Currency must be exactly 3 characters",
       "duplicate_code": "An asset with this ticker already exists",
       "not_found": "Asset not found",
-      "forbidden": "Unauthorized access to this asset"
+      "forbidden": "Unauthorized access to this asset",
+      "invalid_size": "Size must be strictly positive"
     },
     "success": {
       "created": "Asset created successfully",
       "updated": "Asset updated successfully",
-      "deleted": "Asset deleted successfully"
-    }
+      "deleted": "Asset deleted successfully",
+      "settings_saved": "Point value saved",
+      "settings_cleared": "Point value reset"
+    },
+    "sizes_matrix_no_accounts": "Create at least one account to set point values.",
+    "point_value_per_account_hint": "The point value is defined per account, in the table below."
   },
   "setups": {
     "title": "My Setups",

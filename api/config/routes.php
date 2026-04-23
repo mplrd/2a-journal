@@ -26,6 +26,7 @@ use App\Repositories\PartialExitRepository;
 use App\Repositories\CustomFieldDefinitionRepository;
 use App\Repositories\CustomFieldValueRepository;
 use App\Repositories\SetupRepository;
+use App\Repositories\SymbolAccountSettingsRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
@@ -162,14 +163,20 @@ $router->post('/billing/reactivate', [$billingController, 'reactivate'], [$authM
 $router->post('/billing/webhook', [$billingController, 'webhook']);
 
 // ── Symbols ─────────────────────────────────────────────────────
-$symbolService = new SymbolService($symbolRepo);
+// AccountRepository is reused by the Accounts section below; instantiate once here.
+$accountRepo = new AccountRepository($pdo);
+$symbolSettingsRepo = new SymbolAccountSettingsRepository($pdo);
+$symbolService = new SymbolService($symbolRepo, $symbolSettingsRepo, $accountRepo);
 $symbolController = new SymbolController($symbolService);
 
 $router->get('/symbols', [$symbolController, 'index'], [$authMiddleware, $requireSubscription]);
 $router->post('/symbols', [$symbolController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/symbols/settings', [$symbolController, 'settings'], [$authMiddleware, $requireSubscription]);
 $router->get('/symbols/{id}', [$symbolController, 'show'], [$authMiddleware, $requireSubscription]);
 $router->put('/symbols/{id}', [$symbolController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/symbols/{id}', [$symbolController, 'destroy'], [$authMiddleware, $requireSubscription]);
+$router->put('/symbols/{id}/settings/{accountId}', [$symbolController, 'setSetting'], [$authMiddleware, $requireSubscription]);
+$router->delete('/symbols/{id}/settings/{accountId}', [$symbolController, 'clearSetting'], [$authMiddleware, $requireSubscription]);
 
 // ── Setups ──────────────────────────────────────────────────────
 $setupService = new SetupService($setupRepo);
@@ -192,7 +199,7 @@ $router->put('/custom-fields/{id}', [$customFieldController, 'update'], [$authMi
 $router->delete('/custom-fields/{id}', [$customFieldController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Accounts ────────────────────────────────────────────────────
-$accountRepo = new AccountRepository($pdo);
+// $accountRepo already instantiated in the Symbols section above.
 $accountService = new AccountService($accountRepo);
 $accountController = new AccountController($accountService);
 

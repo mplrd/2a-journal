@@ -440,13 +440,18 @@
       "invalid_currency": "La devise doit contenir exactement 3 caractères",
       "duplicate_code": "Un actif avec ce ticker existe déjà",
       "not_found": "Actif non trouvé",
-      "forbidden": "Accès non autorisé à cet actif"
+      "forbidden": "Accès non autorisé à cet actif",
+      "invalid_size": "La taille doit être strictement positive"
     },
     "success": {
       "created": "Actif créé avec succès",
       "updated": "Actif modifié avec succès",
-      "deleted": "Actif supprimé avec succès"
-    }
+      "deleted": "Actif supprimé avec succès",
+      "settings_saved": "Valeur du point enregistrée",
+      "settings_cleared": "Valeur du point réinitialisée"
+    },
+    "sizes_matrix_no_accounts": "Crée au moins un compte pour définir la valeur du point.",
+    "point_value_per_account_hint": "La valeur du point se définit par compte, dans le tableau ci-dessous."
   },
   "setups": {
     "title": "Mes Setups",

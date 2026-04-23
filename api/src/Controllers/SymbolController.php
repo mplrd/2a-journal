@@ -66,4 +66,38 @@ class SymbolController extends Controller
 
         return $this->jsonSuccess(['message_key' => 'symbols.success.deleted']);
     }
+
+    // ── (symbol, account) settings matrix (point_value + default_size) ──
+
+    public function settings(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $matrix = $this->symbolService->getSettingsMatrix($userId);
+
+        return $this->jsonSuccess($matrix);
+    }
+
+    public function setSetting(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $symbolId = (int) $request->getRouteParam('id');
+        $accountId = (int) $request->getRouteParam('accountId');
+        $body = $request->getBody();
+        $pointValue = isset($body['point_value']) ? (float) $body['point_value'] : 0.0;
+
+        $this->symbolService->setSetting($userId, $symbolId, $accountId, $pointValue);
+
+        return $this->jsonSuccess(['message_key' => 'symbols.success.settings_saved']);
+    }
+
+    public function clearSetting(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $symbolId = (int) $request->getRouteParam('id');
+        $accountId = (int) $request->getRouteParam('accountId');
+
+        $this->symbolService->clearSetting($userId, $symbolId, $accountId);
+
+        return $this->jsonSuccess(['message_key' => 'symbols.success.settings_cleared']);
+    }
 }
