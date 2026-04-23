@@ -125,6 +125,32 @@ describe('AssetsTab — unified matrix', () => {
     expect(header.text()).toContain('EUR')
   })
 
+  it('renders a two-level header with "Valeur du point" group spanning all account columns', async () => {
+    const wrapper = mountTab({
+      symbols: [{ id: 1, code: 'NASDAQ', name: 'Nasdaq', type: 'INDEX' }],
+      accounts: [
+        { id: 10, name: 'FTMO 10k', currency: 'EUR' },
+        { id: 20, name: 'FTMO 100k', currency: 'EUR' },
+        { id: 30, name: 'Perso', currency: 'USD' },
+      ],
+    })
+    await flushPromises()
+    const groupHeader = wrapper.find('[data-testid="header-group-point-value"]')
+    expect(groupHeader.exists()).toBe(true)
+    expect(groupHeader.text()).toContain(fr.symbols.point_value)
+    // Spans the 3 account columns
+    expect(groupHeader.attributes('colspan')).toBe('3')
+  })
+
+  it('hides the "Valeur du point" group header when there are no accounts', async () => {
+    const wrapper = mountTab({
+      symbols: [{ id: 1, code: 'NASDAQ', name: 'Nasdaq', type: 'INDEX' }],
+      accounts: [],
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="header-group-point-value"]').exists()).toBe(false)
+  })
+
   it('prefills the input with the saved point_value', async () => {
     const wrapper = mountTab({
       symbols: [{ id: 1, code: 'NASDAQ', name: 'Nasdaq', type: 'INDEX' }],

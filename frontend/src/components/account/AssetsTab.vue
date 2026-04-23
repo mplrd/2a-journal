@@ -162,26 +162,53 @@ async function persistCell(sid, aid) {
     <div v-if="hasSymbols" class="overflow-x-auto">
       <table class="min-w-full border border-gray-200 dark:border-gray-700 text-sm" data-testid="assets-matrix-table">
         <thead>
+          <!-- Level 1: groups — ticker/name/type/actions are fixed, account columns grouped under "Valeur du point" -->
+          <!-- Uniform bg on level 1 (matches other single-level tables). Visual hierarchy conveyed by
+               typography: centered + semibold for the group cell, normal for sub-headers below. -->
           <tr class="bg-gray-50 dark:bg-gray-800">
-            <th class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+            <th
+              rowspan="2"
+              class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700"
+            >
               {{ t('symbols.ticker') }}
             </th>
-            <th class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+            <th
+              rowspan="2"
+              class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700"
+            >
               {{ t('symbols.name') }}
             </th>
-            <th class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
+            <th
+              rowspan="2"
+              class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700"
+            >
               {{ t('symbols.type') }}
             </th>
             <th
-              v-for="account in accounts"
+              v-if="hasAccounts"
+              :colspan="accounts.length"
+              class="p-2 text-center font-semibold text-gray-700 dark:text-gray-300 border-l border-gray-200 dark:border-gray-700"
+              data-testid="header-group-point-value"
+            >
+              {{ t('symbols.point_value') }}
+            </th>
+            <th
+              rowspan="2"
+              class="p-2 border-b border-gray-200 dark:border-gray-700"
+            ></th>
+          </tr>
+          <!-- Level 2: account names with currency. Slightly lighter shade to hint at sub-header. -->
+          <tr class="bg-gray-100/60 dark:bg-gray-800/60">
+            <th
+              v-for="(account, idx) in accounts"
               :key="account.id"
-              class="p-2 text-left font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 min-w-[140px]"
+              class="p-2 text-left font-normal text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 min-w-[140px]"
+              :class="{ 'border-l': idx === 0 }"
               :data-testid="`col-account-${account.id}`"
             >
               {{ account.name }}
-              <span class="text-xs text-gray-500 dark:text-gray-400 font-normal">({{ account.currency }})</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">({{ account.currency }})</span>
             </th>
-            <th class="p-2 border-b border-gray-200 dark:border-gray-700"></th>
           </tr>
         </thead>
         <tbody>
@@ -192,9 +219,10 @@ async function persistCell(sid, aid) {
               <Tag :value="t(`symbols.types.${symbol.type}`)" :severity="typeSeverity(symbol.type)" />
             </td>
             <td
-              v-for="account in accounts"
+              v-for="(account, idx) in accounts"
               :key="account.id"
               class="p-2"
+              :class="{ 'border-l border-gray-200 dark:border-gray-700': idx === 0 }"
               :data-testid="`cell-${symbol.id}-${account.id}`"
             >
               <InputNumber
