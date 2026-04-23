@@ -67,7 +67,7 @@ Chaque transition de statut est enregistrée dans `status_history` (entity_type 
 | `setup` | Requis, non vide, max 255 |
 | `sl_points` | Requis, > 0 |
 | `be_points` | Optionnel, > 0 |
-| `be_size` | Optionnel, > 0 |
+| `be_size` | Optionnel, >= 0. 0 = BE sans sortie partielle (protection seule). |
 | `targets` | Optionnel, JSON valide |
 | `notes` | Optionnel, max 10000 |
 | `expires_at` | Optionnel, datetime dans le futur |

@@ -285,6 +285,29 @@ class TradeServiceTest extends TestCase
         $this->service->create(1, $this->validCreateData(['sl_points' => 0]));
     }
 
+    public function testCreateThrowsWhenBeSizeNegative(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('trades.error.invalid_be_size');
+
+        $this->service->create(1, $this->validCreateData(['be_points' => 30, 'be_size' => -0.1]));
+    }
+
+    public function testCreateAcceptsBeSizeZero(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->positionRepo->method('create')->willReturn([
+            'id' => 10, 'user_id' => 1, 'symbol' => 'NASDAQ',
+        ]);
+        $this->tradeRepo->method('create')->willReturn($this->fakeTrade());
+
+        // be_size = 0 means "BE without partial exit" — should NOT throw.
+        $this->service->create(1, $this->validCreateData(['be_points' => 30, 'be_size' => 0]));
+        $this->addToAssertionCount(1);
+    }
+
     public function testCreateThrowsWhenOpenedAtMissing(): void
     {
         $this->accountRepo->method('findById')->willReturn($this->fakeAccount());

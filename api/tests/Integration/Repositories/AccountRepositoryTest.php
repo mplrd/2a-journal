@@ -49,8 +49,39 @@ class AccountRepositoryTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->pdo->exec('DELETE FROM partial_exits');
+        $this->pdo->exec('DELETE FROM trades');
+        $this->pdo->exec('DELETE FROM positions');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM users');
+    }
+
+    private function insertClosedTradeOnAccount(int $accountId, float $pnl): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+             VALUES (:uid, :aid, 'BUY', 'NASDAQ', 18500, 1, '[\"Breakout\"]', 50, 18450, 'TRADE')"
+        )->execute(['uid' => $this->userId, 'aid' => $accountId]);
+        $positionId = (int) $this->pdo->lastInsertId();
+
+        $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status, pnl)
+             VALUES (:pid, '2026-01-15 10:00:00', 0, 'CLOSED', :pnl)"
+        )->execute(['pid' => $positionId, 'pnl' => $pnl]);
+    }
+
+    private function insertOpenTradeOnAccount(int $accountId): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+             VALUES (:uid, :aid, 'BUY', 'NASDAQ', 18500, 1, '[\"Breakout\"]', 50, 18450, 'TRADE')"
+        )->execute(['uid' => $this->userId, 'aid' => $accountId]);
+        $positionId = (int) $this->pdo->lastInsertId();
+
+        $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status)
+             VALUES (:pid, '2026-01-15 10:00:00', 1, 'OPEN')"
+        )->execute(['pid' => $positionId]);
     }
 
     private function validData(array $overrides = []): array
@@ -169,5 +200,73 @@ class AccountRepositoryTest extends TestCase
         $result = $this->repo->findAllByUserId($this->userId);
         $this->assertCount(0, $result['items']);
         $this->assertSame(0, $result['total']);
+    }
+
+    // ── current_capital computed live from closed-trade PnL ──────
+
+    public function testCurrentCapitalEqualsInitialCapitalWhenNoTrades(): void
+    {
+        $this->repo->create($this->validData(['initial_capital' => 10000]));
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        $this->assertCount(1, $result['items']);
+        $this->assertEquals(10000, (float) $result['items'][0]['current_capital']);
+    }
+
+    public function testCurrentCapitalSumsClosedTradesPnl(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 250);
+        $this->insertClosedTradeOnAccount($accountId, -100);
+        $this->insertClosedTradeOnAccount($accountId, 50);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        // 10000 + (250 - 100 + 50) = 10200
+        $this->assertEquals(10200, (float) $result['items'][0]['current_capital']);
+    }
+
+    public function testCurrentCapitalIgnoresOpenTrades(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 5000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 300);
+        $this->insertOpenTradeOnAccount($accountId); // status OPEN → ignored
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        // Only the closed trade counts: 5000 + 300 = 5300
+        $this->assertEquals(5300, (float) $result['items'][0]['current_capital']);
+    }
+
+    public function testCurrentCapitalIsScopedPerAccount(): void
+    {
+        $a1 = $this->repo->create($this->validData(['name' => 'A1', 'initial_capital' => 10000]));
+        $a2 = $this->repo->create($this->validData(['name' => 'A2', 'initial_capital' => 20000]));
+
+        $this->insertClosedTradeOnAccount((int) $a1['id'], 500);
+        $this->insertClosedTradeOnAccount((int) $a2['id'], -300);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+        $byName = [];
+        foreach ($result['items'] as $row) $byName[$row['name']] = (float) $row['current_capital'];
+
+        $this->assertEquals(10500, $byName['A1']);
+        $this->assertEquals(19700, $byName['A2']);
+    }
+
+    public function testFindByIdReturnsComputedCurrentCapital(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 150);
+
+        $row = $this->repo->findById($accountId);
+        $this->assertEquals(10150, (float) $row['current_capital']);
     }
 }

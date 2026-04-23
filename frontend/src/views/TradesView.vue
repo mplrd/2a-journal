@@ -175,8 +175,8 @@ async function openNextObjective(trade) {
     try {
       await store.markBeHit(trade.id)
       toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.be_reached'), life: 3000 })
-    } catch {
-      // error is set in the store
+    } catch (err) {
+      toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
     }
     return
   }
@@ -193,8 +193,8 @@ async function handleClose(data) {
     showCloseDialog.value = false
     selectedTrade.value = null
     closePrefill.value = null
-  } catch {
-    // error is set in the store
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   }
 }
 
@@ -203,8 +203,8 @@ async function handleDelete(trade) {
     try {
       await store.deleteTrade(trade.id)
       toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.deleted'), life: 3000 })
-    } catch {
-      // error is set in the store
+    } catch (err) {
+      toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
     }
   }
 }
@@ -225,8 +225,8 @@ async function handleEditSave(data) {
     toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.updated'), life: 3000 })
     showEditForm.value = false
     await store.fetchTrades()
-  } catch {
-    // error is set in the store
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   }
 }
 
@@ -241,8 +241,8 @@ async function handleTransfer(accountId) {
     toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.transferred'), life: 3000 })
     showTransfer.value = false
     await store.fetchTrades()
-  } catch {
-    // error is set in the store
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   }
 }
 

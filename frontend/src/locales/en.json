@@ -202,6 +202,7 @@
     "stage": "Stage",
     "currency": "Currency",
     "initial_capital": "Initial capital",
+    "balance": "Balance",
     "broker": "Broker",
     "max_drawdown": "Max drawdown",
     "daily_drawdown": "Daily drawdown",

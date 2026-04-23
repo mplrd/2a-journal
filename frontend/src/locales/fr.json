@@ -202,6 +202,7 @@
     "stage": "Phase",
     "currency": "Devise",
     "initial_capital": "Capital initial",
+    "balance": "Solde",
     "broker": "Courtier",
     "max_drawdown": "Drawdown max",
     "daily_drawdown": "Drawdown journalier",

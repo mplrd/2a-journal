@@ -63,7 +63,7 @@ Les prix sont recalculés automatiquement selon la direction lors de chaque `upd
 | `size` | > 0 |
 | `sl_points` | > 0 |
 | `be_points` | > 0 (si présent) |
-| `be_size` | > 0 (si présent) |
+| `be_size` | >= 0 (si présent). 0 = BE sans sortie partielle (protection seule), null = BE non défini. |
 | `direction` | Enum `Direction` valide |
 | `symbol` | Non vide, max 50 chars |
 | `setup` | Non vide, max 255 chars |
