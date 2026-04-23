@@ -148,7 +148,7 @@ class PositionServiceTest extends TestCase
         $this->service->update(1, 1, ['be_points' => -5]);
     }
 
-    public function testUpdateThrowsWhenBeSizeZero(): void
+    public function testUpdateThrowsWhenBeSizeNegative(): void
     {
         $position = $this->fakePosition();
         $this->positionRepo->method('findById')->willReturn($position);
@@ -156,7 +156,18 @@ class PositionServiceTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessage('positions.error.invalid_be_size');
 
+        $this->service->update(1, 1, ['be_size' => -0.5]);
+    }
+
+    public function testUpdateAcceptsBeSizeZero(): void
+    {
+        $position = $this->fakePosition();
+        $this->positionRepo->method('findById')->willReturn($position);
+        $this->positionRepo->method('update')->willReturn($position);
+
+        // be_size = 0 means "BE without partial exit" — should NOT throw.
         $this->service->update(1, 1, ['be_size' => 0]);
+        $this->addToAssertionCount(1);
     }
 
     public function testUpdateThrowsWhenDirectionInvalid(): void

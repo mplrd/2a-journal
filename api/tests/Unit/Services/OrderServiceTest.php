@@ -273,6 +273,29 @@ class OrderServiceTest extends TestCase
         $this->service->create(1, $this->validCreateData(['sl_points' => 0]));
     }
 
+    public function testCreateThrowsWhenBeSizeNegative(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('orders.error.invalid_be_size');
+
+        $this->service->create(1, $this->validCreateData(['be_points' => 30, 'be_size' => -0.1]));
+    }
+
+    public function testCreateAcceptsBeSizeZero(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->positionRepo->method('create')->willReturn(['id' => 1] + $this->validCreateData());
+        $this->orderRepo->method('create')->willReturn($this->fakeOrder());
+        $this->orderRepo->method('findById')->willReturn($this->fakeOrder());
+        $this->historyRepo->method('create');
+
+        // be_size = 0 means "BE without partial exit" — should NOT throw.
+        $this->service->create(1, $this->validCreateData(['be_points' => 30, 'be_size' => 0]));
+        $this->addToAssertionCount(1);
+    }
+
     public function testCreateThrowsWhenNotesTooLong(): void
     {
         $this->accountRepo->method('findById')->willReturn($this->fakeAccount());

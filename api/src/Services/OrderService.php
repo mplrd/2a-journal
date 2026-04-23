@@ -320,8 +320,8 @@ class OrderService
             throw new ValidationException('orders.error.invalid_be_points', 'be_points');
         }
 
-        // Optional: be_size > 0
-        if (isset($data['be_size']) && (float) $data['be_size'] <= 0) {
+        // Optional: be_size >= 0 (0 = BE without partial exit, null = BE not set)
+        if (isset($data['be_size']) && (float) $data['be_size'] < 0) {
             throw new ValidationException('orders.error.invalid_be_size', 'be_size');
         }
 

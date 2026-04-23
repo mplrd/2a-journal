@@ -210,7 +210,7 @@ class PositionService
             throw new ValidationException('positions.error.invalid_be_points', 'be_points');
         }
 
-        if (isset($data['be_size']) && (float) $data['be_size'] <= 0) {
+        if (isset($data['be_size']) && (float) $data['be_size'] < 0) {
             throw new ValidationException('positions.error.invalid_be_size', 'be_size');
         }
 
