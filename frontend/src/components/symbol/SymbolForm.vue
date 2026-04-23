@@ -3,7 +3,6 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
-import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import { SymbolType } from '@/constants/enums'
@@ -30,8 +29,6 @@ function getDefaultForm() {
     code: '',
     name: '',
     type: SymbolType.INDEX,
-    point_value: 1,
-    currency: 'USD',
   }
 }
 
@@ -44,8 +41,6 @@ watch(
             code: props.symbol.code,
             name: props.symbol.name,
             type: props.symbol.type,
-            point_value: Number(props.symbol.point_value),
-            currency: props.symbol.currency,
           }
         : getDefaultForm()
     }
@@ -87,16 +82,9 @@ function handleClose() {
         <InputText v-model="form.name" class="w-full" :maxlength="100" />
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('symbols.point_value') }} *</label>
-          <InputNumber v-model="form.point_value" class="w-full" :min="0.00001" mode="decimal" locale="en-US" :maxFractionDigits="5" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('symbols.currency') }} *</label>
-          <InputText v-model="form.currency" class="w-full" :maxlength="3" />
-        </div>
-      </div>
+      <p class="text-xs text-gray-500 mt-1">
+        {{ t('symbols.point_value_per_account_hint') }}
+      </p>
     </div>
 
     <template #footer>
