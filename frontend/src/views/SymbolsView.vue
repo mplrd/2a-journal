@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import { useSymbolsStore } from '@/stores/symbols'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -14,6 +15,7 @@ import { useOnboarding } from '@/composables/useOnboarding'
 
 const { t } = useI18n()
 const toast = useToast()
+const confirm = useConfirm()
 const store = useSymbolsStore()
 const router = useRouter()
 const { isOnboarding, completeOnboarding } = useOnboarding()
@@ -50,15 +52,22 @@ async function handleSave(data) {
   }
 }
 
-async function handleDelete(symbol) {
-  if (confirm(t('symbols.confirm_delete'))) {
-    try {
-      await store.deleteSymbol(symbol.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('symbols.success.deleted'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
-  }
+function handleDelete(symbol) {
+  confirm.require({
+    message: t('symbols.confirm_delete'),
+    header: t('common.confirm'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.delete'), severity: 'danger' },
+    accept: async () => {
+      try {
+        await store.deleteSymbol(symbol.id)
+        toast.add({ severity: 'success', summary: t('common.success'), detail: t('symbols.success.deleted'), life: 3000 })
+      } catch (err) {
+        toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+      }
+    },
+  })
 }
 
 async function handleStartTrading() {

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import { useAccountsStore } from '@/stores/accounts'
 import { useFeaturesStore } from '@/stores/features'
 import DataTable from 'primevue/datatable'
@@ -20,6 +21,7 @@ const { t } = useI18n()
 const router = useRouter()
 const { isOnboarding, currentStep, completeOnboarding } = useOnboarding()
 const toast = useToast()
+const confirm = useConfirm()
 const store = useAccountsStore()
 const features = useFeaturesStore()
 
@@ -86,15 +88,22 @@ async function handleStartNow() {
   router.push({ name: 'dashboard' })
 }
 
-async function handleDelete(account) {
-  if (confirm(t('accounts.confirm_delete'))) {
-    try {
-      await store.deleteAccount(account.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.deleted'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
-  }
+function handleDelete(account) {
+  confirm.require({
+    message: t('accounts.confirm_delete'),
+    header: t('common.confirm'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.delete'), severity: 'danger' },
+    accept: async () => {
+      try {
+        await store.deleteAccount(account.id)
+        toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.deleted'), life: 3000 })
+      } catch (err) {
+        toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+      }
+    },
+  })
 }
 
 function typeSeverity(accountType) {
