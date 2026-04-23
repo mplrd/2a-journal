@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import { useOrdersStore } from '@/stores/orders'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
@@ -20,6 +21,7 @@ import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
 const toast = useToast()
+const confirm = useConfirm()
 const store = useOrdersStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
@@ -92,37 +94,58 @@ async function handleCreate(data) {
   }
 }
 
-async function handleCancel(order) {
-  if (confirm(t('orders.confirm_cancel'))) {
-    try {
-      await store.cancelOrder(order.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.cancelled'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
-  }
+function handleCancel(order) {
+  confirm.require({
+    message: t('orders.confirm_cancel'),
+    header: t('common.confirm'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.confirm'), severity: 'warn' },
+    accept: async () => {
+      try {
+        await store.cancelOrder(order.id)
+        toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.cancelled'), life: 3000 })
+      } catch (err) {
+        toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+      }
+    },
+  })
 }
 
-async function handleExecute(order) {
-  if (confirm(t('orders.confirm_execute'))) {
-    try {
-      await store.executeOrder(order.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.executed'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
-  }
+function handleExecute(order) {
+  confirm.require({
+    message: t('orders.confirm_execute'),
+    header: t('common.confirm'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.confirm'), severity: 'success' },
+    accept: async () => {
+      try {
+        await store.executeOrder(order.id)
+        toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.executed'), life: 3000 })
+      } catch (err) {
+        toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+      }
+    },
+  })
 }
 
-async function handleDelete(order) {
-  if (confirm(t('orders.confirm_delete'))) {
-    try {
-      await store.deleteOrder(order.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.deleted'), life: 3000 })
-    } catch {
-      // error is set in the store
-    }
-  }
+function handleDelete(order) {
+  confirm.require({
+    message: t('orders.confirm_delete'),
+    header: t('common.confirm'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.delete'), severity: 'danger' },
+    accept: async () => {
+      try {
+        await store.deleteOrder(order.id)
+        toast.add({ severity: 'success', summary: t('common.success'), detail: t('orders.success.deleted'), life: 3000 })
+      } catch (err) {
+        toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+      }
+    },
+  })
 }
 
 function openShare(order) {

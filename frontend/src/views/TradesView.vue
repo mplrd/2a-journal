@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import { useTradesStore } from '@/stores/trades'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
@@ -22,6 +23,7 @@ import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/e
 
 const { t } = useI18n()
 const toast = useToast()
+const confirm = useConfirm()
 const store = useTradesStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
@@ -116,14 +118,15 @@ function getNextObjective(trade) {
 
   // Step 1: BE if be_price defined
   if (trade.be_price) {
-    if (trade.be_size) {
+    const beSize = Number(trade.be_size) || 0
+    if (beSize > 0) {
       // BE with partial exit: check if already taken
       const beAlreadyTaken = partialExits.some((pe) => pe.exit_type === ExitType.BE)
       if (!beAlreadyTaken) {
         return {
           label: 'BE',
           exit_price: Number(trade.be_price),
-          exit_size: Number(trade.be_size),
+          exit_size: beSize,
           exit_type: ExitType.BE,
           action: 'close',
         }
@@ -198,15 +201,22 @@ async function handleClose(data) {
   }
 }
 
-async function handleDelete(trade) {
-  if (confirm(t('trades.confirm_delete'))) {
-    try {
-      await store.deleteTrade(trade.id)
-      toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.deleted'), life: 3000 })
-    } catch (err) {
-      toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
-    }
-  }
+function handleDelete(trade) {
+  confirm.require({
+    message: t('trades.confirm_delete'),
+    header: t('common.confirm'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('common.delete'), severity: 'danger' },
+    accept: async () => {
+      try {
+        await store.deleteTrade(trade.id)
+        toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.deleted'), life: 3000 })
+      } catch (err) {
+        toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+      }
+    },
+  })
 }
 
 function openShare(trade) {
