@@ -61,6 +61,15 @@ COPY --from=composer-build /build /var/www/api
 # Copy the crontab (versioned in the repo) — single source of truth for schedules
 COPY scheduler/crontab /etc/crontab
 
+# Build-time sanity checks: fail fast if what supercronic is about to exec
+# is not actually in the image. Catches COPY mishaps, missing files, and
+# PATH issues (php binary) before the container ever starts.
+RUN test -x /usr/local/bin/php \
+ && test -f /var/www/api/cli/sync-brokers.php \
+ && test -f /etc/crontab \
+ && echo "[scheduler build] all paths verified" \
+ || (echo "[scheduler build] SANITY CHECK FAILED" && ls -la /var/www/api/cli /etc/crontab /usr/local/bin/php 2>&1; exit 1)
+
 WORKDIR /var/www/api
 
 # Running as non-root isn't worth the permission dance for a cron worker
