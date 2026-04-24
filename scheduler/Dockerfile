@@ -70,9 +70,16 @@ RUN test -x /usr/local/bin/php \
  && echo "[scheduler build] all paths verified" \
  || (echo "[scheduler build] SANITY CHECK FAILED" && ls -la /var/www/api/cli /etc/crontab /usr/local/bin/php 2>&1; exit 1)
 
+# Print the crontab so we can see exactly what supercronic will parse (CR/LF,
+# whitespace, etc.). Visible in the Railway build log.
+RUN echo "[scheduler build] crontab content:" && od -c /etc/crontab | tail -20
+
 WORKDIR /var/www/api
 
 # Running as non-root isn't worth the permission dance for a cron worker
 # with no inbound sockets; keep root inside the container like api/Dockerfile.
 
-CMD ["supercronic", "/etc/crontab"]
+# -debug makes supercronic log every parse/schedule/exec decision. Essential
+# for diagnosing "Failed to fork exec" style errors where the vanilla logs
+# don't tell you which command is being exec'd.
+CMD ["supercronic", "-debug", "/etc/crontab"]
