@@ -1,13 +1,18 @@
-# Trading Journal — scheduled jobs (supercronic format: standard cron, 5 fields).
+# Trading Journal — scheduled jobs (Debian /etc/cron.d format: 6 fields, with USER).
 #
-# Each job's output goes to the container's stdout/stderr, visible in Railway logs.
-# The actual interval applied by a job is typically governed by an env var
-# (e.g. BROKER_SYNC_INTERVAL_MINUTES): supercronic only controls how often the
-# script runs, the script decides which work is actually due.
+# Each job's output goes to /var/log/cron.log, which is tailed into the container
+# stdout by the entrypoint. The actual interval applied by a job is typically
+# governed by an env var (e.g. BROKER_SYNC_INTERVAL_MINUTES): cron only controls
+# how often the script runs, the script decides which work is actually due.
 #
 # To add a new scheduled job: append a line below. Commit the change → next
 # deploy of the `scheduler` service picks it up.
 
+# Cron under Debian does NOT inherit the container env by default; we source
+# the env in the entrypoint, write it to /etc/environment, and cron reads it.
+
 # Broker auto-sync — runs every 5 min; the script picks only connections
 # whose last_sync_at is older than BROKER_SYNC_INTERVAL_MINUTES (default 15).
-*/5 * * * * /usr/local/bin/php /var/www/api/cli/sync-brokers.php
+*/5 * * * * root . /etc/container-env && /usr/local/bin/php /var/www/api/cli/sync-brokers.php >> /var/log/cron.log 2>&1
+
+# Trailing newline required by debian cron — do not delete
