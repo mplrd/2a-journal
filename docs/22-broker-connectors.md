@@ -29,6 +29,7 @@ Synchronisation automatique de l'historique des trades fermés depuis les platef
 - **Auto-création symboles** : les symboles inconnus sont créés dans "Mes actifs" (type OTHER, devise du compte)
 - **Résolution symboles** : utilise les alias existants (`symbol_aliases`) pour mapper broker → journal
 - **Historique des syncs** : chaque sync est journalisée dans `sync_logs`
+- **Auto-sync périodique** : les connexions `ACTIVE` sont synchronisées automatiquement par un scheduler dédié (container séparé sur Railway). Le bouton "Synchroniser" reste disponible pour un refresh à la demande. Voir [31-broker-auto-sync.md](31-broker-auto-sync.md) pour l'architecture, les env vars (intervalle, circuit breaker), et la procédure de déploiement.
 
 ## Architecture
 
