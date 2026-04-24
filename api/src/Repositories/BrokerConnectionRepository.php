@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\ConnectionStatus;
 use PDO;
 
 class BrokerConnectionRepository
@@ -78,5 +79,59 @@ class BrokerConnectionRepository
     public function delete(int $id): void
     {
         $this->pdo->prepare("DELETE FROM broker_connections WHERE id = :id")->execute(['id' => $id]);
+    }
+
+    /**
+     * Return ACTIVE connections that are due for an auto-sync pass.
+     *
+     * A connection is due when it was never synced OR its last sync is older
+     * than the given interval. The interval is clamped to [1, 1440] minutes
+     * and injected as a safe integer literal because MariaDB does not support
+     * bound parameters inside INTERVAL expressions.
+     */
+    public function findDueForAutoSync(int $intervalMinutes): array
+    {
+        if ($intervalMinutes < 1) {
+            $intervalMinutes = 1;
+        } elseif ($intervalMinutes > 1440) {
+            $intervalMinutes = 1440;
+        }
+
+        // UTC_TIMESTAMP() sidesteps the MySQL session-timezone setting so the
+        // comparison stays consistent with PHP's UTC-written last_sync_at.
+        $sql = "SELECT * FROM broker_connections
+                WHERE status = :status
+                  AND (last_sync_at IS NULL OR last_sync_at < UTC_TIMESTAMP() - INTERVAL {$intervalMinutes} MINUTE)
+                ORDER BY last_sync_at IS NULL DESC, last_sync_at ASC";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(['status' => ConnectionStatus::ACTIVE->value]);
+        return $stmt->fetchAll();
+    }
+
+    public function incrementFailures(int $id): void
+    {
+        $this->pdo->prepare(
+            "UPDATE broker_connections SET consecutive_failures = consecutive_failures + 1 WHERE id = :id"
+        )->execute(['id' => $id]);
+    }
+
+    public function resetFailures(int $id): void
+    {
+        $this->pdo->prepare(
+            "UPDATE broker_connections SET consecutive_failures = 0 WHERE id = :id"
+        )->execute(['id' => $id]);
+    }
+
+    public function markError(int $id, string $error): void
+    {
+        $this->pdo->prepare(
+            "UPDATE broker_connections
+             SET status = :status, last_sync_error = :err
+             WHERE id = :id"
+        )->execute([
+            'status' => ConnectionStatus::ERROR->value,
+            'err' => $error,
+            'id' => $id,
+        ]);
     }
 }

@@ -1,0 +1,13 @@
+# Trading Journal — scheduled jobs (supercronic format: standard cron, 5 fields).
+#
+# Each job's output goes to the container's stdout/stderr, visible in Railway logs.
+# The actual interval applied by a job is typically governed by an env var
+# (e.g. BROKER_SYNC_INTERVAL_MINUTES): supercronic only controls how often the
+# script runs, the script decides which work is actually due.
+#
+# To add a new scheduled job: append a line below. Commit the change → next
+# deploy of the `scheduler` service picks it up.
+
+# Broker auto-sync — runs every 5 min; the script picks only connections
+# whose last_sync_at is older than BROKER_SYNC_INTERVAL_MINUTES (default 15).
+*/5 * * * * php /var/www/api/cli/sync-brokers.php
