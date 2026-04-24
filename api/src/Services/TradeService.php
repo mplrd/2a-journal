@@ -368,7 +368,26 @@ class TradeService
             throw new ValidationException('trades.error.already_closed', 'status');
         }
 
-        $updated = $this->tradeRepo->update($tradeId, ['be_reached' => 1]);
+        $previousStatus = $trade['status'];
+        $updateData = ['be_reached' => 1];
+
+        if ($previousStatus === TradeStatus::OPEN->value) {
+            $updateData['status'] = TradeStatus::SECURED->value;
+        }
+
+        $updated = $this->tradeRepo->update($tradeId, $updateData);
+
+        if (isset($updateData['status']) && $updateData['status'] !== $previousStatus) {
+            $this->historyRepo->create([
+                'entity_type' => EntityType::TRADE->value,
+                'entity_id' => $tradeId,
+                'previous_status' => $previousStatus,
+                'new_status' => $updateData['status'],
+                'user_id' => $userId,
+                'trigger_type' => TriggerType::MANUAL->value,
+            ]);
+        }
+
         $updated['partial_exits'] = $this->partialExitRepo->findByTradeId($tradeId);
 
         return $updated;
