@@ -1,0 +1,21 @@
+# Trading Journal — scheduled jobs (Debian /etc/cron.d format: 6 fields, with USER).
+#
+# Each job's output goes to /var/log/cron.log, which is tailed into the container
+# stdout by the entrypoint. The actual interval applied by a job is typically
+# governed by an env var (e.g. BROKER_SYNC_INTERVAL_MINUTES): cron only controls
+# how often the script runs, the script decides which work is actually due.
+#
+# To add a new scheduled job: append a line below. Commit the change → next
+# deploy of the `scheduler` service picks it up.
+
+# Cron under Debian does NOT inherit the container env by default; we source
+# the env in the entrypoint, write it to /etc/environment, and cron reads it.
+
+# Broker auto-sync — invoked every minute (fine-grained tick). The actual
+# per-connection frequency is governed by BROKER_SYNC_INTERVAL_MINUTES (env
+# var, default 15): the script returns immediately for connections synced
+# more recently than that, so a 1-min tick costs almost nothing.
+# Keeping a single user-facing knob (the env var) makes operations simpler.
+*/1 * * * * root . /etc/container-env && /usr/local/bin/php /var/www/api/cli/sync-brokers.php >> /var/log/cron.log 2>&1
+
+# Trailing newline required by debian cron — do not delete
