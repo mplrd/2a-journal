@@ -17,6 +17,11 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+// Identifier emitted in every stdout/stderr JSON line so logs from multiple
+// scheduled jobs can be filtered/grouped downstream (Railway, Grafana, etc.).
+// Convention: kebab-case, matches the CLI filename stem.
+const JOB_NAME = 'broker-sync';
+
 use App\Core\Database;
 use App\Repositories\AccountRepository;
 use App\Repositories\BrokerConnectionRepository;
@@ -64,6 +69,7 @@ $lockPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'broker-sync.lock';
 $lockHandle = fopen($lockPath, 'c');
 if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
     fwrite(STDOUT, json_encode([
+        'job' => JOB_NAME,
         'status' => 'locked',
         'message' => 'another run in progress',
     ]) . PHP_EOL);
@@ -133,10 +139,11 @@ try {
 
     $summary = $scheduler->runDueConnections();
 
-    fwrite(STDOUT, json_encode(array_merge(['status' => 'ok'], $summary)) . PHP_EOL);
+    fwrite(STDOUT, json_encode(array_merge(['job' => JOB_NAME, 'status' => 'ok'], $summary)) . PHP_EOL);
     exit(0);
 } catch (Throwable $e) {
     fwrite(STDERR, json_encode([
+        'job' => JOB_NAME,
         'status' => 'error',
         'message' => $e->getMessage(),
     ]) . PHP_EOL);

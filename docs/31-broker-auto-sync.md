@@ -121,8 +121,20 @@ BrokerSyncSchedulerService::runDueConnections()
 ### Exemple de sortie JSON
 
 ```json
-{"status":"ok","skipped":false,"processed":12,"success":11,"failed":1,"deactivated":0}
+{"job":"broker-sync","status":"ok","skipped":false,"total_active":15,"processed":12,"success":11,"failed":1,"deactivated":0,"interval_minutes":15}
 ```
+
+| Champ | Signification |
+|---|---|
+| `job` | Nom du job émetteur. Utile quand le scheduler hébergera plusieurs jobs (filtre / alerte par job). |
+| `status` | `ok` (run OK), `locked` (un autre run était en cours, skip silencieux), `error` (erreur fatale avant le run, stderr + exit 1). |
+| `skipped` | `true` si `BROKER_AUTO_SYNC_ENABLED=false` — le scheduler tourne mais ne fait rien. |
+| `total_active` | Nombre de connexions `status=ACTIVE` en BDD au moment du run, indépendamment de leur `last_sync_at`. |
+| `processed` | Nombre de connexions effectivement pickées pour sync (filtrage `last_sync_at + INTERVAL < NOW()`). Si `total_active > processed`, la différence sont des connexions syncées trop récemment. |
+| `success` | Parmi les `processed`, combien ont été syncées avec succès. |
+| `failed` | Parmi les `processed`, combien ont échoué (incrémente `consecutive_failures`). |
+| `deactivated` | Parmi les `failed`, combien ont atteint le seuil `BROKER_SYNC_MAX_FAILURES` et sont passées en `status=ERROR`. |
+| `interval_minutes` | Valeur effective de `BROKER_SYNC_INTERVAL_MINUTES` appliquée par ce run. Permet de vérifier d'un coup d'œil que l'env var est bien lue. |
 
 ### Circuit breaker
 

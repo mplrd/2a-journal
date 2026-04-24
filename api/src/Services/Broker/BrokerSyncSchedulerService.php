@@ -25,23 +25,26 @@ class BrokerSyncSchedulerService
     /**
      * Sync all due connections. Returns a run summary for logging.
      *
-     * @return array{skipped: bool, processed: int, success: int, failed: int, deactivated: int}
+     * @return array{skipped: bool, total_active: int, processed: int, success: int, failed: int, deactivated: int, interval_minutes: int}
      */
     public function runDueConnections(): array
     {
+        $intervalMinutes = (int) $this->config['sync_interval_minutes'];
+
         if (!$this->config['auto_sync_enabled']) {
             return [
                 'skipped' => true,
+                'total_active' => 0,
                 'processed' => 0,
                 'success' => 0,
                 'failed' => 0,
                 'deactivated' => 0,
+                'interval_minutes' => $intervalMinutes,
             ];
         }
 
-        $connections = $this->connectionRepo->findDueForAutoSync(
-            $this->config['sync_interval_minutes']
-        );
+        $totalActive = $this->connectionRepo->countActive();
+        $connections = $this->connectionRepo->findDueForAutoSync($intervalMinutes);
 
         $success = 0;
         $failed = 0;
@@ -70,10 +73,12 @@ class BrokerSyncSchedulerService
 
         return [
             'skipped' => false,
+            'total_active' => $totalActive,
             'processed' => count($connections),
             'success' => $success,
             'failed' => $failed,
             'deactivated' => $deactivated,
+            'interval_minutes' => $intervalMinutes,
         ];
     }
 }

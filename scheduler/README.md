@@ -19,8 +19,12 @@ Les entry points CLI planifiés et leurs services vivent dans `api/` avec le res
 
 1. Créer le service + repo methods dans `api/src/...` (code métier).
 2. Créer l'entry point CLI dans `api/cli/<job-name>.php` (wrapper fin qui bootstrap + appelle le service).
-3. Ajouter une ligne dans `scheduler/crontab` pointant vers le nouvel entry point.
-4. Commit → prochain deploy du service `scheduler` sur Railway applique le changement.
+3. En haut du fichier CLI, déclarer `const JOB_NAME = '<job-name>';` (kebab-case, match le nom du fichier).
+4. Inclure `'job' => JOB_NAME` dans **chaque** sortie JSON (stdout pour succès/locked, stderr pour error). Permet le filtrage des logs quand plusieurs jobs coexistent.
+5. Ajouter une ligne dans `scheduler/crontab` pointant vers le nouvel entry point.
+6. Commit → prochain deploy du service `scheduler` sur Railway applique le changement.
+
+Voir `api/cli/sync-brokers.php` comme référence du pattern.
 
 ## Déploiement Railway
 

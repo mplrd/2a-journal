@@ -56,6 +56,7 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $scheduler = $this->makeScheduler(['auto_sync_enabled' => false]);
 
         $this->connectionRepo->expects($this->never())->method('findDueForAutoSync');
+        $this->connectionRepo->expects($this->never())->method('countActive');
         $this->syncService->expects($this->never())->method('sync');
 
         $result = $scheduler->runDueConnections();
@@ -65,6 +66,8 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $this->assertSame(0, $result['success']);
         $this->assertSame(0, $result['failed']);
         $this->assertSame(0, $result['deactivated']);
+        $this->assertSame(0, $result['total_active']);
+        $this->assertSame(15, $result['interval_minutes']);
     }
 
     // ── Happy path: all succeed ─────────────────────────────────
@@ -77,6 +80,7 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $conn2 = $this->connectionRow(2, 20);
 
         $this->connectionRepo->method('findDueForAutoSync')->willReturn([$conn1, $conn2]);
+        $this->connectionRepo->method('countActive')->willReturn(2);
 
         $this->syncService->expects($this->exactly(2))->method('sync');
 
@@ -87,10 +91,12 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $result = $scheduler->runDueConnections();
 
         $this->assertFalse($result['skipped']);
+        $this->assertSame(2, $result['total_active']);
         $this->assertSame(2, $result['processed']);
         $this->assertSame(2, $result['success']);
         $this->assertSame(0, $result['failed']);
         $this->assertSame(0, $result['deactivated']);
+        $this->assertSame(15, $result['interval_minutes']);
     }
 
     // ── Mix: 1 ok + 1 non-fatal fail ────────────────────────────
@@ -103,6 +109,7 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $connKo = $this->connectionRow(2, 20, 0); // first failure
 
         $this->connectionRepo->method('findDueForAutoSync')->willReturn([$connOk, $connKo]);
+        $this->connectionRepo->method('countActive')->willReturn(5); // 2 due + 3 too-recent
 
         $this->syncService->method('sync')->willReturnCallback(function (int $id) {
             if ($id === 2) {
@@ -117,6 +124,7 @@ class BrokerSyncSchedulerServiceTest extends TestCase
 
         $result = $scheduler->runDueConnections();
 
+        $this->assertSame(5, $result['total_active']);
         $this->assertSame(2, $result['processed']);
         $this->assertSame(1, $result['success']);
         $this->assertSame(1, $result['failed']);
@@ -133,6 +141,7 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $connKo = $this->connectionRow(7, 10, 2);
 
         $this->connectionRepo->method('findDueForAutoSync')->willReturn([$connKo]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
 
         $this->syncService->method('sync')->willThrowException(new RuntimeException('oauth expired'));
 
@@ -156,11 +165,28 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $scheduler = $this->makeScheduler();
 
         $this->connectionRepo->method('findDueForAutoSync')->willReturn([]);
+        $this->connectionRepo->method('countActive')->willReturn(0);
         $this->syncService->expects($this->never())->method('sync');
 
         $result = $scheduler->runDueConnections();
 
         $this->assertFalse($result['skipped']);
+        $this->assertSame(0, $result['total_active']);
         $this->assertSame(0, $result['processed']);
+        $this->assertSame(15, $result['interval_minutes']);
+    }
+
+    // ── Interval from config reflected in output ────────────────
+
+    public function testIntervalMinutesReflectsConfig(): void
+    {
+        $scheduler = $this->makeScheduler(['sync_interval_minutes' => 42]);
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([]);
+        $this->connectionRepo->method('countActive')->willReturn(0);
+
+        $result = $scheduler->runDueConnections();
+
+        $this->assertSame(42, $result['interval_minutes']);
     }
 }

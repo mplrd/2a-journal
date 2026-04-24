@@ -177,6 +177,24 @@ class BrokerConnectionRepositoryTest extends TestCase
         $this->assertSame(0, (int) $row['consecutive_failures']);
     }
 
+    // ── countActive ────────────────────────────────────────────
+
+    public function testCountActiveReturnsZeroWhenEmpty(): void
+    {
+        $this->assertSame(0, $this->repo->countActive());
+    }
+
+    public function testCountActiveCountsOnlyActive(): void
+    {
+        $this->createConnection(['status' => \App\Enums\ConnectionStatus::ACTIVE->value]);
+        $this->createConnection(['status' => \App\Enums\ConnectionStatus::ACTIVE->value]);
+        $this->createConnection(['status' => \App\Enums\ConnectionStatus::PENDING->value]);
+        $this->createConnection(['status' => \App\Enums\ConnectionStatus::ERROR->value]);
+        $this->createConnection(['status' => \App\Enums\ConnectionStatus::REVOKED->value]);
+
+        $this->assertSame(2, $this->repo->countActive());
+    }
+
     public function testMarkErrorSetsStatusAndKeepsFailureCount(): void
     {
         $conn = $this->createConnection();
