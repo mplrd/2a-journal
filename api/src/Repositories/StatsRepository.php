@@ -439,10 +439,20 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
+    /**
+     * Ongoing trades for the dashboard "En cours" panel: OPEN + SECURED.
+     * Despite the "open" name, the semantics are "not yet closed".
+     * The method keeps its historical name to avoid ripple renames through
+     * the service/controller/frontend store layers.
+     */
     public function getOpenTrades(int $userId, int $limit = 5, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => TradeStatus::OPEN->value];
+        $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured)';
+        $params = [
+            'user_id' => $userId,
+            'status_open' => TradeStatus::OPEN->value,
+            'status_secured' => TradeStatus::SECURED->value,
+        ];
 
         if (!empty($filters['account_id'])) {
             $where .= ' AND p.account_id = :account_id';

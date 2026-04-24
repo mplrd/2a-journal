@@ -144,7 +144,7 @@ class StatsRepositoryTest extends TestCase
         return $this->tradeRepo->findById((int) $trade['id']);
     }
 
-    private function createOpenTrade(): array
+    private function createOpenTrade(string $status = 'OPEN'): array
     {
         $position = $this->positionRepo->create([
             'user_id' => $this->userId,
@@ -163,7 +163,7 @@ class StatsRepositoryTest extends TestCase
             'position_id' => (int) $position['id'],
             'opened_at' => '2026-01-15 10:00:00',
             'remaining_size' => 1.0,
-            'status' => 'OPEN',
+            'status' => $status,
         ]);
     }
 
@@ -766,15 +766,17 @@ class StatsRepositoryTest extends TestCase
 
     // ── getOpenTrades ──────────────────────────────────────────
 
-    public function testGetOpenTradesReturnsOnlyOpenTrades(): void
+    public function testGetOpenTradesReturnsOngoingTradesAndIgnoresClosed(): void
     {
         $this->createClosedTrade(100.0, 'TP');
-        $this->createOpenTrade();
-        $this->createOpenTrade();
+        $this->createOpenTrade('OPEN');
+        $this->createOpenTrade('OPEN');
+        $this->createOpenTrade('SECURED');
 
         $result = $this->repo->getOpenTrades($this->userId);
 
-        $this->assertCount(2, $result);
+        // "Open" on the dashboard means "ongoing" = OPEN + SECURED. CLOSED excluded.
+        $this->assertCount(3, $result);
         $this->assertArrayHasKey('symbol', $result[0]);
         $this->assertArrayHasKey('direction', $result[0]);
         $this->assertArrayHasKey('entry_price', $result[0]);
