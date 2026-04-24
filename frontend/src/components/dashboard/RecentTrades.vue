@@ -50,6 +50,16 @@ function formatPnl(pnl) {
   const num = Number(pnl)
   return (num >= 0 ? '+' : '') + num.toFixed(2)
 }
+
+function viewAll() {
+  // From the "open trades" tab, we want the destination view to pre-filter on
+  // ongoing trades (OPEN + SECURED). From "recent closed", no filter needed.
+  if (activeTab.value === 'open') {
+    router.push({ path: '/trades', query: { statuses: 'OPEN,SECURED' } })
+  } else {
+    router.push('/trades')
+  }
+}
 </script>
 
 <template>
@@ -66,7 +76,7 @@ function formatPnl(pnl) {
           iconPos="right"
           size="small"
           text
-          @click="router.push('/trades')"
+          @click="viewAll"
         />
       </div>
 

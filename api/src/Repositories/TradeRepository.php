@@ -76,7 +76,18 @@ class TradeRepository
             $params['account_id'] = $filters['account_id'];
         }
 
-        if (!empty($filters['status'])) {
+        // `statuses` (list) takes precedence over the legacy `status` (single)
+        // when both are present. Values are assumed already whitelisted by the
+        // caller via the TradeStatus enum.
+        if (!empty($filters['statuses']) && is_array($filters['statuses'])) {
+            $placeholders = [];
+            foreach (array_values($filters['statuses']) as $i => $s) {
+                $key = "status_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = $s;
+            }
+            $where .= ' AND t.status IN (' . implode(', ', $placeholders) . ')';
+        } elseif (!empty($filters['status'])) {
             $where .= ' AND t.status = :status';
             $params['status'] = $filters['status'];
         }
