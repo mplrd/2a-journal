@@ -70,7 +70,7 @@ Toutes à déclarer sur **les deux services Railway** (`api` et `scheduler`) pou
 |---|---|---|---|
 | `BROKER_ENCRYPTION_KEY` | base64 32-byte | **aucun** — fail fast au boot si absente | Clé symétrique qui chiffre les credentials broker stockés en BDD (`broker_connections.credentials_encrypted`). **Doit être identique sur les services `api` et `scheduler`** sinon impossible de déchiffrer. Générer avec `openssl rand -base64 32`. |
 | `BROKER_AUTO_SYNC_ENABLED` | bool | `false` | Kill switch global. Si `false`, le scheduler tourne mais ne fait rien (`skipped:true` dans la sortie JSON). Utilisé aussi par l'api pour gater les endpoints `/broker/*`. |
-| `BROKER_SYNC_INTERVAL_MINUTES` | int | `15` | Fréquence minimale entre deux syncs d'une même connexion. Une connexion synchronisée il y a moins que cette valeur est skippée par la requête SQL. |
+| `BROKER_SYNC_INTERVAL_MINUTES` | int | `15` | **La fréquence effective d'auto-sync**. Cron déclenche le script PHP toutes les minutes (tick fin), mais le script ne synchronise une connexion que si son `last_sync_at` est plus ancien que cette valeur. Changer cette var = changer effectivement la fréquence, sans redeploy du scheduler. |
 | `BROKER_SYNC_MAX_FAILURES` | int | `3` | Circuit breaker : après N échecs consécutifs, la connexion passe en `status=ERROR` et n'est plus pickée tant que l'utilisateur ne la réactive pas. |
 
 ### Note sur `BROKER_ENCRYPTION_KEY`
