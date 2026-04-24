@@ -50,8 +50,12 @@ echo "[scheduler] ========== PHP CLI smoke test =========="
 # Run the CLI once at startup so any bootstrap error surfaces here rather
 # than hiding inside a cron log. `. /etc/container-env` mirrors what cron
 # jobs will do so we test the exact path they will use.
+# Explicit disable of `set -e` around the test so we always print the exit
+# code, even on failure.
+set +e
 (. /etc/container-env && /usr/local/bin/php /var/www/api/cli/sync-brokers.php)
 smoke_exit=$?
+set -e
 echo "[scheduler] smoke test exit=${smoke_exit}"
 if [ "${smoke_exit}" -ne 0 ]; then
     echo "[scheduler] FATAL: smoke test failed; refusing to start cron with a broken payload."
