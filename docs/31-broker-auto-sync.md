@@ -68,9 +68,22 @@ Toutes à déclarer sur **les deux services Railway** (`api` et `scheduler`) pou
 
 | Variable | Type | Défaut | Rôle |
 |---|---|---|---|
+| `BROKER_ENCRYPTION_KEY` | base64 32-byte | **aucun** — fail fast au boot si absente | Clé symétrique qui chiffre les credentials broker stockés en BDD (`broker_connections.credentials_encrypted`). **Doit être identique sur les services `api` et `scheduler`** sinon impossible de déchiffrer. Générer avec `openssl rand -base64 32`. |
 | `BROKER_AUTO_SYNC_ENABLED` | bool | `false` | Kill switch global. Si `false`, le scheduler tourne mais ne fait rien (`skipped:true` dans la sortie JSON). Utilisé aussi par l'api pour gater les endpoints `/broker/*`. |
 | `BROKER_SYNC_INTERVAL_MINUTES` | int | `15` | Fréquence minimale entre deux syncs d'une même connexion. Une connexion synchronisée il y a moins que cette valeur est skippée par la requête SQL. |
 | `BROKER_SYNC_MAX_FAILURES` | int | `3` | Circuit breaker : après N échecs consécutifs, la connexion passe en `status=ERROR` et n'est plus pickée tant que l'utilisateur ne la réactive pas. |
+
+### Note sur `BROKER_ENCRYPTION_KEY`
+
+Avant 2026-04, `config/broker.php` avait un fallback silencieux sur une clé 32-zéros si la var n'était pas définie — les credentials étaient donc "chiffrés" avec une clé publique (présente en clair dans le code), neutralisant la protection au repos. Ce fallback a été retiré : l'absence de la var déclenche maintenant un `RuntimeException` au boot.
+
+**Procédure de rotation future** (si la clé est compromise ou pour rotation périodique) :
+1. Générer la nouvelle clé
+2. Écrire un script CLI type `api/cli/rotate-broker-key.php` qui prend deux env vars (`BROKER_ENCRYPTION_KEY_OLD` + `BROKER_ENCRYPTION_KEY`), instancie deux `CredentialEncryptionService`, et loop sur `broker_connections` avec `decrypt(OLD) → encrypt(NEW) → update`
+3. Exécuter le script une fois en prod
+4. Retirer `BROKER_ENCRYPTION_KEY_OLD` des env vars
+
+Le script n'a pas été livré avec cette itération car il n'y avait pas de données à migrer au moment du durcissement (feature jamais activée en prod, 0 connexions broker réelles). À écrire au premier besoin réel.
 
 **Note d'évolution** : ces valeurs sont pour l'instant câblées via env vars Railway (changement = redeploy). Un BO admin futur pourra les override via une table `platform_settings`, avec précédence : settings BDD > env var > défaut.
 
