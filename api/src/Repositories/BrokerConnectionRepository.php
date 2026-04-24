@@ -122,6 +122,13 @@ class BrokerConnectionRepository
         )->execute(['id' => $id]);
     }
 
+    public function countActive(): int
+    {
+        $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM broker_connections WHERE status = :status");
+        $stmt->execute(['status' => ConnectionStatus::ACTIVE->value]);
+        return (int) $stmt->fetchColumn();
+    }
+
     public function markError(int $id, string $error): void
     {
         $this->pdo->prepare(
