@@ -236,6 +236,38 @@ class StatsFlowTest extends TestCase
         $this->assertSame(1, $body['data']['overview']['total_trades']);
     }
 
+    // Guard against a regression where a 100% SELL profitable account
+    // would surface a negative avg R:R (reported 2026-04-23, unreproducible
+    // on current data — this test pins the expected sign behavior so any
+    // future refactor that breaks SELL direction math fails loudly).
+    public function testAvgRrPositiveWhenAllSellsProfitable(): void
+    {
+        // Entry 18500, SL 50pts, size 1 → risk = 50.
+        // SELLs profitable when exit < entry. Exits 18400/18450/18300
+        // → PnL +100/+50/+200, R:R +2/+1/+4 → avg = +2.33.
+        $this->createAndCloseTradeWithOptions($this->accountId, 18400, 'TP', ['direction' => 'SELL']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18450, 'TP', ['direction' => 'SELL']);
+        $this->createAndCloseTradeWithOptions($this->accountId, 18300, 'TP', ['direction' => 'SELL']);
+
+        $overview = $this->router->dispatch($this->authRequest('GET', '/stats/overview'))->getBody();
+        $this->assertSame(3, $overview['data']['overview']['total_trades']);
+        $this->assertGreaterThan(0, $overview['data']['overview']['total_pnl']);
+        $this->assertGreaterThan(0, $overview['data']['overview']['avg_rr']);
+
+        $byDir = $this->router->dispatch($this->authRequest('GET', '/stats/by-direction'))->getBody();
+        $sellRow = null;
+        foreach ($byDir['data'] as $row) {
+            if ($row['direction'] === 'SELL') {
+                $sellRow = $row;
+                break;
+            }
+        }
+        $this->assertNotNull($sellRow, 'SELL group missing from by-direction stats');
+        $this->assertSame(3, (int) $sellRow['total_trades']);
+        $this->assertGreaterThan(0, (float) $sellRow['total_pnl']);
+        $this->assertGreaterThan(0, (float) $sellRow['avg_rr']);
+    }
+
     public function testChartsFiltersSymbols(): void
     {
         $this->createAndCloseTradeWithOptions($this->accountId, 18600, 'TP', ['symbol' => 'NASDAQ']);

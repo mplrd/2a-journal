@@ -454,6 +454,23 @@ class TradeFlowTest extends TestCase
         $this->assertArrayHasKey('partial_exits', $body['data']);
     }
 
+    public function testMarkBeReachedTransitionsOpenToSecured(): void
+    {
+        $trade = $this->createTrade(['be_points' => 30]);
+
+        $this->assertSame('OPEN', $trade['status']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/be-hit")
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame('SECURED', $body['data']['status']);
+        $this->assertSame(1, (int) $body['data']['be_reached']);
+    }
+
     public function testMarkBeReachedAlreadyClosed(): void
     {
         $trade = $this->createTrade(['size' => 1]);

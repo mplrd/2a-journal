@@ -74,12 +74,12 @@ duration_minutes = (closed_at - opened_at) en minutes
 ## Cycle de vie d'un trade
 
 ```
-OPEN → (première sortie partielle) → SECURED → (dernière sortie) → CLOSED
+OPEN → (première sortie partielle OU BE atteint) → SECURED → (dernière sortie) → CLOSED
 OPEN → (sortie totale directe) → CLOSED
 ```
 
-- **OPEN** : trade actif, remaining_size = size initial
-- **SECURED** : au moins une sortie partielle effectuée
+- **OPEN** : trade actif, remaining_size = size initial, aucun risque neutralisé
+- **SECURED** : risque neutralisé — soit par une sortie partielle, soit par BE atteint (SL remonté à l'entrée)
 - **CLOSED** : remaining_size = 0, toutes les métriques finales calculées
 
 ## Transitions de statut
@@ -88,6 +88,7 @@ OPEN → (sortie totale directe) → CLOSED
 |----|------|-------------|
 | — | OPEN | Création du trade |
 | OPEN | SECURED | Première sortie partielle |
+| OPEN | SECURED | BE atteint sans sortie partielle (`POST /trades/{id}/be-hit`) |
 | OPEN | CLOSED | Sortie totale directe |
 | SECURED | CLOSED | Dernière sortie (remaining = 0) |
 

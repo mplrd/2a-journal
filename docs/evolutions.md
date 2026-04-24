@@ -2,65 +2,27 @@
 
 Liste des améliorations identifiées en cours de route mais sortant du scope d'une feature en cours. À planifier / prioriser quand les branches concernées seront mergées.
 
-## UX / UI
+## Statut / calculs
 
-### Remplacer les `window.confirm()` natifs restants par des Dialog PrimeVue
+### RR négatif sur un compte 100% shorts en profit
 
-**Contexte** : l'app mélangeait des `window.confirm()` natifs (alertes OS, sans dark mode, non stylables) et des `<Dialog>` PrimeVue. Le cas sur **AssetsTab** (suppression d'un actif) a été corrigé directement sur `develop`. **6 occurrences restent** à migrer sur le même pattern.
+**Contexte** : sur un compte qui n'a que des trades SELL et qui est globalement profitable, le R:R affiché ressort négatif. Symptôme probable : un signe non inversé quelque part pour les SELL dans le calcul du R:R agrégé (StatsRepository ou StatsService).
 
-**Occurrences restantes** (recensées le 2026-04-22) :
+**Diag 2026-04-24** :
+- Code relu : `TradeService::calculateFinalMetrics` (l.568) calcule `rr = totalPnl / (size * slPoints)` où `totalPnl` agrège des `partial_exits.pnl` déjà signés via `directionMultiplier` (l.287) → OK.
+- Agrégation : `StatsRepository::getOverview` et `dimensionStatsSelect` font simplement `AVG(t.risk_reward)` sur la valeur stockée → OK.
+- Seeder démo : formule cohérente BUY/SELL, avg_rr SELL = +0.537 en démo.
+- Tentative de reproduction en réimportant le compte réel : **non reproductible au 2026-04-24**.
+- Guard test posé : `StatsFlowTest::testAvgRrPositiveWhenAllSellsProfitable` (crée 3 SELL gagnants via l'API, vérifie `avg_rr > 0` sur `/stats/overview` et `/stats/by-direction`).
 
-| Fichier | Ligne | i18n key utilisée | Action |
-|---|---|---|---|
-| `frontend/src/views/AccountsView.vue` | 90 | `accounts.confirm_delete` | Supprimer un compte |
-| `frontend/src/views/OrdersView.vue` | 96 | `orders.confirm_cancel` | Annuler un ordre |
-| `frontend/src/views/OrdersView.vue` | 107 | `orders.confirm_execute` | Exécuter un ordre manuellement |
-| `frontend/src/views/OrdersView.vue` | 118 | `orders.confirm_delete` | Supprimer un ordre |
-| `frontend/src/views/SymbolsView.vue` | 54 | `symbols.confirm_delete` | Supprimer un actif (legacy, doublonne AssetsTab) |
-| `frontend/src/views/TradesView.vue` | 202 | `trades.confirm_delete` | Supprimer un trade |
+**À faire si ça revient** :
+- Screenshot + URL (filtres actifs dans la querystring).
+- Snapshot du trade concerné : `SELECT pnl, risk_reward, direction, entry_price, avg_exit_price, size, sl_points FROM trades t JOIN positions p ON p.id=t.position_id WHERE ...`.
+- Vérifier si `risk_reward` est négatif au niveau d'un trade (bug de persistence) ou si l'agrégation est en cause.
 
-**Problèmes** :
-- Incohérence UX avec le reste de l'app (`DeleteAccountDialog`, `ChangePasswordDialog`, résiliation billing utilisent tous `<Dialog>` PrimeVue)
-- Pas de dark mode, pas de contrôle visuel, pas de thématisation
-- Bloque le thread JS (modale bloquante du navigateur)
-
-**Pattern de référence** (voir `AssetsTab.vue` après le fix `chore/assets-confirm-dialog`) :
-```vue
-// script setup
-const deleteDialogVisible = ref(false)
-const itemToDelete = ref(null)
-const deleting = ref(false)
-
-function handleDelete(item) {
-  itemToDelete.value = item
-  deleteDialogVisible.value = true
-}
-
-async function confirmDelete() {
-  if (!itemToDelete.value) return
-  deleting.value = true
-  try {
-    await store.delete(itemToDelete.value.id)
-    toast.add({ ... })
-    deleteDialogVisible.value = false
-  } finally {
-    deleting.value = false
-  }
-}
-
-// template
-<Dialog v-model:visible="deleteDialogVisible" :header="t('…confirm_delete_title')" :modal="true" :style="{ width: '420px' }">
-  <p>{{ t('…confirm_delete_line', { ... }) }}</p>
-  <template #footer>
-    <Button :label="t('common.cancel')" severity="secondary" @click="deleteDialogVisible = false" />
-    <Button :label="t('common.delete')" severity="danger" :loading="deleting" @click="confirmDelete" />
-  </template>
-</Dialog>
-```
-
-Pour chaque vue : ajouter deux nouvelles clés i18n `…confirm_delete_title` (ou `_cancel_title` / `_execute_title`) et `…confirm_delete_line` avec interpolation du contexte (nom du compte, ID de l'ordre, etc.) pour une meilleure UX qu'un message générique.
-
-**Priorité** : basse (fonctionnel OK). À regrouper dans une branche dédiée `chore/replace-native-confirms`.
+**Repéré le** : 2026-04-23.
+**Statut** : en veille, non reproductible, filet en place.
+**Priorité** : haute si ça revient (fausse les stats).
 
 ---
 

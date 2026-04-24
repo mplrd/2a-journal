@@ -639,6 +639,73 @@ class TradeServiceTest extends TestCase
         ]);
     }
 
+    // ── Mark BE Reached ─────────────────────────────────────────
+
+    public function testMarkBeReachedTransitionsOpenToSecured(): void
+    {
+        $this->tradeRepo->method('findById')->willReturn($this->fakeTrade(['status' => 'OPEN']));
+        $this->partialExitRepo->method('findByTradeId')->willReturn([]);
+        $this->tradeRepo->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertSame(1, $data['be_reached']);
+            $this->assertSame('SECURED', $data['status']);
+            return $this->fakeTrade(['status' => 'SECURED', 'be_reached' => 1]);
+        });
+        $this->historyRepo->expects($this->once())->method('create')->with($this->callback(function ($entry) {
+            return $entry['previous_status'] === 'OPEN'
+                && $entry['new_status'] === 'SECURED'
+                && $entry['entity_type'] === 'TRADE';
+        }));
+
+        $result = $this->service->markBeReached(1, 1);
+
+        $this->assertSame('SECURED', $result['status']);
+        $this->assertSame(1, (int) $result['be_reached']);
+    }
+
+    public function testMarkBeReachedOnSecuredDoesNotLogHistory(): void
+    {
+        $this->tradeRepo->method('findById')->willReturn($this->fakeTrade(['status' => 'SECURED']));
+        $this->partialExitRepo->method('findByTradeId')->willReturn([]);
+        $this->tradeRepo->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertSame(1, $data['be_reached']);
+            $this->assertArrayNotHasKey('status', $data);
+            return $this->fakeTrade(['status' => 'SECURED', 'be_reached' => 1]);
+        });
+        $this->historyRepo->expects($this->never())->method('create');
+
+        $result = $this->service->markBeReached(1, 1);
+
+        $this->assertSame('SECURED', $result['status']);
+    }
+
+    public function testMarkBeReachedThrowsWhenAlreadyClosed(): void
+    {
+        $this->tradeRepo->method('findById')->willReturn($this->fakeTrade(['status' => 'CLOSED']));
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('trades.error.already_closed');
+
+        $this->service->markBeReached(1, 1);
+    }
+
+    public function testMarkBeReachedThrowsWhenNotFound(): void
+    {
+        $this->tradeRepo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+
+        $this->service->markBeReached(1, 999);
+    }
+
+    public function testMarkBeReachedThrowsForbidden(): void
+    {
+        $this->tradeRepo->method('findById')->willReturn($this->fakeTrade(['user_id' => 2]));
+
+        $this->expectException(ForbiddenException::class);
+
+        $this->service->markBeReached(1, 1);
+    }
+
     // ── Delete ──────────────────────────────────────────────────
 
     public function testDeleteSuccess(): void
