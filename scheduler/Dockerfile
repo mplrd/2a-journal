@@ -61,25 +61,27 @@ COPY --from=composer-build /build /var/www/api
 # Copy the crontab (versioned in the repo) — single source of truth for schedules
 COPY scheduler/crontab /etc/crontab
 
+# Entrypoint wrapper that prints runtime environment + runs a PHP CLI smoke
+# test before handing off to supercronic. Diagnoses whether "Failed to fork
+# exec" originates from our payload (PHP / script path) or from supercronic
+# itself.
+COPY scheduler/entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+
 # Build-time sanity checks: fail fast if what supercronic is about to exec
 # is not actually in the image. Catches COPY mishaps, missing files, and
 # PATH issues (php binary) before the container ever starts.
 RUN test -x /usr/local/bin/php \
+ && test -x /usr/local/bin/supercronic \
  && test -f /var/www/api/cli/sync-brokers.php \
  && test -f /etc/crontab \
+ && test -x /entrypoint.sh \
  && echo "[scheduler build] all paths verified" \
- || (echo "[scheduler build] SANITY CHECK FAILED" && ls -la /var/www/api/cli /etc/crontab /usr/local/bin/php 2>&1; exit 1)
-
-# Print the crontab so we can see exactly what supercronic will parse (CR/LF,
-# whitespace, etc.). Visible in the Railway build log.
-RUN echo "[scheduler build] crontab content:" && od -c /etc/crontab | tail -20
+ || (echo "[scheduler build] SANITY CHECK FAILED" && ls -la /var/www/api/cli /etc/crontab /usr/local/bin/php /usr/local/bin/supercronic /entrypoint.sh 2>&1; exit 1)
 
 WORKDIR /var/www/api
 
 # Running as non-root isn't worth the permission dance for a cron worker
 # with no inbound sockets; keep root inside the container like api/Dockerfile.
 
-# -debug makes supercronic log every parse/schedule/exec decision. Essential
-# for diagnosing "Failed to fork exec" style errors where the vanilla logs
-# don't tell you which command is being exec'd.
-CMD ["supercronic", "-debug", "/etc/crontab"]
+CMD ["/entrypoint.sh"]
