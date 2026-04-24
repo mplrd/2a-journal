@@ -328,6 +328,7 @@ function pnlClass(pnl) {
         optionLabel="label"
         optionValue="value"
         :placeholder="t('trades.filter_status')"
+        :show-toggle-all="false"
         class="w-48"
         display="chip"
         @change="applyFilters"

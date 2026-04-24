@@ -4,7 +4,18 @@ export const tradesService = {
   async list(filters = {}) {
     const params = new URLSearchParams()
     for (const [key, value] of Object.entries(filters)) {
-      if (value) params.append(key, value)
+      if (value == null || value === '') continue
+      if (Array.isArray(value)) {
+        // Serialize arrays as PHP expects them: key[]=v1&key[]=v2.
+        // URLSearchParams.append(key, array) would stringify to a comma-joined
+        // value that PHP would read as a single string.
+        if (value.length === 0) continue
+        for (const v of value) {
+          params.append(`${key}[]`, v)
+        }
+      } else {
+        params.append(key, value)
+      }
     }
     const query = params.toString()
     return api.get(`/trades${query ? `?${query}` : ''}`)
