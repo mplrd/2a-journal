@@ -10,4 +10,4 @@
 
 # Broker auto-sync — runs every 5 min; the script picks only connections
 # whose last_sync_at is older than BROKER_SYNC_INTERVAL_MINUTES (default 15).
-*/5 * * * * php /var/www/api/cli/sync-brokers.php
+*/5 * * * * /usr/local/bin/php /var/www/api/cli/sync-brokers.php

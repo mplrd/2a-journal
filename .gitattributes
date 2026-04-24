@@ -1,0 +1,19 @@
+# Force LF line endings for files that must be read by Linux tooling in
+# containers, regardless of the developer's OS. Windows git autocrlf would
+# otherwise produce CRLF in the repo checkout, which breaks:
+#  - supercronic parsing the crontab (treats \r as part of the command path)
+#  - /bin/sh shebangs in entrypoints
+#  - Dockerfile parsing in some BuildKit versions
+
+scheduler/crontab      text eol=lf
+scheduler/Dockerfile   text eol=lf
+api/Dockerfile         text eol=lf
+api/docker/*.sh        text eol=lf
+api/cli/*.php          text eol=lf
+
+# Safe default for text files; binaries stay binary
+*.sql   text eol=lf
+*.php   text eol=lf
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
