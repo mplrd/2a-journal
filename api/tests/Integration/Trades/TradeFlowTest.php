@@ -226,6 +226,84 @@ class TradeFlowTest extends TestCase
         $this->assertSame('NASDAQ', $body['data'][0]['symbol']);
     }
 
+    public function testListFiltersByMultipleStatuses(): void
+    {
+        // OPEN
+        $openTrade = $this->createTrade(['symbol' => 'NASDAQ']);
+        // SECURED: create + partial close 0.5 on size 2
+        $secTrade = $this->createTrade(['symbol' => 'NASDAQ', 'size' => 2]);
+        $this->router->dispatch($this->authRequest('POST', "/trades/{$secTrade['id']}/close", [
+            'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+        ]));
+        // CLOSED: create + full close
+        $closedTrade = $this->createTrade(['symbol' => 'NASDAQ', 'size' => 1]);
+        $this->router->dispatch($this->authRequest('POST', "/trades/{$closedTrade['id']}/close", [
+            'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+        ]));
+
+        // statuses[]=OPEN&statuses[]=SECURED should return the 2 first, not the CLOSED one
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/trades', [], ['statuses' => ['OPEN', 'SECURED']])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(2, $body['data']);
+        $returnedStatuses = array_column($body['data'], 'status');
+        sort($returnedStatuses);
+        $this->assertSame(['OPEN', 'SECURED'], $returnedStatuses);
+    }
+
+    public function testListFiltersBySingleStatusViaStatusesArray(): void
+    {
+        $this->createTrade(['symbol' => 'NASDAQ']);
+        $closedTrade = $this->createTrade(['symbol' => 'DAX', 'size' => 1]);
+        $this->router->dispatch($this->authRequest('POST', "/trades/{$closedTrade['id']}/close", [
+            'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+        ]));
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/trades', [], ['statuses' => ['CLOSED']])
+        );
+        $body = $response->getBody();
+
+        $this->assertCount(1, $body['data']);
+        $this->assertSame('CLOSED', $body['data'][0]['status']);
+    }
+
+    public function testListKeepsSingleStatusBackwardCompat(): void
+    {
+        $this->createTrade(['symbol' => 'NASDAQ']);
+        $closedTrade = $this->createTrade(['symbol' => 'DAX', 'size' => 1]);
+        $this->router->dispatch($this->authRequest('POST', "/trades/{$closedTrade['id']}/close", [
+            'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+        ]));
+
+        // Legacy single-status filter continues to work
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/trades', [], ['status' => 'OPEN'])
+        );
+        $body = $response->getBody();
+
+        $this->assertCount(1, $body['data']);
+        $this->assertSame('OPEN', $body['data'][0]['status']);
+    }
+
+    public function testListIgnoresInvalidStatusesEntries(): void
+    {
+        $this->createTrade(['symbol' => 'NASDAQ']);
+
+        // Malformed/unknown values must be filtered out rather than error
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/trades', [], ['statuses' => ['OPEN', 'BOGUS', '']])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(1, $body['data']);
+        $this->assertSame('OPEN', $body['data'][0]['status']);
+    }
+
     // ── Show ────────────────────────────────────────────────────
 
     public function testShowTradeSuccess(): void

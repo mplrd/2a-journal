@@ -149,8 +149,24 @@ class TradeService
             $validFilters['account_id'] = (int) $filters['account_id'];
         }
 
-        if (!empty($filters['status']) && TradeStatus::tryFrom($filters['status'])) {
-            $validFilters['status'] = $filters['status'];
+        // `statuses` is a list (from the multi-select filter); `status` (singular)
+        // stays for backward compat. Each entry is whitelisted via the TradeStatus
+        // enum, unknown or non-string entries are silently dropped rather than
+        // erroring out — a malformed query param shouldn't 400 the whole page.
+        $rawStatuses = [];
+        if (!empty($filters['statuses']) && is_array($filters['statuses'])) {
+            $rawStatuses = $filters['statuses'];
+        } elseif (!empty($filters['status'])) {
+            $rawStatuses = [$filters['status']];
+        }
+        $validStatuses = [];
+        foreach ($rawStatuses as $s) {
+            if (is_string($s) && TradeStatus::tryFrom($s)) {
+                $validStatuses[] = $s;
+            }
+        }
+        if (!empty($validStatuses)) {
+            $validFilters['statuses'] = array_values(array_unique($validStatuses));
         }
 
         if (!empty($filters['direction']) && Direction::tryFrom($filters['direction'])) {

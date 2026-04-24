@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
@@ -13,6 +14,7 @@ import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import PositionForm from '@/components/position/PositionForm.vue'
@@ -21,6 +23,7 @@ import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
 import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/enums'
 
+const route = useRoute()
 const { t } = useI18n()
 const toast = useToast()
 const confirm = useConfirm()
@@ -60,18 +63,32 @@ const showShare = ref(false)
 const sharePositionId = ref(null)
 
 const filterAccountId = ref(null)
-const filterStatus = ref(null)
+const filterStatuses = ref([])
 
-const statusOptions = [
-  { label: t('trades.all_statuses'), value: null },
-  ...Object.values(TradeStatus).map((value) => ({
-    label: t(`trades.statuses.${value}`),
-    value,
-  })),
-]
+const statusOptions = Object.values(TradeStatus).map((value) => ({
+  label: t(`trades.statuses.${value}`),
+  value,
+}))
+
+function applyQueryParamFilters() {
+  // ?statuses=OPEN,SECURED or ?statuses=OPEN&statuses=SECURED — accept both.
+  // Values not matching the TradeStatus enum are silently dropped.
+  const raw = route.query.statuses
+  if (!raw) return
+  const list = Array.isArray(raw) ? raw : String(raw).split(',')
+  const valid = Object.values(TradeStatus)
+  const filtered = list.map((s) => String(s).trim()).filter((s) => valid.includes(s))
+  if (filtered.length > 0) {
+    filterStatuses.value = filtered
+  }
+}
 
 onMounted(async () => {
+  applyQueryParamFilters()
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups(), customFieldsStore.fetchDefinitions()])
+  if (filterStatuses.value.length > 0) {
+    store.setFilters({ statuses: filterStatuses.value })
+  }
   await store.fetchTrades()
 })
 
@@ -91,7 +108,9 @@ function formatCustomFieldValue(value, fieldType) {
 async function applyFilters() {
   const filters = {}
   if (filterAccountId.value) filters.account_id = filterAccountId.value
-  if (filterStatus.value) filters.status = filterStatus.value
+  if (filterStatuses.value && filterStatuses.value.length > 0) {
+    filters.statuses = filterStatuses.value
+  }
   store.setFilters(filters)
   store.page = 1
   await store.fetchTrades()
@@ -303,13 +322,14 @@ function pnlClass(pnl) {
         class="w-48"
         @change="applyFilters"
       />
-      <Select
-        v-model="filterStatus"
+      <MultiSelect
+        v-model="filterStatuses"
         :options="statusOptions"
         optionLabel="label"
         optionValue="value"
         :placeholder="t('trades.filter_status')"
         class="w-48"
+        display="chip"
         @change="applyFilters"
       />
     </div>

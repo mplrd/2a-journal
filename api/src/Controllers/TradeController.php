@@ -28,6 +28,14 @@ class TradeController extends Controller
             }
         }
 
+        // statuses (multi-select) arrives as an array when the client sends
+        // ?statuses[]=OPEN&statuses[]=SECURED. Accept it separately so the
+        // empty-string check above does not reject an empty array silently.
+        $statuses = $request->getQuery('statuses');
+        if (is_array($statuses) && !empty($statuses)) {
+            $filters['statuses'] = $statuses;
+        }
+
         $result = $this->tradeService->list($userId, $filters);
 
         return $this->jsonSuccess($result['data'], $result['meta']);
