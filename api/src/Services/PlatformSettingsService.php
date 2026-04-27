@@ -45,6 +45,21 @@ class PlatformSettingsService
                 'env_var' => 'BROKER_SYNC_MAX_FAILURES',
                 'description' => 'admin.settings.desc.broker_sync_max_failures',
             ],
+            'email_verification_enabled' => [
+                'type' => SettingType::BOOL->value,
+                'env_var' => 'EMAIL_VERIFICATION_ENABLED',
+                'description' => 'admin.settings.desc.email_verification_enabled',
+            ],
+            'mail_enabled' => [
+                'type' => SettingType::BOOL->value,
+                'env_var' => 'MAIL_ENABLED',
+                'description' => 'admin.settings.desc.mail_enabled',
+            ],
+            'billing_grace_days' => [
+                'type' => SettingType::INT->value,
+                'env_var' => 'BILLING_GRACE_DAYS',
+                'description' => 'admin.settings.desc.billing_grace_days',
+            ],
         ];
     }
 

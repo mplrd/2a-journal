@@ -9,8 +9,9 @@ class EmailService
 
     private array $config;
     private string $templateDir;
+    private ?PlatformSettingsService $platformSettings;
 
-    public function __construct(array $config)
+    public function __construct(array $config, ?PlatformSettingsService $platformSettings = null)
     {
         $driver = $config['driver'] ?? 'log';
         if (!in_array($driver, self::VALID_DRIVERS, true)) {
@@ -21,7 +22,23 @@ class EmailService
         }
 
         $this->config = $config;
+        $this->platformSettings = $platformSettings;
         $this->templateDir = dirname(__DIR__, 2) . '/templates/emails';
+    }
+
+    /**
+     * `enabled` resolution: DB > env (via config) > false. Read at send-time
+     * so admin BO toggles take effect without restarting the api.
+     */
+    private function isEnabled(): bool
+    {
+        if ($this->platformSettings !== null) {
+            $value = $this->platformSettings->resolve('mail_enabled');
+            if ($value !== null) {
+                return (bool) $value;
+            }
+        }
+        return (bool) ($this->config['enabled'] ?? false);
     }
 
     public function sendVerificationEmail(string $toEmail, string $token, string $locale = 'en'): void
@@ -58,7 +75,7 @@ class EmailService
 
     private function send(string $to, string $subject, string $htmlBody): void
     {
-        if (!$this->config['enabled']) {
+        if (!$this->isEnabled()) {
             error_log("[EmailService] To: $to | Subject: $subject");
             error_log("[EmailService] HTML:\n$htmlBody");
             return;

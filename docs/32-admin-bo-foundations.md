@@ -97,15 +97,16 @@ Pas de défaut hardcodé dans le resolver. Les callers gèrent `null` explicitem
 
 ### Settings whitelistés (v1)
 
-| Key | Type | Env var fallback | Effet |
-|---|---|---|---|
-| `broker_auto_sync_enabled` | BOOL | `BROKER_AUTO_SYNC_ENABLED` | Active/désactive l'auto-sync brokers |
-| `broker_sync_interval_minutes` | INT | `BROKER_SYNC_INTERVAL_MINUTES` | Min minutes entre 2 syncs d'une connexion |
-| `broker_sync_max_failures` | INT | `BROKER_SYNC_MAX_FAILURES` | Seuil circuit breaker auto-sync |
+| Key | Type | Env var fallback | Consommé par | Effet |
+|---|---|---|---|---|
+| `broker_auto_sync_enabled` | BOOL | `BROKER_AUTO_SYNC_ENABLED` | `cli/sync-brokers.php` (chaque tick) | Active/désactive l'auto-sync brokers |
+| `broker_sync_interval_minutes` | INT | `BROKER_SYNC_INTERVAL_MINUTES` | id | Min minutes entre 2 syncs d'une connexion |
+| `broker_sync_max_failures` | INT | `BROKER_SYNC_MAX_FAILURES` | id | Seuil circuit breaker auto-sync |
+| `email_verification_enabled` | BOOL | `EMAIL_VERIFICATION_ENABLED` | `AuthService::register` | Force la vérification email à l'inscription |
+| `mail_enabled` | BOOL | `MAIL_ENABLED` | `EmailService::send` | Active l'envoi d'emails (sinon log seulement) |
+| `billing_grace_days` | INT | `BILLING_GRACE_DAYS` | `AuthService::register` | Délai de grâce après échec paiement (jours) |
 
-`cli/sync-brokers.php` lit ces 3 settings via `PlatformSettingsService::resolve()` à chaque tick. Modifier une valeur depuis le BO prend effet **au prochain tick cron** (pas de redeploy).
-
-D'autres settings (`mail_enabled`, `email_verification_enabled`, `billing_grace_days`) sont mentionnés dans la spec mais **non encore wirés** dans v1. À traiter dans une itération qui touchera respectivement EmailService, AuthService.register, BillingService.
+Modifier une valeur depuis le BO prend effet **au prochain appel** du consommateur (pas de redeploy). Le scheduler relit la DB à chaque tick (max ~1 min de délai). Les services HTTP (auth, email) relisent à chaque requête concernée.
 
 ## SPA admin (`admin/`)
 
