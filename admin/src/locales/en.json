@@ -13,7 +13,7 @@
     "logout": "Logout"
   },
   "app": {
-    "title": "Trading Journal — Admin",
+    "title": "Admin",
     "loggedAs": "Logged in as {email}"
   },
   "nav": {

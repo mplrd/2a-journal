@@ -13,7 +13,7 @@
     "logout": "Déconnexion"
   },
   "app": {
-    "title": "Trading Journal — Admin",
+    "title": "Admin",
     "loggedAs": "Connecté en tant que {email}"
   },
   "nav": {
