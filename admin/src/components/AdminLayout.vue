@@ -35,7 +35,7 @@ async function logout() {
         <Button :label="t('common.logout')" icon="pi pi-sign-out" size="small" severity="secondary" @click="logout" />
       </div>
     </header>
-    <main class="p-6 max-w-7xl mx-auto">
+    <main class="p-6 w-full">
       <slot />
     </main>
   </div>
