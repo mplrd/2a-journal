@@ -35,9 +35,11 @@
       "active": "Actifs",
       "suspended": "Suspendus"
     },
+    "roleBadge": {
+      "admin": "Admin"
+    },
     "columns": {
       "email": "Email",
-      "role": "Rôle",
       "status": "Statut",
       "accounts": "Comptes",
       "trades": "Trades",

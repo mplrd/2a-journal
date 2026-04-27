@@ -96,10 +96,15 @@ function handleDelete(user) {
     </div>
 
     <DataTable :value="store.users" :loading="store.loading" stripedRows>
-      <Column field="email" :header="t('users.columns.email')" />
-      <Column field="role" :header="t('users.columns.role')">
+      <Column field="email" :header="t('users.columns.email')">
         <template #body="{ data }">
-          <Tag :value="data.role" :severity="data.role === 'ADMIN' ? 'warn' : 'info'" />
+          <span>{{ data.email }}</span>
+          <Tag
+            v-if="data.role === 'ADMIN'"
+            :value="t('users.roleBadge.admin')"
+            severity="warn"
+            class="ml-2"
+          />
         </template>
       </Column>
       <Column :header="t('users.columns.status')">
