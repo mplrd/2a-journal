@@ -33,12 +33,14 @@ use App\Repositories\SymbolAliasRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\PlatformSettingsRepository;
 use App\Services\Broker\BrokerSyncSchedulerService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\Broker\CtraderConnector;
 use App\Services\Broker\MetaApiConnector;
 use App\Services\CustomFieldService;
+use App\Services\PlatformSettingsService;
 use App\Services\Import\ColumnMapperService;
 use App\Services\Import\FileParserService;
 use App\Services\Import\ImportService;
@@ -127,13 +129,33 @@ try {
         $metaApiConnector,
     );
 
+    // Live settings: prefer DB-backed values (admin BO override), fall back to
+    // env var, then null. The scheduler skips the run if any required setting
+    // is unconfigured (logged with the unconfigured key for debugging).
+    $platformSettings = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
+    $autoSyncEnabled = $platformSettings->resolve('broker_auto_sync_enabled');
+    $syncInterval = $platformSettings->resolve('broker_sync_interval_minutes');
+    $maxFailures = $platformSettings->resolve('broker_sync_max_failures');
+
+    if ($syncInterval === null || $maxFailures === null) {
+        $missing = [];
+        if ($syncInterval === null) $missing[] = 'broker_sync_interval_minutes';
+        if ($maxFailures === null) $missing[] = 'broker_sync_max_failures';
+        fwrite(STDOUT, json_encode([
+            'job' => JOB_NAME,
+            'status' => 'unconfigured',
+            'missing_settings' => $missing,
+        ]) . PHP_EOL);
+        exit(0);
+    }
+
     $scheduler = new BrokerSyncSchedulerService(
         $brokerConnectionRepo,
         $syncService,
         [
-            'auto_sync_enabled' => (bool) $brokerConfig['auto_sync_enabled'],
-            'sync_interval_minutes' => (int) $brokerConfig['sync_interval_minutes'],
-            'max_consecutive_failures' => (int) $brokerConfig['max_consecutive_failures'],
+            'auto_sync_enabled' => (bool) $autoSyncEnabled,
+            'sync_interval_minutes' => (int) $syncInterval,
+            'max_consecutive_failures' => (int) $maxFailures,
         ],
     );
 

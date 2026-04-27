@@ -1,6 +1,8 @@
 <?php
 
 use App\Controllers\AccountController;
+use App\Controllers\AdminSettingsController;
+use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
 use App\Controllers\BillingController;
 use App\Controllers\OrderController;
@@ -18,7 +20,9 @@ use App\Middlewares\AuthMiddleware;
 use App\Middlewares\FeatureFlagMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Middlewares\RequireActiveSubscriptionMiddleware;
+use App\Middlewares\RequireAdminMiddleware;
 use App\Repositories\AccountRepository;
+use App\Repositories\PlatformSettingsRepository;
 use App\Repositories\SubscriptionRepository;
 use App\Repositories\WebhookEventRepository;
 use App\Repositories\OrderRepository;
@@ -43,7 +47,9 @@ use App\Repositories\EmailVerificationTokenRepository;
 use App\Repositories\PasswordResetTokenRepository;
 use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\AdminUserService;
 use App\Services\BillingService;
+use App\Services\PlatformSettingsService;
 use App\Services\EmailService;
 use App\Services\OrderService;
 use App\Services\PositionService;
@@ -92,8 +98,12 @@ $securityConfig = require __DIR__ . '/security.php';
 $mailConfig = require __DIR__ . '/mail.php';
 $verificationTokenRepo = new EmailVerificationTokenRepository($pdo);
 $resetTokenRepo = new PasswordResetTokenRepository($pdo);
-$emailService = new EmailService($mailConfig);
-$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig);
+// PlatformSettingsService is shared between AuthService, EmailService and the
+// admin BO endpoints. Build it once and inject into every consumer that needs
+// to honour DB > env overrides for runtime-tunable settings.
+$platformSettingsService = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
+$emailService = new EmailService($mailConfig, $platformSettingsService);
+$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig, $platformSettingsService);
 $authController = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authConfig['jwt_secret']);
 
@@ -333,3 +343,19 @@ $router->get('/stats/daily-pnl', [$statsController, 'dailyPnl'], [$authMiddlewar
 $router->get('/stats/by-session', [$statsController, 'bySession'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/by-account', [$statsController, 'byAccount'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/by-account-type', [$statsController, 'byAccountType'], [$authMiddleware, $requireSubscription]);
+
+// ── Admin BO ────────────────────────────────────────────────
+$requireAdmin = new RequireAdminMiddleware();
+$adminUserService = new AdminUserService($userRepo, $authService, $pdo);
+$adminUserController = new AdminUserController($adminUserService);
+
+$router->get('/admin/users', [$adminUserController, 'index'], [$authMiddleware, $requireAdmin]);
+$router->get('/admin/users/{id}', [$adminUserController, 'show'], [$authMiddleware, $requireAdmin]);
+$router->post('/admin/users/{id}/suspend', [$adminUserController, 'suspend'], [$authMiddleware, $requireAdmin]);
+$router->post('/admin/users/{id}/unsuspend', [$adminUserController, 'unsuspend'], [$authMiddleware, $requireAdmin]);
+$router->post('/admin/users/{id}/reset-password', [$adminUserController, 'resetPassword'], [$authMiddleware, $requireAdmin]);
+$router->delete('/admin/users/{id}', [$adminUserController, 'destroy'], [$authMiddleware, $requireAdmin]);
+
+$adminSettingsController = new AdminSettingsController($platformSettingsService);
+$router->get('/admin/settings', [$adminSettingsController, 'index'], [$authMiddleware, $requireAdmin]);
+$router->put('/admin/settings/{key}', [$adminSettingsController, 'update'], [$authMiddleware, $requireAdmin]);

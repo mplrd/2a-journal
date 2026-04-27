@@ -62,6 +62,8 @@
       "password_too_weak": "Password must contain at least 8 characters, one uppercase, one lowercase and one digit",
       "email_taken": "This email is already taken",
       "invalid_credentials": "Invalid email or password",
+      "suspended": "Your account has been suspended. Please contact the administrator.",
+      "admin_only": "Administrator access only.",
       "token_missing": "Authentication required",
       "token_expired": "Session expired, please sign in again",
       "token_invalid": "Invalid session",

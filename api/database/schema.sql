@@ -13,6 +13,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE IF NOT EXISTS users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(255) NOT NULL,
+    role ENUM('USER','ADMIN') NOT NULL DEFAULT 'USER',
+    suspended_at TIMESTAMP NULL DEFAULT NULL,
     password VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NULL,
     last_name VARCHAR(100) NULL,
@@ -29,12 +31,14 @@ CREATE TABLE IF NOT EXISTS users (
     email_verified_at TIMESTAMP NULL DEFAULT NULL,
     failed_login_attempts INT UNSIGNED NOT NULL DEFAULT 0,
     locked_until TIMESTAMP NULL DEFAULT NULL,
+    last_login_at TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
 
     UNIQUE KEY uk_users_email (email),
-    UNIQUE KEY uk_users_stripe_customer (stripe_customer_id)
+    UNIQUE KEY uk_users_stripe_customer (stripe_customer_id),
+    KEY idx_users_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -481,6 +485,24 @@ CREATE TABLE IF NOT EXISTS symbol_account_settings (
     KEY idx_sas_account (account_id),
     CONSTRAINT fk_sas_symbol FOREIGN KEY (symbol_id) REFERENCES symbols (id) ON DELETE CASCADE,
     CONSTRAINT fk_sas_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- 22. PLATFORM_SETTINGS (admin BO — runtime-editable app config)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS platform_settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) NOT NULL,
+    setting_value TEXT NULL,
+    value_type ENUM('BOOL','INT','STRING') NOT NULL,
+    description VARCHAR(255) NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by_user_id INT UNSIGNED NULL,
+
+    UNIQUE KEY uk_platform_settings_key (setting_key),
+    KEY idx_platform_settings_updated_by (updated_by_user_id),
+    CONSTRAINT fk_platform_settings_user FOREIGN KEY (updated_by_user_id)
+        REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
