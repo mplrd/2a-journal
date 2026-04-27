@@ -1,0 +1,116 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "back": "Back",
+    "yes": "Yes",
+    "no": "No",
+    "search": "Search",
+    "actions": "Actions",
+    "logout": "Logout"
+  },
+  "app": {
+    "title": "Trading Journal — Admin",
+    "loggedAs": "Logged in as {email}"
+  },
+  "nav": {
+    "users": "Users",
+    "settings": "Settings"
+  },
+  "login": {
+    "title": "Administrator login",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in..."
+  },
+  "users": {
+    "title": "User management",
+    "search": "Search by email",
+    "filter": {
+      "all": "All",
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "columns": {
+      "email": "Email",
+      "role": "Role",
+      "status": "Status",
+      "trades": "Trades",
+      "createdAt": "Created"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended"
+    },
+    "actions": {
+      "suspend": "Suspend",
+      "unsuspend": "Reactivate",
+      "resetPassword": "Reset password",
+      "delete": "Delete"
+    },
+    "confirmDelete": {
+      "title": "Delete user",
+      "message": "This is irreversible. User {email} will be deleted."
+    },
+    "toast": {
+      "suspended": "User suspended",
+      "unsuspended": "User reactivated",
+      "passwordResetSent": "Password reset email sent",
+      "deleted": "User deleted"
+    }
+  },
+  "settings": {
+    "title": "Platform settings",
+    "key": "Setting",
+    "value": "Value",
+    "type": "Type",
+    "source": "Source",
+    "updatedAt": "Updated",
+    "sources": {
+      "db": "DB",
+      "env": "Env",
+      "default": "—"
+    },
+    "save": "Save",
+    "saved": "Setting saved"
+  },
+  "auth": {
+    "error": {
+      "invalid_credentials": "Invalid email or password",
+      "suspended": "Your account has been suspended.",
+      "admin_only": "Administrator access only.",
+      "field_required": "This field is required",
+      "token_missing": "Authentication required",
+      "token_expired": "Session expired, please sign in again",
+      "token_invalid": "Invalid session",
+      "refresh_token_invalid": "Session expired, please sign in again",
+      "account_locked": "Account temporarily locked after too many attempts. Try again in 15 minutes."
+    }
+  },
+  "admin": {
+    "error": {
+      "user_not_found": "User not found",
+      "cannot_self_suspend": "You cannot suspend yourself",
+      "cannot_self_delete": "You cannot delete yourself"
+    },
+    "settings": {
+      "error": {
+        "unknown_key": "Unknown setting",
+        "invalid_type": "Invalid value for the expected type",
+        "value_required": "A value is required"
+      },
+      "desc": {
+        "broker_auto_sync_enabled": "Globally enables broker auto-sync",
+        "broker_sync_interval_minutes": "Min minutes between two syncs of the same connection",
+        "broker_sync_max_failures": "Consecutive failures before auto-deactivation"
+      }
+    }
+  },
+  "error": {
+    "internal": "An error occurred"
+  }
+}

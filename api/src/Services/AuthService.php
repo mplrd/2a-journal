@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\UserRole;
+use App\Exceptions\ForbiddenException;
 use App\Exceptions\HttpException;
 use App\Exceptions\UnauthorizedException;
 use App\Exceptions\ValidationException;
@@ -124,6 +126,13 @@ class AuthService
         if (!password_verify($data['password'], $user['password'])) {
             $this->handleFailedLogin($user);
             throw new UnauthorizedException('auth.error.invalid_credentials', 'INVALID_CREDENTIALS');
+        }
+
+        // After password verification (so suspension status doesn't leak to
+        // bruteforce attackers via timing or response codes): refuse suspended
+        // users. Returns 403 with a distinct message so the user knows why.
+        if (!empty($user['suspended_at'])) {
+            throw new ForbiddenException('auth.error.suspended');
         }
 
         // Reset failed attempts on successful login
@@ -584,8 +593,14 @@ class AuthService
     private function generateAccessToken(int $userId): string
     {
         $now = time();
+        // Embed the role claim so the admin frontend and RequireAdminMiddleware
+        // can authorize without an extra DB roundtrip per request. A user
+        // promoted/demoted between two logins must reconnect to refresh the
+        // claim — acceptable for this admin-only feature flag.
+        $user = $this->userRepo->findById($userId);
         $payload = [
             'sub' => $userId,
+            'role' => $user['role'] ?? UserRole::USER->value,
             'iat' => $now,
             'exp' => $now + $this->config['access_token_ttl'],
         ];

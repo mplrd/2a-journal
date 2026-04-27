@@ -5,6 +5,10 @@ set -e
 echo "==> Running migrations..."
 php /var/www/api/database/migrate.php
 
+# Bootstrap initial admin if INITIAL_ADMIN_EMAIL is set (idempotent, never fails the boot)
+echo "==> Bootstrapping admin..."
+php /var/www/api/cli/bootstrap-admin.php
+
 # Seed demo data (idempotent)
 echo "==> Seeding demo data..."
 php /var/www/api/database/seed-demo.php

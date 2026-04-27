@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\UserRole;
 use PDO;
 
 class UserRepository
@@ -32,7 +33,7 @@ class UserRepository
     public function findByEmail(string $email): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, password, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, bypass_subscription, grace_period_end, stripe_customer_id, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
+            'SELECT id, email, role, suspended_at, password, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, bypass_subscription, grace_period_end, stripe_customer_id, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
         );
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch();
@@ -43,7 +44,7 @@ class UserRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, bypass_subscription, grace_period_end, stripe_customer_id, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
+            'SELECT id, email, role, suspended_at, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, bypass_subscription, grace_period_end, stripe_customer_id, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
         $user = $stmt->fetch();
@@ -129,6 +130,33 @@ class UserRepository
     {
         $stmt = $this->pdo->prepare(
             'UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
+    public function promoteToAdmin(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET role = :role WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute([
+            'role' => UserRole::ADMIN->value,
+            'id' => $id,
+        ]);
+    }
+
+    public function setSuspendedAt(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET suspended_at = CURRENT_TIMESTAMP WHERE id = :id AND deleted_at IS NULL AND suspended_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
+    public function clearSuspendedAt(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET suspended_at = NULL WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
     }

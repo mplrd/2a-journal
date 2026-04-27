@@ -4,6 +4,7 @@ namespace App\Middlewares;
 
 use App\Core\MiddlewareInterface;
 use App\Core\Request;
+use App\Enums\UserRole;
 use App\Exceptions\UnauthorizedException;
 use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
@@ -31,6 +32,9 @@ class AuthMiddleware implements MiddlewareInterface
         try {
             $decoded = JWT::decode($token, new Key($this->secret, 'HS256'));
             $request->setAttribute('user_id', (int)$decoded->sub);
+            // Role claim is optional (older tokens may not have it); default
+            // to USER so existing behaviour is preserved for non-admin paths.
+            $request->setAttribute('user_role', $decoded->role ?? UserRole::USER->value);
         } catch (ExpiredException) {
             throw new UnauthorizedException('auth.error.token_expired', 'TOKEN_EXPIRED');
         } catch (\Throwable) {

@@ -1165,4 +1165,74 @@ class AuthFlowTest extends TestCase
         $this->assertNotFalse($row, 'User row should still exist after soft delete');
         $this->assertNotNull($row['deleted_at']);
     }
+
+    // ── Suspension & role in JWT ───────────────────────────────
+
+    public function testLoginRefusedWhenSuspended(): void
+    {
+        $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'suspended@test.com',
+            'password' => 'Test1234',
+        ]));
+
+        // Suspend the user directly in DB (simulates an admin action)
+        $this->pdo->prepare("UPDATE users SET suspended_at = CURRENT_TIMESTAMP WHERE email = :e")
+            ->execute(['e' => 'suspended@test.com']);
+
+        try {
+            $this->router->dispatch(Request::create('POST', '/auth/login', [
+                'email' => 'suspended@test.com',
+                'password' => 'Test1234',
+            ]));
+            $this->fail('Expected HttpException for suspended user');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+            $this->assertSame('auth.error.suspended', $e->getMessageKey());
+        }
+    }
+
+    public function testLoginAccessTokenIncludesRoleClaim(): void
+    {
+        $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'role-claim@test.com',
+            'password' => 'Test1234',
+        ]));
+
+        $response = $this->router->dispatch(Request::create('POST', '/auth/login', [
+            'email' => 'role-claim@test.com',
+            'password' => 'Test1234',
+        ]));
+        $token = $response->getBody()['data']['access_token'];
+
+        // JWT format: header.payload.signature — decode the payload
+        $parts = explode('.', $token);
+        $this->assertCount(3, $parts);
+        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+
+        $this->assertArrayHasKey('role', $payload);
+        $this->assertSame('USER', $payload['role']);
+    }
+
+    public function testLoginAccessTokenReflectsAdminRole(): void
+    {
+        $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'admin-claim@test.com',
+            'password' => 'Test1234',
+        ]));
+
+        // Promote to admin directly in DB
+        $this->pdo->prepare("UPDATE users SET role = 'ADMIN' WHERE email = :e")
+            ->execute(['e' => 'admin-claim@test.com']);
+
+        $response = $this->router->dispatch(Request::create('POST', '/auth/login', [
+            'email' => 'admin-claim@test.com',
+            'password' => 'Test1234',
+        ]));
+        $token = $response->getBody()['data']['access_token'];
+
+        $parts = explode('.', $token);
+        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+
+        $this->assertSame('ADMIN', $payload['role']);
+    }
 }
