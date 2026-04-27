@@ -2,6 +2,7 @@
 /api/vendor/
 /api/composer.phar
 /frontend/node_modules/
+/admin/node_modules/
 
 # Environment
 .env
@@ -17,6 +18,7 @@
 
 # Build
 /frontend/dist/
+/admin/dist/
 
 # OS
 .DS_Store

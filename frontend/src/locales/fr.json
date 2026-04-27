@@ -62,6 +62,8 @@
       "password_too_weak": "Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre",
       "email_taken": "Cet email est déjà utilisé",
       "invalid_credentials": "Email ou mot de passe incorrect",
+      "suspended": "Votre compte a été suspendu. Contactez l'administrateur.",
+      "admin_only": "Accès réservé aux administrateurs.",
       "token_missing": "Authentification requise",
       "token_expired": "Session expirée, veuillez vous reconnecter",
       "token_invalid": "Session invalide",

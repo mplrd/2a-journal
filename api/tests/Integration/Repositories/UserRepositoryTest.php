@@ -247,4 +247,98 @@ class UserRepositoryTest extends TestCase
         $user = $this->repo->findById($id);
         $this->assertSame('cus_test_ABC', $user['stripe_customer_id']);
     }
+
+    // ── Roles & suspension ─────────────────────────────────────
+
+    public function testCreateDefaultsRoleToUser(): void
+    {
+        $user = $this->repo->create([
+            'email' => 'role-default@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+        $this->assertSame('USER', $user['role']);
+        $this->assertNull($user['suspended_at']);
+    }
+
+    public function testFindByEmailIncludesRoleAndSuspendedAt(): void
+    {
+        $this->repo->create([
+            'email' => 'shape@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $user = $this->repo->findByEmail('shape@example.com');
+
+        $this->assertArrayHasKey('role', $user);
+        $this->assertArrayHasKey('suspended_at', $user);
+        $this->assertSame('USER', $user['role']);
+        $this->assertNull($user['suspended_at']);
+    }
+
+    public function testFindByIdIncludesRoleAndSuspendedAt(): void
+    {
+        $created = $this->repo->create([
+            'email' => 'shape-id@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $user = $this->repo->findById((int) $created['id']);
+
+        $this->assertArrayHasKey('role', $user);
+        $this->assertArrayHasKey('suspended_at', $user);
+    }
+
+    public function testPromoteToAdminFlipsRole(): void
+    {
+        $user = $this->repo->create([
+            'email' => 'promote@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $this->repo->promoteToAdmin((int) $user['id']);
+
+        $reloaded = $this->repo->findById((int) $user['id']);
+        $this->assertSame('ADMIN', $reloaded['role']);
+    }
+
+    public function testPromoteToAdminIsIdempotent(): void
+    {
+        $user = $this->repo->create([
+            'email' => 'idempotent@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $this->repo->promoteToAdmin((int) $user['id']);
+        $this->repo->promoteToAdmin((int) $user['id']);
+
+        $reloaded = $this->repo->findById((int) $user['id']);
+        $this->assertSame('ADMIN', $reloaded['role']);
+    }
+
+    public function testSetSuspendedAtMarksUserAsSuspended(): void
+    {
+        $user = $this->repo->create([
+            'email' => 'suspend@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $this->repo->setSuspendedAt((int) $user['id']);
+
+        $reloaded = $this->repo->findById((int) $user['id']);
+        $this->assertNotNull($reloaded['suspended_at']);
+    }
+
+    public function testClearSuspendedAtRestoresAccess(): void
+    {
+        $user = $this->repo->create([
+            'email' => 'unsuspend@example.com',
+            'password' => password_hash('Test1234', PASSWORD_BCRYPT),
+        ]);
+
+        $this->repo->setSuspendedAt((int) $user['id']);
+        $this->repo->clearSuspendedAt((int) $user['id']);
+
+        $reloaded = $this->repo->findById((int) $user['id']);
+        $this->assertNull($reloaded['suspended_at']);
+    }
 }

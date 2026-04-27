@@ -1,0 +1,122 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "confirm": "Confirmer",
+    "back": "Retour",
+    "yes": "Oui",
+    "no": "Non",
+    "search": "Rechercher",
+    "actions": "Actions",
+    "logout": "Déconnexion"
+  },
+  "app": {
+    "title": "Trading Journal — Admin",
+    "loggedAs": "Connecté en tant que {email}"
+  },
+  "nav": {
+    "users": "Utilisateurs",
+    "settings": "Paramètres"
+  },
+  "login": {
+    "title": "Connexion administrateur",
+    "email": "Email",
+    "password": "Mot de passe",
+    "submit": "Se connecter",
+    "submitting": "Connexion en cours..."
+  },
+  "users": {
+    "title": "Gestion des utilisateurs",
+    "search": "Rechercher par email",
+    "filter": {
+      "all": "Tous",
+      "active": "Actifs",
+      "suspended": "Suspendus"
+    },
+    "columns": {
+      "email": "Email",
+      "role": "Rôle",
+      "status": "Statut",
+      "accounts": "Comptes",
+      "trades": "Trades",
+      "lastLogin": "Dernière connexion",
+      "subscription": "Abonnement",
+      "subStarted": "Souscrit le",
+      "graceEnd": "Fin grâce",
+      "createdAt": "Créé le",
+      "never": "Jamais"
+    },
+    "status": {
+      "active": "Actif",
+      "suspended": "Suspendu"
+    },
+    "actions": {
+      "suspend": "Suspendre",
+      "unsuspend": "Réactiver",
+      "resetPassword": "Reset mot de passe",
+      "delete": "Supprimer"
+    },
+    "confirmDelete": {
+      "title": "Supprimer l'utilisateur",
+      "message": "Cette action est irréversible. L'utilisateur {email} sera supprimé."
+    },
+    "toast": {
+      "suspended": "Utilisateur suspendu",
+      "unsuspended": "Utilisateur réactivé",
+      "passwordResetSent": "Email de réinitialisation envoyé",
+      "deleted": "Utilisateur supprimé"
+    }
+  },
+  "settings": {
+    "title": "Paramètres de la plateforme",
+    "key": "Paramètre",
+    "value": "Valeur",
+    "type": "Type",
+    "source": "Source",
+    "updatedAt": "Modifié le",
+    "sources": {
+      "db": "BDD",
+      "env": "Env",
+      "default": "—"
+    },
+    "save": "Enregistrer",
+    "saved": "Paramètre enregistré"
+  },
+  "auth": {
+    "error": {
+      "invalid_credentials": "Email ou mot de passe incorrect",
+      "suspended": "Votre compte a été suspendu.",
+      "admin_only": "Accès réservé aux administrateurs.",
+      "field_required": "Ce champ est requis",
+      "token_missing": "Authentification requise",
+      "token_expired": "Session expirée, veuillez vous reconnecter",
+      "token_invalid": "Session invalide",
+      "refresh_token_invalid": "Session expirée, veuillez vous reconnecter",
+      "account_locked": "Compte temporairement verrouillé suite à trop de tentatives. Réessayez dans 15 minutes."
+    }
+  },
+  "admin": {
+    "error": {
+      "user_not_found": "Utilisateur introuvable",
+      "cannot_self_suspend": "Vous ne pouvez pas vous suspendre vous-même",
+      "cannot_self_delete": "Vous ne pouvez pas vous supprimer vous-même"
+    },
+    "settings": {
+      "error": {
+        "unknown_key": "Paramètre inconnu",
+        "invalid_type": "Valeur invalide pour le type attendu",
+        "value_required": "Une valeur est requise"
+      },
+      "desc": {
+        "broker_auto_sync_enabled": "Active globalement l'auto-sync des connexions broker",
+        "broker_sync_interval_minutes": "Fréquence min entre deux syncs d'une même connexion (minutes)",
+        "broker_sync_max_failures": "Nombre d'échecs consécutifs avant désactivation auto"
+      }
+    }
+  },
+  "error": {
+    "internal": "Une erreur est survenue"
+  }
+}

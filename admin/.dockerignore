@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+.vscode
+node_modules
+.env*
+*.md
+dist
+docker-compose*
