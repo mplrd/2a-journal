@@ -9,8 +9,9 @@ class EmailService
 
     private array $config;
     private string $templateDir;
+    private ?PlatformSettingsService $platformSettings;
 
-    public function __construct(array $config)
+    public function __construct(array $config, ?PlatformSettingsService $platformSettings = null)
     {
         $driver = $config['driver'] ?? 'log';
         if (!in_array($driver, self::VALID_DRIVERS, true)) {
@@ -21,7 +22,38 @@ class EmailService
         }
 
         $this->config = $config;
+        $this->platformSettings = $platformSettings;
         $this->templateDir = dirname(__DIR__, 2) . '/templates/emails';
+    }
+
+    /**
+     * `enabled` resolution: DB > env (via config) > false. Read at send-time
+     * so admin BO toggles take effect without restarting the api.
+     */
+    private function isEnabled(): bool
+    {
+        if ($this->platformSettings !== null) {
+            $value = $this->platformSettings->resolve('mail_enabled');
+            if ($value !== null) {
+                return (bool) $value;
+            }
+        }
+        return (bool) ($this->config['enabled'] ?? false);
+    }
+
+    /**
+     * `from_address` resolution: DB > env (via config) > empty.
+     * Returned as-is; the caller is responsible for the final formatting.
+     */
+    private function fromAddress(): string
+    {
+        if ($this->platformSettings !== null) {
+            $value = $this->platformSettings->resolve('mail_from_address');
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+        return (string) ($this->config['from_address'] ?? '');
     }
 
     public function sendVerificationEmail(string $toEmail, string $token, string $locale = 'en'): void
@@ -58,7 +90,7 @@ class EmailService
 
     private function send(string $to, string $subject, string $htmlBody): void
     {
-        if (!$this->config['enabled']) {
+        if (!$this->isEnabled()) {
             error_log("[EmailService] To: $to | Subject: $subject");
             error_log("[EmailService] HTML:\n$htmlBody");
             return;
@@ -107,7 +139,7 @@ class EmailService
     private function buildResendPayload(string $to, string $subject, string $htmlBody): array
     {
         return [
-            'from' => "{$this->config['from_name']} <{$this->config['from_address']}>",
+            'from' => "{$this->config['from_name']} <{$this->fromAddress()}>",
             'to' => [$to],
             'subject' => $subject,
             'html' => $htmlBody,

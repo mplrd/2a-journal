@@ -98,8 +98,12 @@ $securityConfig = require __DIR__ . '/security.php';
 $mailConfig = require __DIR__ . '/mail.php';
 $verificationTokenRepo = new EmailVerificationTokenRepository($pdo);
 $resetTokenRepo = new PasswordResetTokenRepository($pdo);
-$emailService = new EmailService($mailConfig);
-$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig);
+// PlatformSettingsService is shared between AuthService, EmailService and the
+// admin BO endpoints. Build it once and inject into every consumer that needs
+// to honour DB > env overrides for runtime-tunable settings.
+$platformSettingsService = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
+$emailService = new EmailService($mailConfig, $platformSettingsService);
+$authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig, $platformSettingsService);
 $authController = new AuthController($authService);
 $authMiddleware = new AuthMiddleware($authConfig['jwt_secret']);
 
@@ -352,7 +356,6 @@ $router->post('/admin/users/{id}/unsuspend', [$adminUserController, 'unsuspend']
 $router->post('/admin/users/{id}/reset-password', [$adminUserController, 'resetPassword'], [$authMiddleware, $requireAdmin]);
 $router->delete('/admin/users/{id}', [$adminUserController, 'destroy'], [$authMiddleware, $requireAdmin]);
 
-$platformSettingsService = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
 $adminSettingsController = new AdminSettingsController($platformSettingsService);
 $router->get('/admin/settings', [$adminSettingsController, 'index'], [$authMiddleware, $requireAdmin]);
 $router->put('/admin/settings/{key}', [$adminSettingsController, 'update'], [$authMiddleware, $requireAdmin]);

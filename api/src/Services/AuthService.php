@@ -24,6 +24,7 @@ class AuthService
     private ?EmailVerificationTokenRepository $verificationTokenRepo;
     private ?PasswordResetTokenRepository $resetTokenRepo;
     private ?EmailService $emailService;
+    private ?PlatformSettingsService $platformSettings;
     private array $config;
     private array $securityConfig;
 
@@ -36,7 +37,8 @@ class AuthService
         ?EmailVerificationTokenRepository $verificationTokenRepo = null,
         ?PasswordResetTokenRepository $resetTokenRepo = null,
         ?EmailService $emailService = null,
-        array $securityConfig = []
+        array $securityConfig = [],
+        ?PlatformSettingsService $platformSettings = null
     ) {
         $this->userRepo = $userRepo;
         $this->tokenRepo = $tokenRepo;
@@ -47,6 +49,23 @@ class AuthService
         $this->resetTokenRepo = $resetTokenRepo;
         $this->emailService = $emailService;
         $this->securityConfig = $securityConfig;
+        $this->platformSettings = $platformSettings;
+    }
+
+    /**
+     * Resolve a setting with the priority chain DB > env (via config) > default.
+     * Wrapped in a helper so each consumer reads the same way and tests can
+     * override the platform settings without re-wiring the whole config array.
+     */
+    private function setting(string $key, string $configKey, mixed $default): mixed
+    {
+        if ($this->platformSettings !== null) {
+            $value = $this->platformSettings->resolve($key);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+        return $this->config[$configKey] ?? $default;
     }
 
     public function register(array $data): array
@@ -71,8 +90,8 @@ class AuthService
 
         $userId = (int)$user['id'];
 
-        // Give the new user a billing grace period (configurable, default 14 days).
-        $graceDays = (int) ($this->config['billing_grace_days'] ?? 14);
+        // Give the new user a billing grace period. Resolution: DB > env > default.
+        $graceDays = (int) $this->setting('billing_grace_days', 'billing_grace_days', 14);
         $graceEnd = date('Y-m-d H:i:s', time() + $graceDays * 86400);
         $this->userRepo->setGracePeriodEnd($userId, $graceEnd);
 
@@ -506,7 +525,8 @@ class AuthService
 
     private function isEmailVerificationEnabled(): bool
     {
-        return ($this->config['email_verification_enabled'] ?? true) && $this->verificationTokenRepo !== null;
+        $enabled = (bool) $this->setting('email_verification_enabled', 'email_verification_enabled', true);
+        return $enabled && $this->verificationTokenRepo !== null;
     }
 
     private function createAndSendVerificationToken(int $userId, string $email, string $locale): void
