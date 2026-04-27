@@ -110,10 +110,33 @@ function handleDelete(user) {
           />
         </template>
       </Column>
+      <Column field="account_count" :header="t('users.columns.accounts')" />
       <Column field="trade_count" :header="t('users.columns.trades')" />
+      <Column :header="t('users.columns.lastLogin')">
+        <template #body="{ data }">
+          <span v-if="data.last_login_at">{{ new Date(data.last_login_at).toLocaleString() }}</span>
+          <span v-else class="text-gray-400 italic">{{ t('users.columns.never') }}</span>
+        </template>
+      </Column>
       <Column field="created_at" :header="t('users.columns.createdAt')">
         <template #body="{ data }">
           {{ data.created_at ? new Date(data.created_at).toLocaleDateString() : '-' }}
+        </template>
+      </Column>
+      <Column :header="t('users.columns.subscription')">
+        <template #body="{ data }">
+          <Tag v-if="data.subscription_status" :value="data.subscription_status" :severity="data.subscription_status === 'active' ? 'success' : 'warn'" />
+          <span v-else class="text-gray-400">-</span>
+        </template>
+      </Column>
+      <Column :header="t('users.columns.subStarted')">
+        <template #body="{ data }">
+          {{ data.subscription_started_at ? new Date(data.subscription_started_at).toLocaleDateString() : '-' }}
+        </template>
+      </Column>
+      <Column :header="t('users.columns.graceEnd')">
+        <template #body="{ data }">
+          {{ data.grace_period_end ? new Date(data.grace_period_end).toLocaleDateString() : '-' }}
         </template>
       </Column>
       <Column :header="t('common.actions')">

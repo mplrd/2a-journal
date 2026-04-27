@@ -161,6 +161,14 @@ class UserRepository
         $stmt->execute(['id' => $id]);
     }
 
+    public function touchLastLogin(int $id): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+    }
+
     public function setGracePeriodEnd(int $id, string $endDatetime): void
     {
         $stmt = $this->pdo->prepare(

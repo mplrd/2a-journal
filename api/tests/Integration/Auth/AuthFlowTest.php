@@ -1213,6 +1213,28 @@ class AuthFlowTest extends TestCase
         $this->assertSame('USER', $payload['role']);
     }
 
+    public function testLoginUpdatesLastLoginAt(): void
+    {
+        $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'last-login@test.com',
+            'password' => 'Test1234',
+        ]));
+
+        // last_login_at should be NULL before any login
+        $stmt = $this->pdo->prepare('SELECT last_login_at FROM users WHERE email = :e');
+        $stmt->execute(['e' => 'last-login@test.com']);
+        $this->assertNull($stmt->fetchColumn());
+
+        $this->router->dispatch(Request::create('POST', '/auth/login', [
+            'email' => 'last-login@test.com',
+            'password' => 'Test1234',
+        ]));
+
+        $stmt->execute(['e' => 'last-login@test.com']);
+        $value = $stmt->fetchColumn();
+        $this->assertNotNull($value);
+    }
+
     public function testLoginAccessTokenReflectsAdminRole(): void
     {
         $this->router->dispatch(Request::create('POST', '/auth/register', [

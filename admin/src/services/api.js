@@ -1,7 +1,12 @@
 // HTTP client for the admin SPA. Mirror of the user frontend's api.js, with
 // the admin-only twist that a 403 admin_only error logs the user out instead
 // of redirecting to a subscription flow.
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
+//
+// Default `/api` (relative) works for any setup where the admin SPA and the
+// API are served from the same origin (Apache vhost with /api alias, or a
+// Railway service that proxies /api to the API). Override via VITE_API_URL
+// when the admin SPA and API live on separate origins (typical Railway prod).
+const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
 let accessToken = null
 

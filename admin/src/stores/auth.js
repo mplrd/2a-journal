@@ -14,17 +14,29 @@ class NotAdminError extends Error {
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const role = ref(null)
+  // Mirror the access token in a reactive ref so Vue computed/watcher can
+  // observe its changes. The api module's getAccessToken() returns a plain
+  // module variable that Vue reactivity cannot track — the router guard
+  // would see a stale `false` for isAuthenticated otherwise.
+  const accessToken = ref(null)
   const loading = ref(false)
   const error = ref(null)
   const initialized = ref(false)
 
-  const isAuthenticated = computed(() => !!api.getAccessToken())
+  const isAuthenticated = computed(() => !!accessToken.value)
   const isAdmin = computed(() => role.value === 'ADMIN')
 
-  function applyTokenAndDecodeRole(accessToken) {
-    api.setTokens(accessToken)
-    const payload = decodeJwtPayload(accessToken)
+  function applyTokenAndDecodeRole(token) {
+    api.setTokens(token)
+    accessToken.value = token
+    const payload = decodeJwtPayload(token)
     role.value = payload?.role ?? null
+  }
+
+  function clearAuthState() {
+    api.clearTokens()
+    accessToken.value = null
+    role.value = null
   }
 
   async function login(credentials) {
@@ -37,8 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (role.value !== 'ADMIN') {
         // Drop the access token so subsequent calls fail clean.
         // The refresh cookie is still set; it'll expire naturally.
-        api.clearTokens()
-        role.value = null
+        clearAuthState()
         throw new NotAdminError()
       }
 
@@ -73,27 +84,24 @@ export const useAuthStore = defineStore('auth', () => {
       // logout best-effort
     } finally {
       user.value = null
-      role.value = null
-      api.clearTokens()
+      clearAuthState()
     }
   }
 
   async function initSession() {
     try {
-      const accessToken = await api.refreshAccessToken()
-      if (accessToken) {
-        applyTokenAndDecodeRole(accessToken)
+      const token = await api.refreshAccessToken()
+      if (token) {
+        applyTokenAndDecodeRole(token)
         if (role.value !== 'ADMIN') {
-          api.clearTokens()
-          role.value = null
+          clearAuthState()
         } else {
           await fetchProfile()
         }
       }
     } catch {
       user.value = null
-      role.value = null
-      api.clearTokens()
+      clearAuthState()
     } finally {
       initialized.value = true
     }

@@ -138,6 +138,7 @@ class AuthService
         // Reset failed attempts on successful login
         $userId = (int)$user['id'];
         $this->userRepo->resetLoginAttempts($userId);
+        $this->userRepo->touchLastLogin($userId);
 
         $accessToken = $this->generateAccessToken($userId);
         $refreshToken = $this->generateRefreshToken($userId);

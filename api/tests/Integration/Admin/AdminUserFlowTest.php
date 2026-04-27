@@ -153,6 +153,49 @@ class AdminUserFlowTest extends TestCase
         }
     }
 
+    public function testListIncludesAccountCount(): void
+    {
+        // Create one account for the regular user
+        $this->router->dispatch(
+            Request::create('POST', '/accounts', [
+                'name' => 'Compte Test', 'account_type' => 'BROKER_DEMO',
+            ], [], ['Authorization' => "Bearer {$this->userAccessToken}"])
+        );
+
+        $response = $this->router->dispatch($this->adminRequest('GET', '/admin/users'));
+        $body = $response->getBody();
+
+        $userRow = null;
+        foreach ($body['data'] as $u) {
+            if ($u['email'] === 'user@test.com') { $userRow = $u; break; }
+        }
+        $this->assertNotNull($userRow);
+        $this->assertArrayHasKey('account_count', $userRow);
+        $this->assertSame(1, (int) $userRow['account_count']);
+    }
+
+    public function testListIncludesGracePeriodAndLastLogin(): void
+    {
+        $response = $this->router->dispatch($this->adminRequest('GET', '/admin/users'));
+        $body = $response->getBody();
+
+        foreach ($body['data'] as $user) {
+            $this->assertArrayHasKey('grace_period_end', $user);
+            $this->assertArrayHasKey('last_login_at', $user);
+        }
+    }
+
+    public function testListIncludesSubscriptionFields(): void
+    {
+        $response = $this->router->dispatch($this->adminRequest('GET', '/admin/users'));
+        $body = $response->getBody();
+
+        foreach ($body['data'] as $user) {
+            $this->assertArrayHasKey('subscription_started_at', $user);
+            $this->assertArrayHasKey('subscription_status', $user);
+        }
+    }
+
     public function testListFiltersBySearchEmail(): void
     {
         $response = $this->router->dispatch(

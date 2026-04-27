@@ -39,8 +39,14 @@
       "email": "Email",
       "role": "Rôle",
       "status": "Statut",
+      "accounts": "Comptes",
       "trades": "Trades",
-      "createdAt": "Créé le"
+      "lastLogin": "Dernière connexion",
+      "subscription": "Abonnement",
+      "subStarted": "Souscrit le",
+      "graceEnd": "Fin grâce",
+      "createdAt": "Créé le",
+      "never": "Jamais"
     },
     "status": {
       "active": "Actif",

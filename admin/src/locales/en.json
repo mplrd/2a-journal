@@ -39,8 +39,14 @@
       "email": "Email",
       "role": "Role",
       "status": "Status",
+      "accounts": "Accounts",
       "trades": "Trades",
-      "createdAt": "Created"
+      "lastLogin": "Last login",
+      "subscription": "Subscription",
+      "subStarted": "Subscribed",
+      "graceEnd": "Grace end",
+      "createdAt": "Created",
+      "never": "Never"
     },
     "status": {
       "active": "Active",

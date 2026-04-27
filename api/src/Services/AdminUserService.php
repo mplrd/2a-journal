@@ -55,10 +55,16 @@ class AdminUserService
 
         $sql = "SELECT u.id, u.email, u.role, u.suspended_at, u.first_name, u.last_name,
                        u.locale, u.created_at, u.updated_at,
+                       u.grace_period_end, u.last_login_at,
                        (SELECT COUNT(*) FROM trades t
                         INNER JOIN positions p ON p.id = t.position_id
-                        WHERE p.user_id = u.id) AS trade_count
+                        WHERE p.user_id = u.id) AS trade_count,
+                       (SELECT COUNT(*) FROM accounts a
+                        WHERE a.user_id = u.id AND a.deleted_at IS NULL) AS account_count,
+                       s.created_at AS subscription_started_at,
+                       s.status AS subscription_status
                 FROM users u
+                LEFT JOIN subscriptions s ON s.user_id = u.id
                 $where
                 ORDER BY u.created_at DESC
                 LIMIT :limit OFFSET :offset";
@@ -154,7 +160,9 @@ class AdminUserService
             'first_name', 'last_name', 'locale', 'timezone', 'default_currency',
             'theme', 'created_at', 'updated_at',
             'email_verified_at', 'onboarding_completed_at',
-            'trade_count',
+            'last_login_at', 'grace_period_end',
+            'trade_count', 'account_count',
+            'subscription_started_at', 'subscription_status',
         ];
         $out = [];
         foreach ($allowed as $key) {
