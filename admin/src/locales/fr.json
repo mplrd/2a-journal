@@ -115,7 +115,7 @@
         "broker_sync_max_failures": "Nombre d'échecs consécutifs avant désactivation auto",
         "email_verification_enabled": "Force la vérification de l'email à l'inscription",
         "mail_enabled": "Active l'envoi d'emails (reset password, notifications, etc.)",
-        "mail_from_address": "Adresse expéditeur des emails sortants (ex: noreply@domain.com)",
+        "mail_from_address": "Adresse expéditeur des emails sortants",
         "billing_grace_days": "Délai de grâce après échec de paiement Stripe (jours)"
       }
     }

@@ -115,7 +115,7 @@
         "broker_sync_max_failures": "Consecutive failures before auto-deactivation",
         "email_verification_enabled": "Require email verification on registration",
         "mail_enabled": "Enable email delivery (password reset, notifications, etc.)",
-        "mail_from_address": "From address for outgoing emails (e.g. noreply@domain.com)",
+        "mail_from_address": "From address for outgoing emails",
         "billing_grace_days": "Grace period after a failed Stripe payment (days)"
       }
     }
