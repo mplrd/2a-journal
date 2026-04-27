@@ -104,6 +104,7 @@ Pas de défaut hardcodé dans le resolver. Les callers gèrent `null` explicitem
 | `broker_sync_max_failures` | INT | `BROKER_SYNC_MAX_FAILURES` | id | Seuil circuit breaker auto-sync |
 | `email_verification_enabled` | BOOL | `EMAIL_VERIFICATION_ENABLED` | `AuthService::register` | Force la vérification email à l'inscription |
 | `mail_enabled` | BOOL | `MAIL_ENABLED` | `EmailService::send` | Active l'envoi d'emails (sinon log seulement) |
+| `mail_from_address` | STRING | `MAIL_FROM_ADDRESS` | `EmailService::buildResendPayload` | Adresse expéditeur (header `from`) |
 | `billing_grace_days` | INT | `BILLING_GRACE_DAYS` | `AuthService::register` | Délai de grâce après échec paiement (jours) |
 
 Modifier une valeur depuis le BO prend effet **au prochain appel** du consommateur (pas de redeploy). Le scheduler relit la DB à chaque tick (max ~1 min de délai). Les services HTTP (auth, email) relisent à chaque requête concernée.

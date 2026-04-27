@@ -107,6 +107,7 @@ class AdminSettingsFlowTest extends TestCase
         $this->assertContains('broker_sync_max_failures', $keys);
         $this->assertContains('email_verification_enabled', $keys);
         $this->assertContains('mail_enabled', $keys);
+        $this->assertContains('mail_from_address', $keys);
         $this->assertContains('billing_grace_days', $keys);
     }
 

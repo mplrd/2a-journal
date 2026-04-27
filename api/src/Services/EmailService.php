@@ -41,6 +41,21 @@ class EmailService
         return (bool) ($this->config['enabled'] ?? false);
     }
 
+    /**
+     * `from_address` resolution: DB > env (via config) > empty.
+     * Returned as-is; the caller is responsible for the final formatting.
+     */
+    private function fromAddress(): string
+    {
+        if ($this->platformSettings !== null) {
+            $value = $this->platformSettings->resolve('mail_from_address');
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+        return (string) ($this->config['from_address'] ?? '');
+    }
+
     public function sendVerificationEmail(string $toEmail, string $token, string $locale = 'en'): void
     {
         $url = $this->config['frontend_url'] . '/verify-email?token=' . urlencode($token);
@@ -124,7 +139,7 @@ class EmailService
     private function buildResendPayload(string $to, string $subject, string $htmlBody): array
     {
         return [
-            'from' => "{$this->config['from_name']} <{$this->config['from_address']}>",
+            'from' => "{$this->config['from_name']} <{$this->fromAddress()}>",
             'to' => [$to],
             'subject' => $subject,
             'html' => $htmlBody,

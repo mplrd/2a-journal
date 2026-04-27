@@ -55,6 +55,11 @@ class PlatformSettingsService
                 'env_var' => 'MAIL_ENABLED',
                 'description' => 'admin.settings.desc.mail_enabled',
             ],
+            'mail_from_address' => [
+                'type' => SettingType::STRING->value,
+                'env_var' => 'MAIL_FROM_ADDRESS',
+                'description' => 'admin.settings.desc.mail_from_address',
+            ],
             'billing_grace_days' => [
                 'type' => SettingType::INT->value,
                 'env_var' => 'BILLING_GRACE_DAYS',
