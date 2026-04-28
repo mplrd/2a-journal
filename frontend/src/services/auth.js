@@ -54,4 +54,8 @@ export const authService = {
   async deleteAccount(data) {
     return api.delete('/auth/me', data)
   },
+
+  async ssoIssueCode() {
+    return api.post('/auth/sso/code')
+  },
 }
