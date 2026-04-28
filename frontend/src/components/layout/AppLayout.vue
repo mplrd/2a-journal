@@ -295,7 +295,7 @@ async function handleLogout() {
 
       <!-- Main content (only this area scrolls) -->
       <main class="flex-1 overflow-y-auto px-4 py-6 min-w-0">
-        <div class="max-w-7xl w-full mx-auto">
+        <div class="w-full">
           <RouterView />
         </div>
       </main>
