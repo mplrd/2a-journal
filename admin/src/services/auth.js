@@ -12,4 +12,8 @@ export const authService = {
   async me() {
     return api.get('/auth/me')
   },
+
+  async ssoExchange(code) {
+    return api.post('/auth/sso/exchange', { code }, { auth: false })
+  },
 }

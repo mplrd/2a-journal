@@ -32,7 +32,8 @@
     "logout": "Déconnexion",
     "language": "Langue",
     "menu": "Menu",
-    "my_account": "Mon compte"
+    "my_account": "Mon compte",
+    "go_to_admin": "Aller à l'admin"
   },
   "auth": {
     "login": "Connexion",
@@ -68,6 +69,7 @@
       "token_expired": "Session expirée, veuillez vous reconnecter",
       "token_invalid": "Session invalide",
       "refresh_token_invalid": "Session expirée, veuillez vous reconnecter",
+      "sso_code_invalid": "Le code SSO est invalide ou a expiré, veuillez réessayer",
       "email_too_long": "L'email est trop long (255 caractères maximum)",
       "field_too_long": "Ce champ est trop long",
       "invalid_locale": "Langue non supportée",

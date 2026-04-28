@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia } from 'pinia'
+import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
 import AppLayout from '../components/layout/AppLayout.vue'
 import fr from '../locales/fr.json'
 import en from '../locales/en.json'
@@ -16,7 +18,7 @@ function createWrapper(locale = 'fr') {
 
   return mount(AppLayout, {
     global: {
-      plugins: [createPinia(), i18n],
+      plugins: [createPinia(), i18n, PrimeVue, ToastService],
       stubs: {
         RouterView: true,
         RouterLink: true,

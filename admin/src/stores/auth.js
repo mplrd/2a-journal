@@ -88,6 +88,33 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function loginWithSsoCode(code) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await authService.ssoExchange(code)
+      applyTokenAndDecodeRole(response.data.access_token)
+
+      // Same admin-gate as the password login path: a non-admin who somehow
+      // exchanges a code (the user SPA endpoint is open to all authenticated
+      // users) still must not get into the admin BO.
+      if (role.value !== 'ADMIN') {
+        clearAuthState()
+        throw new NotAdminError()
+      }
+
+      user.value = response.data.user || null
+      return response
+    } catch (err) {
+      error.value = err.code === 'NOT_ADMIN'
+        ? 'auth.error.admin_only'
+        : (err.messageKey || 'error.internal')
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function initSession() {
     try {
       const token = await api.refreshAccessToken()
@@ -116,6 +143,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isAdmin,
     login,
+    loginWithSsoCode,
     logout,
     fetchProfile,
     initSession,

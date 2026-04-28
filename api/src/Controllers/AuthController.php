@@ -6,14 +6,17 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Services\AuthService;
+use App\Services\SsoService;
 
 class AuthController extends Controller
 {
     private AuthService $authService;
+    private ?SsoService $ssoService;
 
-    public function __construct(AuthService $authService)
+    public function __construct(AuthService $authService, ?SsoService $ssoService = null)
     {
         $this->authService = $authService;
+        $this->ssoService = $ssoService;
     }
 
     public function register(Request $request): Response
@@ -143,6 +146,22 @@ class AuthController extends Controller
         }
 
         return $response;
+    }
+
+    public function ssoIssueCode(Request $request): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $result = $this->ssoService->issueCode($userId);
+
+        return $this->jsonSuccess($result);
+    }
+
+    public function ssoExchange(Request $request): Response
+    {
+        $code = (string) ($request->getBody('code') ?? '');
+        $result = $this->ssoService->exchange($code);
+
+        return $this->respondWithCookie($result);
     }
 
     private function respondWithCookie(array $result, int $status = 200): Response

@@ -154,8 +154,29 @@ class AuthService
             throw new ForbiddenException('auth.error.suspended');
         }
 
-        // Reset failed attempts on successful login
-        $userId = (int)$user['id'];
+        return $this->issueSessionForUser((int) $user['id']);
+    }
+
+    /**
+     * Issue a fresh session (access_token + refresh cookie + user payload)
+     * for a user whose identity has already been verified by an upstream
+     * mechanism — e.g. password+email at login time, or a one-time SSO
+     * code in the cross-SPA bridge.
+     *
+     * Still rejects suspended users so the bypass cannot resurrect a
+     * disabled account, and refuses unknown user_ids defensively.
+     */
+    public function issueSessionForUser(int $userId): array
+    {
+        $user = $this->userRepo->findById($userId);
+        if (!$user) {
+            throw new UnauthorizedException('auth.error.token_invalid', 'TOKEN_INVALID');
+        }
+
+        if (!empty($user['suspended_at'])) {
+            throw new ForbiddenException('auth.error.suspended');
+        }
+
         $this->userRepo->resetLoginAttempts($userId);
         $this->userRepo->touchLastLogin($userId);
 
