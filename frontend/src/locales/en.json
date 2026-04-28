@@ -276,6 +276,7 @@
       "not_found": "Position not found",
       "forbidden": "Unauthorized access to this position",
       "transfer_forbidden": "Target account does not belong to you",
+      "transfer_disabled": "Trade transfer is disabled",
       "field_required": "This field is required",
       "invalid_price": "Price must be positive",
       "invalid_size": "Size must be positive",

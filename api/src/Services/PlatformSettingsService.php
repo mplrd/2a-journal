@@ -65,7 +65,37 @@ class PlatformSettingsService
                 'env_var' => 'BILLING_GRACE_DAYS',
                 'description' => 'admin.settings.desc.billing_grace_days',
             ],
+            'trade_transfer_enabled' => [
+                'type' => SettingType::BOOL->value,
+                'env_var' => 'TRADE_TRANSFER_ENABLED',
+                'description' => 'admin.settings.desc.trade_transfer_enabled',
+                'is_public' => true,
+            ],
         ];
+    }
+
+    /**
+     * Subset of known settings that are safe to surface to authenticated end
+     * users (e.g. UI feature flags). Returned as a plain key=>value dict so
+     * the auth/me payload can ship it as `public_settings`.
+     *
+     * BOOL settings default to false when neither DB nor env carries a value
+     * — that is the safer default for "feature off until explicitly enabled".
+     */
+    public function publicSettings(): array
+    {
+        $out = [];
+        foreach (self::knownSettings() as $key => $meta) {
+            if (empty($meta['is_public'])) {
+                continue;
+            }
+            $value = $this->resolve($key);
+            if ($value === null && $meta['type'] === SettingType::BOOL->value) {
+                $value = false;
+            }
+            $out[$key] = $value;
+        }
+        return $out;
     }
 
     public function __construct(private PlatformSettingsRepository $repo) {}
