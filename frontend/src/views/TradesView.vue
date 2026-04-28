@@ -10,6 +10,7 @@ import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
 import { useCustomFieldsStore } from '@/stores/customFields'
 import { useAuthStore } from '@/stores/auth'
+import { formatSize } from '@/utils/format'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -87,6 +88,7 @@ function applyQueryParamFilters() {
 
 onMounted(async () => {
   applyQueryParamFilters()
+  store.perPage = Number(authStore.user?.default_page_size) || 10
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups(), customFieldsStore.fetchDefinitions()])
   if (filterStatuses.value.length > 0) {
     store.setFilters({ statuses: filterStatuses.value })
@@ -366,7 +368,11 @@ function pnlClass(pnl) {
           {{ Number(data.entry_price).toLocaleString() }}
         </template>
       </Column>
-      <Column field="size" :header="t('positions.size')" />
+      <Column field="size" :header="t('positions.size')">
+        <template #body="{ data }">
+          <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
+        </template>
+      </Column>
       <Column field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
@@ -374,7 +380,11 @@ function pnlClass(pnl) {
           </div>
         </template>
       </Column>
-      <Column field="remaining_size" :header="t('trades.remaining_size')" />
+      <Column field="remaining_size" :header="t('trades.remaining_size')">
+        <template #body="{ data }">
+          <span class="font-mono tabular-nums">{{ formatSize(data.remaining_size) }}</span>
+        </template>
+      </Column>
       <Column field="opened_at" :header="t('trades.opened_at')">
         <template #body="{ data }">
           {{ new Date(data.opened_at).toLocaleString() }}
