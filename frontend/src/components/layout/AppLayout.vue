@@ -55,26 +55,41 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
-// Sidebar: open by default on desktop, closed on mobile, persist preference
-const sidebarOpen = ref(getSidebarDefault())
+// Sidebar: two distinct states.
+// Desktop: compact (icons only) ↔ expanded (icons + labels), persisted.
+// Mobile: closed (hidden) ↔ open (full overlay), ephemeral.
+const sidebarExpanded = ref(getSidebarDefault())
+const mobileOpen = ref(false)
 
 function getSidebarDefault() {
-  const saved = localStorage.getItem('sidebarOpen')
+  const saved = localStorage.getItem('sidebarExpanded')
   if (saved !== null) return saved === 'true'
-  return window.innerWidth >= 768
+  return false
 }
 
 function toggleSidebar() {
-  sidebarOpen.value = !sidebarOpen.value
-  localStorage.setItem('sidebarOpen', String(sidebarOpen.value))
+  if (isMobile.value) {
+    mobileOpen.value = !mobileOpen.value
+  } else {
+    sidebarExpanded.value = !sidebarExpanded.value
+    localStorage.setItem('sidebarExpanded', String(sidebarExpanded.value))
+  }
 }
 
 function handleNavClick() {
   if (isMobile.value) {
-    sidebarOpen.value = false
-    localStorage.setItem('sidebarOpen', 'false')
+    mobileOpen.value = false
   }
 }
+
+const showLabels = computed(() =>
+  isMobile.value ? mobileOpen.value : sidebarExpanded.value,
+)
+
+const sidebarWidthClass = computed(() => {
+  if (isMobile.value) return mobileOpen.value ? 'w-64' : 'w-0'
+  return sidebarExpanded.value ? 'w-64' : 'w-14'
+})
 
 const localeOptions = [
   { code: 'fr', label: 'Français' },
@@ -250,7 +265,7 @@ async function handleLogout() {
     <div class="flex flex-1 min-h-0">
       <!-- Backdrop (mobile only) -->
       <div
-        v-if="sidebarOpen && isMobile"
+        v-if="mobileOpen && isMobile"
         class="fixed inset-0 bg-black/30 z-20"
         @click="toggleSidebar"
       />
@@ -258,37 +273,43 @@ async function handleLogout() {
       <!-- Sidebar (below header) -->
       <aside
         class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden shrink-0"
-        :class="sidebarOpen ? 'w-64' : 'w-0'"
+        :class="sidebarWidthClass"
       >
-        <nav class="w-64 p-3 flex flex-col gap-1 overflow-y-auto h-full">
+        <nav class="p-2 flex flex-col gap-1 overflow-y-auto h-full">
           <template v-for="link in navLinks" :key="link.to">
             <RouterLink
               v-if="isRouteAllowed(link.name)"
+              v-tooltip.right="!showLabels ? link.label : null"
               :to="link.to"
               class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+              :class="!showLabels ? 'justify-center' : ''"
               @click="handleNavClick"
             >
               <i :class="link.icon"></i>
-              <span>{{ link.label }}</span>
+              <span v-if="showLabels">{{ link.label }}</span>
             </RouterLink>
             <span
               v-else
+              v-tooltip.right="!showLabels ? link.label : null"
               class="flex items-center gap-3 px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
+              :class="!showLabels ? 'justify-center' : ''"
             >
               <i :class="link.icon"></i>
-              <span>{{ link.label }}</span>
+              <span v-if="showLabels">{{ link.label }}</span>
             </span>
           </template>
           <button
             v-if="isAdmin && ADMIN_URL"
+            v-tooltip.right="!showLabels ? t('nav.go_to_admin') : null"
             type="button"
             class="mt-auto flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
+            :class="!showLabels ? 'justify-center' : ''"
             data-testid="admin-link"
             @click="openAdmin"
           >
             <i class="pi pi-shield"></i>
-            <span>{{ t('nav.go_to_admin') }}</span>
-            <i class="pi pi-external-link ml-auto text-xs"></i>
+            <span v-if="showLabels">{{ t('nav.go_to_admin') }}</span>
+            <i v-if="showLabels" class="pi pi-external-link ml-auto text-xs"></i>
           </button>
         </nav>
       </aside>
