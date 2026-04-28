@@ -51,7 +51,7 @@ async function handleSubmit() {
       </form>
 
       <p class="text-center mt-4 text-sm text-gray-600 dark:text-gray-400">
-        <RouterLink to="/login" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.back_to_login') }}</RouterLink>
+        <RouterLink to="/login" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.back_to_login') }}</RouterLink>
       </p>
     </div>
   </div>

@@ -171,7 +171,7 @@ async function handleReactivate() {
 
         <div
           v-else-if="isGrace"
-          class="p-3 rounded bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 text-sm"
+          class="p-3 rounded bg-info-bg dark:bg-info/20 border border-info/30 dark:border-info/40 text-info dark:text-info-bg text-sm"
           data-testid="status-grace"
         >
           {{ t('account.billing.status_grace', { date: formatDate(billing.gracePeriodEnd) }) }}

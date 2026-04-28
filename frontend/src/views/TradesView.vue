@@ -303,7 +303,7 @@ function realizedPnl(trade) {
 
 function pnlClass(pnl) {
   if (pnl === null || pnl === undefined) return ''
-  return Number(pnl) >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'
+  return Number(pnl) >= 0 ? 'text-success font-medium font-mono tabular-nums' : 'text-danger font-medium font-mono tabular-nums'
 }
 </script>
 

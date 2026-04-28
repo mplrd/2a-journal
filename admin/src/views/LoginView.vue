@@ -8,6 +8,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Card from 'primevue/card'
+import BrandLogo from '@/components/common/BrandLogo.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -61,10 +62,15 @@ onMounted(async () => {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
     <Card class="w-full max-w-md">
+      <template #header>
+        <div class="flex justify-center pt-6">
+          <BrandLogo :size="200" class="text-brand-navy-900 dark:text-brand-cream" />
+        </div>
+      </template>
       <template #title>{{ t('login.title') }}</template>
       <template #content>
         <div v-if="ssoLoading" class="flex flex-col items-center gap-3 py-8">
-          <i class="pi pi-spin pi-spinner text-3xl text-blue-600"></i>
+          <i class="pi pi-spin pi-spinner text-3xl text-brand-navy-900 dark:text-brand-cream"></i>
           <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('login.sso_loading') }}</p>
         </div>
         <form v-else class="flex flex-col gap-4" @submit.prevent="submit">

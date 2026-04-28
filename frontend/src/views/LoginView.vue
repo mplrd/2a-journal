@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Button from 'primevue/button'
+import BrandLogo from '@/components/common/BrandLogo.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -28,6 +29,9 @@ async function handleLogin() {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
     <div class="w-full max-w-md p-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+      <div class="flex justify-center mb-4">
+        <BrandLogo :size="200" class="text-brand-navy-900 dark:text-brand-cream" />
+      </div>
       <h1 class="text-2xl font-bold text-center mb-6 text-gray-900 dark:text-gray-100">{{ t('auth.login') }}</h1>
 
       <div v-if="errorKey" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400 text-sm">
@@ -50,12 +54,12 @@ async function handleLogin() {
       </form>
 
       <p class="text-center mt-3 text-sm">
-        <RouterLink to="/forgot-password" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.forgot_password') }}</RouterLink>
+        <RouterLink to="/forgot-password" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.forgot_password') }}</RouterLink>
       </p>
 
       <p class="text-center mt-2 text-sm text-gray-600 dark:text-gray-400">
         {{ t('auth.no_account') }}
-        <RouterLink to="/register" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.register_button') }}</RouterLink>
+        <RouterLink to="/register" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.register_button') }}</RouterLink>
       </p>
     </div>
   </div>
