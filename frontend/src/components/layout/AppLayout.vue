@@ -10,6 +10,7 @@ import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
 import FlagIcon from '@/components/common/FlagIcon.vue'
+import BrandLogo from '@/components/common/BrandLogo.vue'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
 const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || ''
@@ -149,7 +150,10 @@ async function handleLogout() {
           >
             <i class="pi pi-bars text-xl"></i>
           </button>
-          <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ t('app.title') }}</h1>
+          <RouterLink to="/" class="flex items-center gap-2">
+            <BrandLogo :size="40" class="text-brand-navy-900 dark:text-brand-cream" />
+            <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ t('app.title') }}</h1>
+          </RouterLink>
         </div>
 
         <!-- Right: Locale selector + Dark mode toggle + Avatar + User menu -->

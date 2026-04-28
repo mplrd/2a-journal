@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import Button from 'primevue/button'
+import BrandLogo from '@/components/common/BrandLogo.vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -18,7 +19,10 @@ async function logout() {
   <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
     <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-6">
-        <h1 class="font-bold text-lg">{{ t('app.title') }}</h1>
+        <div class="flex items-center gap-2">
+          <BrandLogo :size="40" class="text-brand-navy-900 dark:text-brand-cream" />
+          <h1 class="font-bold text-lg">{{ t('app.title') }}</h1>
+        </div>
         <nav class="flex gap-4">
           <router-link to="/users" class="text-sm hover:underline" active-class="font-semibold text-blue-600">
             {{ t('nav.users') }}
