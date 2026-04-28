@@ -364,6 +364,38 @@ class AuthServiceTest extends TestCase
         $this->service->updateProfile(1, ['be_threshold_percent' => 'abc']);
     }
 
+    public function testUpdateProfileAcceptsSupportedPageSizes(): void
+    {
+        foreach ([10, 25, 50, 100] as $size) {
+            $repo = $this->createMock(UserRepository::class);
+            $repo->expects($this->once())
+                ->method('updateProfile')
+                ->with(1, ['default_page_size' => $size])
+                ->willReturn(['id' => 1, 'default_page_size' => $size]);
+
+            $service = new AuthService($repo, $this->tokenRepo, null, null, $this->config);
+            $result = $service->updateProfile(1, ['default_page_size' => $size]);
+
+            $this->assertSame($size, (int) $result['default_page_size']);
+        }
+    }
+
+    public function testUpdateProfileRejectsUnsupportedPageSize(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_page_size');
+
+        $this->service->updateProfile(1, ['default_page_size' => 7]);
+    }
+
+    public function testUpdateProfileRejectsNonIntegerPageSize(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('auth.error.invalid_page_size');
+
+        $this->service->updateProfile(1, ['default_page_size' => 'abc']);
+    }
+
     // ── Change password ──────────────────────────────────────────
 
     public function testChangePasswordThrowsWhenCurrentMissing(): void

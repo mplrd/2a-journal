@@ -19,6 +19,7 @@ const form = ref({
   timezone: 'Europe/Paris',
   default_currency: 'EUR',
   be_threshold_percent: 0,
+  default_page_size: 10,
 })
 
 const timezones = Intl.supportedValuesOf('timeZone')
@@ -34,6 +35,8 @@ const localeOptions = [
   { value: 'en', label: 'English' },
 ]
 
+const pageSizeOptions = [10, 25, 50, 100].map((value) => ({ value, label: String(value) }))
+
 const saving = ref(false)
 
 onMounted(() => {
@@ -44,6 +47,7 @@ onMounted(() => {
       timezone: authStore.user.timezone || 'Europe/Paris',
       default_currency: authStore.user.default_currency || 'EUR',
       be_threshold_percent: Number(authStore.user.be_threshold_percent) || 0,
+      default_page_size: Number(authStore.user.default_page_size) || 10,
     }
   }
 })
@@ -121,6 +125,20 @@ async function handleSave() {
         data-testid="select-currency"
         class="w-full"
       />
+    </div>
+
+    <!-- Default page size -->
+    <div>
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.default_page_size') }}</label>
+      <Select
+        v-model="form.default_page_size"
+        :options="pageSizeOptions"
+        optionLabel="label"
+        optionValue="value"
+        data-testid="select-page-size"
+        class="w-full"
+      />
+      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.default_page_size_hint') }}</p>
     </div>
 
     <!-- BE threshold -->
