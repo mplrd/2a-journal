@@ -15,6 +15,36 @@ class AuthFlowTest extends TestCase
     private Router $router;
     private PDO $pdo;
 
+    /**
+     * Holds env vars the test mutates via putenv() so tearDown() can restore
+     * them. Without this, a test that clears TRADE_TRANSFER_ENABLED leaks
+     * the cleared state to every subsequent test in the same PHP process.
+     */
+    private array $savedEnv = [];
+
+    private function clearEnv(string $key): void
+    {
+        if (!array_key_exists($key, $this->savedEnv)) {
+            $this->savedEnv[$key] = getenv($key);
+        }
+        putenv($key);
+        unset($_ENV[$key]);
+    }
+
+    private function restoreSavedEnv(): void
+    {
+        foreach ($this->savedEnv as $key => $original) {
+            if ($original === false) {
+                putenv($key);
+                unset($_ENV[$key]);
+            } else {
+                putenv("$key=$original");
+                $_ENV[$key] = $original;
+            }
+        }
+        $this->savedEnv = [];
+    }
+
     protected function setUp(): void
     {
         // Load .env
@@ -44,6 +74,7 @@ class AuthFlowTest extends TestCase
         $this->pdo->exec('DELETE FROM rate_limits');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
+        $this->pdo->exec('DELETE FROM platform_settings');
 
         // Build router with routes
         $router = new Router();
@@ -56,6 +87,8 @@ class AuthFlowTest extends TestCase
         $this->pdo->exec('DELETE FROM rate_limits');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
+        $this->pdo->exec('DELETE FROM platform_settings');
+        $this->restoreSavedEnv();
     }
 
     private function extractRefreshToken(Response $response): string
@@ -369,6 +402,81 @@ class AuthFlowTest extends TestCase
         $this->assertSame('me@test.com', $body['data']['email']);
         $this->assertSame('Jane', $body['data']['first_name']);
         $this->assertSame('Smith', $body['data']['last_name']);
+    }
+
+    public function testLoginIncludesPublicSettings(): void
+    {
+        $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'login-pub@test.com',
+            'password' => 'Test1234',
+        ]));
+
+        // Wait > 1s so login attempt timestamps don't collide
+        sleep(1);
+
+        $body = $this->router->dispatch(Request::create('POST', '/auth/login', [
+            'email' => 'login-pub@test.com',
+            'password' => 'Test1234',
+        ]))->getBody();
+
+        $this->assertArrayHasKey('public_settings', $body['data']['user']);
+        $this->assertFalse($body['data']['user']['public_settings']['trade_transfer_enabled']);
+    }
+
+    public function testRegisterIncludesPublicSettings(): void
+    {
+        $body = $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'reg-pub@test.com',
+            'password' => 'Test1234',
+        ]))->getBody();
+
+        $this->assertArrayHasKey('public_settings', $body['data']['user']);
+        $this->assertFalse($body['data']['user']['public_settings']['trade_transfer_enabled']);
+    }
+
+    public function testMeIncludesPublicSettingsDefaultFalse(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'pub-default@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        // Make sure no env override leaks into this case (tearDown restores)
+        $this->clearEnv('TRADE_TRANSFER_ENABLED');
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $body = $this->router->dispatch($request)->getBody();
+
+        $this->assertArrayHasKey('public_settings', $body['data']);
+        $this->assertArrayHasKey('trade_transfer_enabled', $body['data']['public_settings']);
+        $this->assertFalse($body['data']['public_settings']['trade_transfer_enabled']);
+    }
+
+    public function testMePublicSettingsReflectsDbOverride(): void
+    {
+        $request = Request::create('POST', '/auth/register', [
+            'email' => 'pub-db@test.com',
+            'password' => 'Test1234',
+        ]);
+        $response = $this->router->dispatch($request);
+        $accessToken = $response->getBody()['data']['access_token'];
+
+        // Override via DB (simulating an admin toggle)
+        $this->pdo->prepare(
+            "INSERT INTO platform_settings (setting_key, setting_value, value_type, updated_at)
+             VALUES ('trade_transfer_enabled', 'true', 'BOOL', NOW())"
+        )->execute();
+
+        $request = Request::create('GET', '/auth/me', [], [], [
+            'Authorization' => "Bearer $accessToken",
+        ]);
+        $body = $this->router->dispatch($request)->getBody();
+
+        $this->assertTrue($body['data']['public_settings']['trade_transfer_enabled']);
     }
 
     public function testMeWithoutToken(): void

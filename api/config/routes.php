@@ -226,7 +226,7 @@ $partialExitRepo = new PartialExitRepository($pdo);
 // ── Positions ──────────────────────────────────────────────────
 $positionRepo = new PositionRepository($pdo);
 $historyRepo = new StatusHistoryRepository($pdo);
-$positionService = new PositionService($positionRepo, $accountRepo, $historyRepo, $setupRepo);
+$positionService = new PositionService($positionRepo, $accountRepo, $historyRepo, $setupRepo, $platformSettingsService);
 $shareService = new ShareService($positionRepo, $tradeRepo);
 $positionController = new PositionController($positionService, $shareService);
 

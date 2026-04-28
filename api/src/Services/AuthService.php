@@ -111,7 +111,7 @@ class AuthService
         } else {
             // Auto-verify when disabled
             $this->userRepo->setEmailVerified($userId);
-            $user = $this->userRepo->findById($userId);
+            $user = $this->userRepo->findById($userId) ?? $user;
         }
 
         $accessToken = $this->generateAccessToken($userId);
@@ -120,7 +120,7 @@ class AuthService
         return [
             'access_token' => $accessToken,
             'refresh_cookie' => $this->buildRefreshCookie($refreshToken, $this->config['refresh_token_ttl']),
-            'user' => $user,
+            'user' => $this->enrichUserPayload($user),
         ];
     }
 
@@ -167,7 +167,7 @@ class AuthService
         return [
             'access_token' => $accessToken,
             'refresh_cookie' => $this->buildRefreshCookie($refreshToken, $this->config['refresh_token_ttl']),
-            'user' => $profile,
+            'user' => $this->enrichUserPayload($profile),
         ];
     }
 
@@ -216,6 +216,20 @@ class AuthService
             throw new UnauthorizedException('auth.error.token_invalid', 'TOKEN_INVALID');
         }
 
+        return $this->enrichUserPayload($user);
+    }
+
+    /**
+     * Add fields the SPA needs at session bootstrap (e.g. public_settings for
+     * UI feature flags). Used by every endpoint that returns a user payload —
+     * login, register, /auth/me — so the SPA never has to hit a second
+     * endpoint to know what to render.
+     */
+    private function enrichUserPayload(array $user): array
+    {
+        $user['public_settings'] = $this->platformSettings !== null
+            ? $this->platformSettings->publicSettings()
+            : [];
         return $user;
     }
 

@@ -276,6 +276,7 @@
       "not_found": "Position non trouvée",
       "forbidden": "Accès non autorisé à cette position",
       "transfer_forbidden": "Le compte cible ne vous appartient pas",
+      "transfer_disabled": "Le transfert de trade est désactivé",
       "field_required": "Ce champ est requis",
       "invalid_price": "Le prix doit être positif",
       "invalid_size": "La taille doit être positive",
