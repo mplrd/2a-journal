@@ -407,29 +407,45 @@ function pnlClass(pnl) {
 
       <Column :header="''">
         <template #body="{ data }">
-          <div class="flex gap-2">
-            <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
-            <Button v-if="data.status !== TradeStatus.CLOSED && authStore.user?.public_settings?.trade_transfer_enabled" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
-            <Button
-              v-if="data.status !== TradeStatus.CLOSED && getNextObjective(data)"
-              icon="pi pi-angle-double-up"
-              severity="success"
-              size="small"
-              text
-              v-tooltip.top="getNextObjective(data)?.label"
-              @click="openNextObjective(data)"
-            />
-            <Button
-              v-if="data.status !== TradeStatus.CLOSED"
-              icon="pi pi-sign-out"
-              severity="warn"
-              size="small"
-              text
-              v-tooltip.top="t('trades.close_trade')"
-              @click="openCloseDialog(data)"
-            />
-            <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
+          <div class="flex items-center divide-x divide-gray-200 dark:divide-gray-700">
+            <!-- Group: trade management -->
+            <div v-if="data.status !== TradeStatus.CLOSED" class="flex gap-1 pr-2">
+              <Button
+                v-if="getNextObjective(data)"
+                icon="pi pi-angle-double-up"
+                severity="success"
+                size="small"
+                text
+                v-tooltip.top="getNextObjective(data)?.label"
+                @click="openNextObjective(data)"
+              />
+              <Button
+                icon="pi pi-sign-out"
+                severity="warn"
+                size="small"
+                text
+                v-tooltip.top="t('trades.close_trade')"
+                @click="openCloseDialog(data)"
+              />
+              <Button
+                v-if="authStore.user?.public_settings?.trade_transfer_enabled"
+                icon="pi pi-arrow-right-arrow-left"
+                severity="info"
+                size="small"
+                text
+                v-tooltip.top="t('positions.transfer')"
+                @click="openTransfer(data)"
+              />
+            </div>
+            <!-- Group: edit & delete -->
+            <div class="flex gap-1 px-2">
+              <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
+              <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
+            </div>
+            <!-- Group: share -->
+            <div class="flex gap-1 pl-2">
+              <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
+            </div>
           </div>
         </template>
       </Column>
