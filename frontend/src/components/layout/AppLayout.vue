@@ -10,6 +10,9 @@ import Popover from 'primevue/popover'
 import FlagIcon from '@/components/common/FlagIcon.vue'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
+const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || ''
+
+const isAdmin = computed(() => authStore.user?.role === 'ADMIN')
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -232,7 +235,7 @@ async function handleLogout() {
         class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden shrink-0"
         :class="sidebarOpen ? 'w-64' : 'w-0'"
       >
-        <nav class="w-64 p-3 flex flex-col gap-1 overflow-y-auto">
+        <nav class="w-64 p-3 flex flex-col gap-1 overflow-y-auto h-full">
           <template v-for="link in navLinks" :key="link.to">
             <RouterLink
               v-if="isRouteAllowed(link.name)"
@@ -251,6 +254,18 @@ async function handleLogout() {
               <span>{{ link.label }}</span>
             </span>
           </template>
+          <a
+            v-if="isAdmin && ADMIN_URL"
+            :href="ADMIN_URL"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mt-auto flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3"
+            data-testid="admin-link"
+          >
+            <i class="pi pi-shield"></i>
+            <span>{{ t('nav.go_to_admin') }}</span>
+            <i class="pi pi-external-link ml-auto text-xs"></i>
+          </a>
         </nav>
       </aside>
 

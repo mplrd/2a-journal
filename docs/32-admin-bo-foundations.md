@@ -220,6 +220,23 @@ Wirer un setting demande de toucher le code qui le consomme (par ex. `mail_enabl
 
 Zéro friction au déploiement. Tu poses la var une fois, tu redéploies, c'est fait. Le script est idempotent donc aucun effet aux deploys suivants. Un CLI explicite serait plus "propre" mais demande de se souvenir de le lancer après chaque setup d'env vierge.
 
+## Cross-link "Aller à l'admin" depuis le SPA user
+
+Pour les users qui ont aussi le rôle `ADMIN`, un lien externe est affiché en bas de la sidebar du SPA user (`AppLayout.vue`). Il pointe vers la SPA admin via `VITE_ADMIN_URL`.
+
+**Conditions d'affichage** :
+- `authStore.user?.role === 'ADMIN'` (le claim arrive avec `/auth/me`)
+- `VITE_ADMIN_URL` est définie (sans valeur, le lien ne s'affiche pas — utile pour des envs custom)
+
+**Variable d'env** :
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_ADMIN_URL` | `http://2a.admin.local/login` (.env.example) | URL absolue vers la SPA admin (login page de préférence) |
+
+En prod, configurer `VITE_ADMIN_URL=https://admin.2a-trading-tools.com/login` au build du SPA user.
+
+**Pourquoi un lien externe et pas une RouterLink** : le SPA admin est une appli distincte (autre domaine, autre bundle, sa propre session JWT/refresh). Un `<a href>` quitte le SPA user et ouvre l'autre app, qui renvoie sur `/login` si la session admin n'est pas active.
+
 ## Scope exclu (v1.1+)
 
 - **Audit log des actions admin** (table `admin_actions`) — déféré

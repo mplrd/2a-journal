@@ -32,7 +32,8 @@
     "logout": "Déconnexion",
     "language": "Langue",
     "menu": "Menu",
-    "my_account": "Mon compte"
+    "my_account": "Mon compte",
+    "go_to_admin": "Aller à l'admin"
   },
   "auth": {
     "login": "Connexion",

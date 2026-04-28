@@ -32,7 +32,8 @@
     "logout": "Logout",
     "language": "Language",
     "menu": "Menu",
-    "my_account": "My account"
+    "my_account": "My account",
+    "go_to_admin": "Go to admin"
   },
   "auth": {
     "login": "Login",
