@@ -15,6 +15,36 @@ class AuthFlowTest extends TestCase
     private Router $router;
     private PDO $pdo;
 
+    /**
+     * Holds env vars the test mutates via putenv() so tearDown() can restore
+     * them. Without this, a test that clears TRADE_TRANSFER_ENABLED leaks
+     * the cleared state to every subsequent test in the same PHP process.
+     */
+    private array $savedEnv = [];
+
+    private function clearEnv(string $key): void
+    {
+        if (!array_key_exists($key, $this->savedEnv)) {
+            $this->savedEnv[$key] = getenv($key);
+        }
+        putenv($key);
+        unset($_ENV[$key]);
+    }
+
+    private function restoreSavedEnv(): void
+    {
+        foreach ($this->savedEnv as $key => $original) {
+            if ($original === false) {
+                putenv($key);
+                unset($_ENV[$key]);
+            } else {
+                putenv("$key=$original");
+                $_ENV[$key] = $original;
+            }
+        }
+        $this->savedEnv = [];
+    }
+
     protected function setUp(): void
     {
         // Load .env
@@ -58,6 +88,7 @@ class AuthFlowTest extends TestCase
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
         $this->pdo->exec('DELETE FROM platform_settings');
+        $this->restoreSavedEnv();
     }
 
     private function extractRefreshToken(Response $response): string
@@ -412,9 +443,8 @@ class AuthFlowTest extends TestCase
         $response = $this->router->dispatch($request);
         $accessToken = $response->getBody()['data']['access_token'];
 
-        // Make sure no env override leaks into this case
-        putenv('TRADE_TRANSFER_ENABLED');
-        unset($_ENV['TRADE_TRANSFER_ENABLED']);
+        // Make sure no env override leaks into this case (tearDown restores)
+        $this->clearEnv('TRADE_TRANSFER_ENABLED');
 
         $request = Request::create('GET', '/auth/me', [], [], [
             'Authorization' => "Bearer $accessToken",

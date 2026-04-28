@@ -48,6 +48,7 @@ class PositionFlowTest extends TestCase
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
+        $this->pdo->exec('DELETE FROM platform_settings');
 
         // Build router
         $router = new Router();
@@ -84,6 +85,15 @@ class PositionFlowTest extends TestCase
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
+        $this->pdo->exec('DELETE FROM platform_settings');
+    }
+
+    private function enableTransferSetting(): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO platform_settings (setting_key, setting_value, value_type, updated_at)
+             VALUES ('trade_transfer_enabled', 'true', 'BOOL', NOW())"
+        )->execute();
     }
 
     private function authRequest(string $method, string $uri, array $body = [], array $query = []): Request
@@ -283,6 +293,7 @@ class PositionFlowTest extends TestCase
 
     public function testTransferPositionSuccess(): void
     {
+        $this->enableTransferSetting();
         $positionId = $this->insertPosition();
 
         // Create second account
@@ -301,8 +312,31 @@ class PositionFlowTest extends TestCase
         $this->assertEquals($newAccountId, $body['data']['account_id']);
     }
 
+    public function testTransferPositionForbiddenWhenSettingDisabled(): void
+    {
+        // No enableTransferSetting() — default is false
+        $positionId = $this->insertPosition();
+
+        $response = $this->router->dispatch($this->authRequest('POST', '/accounts', [
+            'name' => 'Second Account',
+            'account_type' => 'BROKER_LIVE',
+        ]));
+        $newAccountId = (int) $response->getBody()['data']['id'];
+
+        try {
+            $this->router->dispatch(
+                $this->authRequest('POST', "/positions/{$positionId}/transfer", ['account_id' => $newAccountId])
+            );
+            $this->fail('Expected ForbiddenException');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+            $this->assertSame('positions.error.transfer_disabled', $e->getMessage());
+        }
+    }
+
     public function testTransferPositionForbiddenTargetAccount(): void
     {
+        $this->enableTransferSetting();
         $positionId = $this->insertPosition();
 
         // Register another user and create their account
@@ -346,6 +380,7 @@ class PositionFlowTest extends TestCase
 
     public function testHistoryAfterTransfer(): void
     {
+        $this->enableTransferSetting();
         $positionId = $this->insertPosition();
 
         // Create second account and transfer

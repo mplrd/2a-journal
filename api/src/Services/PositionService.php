@@ -20,17 +20,20 @@ class PositionService
     private AccountRepository $accountRepo;
     private StatusHistoryRepository $historyRepo;
     private ?SetupRepository $setupRepo;
+    private ?PlatformSettingsService $platformSettings;
 
     public function __construct(
         PositionRepository $positionRepo,
         AccountRepository $accountRepo,
         StatusHistoryRepository $historyRepo,
-        ?SetupRepository $setupRepo = null
+        ?SetupRepository $setupRepo = null,
+        ?PlatformSettingsService $platformSettings = null
     ) {
         $this->positionRepo = $positionRepo;
         $this->accountRepo = $accountRepo;
         $this->historyRepo = $historyRepo;
         $this->setupRepo = $setupRepo;
+        $this->platformSettings = $platformSettings;
     }
 
     public function listAggregated(int $userId, array $filters = []): array
@@ -147,6 +150,14 @@ class PositionService
 
     public function transfer(int $userId, int $positionId, array $data): array
     {
+        // Server-side kill-switch. The UI hides the transfer button when
+        // disabled; this enforces the same intent against direct API calls
+        // so the flag is a real on/off, not just a UI nicety.
+        if ($this->platformSettings !== null
+            && $this->platformSettings->resolve('trade_transfer_enabled') !== true) {
+            throw new ForbiddenException('positions.error.transfer_disabled');
+        }
+
         $position = $this->get($userId, $positionId);
 
         if (empty($data['account_id'])) {
