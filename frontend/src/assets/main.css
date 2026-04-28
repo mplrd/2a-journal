@@ -35,6 +35,18 @@
   /* Surface dark mode élevée (panels, cards) */
   --color-surface-dark: #1a2435;
 
+  /* Tailwind gray scale tinted to charte palette.
+     Light tones: charte's warm neutrals.
+     Dark tones (700+): retargeted to navy surfaces so dark:bg-gray-900
+     and dark:bg-gray-800 already used everywhere render the brand
+     navy/surface without a per-component sweep. */
+  --color-gray-50: #f7f7f5;
+  --color-gray-100: #ececea;
+  --color-gray-200: #d8d8d4;
+  --color-gray-700: #3a3d44;
+  --color-gray-800: #1a2435;
+  --color-gray-900: #1f2a3c;
+
   /* Typographie */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -43,14 +55,14 @@
 @custom-variant dark (&:where(.dark-mode, .dark-mode *));
 
 body {
-  color: #1f2937;
-  background-color: #f9fafb;
+  color: var(--color-gray-700);
+  background-color: var(--color-gray-50);
   font-family: var(--font-sans);
 }
 
 .dark-mode body {
-  color: #f3f4f6;
-  background-color: #111827;
+  color: var(--color-brand-cream);
+  background-color: var(--color-brand-navy-900);
 }
 
 /* Force PrimeVue form components to shrink inside CSS Grid cells */
