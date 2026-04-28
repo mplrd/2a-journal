@@ -75,10 +75,10 @@ async function handleManage() {
         <!-- Grace period -->
         <div
           v-if="billing.reason === 'grace_period' && billing.gracePeriodEnd"
-          class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded"
+          class="mb-6 p-4 bg-info-bg dark:bg-info/20 border border-info/30 dark:border-info/40 rounded"
           data-testid="status-grace"
         >
-          <p class="text-blue-800 dark:text-blue-200">
+          <p class="text-info dark:text-info-bg">
             {{ t('billing.grace_info', { date: formatDate(billing.gracePeriodEnd) }) }}
           </p>
         </div>

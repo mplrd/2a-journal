@@ -36,7 +36,7 @@ async function handleSubmit() {
 
       <div v-if="success" class="mb-4 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded text-green-700 dark:text-green-400 text-sm">
         {{ t('auth.success.password_reset') }}
-        <RouterLink to="/login" class="block mt-2 text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.back_to_login') }}</RouterLink>
+        <RouterLink to="/login" class="block mt-2 text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.back_to_login') }}</RouterLink>
       </div>
 
       <div v-if="errorKey" class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400 text-sm">
@@ -53,7 +53,7 @@ async function handleSubmit() {
       </form>
 
       <p v-if="!success" class="text-center mt-4 text-sm text-gray-600 dark:text-gray-400">
-        <RouterLink to="/login" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.back_to_login') }}</RouterLink>
+        <RouterLink to="/login" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.back_to_login') }}</RouterLink>
       </p>
     </div>
   </div>

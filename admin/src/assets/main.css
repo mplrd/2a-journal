@@ -1,9 +1,64 @@
 @import "tailwindcss";
 
+@theme {
+  /* Brand — Navy (encre, surfaces sombres) */
+  --color-brand-navy-900: #1f2a3c;
+  --color-brand-navy-800: #283449;
+  --color-brand-navy-700: #354560;
+  --color-brand-navy-600: #45587a;
+  --color-brand-navy-400: #6d7c98;
+  --color-brand-navy-300: #93a3b9;
+  --color-brand-navy-200: #c9d1de;
+
+  /* Brand — Green (performance, accents) */
+  --color-brand-green-800: #1f5e3f;
+  --color-brand-green-700: #2d7952;
+  --color-brand-green-500: #46926b;
+  --color-brand-green-400: #6bad8a;
+  --color-brand-green-300: #9bc7af;
+  --color-brand-green-100: #e3f0e9;
+
+  --color-brand-cream: #e8e8e6;
+
+  /* Sémantique (sens uniquement : gain/perte/alerte) */
+  --color-success: #2d7952;
+  --color-success-bg: #e3f0e9;
+  --color-success-fg: #1f5e3f;
+  --color-danger: #b5384a;
+  --color-danger-bg: #f7e1e4;
+  --color-danger-fg-dark: #e88a96;
+  --color-warning: #c98a2b;
+  --color-warning-bg: #fbeed4;
+  --color-info: #2c6e8f;
+  --color-info-bg: #dceaf1;
+
+  /* Surface dark mode élevée (panels, cards) */
+  --color-surface-dark: #1a2435;
+
+  /* Tailwind gray scale tinted to charte palette (light = warm neutrals,
+     dark surfaces 700+ retargeted to navy so existing dark:bg-gray-* wins
+     repaint automatically). */
+  --color-gray-50: #f7f7f5;
+  --color-gray-100: #ececea;
+  --color-gray-200: #d8d8d4;
+  --color-gray-700: #3a3d44;
+  --color-gray-800: #1a2435;
+  --color-gray-900: #1f2a3c;
+
+  /* Typographie */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
 @custom-variant dark (&:where(.dark-mode, .dark-mode *));
 
 html, body, #app {
   height: 100%;
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+}
+
+.dark-mode body {
+  background-color: var(--color-brand-navy-900);
+  color: var(--color-brand-cream);
 }

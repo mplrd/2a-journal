@@ -249,7 +249,7 @@ function formatDate(dateStr) {
                 <input
                   type="file"
                   :accept="acceptedFileTypes"
-                  class="block w-full md:w-80 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
+                  class="block w-full md:w-80 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-green-100 file:text-brand-green-800 hover:file:bg-brand-green-300 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
                   @change="onFileSelect"
                 />
                 <p v-if="fileName" class="text-xs text-gray-400 mt-1">{{ fileName }}</p>
@@ -279,7 +279,7 @@ function formatDate(dateStr) {
                   <p class="text-xs text-gray-500">{{ t('import.total_rows') }}</p>
                 </div>
                 <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
-                  <p class="text-2xl font-bold text-blue-600">{{ preview.total_positions }}</p>
+                  <p class="text-2xl font-bold font-mono tabular-nums text-info">{{ preview.total_positions }}</p>
                   <p class="text-xs text-gray-500">{{ t('import.total_positions') }}</p>
                 </div>
                 <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
@@ -360,8 +360,8 @@ function formatDate(dateStr) {
                   <p class="text-2xl font-bold text-green-600">{{ result.imported_positions }}</p>
                   <p class="text-xs text-gray-500">{{ t('import.positions_imported') }}</p>
                 </div>
-                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center">
-                  <p class="text-2xl font-bold text-blue-600">{{ result.imported_trades }}</p>
+                <div class="bg-info-bg dark:bg-info/20 rounded-lg p-3 text-center">
+                  <p class="text-2xl font-bold font-mono tabular-nums text-info">{{ result.imported_trades }}</p>
                   <p class="text-xs text-gray-500">{{ t('import.trades_imported') }}</p>
                 </div>
                 <div class="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 text-center">

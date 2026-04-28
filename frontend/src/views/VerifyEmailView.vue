@@ -50,7 +50,7 @@ onMounted(async () => {
 
       <div v-else class="p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-400 text-sm">
         {{ t(errorKey) }}
-        <RouterLink to="/login" class="block mt-3 text-blue-600 dark:text-blue-400 hover:underline">
+        <RouterLink to="/login" class="block mt-3 text-brand-green-700 dark:text-brand-green-400 hover:underline">
           {{ t('auth.back_to_login') }}
         </RouterLink>
       </div>

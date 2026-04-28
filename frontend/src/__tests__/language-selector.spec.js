@@ -4,6 +4,12 @@ import { createI18n } from 'vue-i18n'
 import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ path: '/' }),
+}))
+
 import AppLayout from '../components/layout/AppLayout.vue'
 import fr from '../locales/fr.json'
 import en from '../locales/en.json'

@@ -127,8 +127,8 @@ function stageSeverity(stage) {
 function balanceClass(account) {
   const current = Number(account.current_capital)
   const initial = Number(account.initial_capital)
-  if (current > initial) return 'text-green-600 dark:text-green-400 font-medium'
-  if (current < initial) return 'text-red-600 dark:text-red-400 font-medium'
+  if (current > initial) return 'text-success dark:text-brand-green-400 font-medium font-mono tabular-nums'
+  if (current < initial) return 'text-danger dark:text-danger-fg-dark font-medium font-mono tabular-nums'
   return ''
 }
 
@@ -146,7 +146,7 @@ function balanceVariation(account) {
   <div>
     <div
       v-if="isOnboarding && currentStep === 'accounts'"
-      class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-800 dark:text-blue-200"
+      class="mb-4 p-4 bg-info-bg dark:bg-info/20 border border-info/30 dark:border-info/40 rounded-lg text-info dark:text-info-bg"
       data-testid="onboarding-banner"
     >
       {{ t('onboarding.welcome') }}
@@ -183,7 +183,7 @@ function balanceVariation(account) {
       <Column field="currency" :header="t('accounts.currency')" />
       <Column field="initial_capital" :header="t('accounts.initial_capital')">
         <template #body="{ data }">
-          {{ Number(data.initial_capital).toLocaleString() }}
+          <span class="font-mono tabular-nums">{{ Number(data.initial_capital).toLocaleString() }}</span>
         </template>
       </Column>
       <Column field="current_capital" :header="t('accounts.balance')">

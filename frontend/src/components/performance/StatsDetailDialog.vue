@@ -56,9 +56,9 @@ function formatRatio(value) {
 }
 
 function pnlClass(value) {
-  if (value > 0) return 'text-green-600 dark:text-green-400'
-  if (value < 0) return 'text-red-600 dark:text-red-400'
-  return ''
+  if (value > 0) return 'text-success dark:text-brand-green-400 font-mono tabular-nums'
+  if (value < 0) return 'text-danger dark:text-danger-fg-dark font-mono tabular-nums'
+  return 'font-mono tabular-nums'
 }
 </script>
 
