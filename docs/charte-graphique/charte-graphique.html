@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Charte graphique — 2A Trading Tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Brand */
+    --brand-navy-900: #1f2a3c;
+    --brand-navy-800: #283449;
+    --brand-navy-700: #354560;
+    --brand-navy-600: #45587a;
+
+    --brand-green-800: #1f5e3f;
+    --brand-green-700: #2d7952;
+    --brand-green-500: #46926b;
+    --brand-green-400: #6bad8a;
+    --brand-green-300: #9bc7af;
+    --brand-green-100: #e3f0e9;
+
+    --brand-cream: #e8e8e6;
+
+    /* Semantic */
+    --success: #2d7952;
+    --success-bg: #e3f0e9;
+    --danger: #b5384a;
+    --danger-bg: #f7e1e4;
+    --warning: #c98a2b;
+    --warning-bg: #fbeed4;
+    --info: #2c6e8f;
+    --info-bg: #dceaf1;
+
+    /* Neutrals */
+    --white: #ffffff;
+    --gray-50: #f7f7f5;
+    --gray-100: #ececea;
+    --gray-200: #d8d8d4;
+    --gray-300: #b6b6b0;
+    --gray-400: #8b8b85;
+    --gray-500: #6b6e75;
+    --gray-600: #4d5058;
+    --gray-700: #3a3d44;
+    --gray-800: #25282e;
+    --gray-900: #16181c;
+
+    /* Type scale */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+    /* Radii */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(31, 42, 60, 0.06);
+    --shadow-md: 0 4px 12px rgba(31, 42, 60, 0.08);
+    --shadow-lg: 0 12px 32px rgba(31, 42, 60, 0.12);
+    --shadow-xl: 0 24px 64px rgba(31, 42, 60, 0.16);
+
+    /* Layout */
+    --container: 1180px;
+    --nav-h: 64px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--brand-navy-900);
+    background: var(--gray-50);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+  }
+
+  a { color: var(--brand-green-700); }
+
+  /* ---------- Top nav ---------- */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    height: var(--nav-h);
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: saturate(140%) blur(8px);
+    border-bottom: 1px solid var(--gray-200);
+  }
+  .nav-inner {
+    max-width: var(--container);
+    margin: 0 auto;
+    padding: 0 24px;
+    height: 100%;
+    display: flex; align-items: center; gap: 32px;
+  }
+  .nav-brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; color: var(--brand-navy-900);
+    text-decoration: none; font-size: 14px; letter-spacing: 0.02em;
+  }
+  .nav-brand svg { width: 28px; height: 28px; }
+  .nav-links {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .nav-links a {
+    color: var(--gray-600);
+    text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 6px 10px; border-radius: var(--radius-sm);
+  }
+  .nav-links a:hover { background: var(--gray-100); color: var(--brand-navy-900); }
+
+  /* ---------- Layout ---------- */
+  main { max-width: var(--container); margin: 0 auto; padding: 0 24px 96px; }
+  section { padding: 72px 0 24px; scroll-margin-top: calc(var(--nav-h) + 16px); }
+  section + section { border-top: 1px solid var(--gray-200); }
+
+  h1, h2, h3, h4 {
+    color: var(--brand-navy-900);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  h1 { font-size: clamp(36px, 5vw, 56px); font-weight: 800; letter-spacing: -0.02em; }
+  h2 { font-size: 30px; }
+  h3 { font-size: 18px; font-weight: 600; }
+  h4 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); }
+
+  p { color: var(--gray-700); margin: 12px 0; }
+  .lead { font-size: 17px; color: var(--gray-600); max-width: 720px; }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px; font-weight: 600;
+    color: var(--brand-green-700); letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--brand-green-100); padding: 4px 10px; border-radius: var(--radius-full);
+    margin-bottom: 14px;
+  }
+
+  .section-head { margin-bottom: 32px; }
+  .section-head h2 + p { margin-top: 8px; max-width: 760px; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .grid.cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  @media (max-width: 900px) {
+    .grid.cols-3, .grid.cols-4, .grid.cols-6 { grid-template-columns: repeat(2, 1fr); }
+    .grid.cols-2 { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+  }
+
+  .pill {
+    display: inline-flex; align-items: center;
+    background: var(--gray-100); color: var(--gray-700);
+    font-size: 12px; font-weight: 500;
+    padding: 3px 10px; border-radius: var(--radius-full);
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    border-bottom: 1px solid var(--gray-200);
+    background:
+      radial-gradient(1200px 400px at 90% -10%, rgba(70,146,107,0.16), transparent 60%),
+      radial-gradient(900px 360px at 0% 110%, rgba(31,42,60,0.10), transparent 60%),
+      var(--white);
+  }
+  .hero-inner {
+    max-width: var(--container); margin: 0 auto; padding: 96px 24px 80px;
+    display: grid; grid-template-columns: 1.2fr 1fr; gap: 48px; align-items: center;
+  }
+  @media (max-width: 900px) { .hero-inner { grid-template-columns: 1fr; padding: 56px 24px; } }
+  .hero h1 span { color: var(--brand-green-700); }
+  .hero .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 28px; color: var(--gray-500); font-size: 13px; }
+  .hero .meta b { color: var(--brand-navy-900); font-weight: 600; }
+  .hero-logo {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-xl);
+    padding: 36px;
+    display: flex; align-items: center; justify-content: center;
+    aspect-ratio: 1 / 1; max-width: 420px; margin-left: auto;
+  }
+  .hero-logo svg { width: 100%; height: auto; max-height: 320px; }
+
+  /* ---------- Logos ---------- */
+  .logo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .logo-grid { grid-template-columns: 1fr; } }
+  .logo-tile {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--gray-200);
+    padding: 56px 32px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 240px;
+    position: relative;
+  }
+  .logo-tile.light { background: var(--white); }
+  .logo-tile.cream { background: var(--brand-cream); }
+  .logo-tile.dark { background: var(--brand-navy-900); }
+  .logo-tile.tinted { background: linear-gradient(135deg, var(--brand-green-700), var(--brand-navy-900)); }
+  .logo-tile svg { width: 200px; height: auto; max-height: 200px; }
+  .logo-tile .tag {
+    position: absolute; top: 12px; left: 12px;
+    font-size: 11px; font-weight: 600; color: var(--gray-500); letter-spacing: 0.06em;
+    text-transform: uppercase; background: rgba(255,255,255,0.85); padding: 4px 8px; border-radius: var(--radius-full);
+  }
+  .logo-tile.dark .tag, .logo-tile.tinted .tag { background: rgba(0,0,0,0.25); color: var(--brand-cream); }
+
+  .clearspace {
+    background: var(--gray-50);
+    border: 1px dashed var(--gray-300);
+    border-radius: var(--radius-lg);
+    padding: 48px;
+    display: flex; justify-content: center;
+    position: relative;
+  }
+  .clearspace .frame {
+    position: relative; padding: 56px;
+    background: rgba(70,146,107,0.06); border: 1px dashed var(--brand-green-500);
+    border-radius: var(--radius-md);
+  }
+  .clearspace .inner { background: white; border-radius: var(--radius-sm); padding: 12px 18px; }
+  .clearspace .inner svg { width: 200px; height: auto; }
+  .clearspace .x-marker {
+    position: absolute; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    color: var(--brand-green-700);
+  }
+
+  /* ---------- Color swatches ---------- */
+  .swatch {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+    background: var(--white);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+  }
+  .swatch:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .swatch:active { transform: translateY(0); }
+  .swatch .chip { height: 110px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; }
+  .swatch .chip .copied {
+    opacity: 0; transition: opacity 0.2s ease;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    background: rgba(0,0,0,0.4); color: white; padding: 3px 8px; border-radius: var(--radius-full);
+  }
+  .swatch.copied .chip .copied { opacity: 1; }
+  .swatch .meta { padding: 12px 14px; }
+  .swatch .name { font-weight: 600; font-size: 14px; color: var(--brand-navy-900); }
+  .swatch .hex { font-family: var(--font-mono); font-size: 12px; color: var(--gray-500); margin-top: 2px; }
+
+  /* Typography demo */
+  .type-demo { display: grid; gap: 16px; }
+  .type-row {
+    display: grid; grid-template-columns: 200px 1fr;
+    gap: 24px; align-items: baseline;
+    padding: 16px 20px; border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+    background: var(--white);
+  }
+  .type-row .label {
+    font-family: var(--font-mono); font-size: 12px; color: var(--gray-500);
+  }
+  .type-row .label b { display: block; color: var(--brand-navy-900); font-weight: 600; font-family: var(--font-sans); margin-bottom: 4px; }
+  @media (max-width: 700px) { .type-row { grid-template-columns: 1fr; } }
+
+  .h-display { font-size: 56px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
+  .h-h1 { font-size: 36px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+  .h-h2 { font-size: 28px; font-weight: 700; }
+  .h-h3 { font-size: 20px; font-weight: 600; }
+  .h-body { font-size: 15px; line-height: 1.6; color: var(--gray-700); }
+  .h-small { font-size: 13px; color: var(--gray-600); }
+  .h-mono { font-family: var(--font-mono); font-weight: 500; font-size: 16px; }
+  .h-numeric { font-family: var(--font-mono); font-weight: 600; font-size: 22px; color: var(--brand-navy-900); font-variant-numeric: tabular-nums; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-sans); font-weight: 600; font-size: 14px;
+    padding: 10px 16px; border-radius: var(--radius-md); cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+    text-decoration: none;
+  }
+  .btn-primary { background: var(--brand-navy-900); color: white; }
+  .btn-primary:hover { background: var(--brand-navy-700); }
+  .btn-success { background: var(--brand-green-700); color: white; }
+  .btn-success:hover { background: var(--brand-green-800); }
+  .btn-secondary { background: var(--white); color: var(--brand-navy-900); border-color: var(--gray-300); }
+  .btn-secondary:hover { border-color: var(--brand-navy-700); }
+  .btn-ghost { background: transparent; color: var(--brand-navy-900); }
+  .btn-ghost:hover { background: var(--gray-100); }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-danger:hover { filter: brightness(0.92); }
+
+  /* Inputs */
+  .input {
+    width: 100%; padding: 10px 12px;
+    border: 1px solid var(--gray-300); border-radius: var(--radius-md);
+    font-family: inherit; font-size: 14px;
+    background: var(--white); color: var(--brand-navy-900);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .input:focus { outline: none; border-color: var(--brand-green-500); box-shadow: 0 0 0 3px rgba(70,146,107,0.15); }
+  .label { font-size: 13px; font-weight: 500; color: var(--gray-700); display: block; margin-bottom: 6px; }
+
+  /* Badges */
+  .badge { display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full); }
+  .badge.success { background: var(--success-bg); color: var(--success); }
+  .badge.danger { background: var(--danger-bg); color: var(--danger); }
+  .badge.warning { background: var(--warning-bg); color: var(--warning); }
+  .badge.info { background: var(--info-bg); color: var(--info); }
+  .badge.neutral { background: var(--gray-100); color: var(--gray-700); }
+  .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* Trade table */
+  .table-wrap { overflow: auto; border: 1px solid var(--gray-200); border-radius: var(--radius-lg); background: var(--white); }
+  table.trades { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.trades th, table.trades td { padding: 12px 16px; text-align: left; }
+  table.trades thead th {
+    background: var(--gray-50); color: var(--gray-600);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  table.trades tbody tr + tr { border-top: 1px solid var(--gray-100); }
+  table.trades td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+  .pos { color: var(--success); font-weight: 600; }
+  .neg { color: var(--danger); font-weight: 600; }
+
+  /* KPI */
+  .kpi {
+    background: var(--white); border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg); padding: 18px 20px;
+  }
+  .kpi .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray-500); }
+  .kpi .value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 28px; color: var(--brand-navy-900); margin-top: 4px; }
+  .kpi .delta { font-size: 13px; margin-top: 4px; font-weight: 600; }
+
+  /* Dark preview */
+  .dark-preview {
+    background: var(--brand-navy-900); color: var(--brand-cream);
+    border-radius: var(--radius-xl); padding: 32px; border: 1px solid var(--brand-navy-700);
+  }
+  .dark-preview h3 { color: var(--brand-cream); }
+  .dark-preview .panel {
+    background: #1a2435; border: 1px solid var(--brand-navy-700);
+    border-radius: var(--radius-md); padding: 16px;
+  }
+  .dark-preview .panel .label { color: #93a3b9; }
+  .dark-preview .panel .value { color: var(--brand-cream); }
+
+  /* Spacing scale */
+  .space-list { display: grid; gap: 8px; }
+  .space-row { display: grid; grid-template-columns: 80px 1fr 100px; gap: 16px; align-items: center; padding: 6px 0; }
+  .space-row .token { font-family: var(--font-mono); font-size: 12px; color: var(--brand-navy-900); font-weight: 600; }
+  .space-row .bar { height: 14px; background: var(--brand-green-500); border-radius: 3px; }
+  .space-row .px { font-family: var(--font-mono); font-size: 12px; color: var(--gray-500); text-align: right; }
+
+  /* Radii row */
+  .radii { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  @media (max-width: 700px) { .radii { grid-template-columns: repeat(2, 1fr); } }
+  .radii .r-tile { background: var(--brand-green-100); border: 1px solid var(--brand-green-300); height: 96px; display: flex; align-items: flex-end; justify-content: center; padding: 10px; }
+  .radii .r-tile .tag { font-family: var(--font-mono); font-size: 11px; color: var(--brand-green-800); font-weight: 600; }
+
+  /* Do / Don't */
+  .dodont { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .dodont { grid-template-columns: 1fr; } }
+  .dodont .item {
+    background: var(--white); border-radius: var(--radius-lg);
+    overflow: hidden; border: 1px solid var(--gray-200);
+  }
+  .dodont .head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .dodont .do .head { background: var(--success-bg); color: var(--success); }
+  .dodont .dont .head { background: var(--danger-bg); color: var(--danger); }
+  .dodont .preview { padding: 32px; min-height: 180px; display: flex; align-items: center; justify-content: center; background: var(--gray-50); border-top: 1px solid var(--gray-100); }
+  .dodont .preview > svg.logo,
+  .dodont .preview .logo-wrap > svg.logo { width: 160px; height: auto; }
+  .dodont .preview.bad-bg { background: linear-gradient(120deg, #f5b500, #e84a4a); }
+  .dodont .preview.bad-stretch .logo-wrap { transform: scaleX(1.6) scaleY(0.78); }
+  .dodont .preview.bad-rotate .logo-wrap { transform: rotate(-9deg); }
+  .dodont .preview.bad-contrast { background: var(--brand-navy-900); }
+  .dodont .preview.bad-effects .logo-wrap { filter: drop-shadow(0 0 16px rgba(70,146,107,0.9)) drop-shadow(0 6px 0 rgba(0,0,0,0.5)); }
+  .dodont .caption { padding: 12px 16px; font-size: 13px; color: var(--gray-600); border-top: 1px solid var(--gray-100); }
+
+  /* Logo color variants — the navy parts of the logo use currentColor */
+  svg.logo { color: #1f2a3c; display: block; max-width: 100%; height: auto; }
+  .logo-tile.dark svg.logo,
+  .logo-tile.tinted svg.logo,
+  .dark-preview svg.logo { color: #e8e8e6; }
+  .clearspace svg.logo { width: 200px; }
+  .hero-logo svg.logo { width: 100%; max-height: 320px; }
+  .logo-tile svg.logo { width: 200px; max-height: 200px; }
+  .nav-brand svg.logo { width: 28px; height: 28px; }
+
+  /* Voice */
+  .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .voice-grid { grid-template-columns: 1fr; } }
+  .voice-card { background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-lg); padding: 18px; }
+  .voice-card h4 { color: var(--brand-navy-900); font-size: 13px; }
+  .voice-card .row { font-size: 14px; padding: 6px 0; }
+  .voice-card .row .ok { color: var(--success); font-weight: 600; margin-right: 6px; }
+  .voice-card .row .ko { color: var(--danger); font-weight: 600; margin-right: 6px; }
+
+  /* Footer / colophon */
+  footer {
+    border-top: 1px solid var(--gray-200);
+    padding: 32px 24px 64px;
+    color: var(--gray-500); font-size: 13px;
+    max-width: var(--container); margin: 64px auto 0;
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+
+  /* Helpers */
+  .stack-12 > * + * { margin-top: 12px; }
+  .stack-16 > * + * { margin-top: 16px; }
+  .stack-24 > * + * { margin-top: 24px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--gray-500); }
+  code.inline {
+    font-family: var(--font-mono); font-size: 12.5px;
+    background: var(--gray-100); color: var(--brand-navy-900);
+    padding: 2px 6px; border-radius: var(--radius-sm);
+  }
+  .note {
+    background: var(--info-bg); border-left: 3px solid var(--info);
+    padding: 12px 16px; border-radius: var(--radius-sm);
+    color: var(--gray-700); font-size: 14px;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--brand-navy-900); color: white;
+    padding: 10px 18px; border-radius: var(--radius-full);
+    font-size: 13px; font-weight: 500; box-shadow: var(--shadow-lg);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+  @media print {
+    .nav, .toast { display: none; }
+    section { break-inside: avoid; padding: 24px 0; }
+    .swatch:hover { transform: none; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============== SVG SYMBOLS (logo défini une fois, réutilisé partout via <use>) ============== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo-mark" viewBox="0 0 1024 1024">
+    <path fill="#2d7952" d="M709.75 636.38L657.25 636.38L654.88 634L654.88 466.25L703.62 410.25L710.5 404.38L711.12 497.5L712.88 522.75L711.38 534.5L711.62 634.5L709.75 636.38ZM643 636.38L593.75 636.38L590.25 636.12L588.62 634.5L588.62 491L602.88 475L606.75 472.38L643.25 472.38L645.38 474.25L645.38 632.5L644.62 635.5L643 636.38ZM576 636.38L523.25 636.38L521.12 634.5L521.38 549L527 542.12L537.5 533.38L576 533.12L577.88 534.5L578.12 634.5L576 636.38ZM498 636.62L458.5 636.38L456.38 635.25L456.12 586L458.5 583.88L486 582.62L508.5 560.62L510.75 559.88L511.88 567L512.38 632.25L509.5 635.62L498 636.62Z"/>
+    <path fill="#46926b" d="M657 518.62L655.38 517.25L655.62 465.25L704.12 410.25L708.75 406.88L710.12 409.5L710.88 420L710.62 480.25L694.5 484.88L685 489.62L676.38 497.25L657 518.62ZM592 569.12L589.38 567.5L589.12 516L590.88 488.5L605.75 473.12L643.75 473.12L645.12 476L644.12 529.5L633.5 535.88L607.5 560.88L592 569.12ZM523.25 585.88L521.62 584.5L521.88 549L523.75 545.88L538.5 533.62L573.75 533.62L575.88 535L577.12 556L576.25 573.88L569.75 573.88L553.25 568.88L544.25 568.88L537.25 572.38L523.25 585.88ZM486.25 624.88L466.25 620.62L458.25 622.12L456.62 621.25L456.88 585.75L458.75 584.38L486 583.12L510.25 560.62L511.38 567L511.62 610.75L499.5 619.88L486.25 624.88Z"/>
+    <path fill="currentColor" d="M443 635.88L271.5 635.88L269.88 634.75L271.88 625.5L281.88 603.25L292.38 586L305.62 568L347.12 523.5L430.62 439L436.38 431L440.12 422L442.38 410L442.12 398.25L439.62 388L435.12 378.5L425.5 368.12L418.5 363.38L409.5 359.88L400.25 358.12L390 358.38L379 361.12L368.5 366.88L361.88 372.75L356.12 380.5L350.38 394L347.25 419.62L301 420.38L293.5 420.12L291.12 418.75L291.38 401.75L294.62 383.25L301.38 364.75L309.38 350.25L319.38 337.75L335.75 322.88L352 313.38L370.25 306.88L388 304.12L412 304.88L433 310.12L451.75 319.38L469 332.88L483.12 349L492.38 365.5L498.88 384.75L501.38 405L499.62 426.25L494.62 444L485.12 463L467.62 485L380.62 573.25L382 574.62L387.25 574.88L443 574.88L444.62 576L444.88 634L443 635.88ZM494.75 549.88L486.25 549.12L485.12 547.5L486.12 541.5L569.88 308.75L572.25 307.12L581.25 306.88L640.75 307.38L677.38 406L678.38 409.25L677.38 413.75L643.38 452.5L639.5 456.38L637.25 456.88L632.62 448L608.12 380.75L605.25 378.12L603.12 381.5L557.62 514.5L555.5 515.88L529.75 516.62L494.75 549.88ZM751 635.88L713 635.88L711.12 634.25L710.88 534.5L712 523.12L719.62 540.25L751.38 624.25L754.12 634.25L751 635.88Z"/>
+    <path fill="currentColor" d="M289.196 686.244V688.796H280.66V717H277.58V688.796H269V686.244ZM323.585 717L315.973 704.152H310.297V717H307.217V686.244H316.457Q321.605 686.244 324.267 688.708Q326.929 691.172 326.929 695.176Q326.929 698.52 325.015 700.874Q323.101 703.228 319.361 703.932L327.281 717ZM310.297 701.644H316.501Q320.109 701.644 321.935 699.884Q323.761 698.124 323.761 695.176Q323.761 692.14 322.001 690.49Q320.241 688.84 316.457 688.84H310.297ZM364.001 709.696H350.009L347.325 717H344.069L355.289 686.64H358.765L369.941 717H366.685ZM363.077 707.144L357.005 690.512L350.933 707.144ZM413.394 701.688Q413.394 706.44 411.458 709.894Q409.522 713.348 405.87 715.174Q402.218 717 397.114 717H388.006V686.244H397.114Q402.218 686.244 405.87 688.092Q409.522 689.94 411.458 693.416Q413.394 696.892 413.394 701.688ZM410.27 701.688Q410.27 695.616 406.904 692.206Q403.538 688.796 397.114 688.796H391.086V714.448H397.114Q403.538 714.448 406.904 711.082Q410.27 707.716 410.27 701.688ZM435.287 686.244V717H432.207V686.244ZM478.607 717H475.527L458.499 691.128V717H455.419V686.244H458.499L475.527 712.072V686.244H478.607ZM522.94 695.22Q521.62 692.184 518.914 690.446Q516.208 688.708 512.556 688.708Q509.124 688.708 506.396 690.292Q503.668 691.876 502.084 694.802Q500.5 697.728 500.5 701.6Q500.5 705.472 502.084 708.42Q503.668 711.368 506.396 712.952Q509.124 714.536 512.556 714.536Q515.768 714.536 518.342 713.15Q520.916 711.764 522.478 709.19Q524.04 706.616 524.26 703.184H511.324V700.676H527.516V702.92Q527.296 706.968 525.316 710.246Q523.336 713.524 520.014 715.416Q516.692 717.308 512.556 717.308Q508.288 717.308 504.812 715.306Q501.336 713.304 499.334 709.718Q497.332 706.132 497.332 701.6Q497.332 697.068 499.334 693.482Q501.336 689.896 504.812 687.894Q508.288 685.892 512.556 685.892Q517.484 685.892 521.18 688.356Q524.876 690.82 526.548 695.22ZM589.473 686.244V688.796H580.937V717H577.857V688.796H569.277V686.244ZM606.086 701.6Q606.086 697.068 608.088 693.482Q610.09 689.896 613.566 687.894Q617.042 685.892 621.31 685.892Q625.622 685.892 629.098 687.894Q632.574 689.896 634.554 693.482Q636.534 697.068 636.534 701.6Q636.534 706.132 634.554 709.718Q632.574 713.304 629.098 715.306Q625.622 717.308 621.31 717.308Q617.042 717.308 613.566 715.306Q610.09 713.304 608.088 709.718Q606.086 706.132 606.086 701.6ZM633.366 701.6Q633.366 697.684 631.782 694.736Q630.198 691.788 627.47 690.204Q624.742 688.62 621.31 688.62Q617.878 688.62 615.15 690.204Q612.422 691.788 610.838 694.736Q609.254 697.684 609.254 701.6Q609.254 705.516 610.838 708.486Q612.422 711.456 615.15 713.04Q617.878 714.624 621.31 714.624Q624.742 714.624 627.47 713.04Q630.198 711.456 631.782 708.486Q633.366 705.516 633.366 701.6ZM653.895 701.6Q653.895 697.068 655.897 693.482Q657.899 689.896 661.375 687.894Q664.851 685.892 669.119 685.892Q673.431 685.892 676.907 687.894Q680.383 689.896 682.363 693.482Q684.343 697.068 684.343 701.6Q684.343 706.132 682.363 709.718Q680.383 713.304 676.907 715.306Q673.431 717.308 669.119 717.308Q664.851 717.308 661.375 715.306Q657.899 713.304 655.897 709.718Q653.895 706.132 653.895 701.6ZM681.175 701.6Q681.175 697.684 679.591 694.736Q678.007 691.788 675.279 690.204Q672.551 688.62 669.119 688.62Q665.687 688.62 662.959 690.204Q660.231 691.788 658.647 694.736Q657.063 697.684 657.063 701.6Q657.063 705.516 658.647 708.486Q660.231 711.456 662.959 713.04Q665.687 714.624 669.119 714.624Q672.551 714.624 675.279 713.04Q678.007 711.456 679.591 708.486Q681.175 705.516 681.175 701.6ZM706.191 714.492H717.235V717H703.111V686.244H706.191ZM733.716 709.08H736.972Q737.192 711.324 738.952 713.018Q740.712 714.712 744.1 714.712Q747.224 714.712 749.05 713.106Q750.876 711.5 750.876 709.036Q750.876 707.056 749.864 705.846Q748.852 704.636 747.356 704.042Q745.86 703.448 743.22 702.744Q740.14 701.908 738.336 701.116Q736.532 700.324 735.256 698.652Q733.98 696.98 733.98 694.12Q733.98 691.744 735.212 689.874Q736.444 688.004 738.688 686.948Q740.932 685.892 743.836 685.892Q748.104 685.892 750.722 687.982Q753.34 690.072 753.736 693.372H750.392Q750.084 691.48 748.324 690.006Q746.564 688.532 743.572 688.532Q740.8 688.532 738.952 690.006Q737.104 691.48 737.104 694.032Q737.104 695.968 738.116 697.156Q739.128 698.344 740.646 698.96Q742.164 699.576 744.76 700.28Q747.752 701.116 749.6 701.93Q751.448 702.744 752.724 704.416Q754 706.088 754 708.904Q754 711.06 752.856 712.996Q751.712 714.932 749.468 716.12Q747.224 717.308 744.1 717.308Q741.064 717.308 738.754 716.252Q736.444 715.196 735.124 713.304Q733.804 711.412 733.716 709.08Z"/>
+  </symbol>
+</svg>
+
+<!-- ============== NAV ============== -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="#top">
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+      2A Trading Tools
+    </a>
+    <div class="nav-links">
+      <a href="#identite">Identité</a>
+      <a href="#logo">Logo</a>
+      <a href="#couleurs">Couleurs</a>
+      <a href="#typographie">Typo</a>
+      <a href="#iconographie">Icônes</a>
+      <a href="#composants">Composants</a>
+      <a href="#data">Data viz</a>
+      <a href="#espaces">Layout</a>
+      <a href="#dark">Dark mode</a>
+      <a href="#dodont">Do / Don't</a>
+      <a href="#ton">Ton</a>
+      <a href="#tokens">Tokens</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ============== HERO ============== -->
+<header class="hero" id="top">
+  <div class="hero-inner">
+    <div>
+      <span class="eyebrow">Charte graphique · v1.0</span>
+      <h1>L'identité visuelle de <span>2A Trading Tools</span>.</h1>
+      <p class="lead">Référentiel d'usage du logo, de la palette, de la typographie et des composants UI du Trading Journal. Pensé pour rester cohérent du dashboard au support marketing, en mode clair comme en mode sombre.</p>
+      <div class="meta">
+        <span><b>Document interne</b> · usage dev &amp; design</span>
+        <span><b>Mise à jour</b> · avril 2026</span>
+        <span><b>Version</b> · 1.0</span>
+      </div>
+    </div>
+    <div class="hero-logo">
+      <!-- Light logo -->
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- ============== IDENTITÉ ============== -->
+<section id="identite">
+  <div class="section-head">
+    <span class="eyebrow">01 · Fondations</span>
+    <h2>Identité &amp; positionnement</h2>
+    <p>2A Trading Tools est un outil de tenue de journal de trading. La marque doit transmettre rigueur, lisibilité et confiance — pas la fébrilité de la spéculation, mais la discipline du suivi de performance.</p>
+  </div>
+
+  <div class="grid cols-3">
+    <div class="card stack-12">
+      <h4>Mission</h4>
+      <p>Aider les traders à objectiver leur prise de décision en transformant chaque trade en donnée exploitable.</p>
+    </div>
+    <div class="card stack-12">
+      <h4>Personnalité</h4>
+      <p>Sobre, technique, méthodique. Une UI dense mais lisible, façon outil de pro — proche d'un terminal financier, loin du gamification flashy.</p>
+    </div>
+    <div class="card stack-12">
+      <h4>Promesse visuelle</h4>
+      <p>Lecture claire des chiffres, cohérence entre dark et light, hiérarchie typographique stricte, couleurs sémantiques utilisées <em>uniquement</em> pour porter du sens (gain / perte / alerte).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============== LOGO ============== -->
+<section id="logo">
+  <div class="section-head">
+    <span class="eyebrow">02 · Logo</span>
+    <h2>Le logo et ses déclinaisons</h2>
+    <p>Le logo combine un monogramme « 2A » dont le « A » se prolonge en histogramme ascendant — symbole de la performance suivie sur la durée — et la signature « TRADING TOOLS ».</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">Versions principales</h3>
+  <div class="logo-grid">
+    <div class="logo-tile light">
+      <span class="tag">Light · fond clair</span>
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+    </div>
+    <div class="logo-tile dark">
+      <span class="tag">Dark · fond sombre</span>
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+    </div>
+  </div>
+
+  <p class="muted" style="margin-top:24px;">Versions secondaires (à utiliser exceptionnellement, par ex. en favicon ou sur fond photo neutre).</p>
+  <div class="logo-grid" style="margin-top:8px;">
+    <div class="logo-tile cream">
+      <span class="tag">Sur crème</span>
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+    </div>
+    <div class="logo-tile tinted">
+      <span class="tag">Sur fond plein</span>
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+    </div>
+  </div>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">Zone de protection &amp; tailles minimales</h3>
+  <div class="grid cols-2">
+    <div>
+      <div class="clearspace">
+        <div class="frame">
+          <div class="inner">
+            <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+          </div>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:8px;font-size:13px;">Marge minimale : <code class="inline">x = hauteur du « 2 »</code>. Aucun élément (texte, image, bord) ne doit pénétrer cette zone.</p>
+    </div>
+    <div class="card">
+      <h4>Tailles minimales</h4>
+      <div class="stack-12" style="margin-top:12px;">
+        <div class="row"><span class="pill">Web</span><span>32 px de hauteur minimale</span></div>
+        <div class="row"><span class="pill">App / dashboard</span><span>24 px (icône seule, sans signature)</span></div>
+        <div class="row"><span class="pill">Favicon</span><span>16 px (monogramme « 2A » seul)</span></div>
+        <div class="row"><span class="pill">Print</span><span>10 mm de hauteur minimale</span></div>
+      </div>
+      <p class="muted" style="margin-top:14px;font-size:13px;">En dessous de 80 px, masquer la signature « TRADING TOOLS » et n'afficher que le monogramme.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============== COULEURS ============== -->
+<section id="couleurs">
+  <div class="section-head">
+    <span class="eyebrow">03 · Couleurs</span>
+    <h2>Palette</h2>
+    <p>Cliquez sur n'importe quelle couleur pour copier sa valeur HEX. Les variables CSS correspondantes sont disponibles en bas de page.</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">Couleurs de marque (extraites des logos)</h3>
+  <div class="grid cols-4 swatches">
+    <div class="swatch" data-color="#1f2a3c">
+      <div class="chip" style="background:#1f2a3c;color:#e8e8e6;"><span class="copied">copié</span></div>
+      <div class="meta"><div class="name">Navy 900 · Encre</div><div class="hex">#1F2A3C</div></div>
+    </div>
+    <div class="swatch" data-color="#2d7952">
+      <div class="chip" style="background:#2d7952;color:#fff;"><span class="copied">copié</span></div>
+      <div class="meta"><div class="name">Green 700 · Profit dark</div><div class="hex">#2D7952</div></div>
+    </div>
+    <div class="swatch" data-color="#46926b">
+      <div class="chip" style="background:#46926b;color:#fff;"><span class="copied">copié</span></div>
+      <div class="meta"><div class="name">Green 500 · Profit medium</div><div class="hex">#46926B</div></div>
+    </div>
+    <div class="swatch" data-color="#e8e8e6">
+      <div class="chip" style="background:#e8e8e6;color:#1f2a3c;border-bottom:1px solid var(--gray-200);"><span class="copied">copié</span></div>
+      <div class="meta"><div class="name">Cream · Lumière</div><div class="hex">#E8E8E6</div></div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:40px;margin-bottom:12px;">Échelles dérivées</h3>
+  <h4 style="margin-bottom:8px;">Navy (encre, surfaces sombres)</h4>
+  <div class="grid cols-6 swatches">
+    <div class="swatch" data-color="#1f2a3c"><div class="chip" style="background:#1f2a3c;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Navy 900</div><div class="hex">#1F2A3C</div></div></div>
+    <div class="swatch" data-color="#283449"><div class="chip" style="background:#283449;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Navy 800</div><div class="hex">#283449</div></div></div>
+    <div class="swatch" data-color="#354560"><div class="chip" style="background:#354560;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Navy 700</div><div class="hex">#354560</div></div></div>
+    <div class="swatch" data-color="#45587a"><div class="chip" style="background:#45587a;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Navy 600</div><div class="hex">#45587A</div></div></div>
+    <div class="swatch" data-color="#6d7c98"><div class="chip" style="background:#6d7c98;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Navy 400</div><div class="hex">#6D7C98</div></div></div>
+    <div class="swatch" data-color="#c9d1de"><div class="chip" style="background:#c9d1de;color:#1f2a3c;"><span class="copied">copié</span></div><div class="meta"><div class="name">Navy 200</div><div class="hex">#C9D1DE</div></div></div>
+  </div>
+
+  <h4 style="margin-top:24px;margin-bottom:8px;">Green (performance, accents, success)</h4>
+  <div class="grid cols-6 swatches">
+    <div class="swatch" data-color="#1f5e3f"><div class="chip" style="background:#1f5e3f;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Green 800</div><div class="hex">#1F5E3F</div></div></div>
+    <div class="swatch" data-color="#2d7952"><div class="chip" style="background:#2d7952;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Green 700</div><div class="hex">#2D7952</div></div></div>
+    <div class="swatch" data-color="#46926b"><div class="chip" style="background:#46926b;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Green 500</div><div class="hex">#46926B</div></div></div>
+    <div class="swatch" data-color="#6bad8a"><div class="chip" style="background:#6bad8a;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Green 400</div><div class="hex">#6BAD8A</div></div></div>
+    <div class="swatch" data-color="#9bc7af"><div class="chip" style="background:#9bc7af;color:#1f2a3c;"><span class="copied">copié</span></div><div class="meta"><div class="name">Green 300</div><div class="hex">#9BC7AF</div></div></div>
+    <div class="swatch" data-color="#e3f0e9"><div class="chip" style="background:#e3f0e9;color:#1f2a3c;"><span class="copied">copié</span></div><div class="meta"><div class="name">Green 100</div><div class="hex">#E3F0E9</div></div></div>
+  </div>
+
+  <h3 style="margin-top:40px;margin-bottom:12px;">Couleurs sémantiques</h3>
+  <p class="muted" style="margin-top:0;">Réservées au sens : performance, alerte, statut. Ne jamais les utiliser pour de la décoration pure.</p>
+  <div class="grid cols-4 swatches" style="margin-top:12px;">
+    <div class="swatch" data-color="#2d7952"><div class="chip" style="background:#2d7952;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Success / Gain</div><div class="hex">#2D7952</div></div></div>
+    <div class="swatch" data-color="#b5384a"><div class="chip" style="background:#b5384a;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Danger / Loss</div><div class="hex">#B5384A</div></div></div>
+    <div class="swatch" data-color="#c98a2b"><div class="chip" style="background:#c98a2b;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Warning</div><div class="hex">#C98A2B</div></div></div>
+    <div class="swatch" data-color="#2c6e8f"><div class="chip" style="background:#2c6e8f;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Info</div><div class="hex">#2C6E8F</div></div></div>
+  </div>
+
+  <h3 style="margin-top:40px;margin-bottom:12px;">Neutres</h3>
+  <div class="grid cols-6 swatches">
+    <div class="swatch" data-color="#ffffff"><div class="chip" style="background:#ffffff;color:#1f2a3c;border-bottom:1px solid var(--gray-200);"><span class="copied">copié</span></div><div class="meta"><div class="name">White</div><div class="hex">#FFFFFF</div></div></div>
+    <div class="swatch" data-color="#f7f7f5"><div class="chip" style="background:#f7f7f5;color:#1f2a3c;border-bottom:1px solid var(--gray-200);"><span class="copied">copié</span></div><div class="meta"><div class="name">Gray 50</div><div class="hex">#F7F7F5</div></div></div>
+    <div class="swatch" data-color="#ececea"><div class="chip" style="background:#ececea;color:#1f2a3c;"><span class="copied">copié</span></div><div class="meta"><div class="name">Gray 100</div><div class="hex">#ECECEA</div></div></div>
+    <div class="swatch" data-color="#d8d8d4"><div class="chip" style="background:#d8d8d4;color:#1f2a3c;"><span class="copied">copié</span></div><div class="meta"><div class="name">Gray 200</div><div class="hex">#D8D8D4</div></div></div>
+    <div class="swatch" data-color="#8b8b85"><div class="chip" style="background:#8b8b85;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Gray 400</div><div class="hex">#8B8B85</div></div></div>
+    <div class="swatch" data-color="#3a3d44"><div class="chip" style="background:#3a3d44;color:#fff;"><span class="copied">copié</span></div><div class="meta"><div class="name">Gray 700</div><div class="hex">#3A3D44</div></div></div>
+  </div>
+
+  <h3 style="margin-top:40px;margin-bottom:12px;">Combinaisons accessibles (WCAG AA)</h3>
+  <div class="grid cols-4">
+    <div class="card" style="background:#1f2a3c;color:#fff;border-color:#1f2a3c;">
+      <div class="muted" style="color:#9bc7af;">Texte sur Navy 900</div>
+      <p style="color:#fff;margin:6px 0 0;font-weight:600;">Ratio 14.7:1 — AAA</p>
+    </div>
+    <div class="card" style="background:#2d7952;color:#fff;border-color:#2d7952;">
+      <div class="muted" style="color:#e3f0e9;">Texte sur Green 700</div>
+      <p style="color:#fff;margin:6px 0 0;font-weight:600;">Ratio 4.9:1 — AA</p>
+    </div>
+    <div class="card">
+      <div class="muted">Navy 900 sur blanc</div>
+      <p style="color:#1f2a3c;margin:6px 0 0;font-weight:600;">Ratio 14.7:1 — AAA</p>
+    </div>
+    <div class="card">
+      <div class="muted">Green 700 sur blanc</div>
+      <p style="color:#2d7952;margin:6px 0 0;font-weight:600;">Ratio 4.9:1 — AA</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============== TYPO ============== -->
+<section id="typographie">
+  <div class="section-head">
+    <span class="eyebrow">04 · Typographie</span>
+    <h2>Système typographique</h2>
+    <p><b>Inter</b> couvre 100&nbsp;% des usages texte/UI. <b>JetBrains Mono</b> est exclusivement réservée aux données chiffrées (P&amp;L, prix, ratios, timestamps) — c'est la signature visuelle des chiffres dans 2A Trading Tools.</p>
+  </div>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h4>Inter — sans-serif principale</h4>
+      <p style="font-size:64px;font-weight:800;letter-spacing:-0.03em;line-height:1;margin:8px 0 4px;color:var(--brand-navy-900);">Aa</p>
+      <p class="muted">Light 300 · Regular 400 · Medium 500 · Semibold 600 · Bold 700 · ExtraBold 800</p>
+      <p style="font-size:13px;margin-top:14px;">Open source · <a href="https://fonts.google.com/specimen/Inter" target="_blank" rel="noopener">Google Fonts</a></p>
+    </div>
+    <div class="card">
+      <h4>JetBrains Mono — données chiffrées</h4>
+      <p style="font-size:64px;font-weight:600;line-height:1;margin:8px 0 4px;color:var(--brand-green-700);font-family:var(--font-mono);">+12.4%</p>
+      <p class="muted">Regular 400 · Medium 500 · Semibold 600 · avec <code class="inline">font-variant-numeric: tabular-nums</code></p>
+      <p style="font-size:13px;margin-top:14px;">Open source · <a href="https://fonts.google.com/specimen/JetBrains+Mono" target="_blank" rel="noopener">Google Fonts</a></p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:40px;margin-bottom:12px;">Échelle</h3>
+  <div class="type-demo">
+    <div class="type-row">
+      <div class="label"><b>Display</b>56 / 64 · 800 · -0.02em</div>
+      <div class="h-display">Construire la discipline du trader</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>H1</b>36 / 44 · 700</div>
+      <div class="h-h1">Performance mensuelle</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>H2</b>28 / 36 · 700</div>
+      <div class="h-h2">Vue d'ensemble du compte</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>H3</b>20 / 28 · 600</div>
+      <div class="h-h3">Trades de la semaine</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>Body</b>15 / 24 · 400</div>
+      <div class="h-body">Le journal vous permet de cataloguer chaque trade avec son contexte, vos émotions, et les décisions prises pour ensuite identifier vos schémas récurrents.</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>Small</b>13 / 20 · 400</div>
+      <div class="h-small">Mis à jour il y a 4 minutes · 17 trades cette semaine</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>Numeric L</b>22 · 600 · mono · tabular</div>
+      <div class="h-numeric">+ 2&nbsp;480.55 €</div>
+    </div>
+    <div class="type-row">
+      <div class="label"><b>Code / mono</b>15 · 500 · mono</div>
+      <div class="h-mono">EURUSD · long · entry 1.0832</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== ICÔNES ============== -->
+<section id="iconographie">
+  <div class="section-head">
+    <span class="eyebrow">05 · Iconographie</span>
+    <h2>Style d'icônes</h2>
+    <p>Privilégier <b>Lucide</b> ou <b>Phosphor (regular)</b> : trait fin, coins légèrement arrondis, cohérent avec la sobriété du logo. Stroke 1.75&nbsp;px à 24&nbsp;px, taille de référence&nbsp;20&nbsp;px en UI.</p>
+  </div>
+
+  <div class="card">
+    <div class="grid cols-6" style="text-align:center;">
+      <div><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1f2a3c" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg><div class="muted" style="font-size:12px;margin-top:6px;">trending-up</div></div>
+      <div><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1f2a3c" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><div class="muted" style="font-size:12px;margin-top:6px;">layout</div></div>
+      <div><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1f2a3c" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M5 9l7-7 7 7"/></svg><div class="muted" style="font-size:12px;margin-top:6px;">arrow-up</div></div>
+      <div><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1f2a3c" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg><div class="muted" style="font-size:12px;margin-top:6px;">clock</div></div>
+      <div><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1f2a3c" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v4H3zM3 11h18v4H3zM3 19h18"/></svg><div class="muted" style="font-size:12px;margin-top:6px;">list</div></div>
+      <div><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1f2a3c" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg><div class="muted" style="font-size:12px;margin-top:6px;">arrow-right</div></div>
+    </div>
+  </div>
+
+  <div class="grid cols-3" style="margin-top:16px;">
+    <div class="card stack-12"><h4>Stroke</h4><p>1.75 px à 24 px (1.5 px en dessous, 2 px en grande taille).</p></div>
+    <div class="card stack-12"><h4>Couleur</h4><p>Toujours hériter de <code class="inline">currentColor</code>. Jamais d'icônes sémantiques en couleur de marque.</p></div>
+    <div class="card stack-12"><h4>Tailles UI</h4><p>16, 20, 24, 32 px. Ne pas redimensionner librement.</p></div>
+  </div>
+</section>
+
+<!-- ============== COMPOSANTS ============== -->
+<section id="composants">
+  <div class="section-head">
+    <span class="eyebrow">06 · Composants</span>
+    <h2>Composants UI</h2>
+    <p>Référence visuelle des éléments les plus utilisés dans le journal de trading.</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">Boutons</h3>
+  <div class="card">
+    <div class="row">
+      <button class="btn btn-primary">Enregistrer le trade</button>
+      <button class="btn btn-success">+ Nouveau trade</button>
+      <button class="btn btn-secondary">Annuler</button>
+      <button class="btn btn-ghost">Voir le détail</button>
+      <button class="btn btn-danger">Supprimer</button>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:14px;">Hauteur 40 px · padding 10/16 · radius 8 · poids 600. Le bouton <b>Success</b> (vert) est réservé aux actions de création / validation positive.</p>
+  </div>
+
+  <h3 style="margin-top:32px;margin-bottom:12px;">Champs &amp; formulaires</h3>
+  <div class="card">
+    <div class="grid cols-2">
+      <div>
+        <label class="label">Symbole</label>
+        <input class="input" value="EURUSD" />
+      </div>
+      <div>
+        <label class="label">Direction</label>
+        <input class="input" value="Long" />
+      </div>
+      <div>
+        <label class="label">Prix d'entrée</label>
+        <input class="input" value="1.0832" />
+      </div>
+      <div>
+        <label class="label">Stop loss</label>
+        <input class="input" value="1.0780" />
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px;margin-bottom:12px;">Badges &amp; statuts</h3>
+  <div class="card">
+    <div class="row">
+      <span class="badge success"><span class="dot"></span>Gagnant</span>
+      <span class="badge danger"><span class="dot"></span>Perdant</span>
+      <span class="badge warning"><span class="dot"></span>Stop touché</span>
+      <span class="badge info"><span class="dot"></span>En cours</span>
+      <span class="badge neutral"><span class="dot"></span>Annulé</span>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px;margin-bottom:12px;">KPI cards</h3>
+  <div class="grid cols-4">
+    <div class="kpi"><div class="label">P&amp;L total</div><div class="value">+8 240 €</div><div class="delta pos">▲ +12.4 % ce mois</div></div>
+    <div class="kpi"><div class="label">Win rate</div><div class="value">62 %</div><div class="delta pos">▲ +3 pts</div></div>
+    <div class="kpi"><div class="label">Profit factor</div><div class="value">2.18</div><div class="delta neg">▼ -0.12</div></div>
+    <div class="kpi"><div class="label">Drawdown max</div><div class="value">-4.2 %</div><div class="delta" style="color:var(--gray-500);">stable</div></div>
+  </div>
+</section>
+
+<!-- ============== DATA VIZ ============== -->
+<section id="data">
+  <div class="section-head">
+    <span class="eyebrow">07 · Data &amp; tableaux</span>
+    <h2>Tableaux de trades &amp; visualisation</h2>
+    <p>Les chiffres sont le cœur du produit. Conventions strictes : police mono, alignement à droite, signe explicite, vert/rouge sémantiques uniquement.</p>
+  </div>
+
+  <div class="table-wrap">
+    <table class="trades">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Symbole</th>
+          <th>Sens</th>
+          <th class="num">Entrée</th>
+          <th class="num">Sortie</th>
+          <th class="num">P&amp;L</th>
+          <th class="num">R</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>28/04/2026</td>
+          <td><b>EURUSD</b></td>
+          <td><span class="badge success" style="padding:2px 8px;">Long</span></td>
+          <td class="num">1.0832</td>
+          <td class="num">1.0894</td>
+          <td class="num pos">+ 620 €</td>
+          <td class="num pos">+1.8 R</td>
+          <td><span class="badge success"><span class="dot"></span>Gain</span></td>
+        </tr>
+        <tr>
+          <td>27/04/2026</td>
+          <td><b>BTCUSD</b></td>
+          <td><span class="badge danger" style="padding:2px 8px;">Short</span></td>
+          <td class="num">64 210</td>
+          <td class="num">63 180</td>
+          <td class="num pos">+ 1 030 €</td>
+          <td class="num pos">+2.3 R</td>
+          <td><span class="badge success"><span class="dot"></span>Gain</span></td>
+        </tr>
+        <tr>
+          <td>26/04/2026</td>
+          <td><b>NQ</b></td>
+          <td><span class="badge success" style="padding:2px 8px;">Long</span></td>
+          <td class="num">17 820</td>
+          <td class="num">17 760</td>
+          <td class="num neg">- 240 €</td>
+          <td class="num neg">-1.0 R</td>
+          <td><span class="badge danger"><span class="dot"></span>Perte</span></td>
+        </tr>
+        <tr>
+          <td>26/04/2026</td>
+          <td><b>GBPJPY</b></td>
+          <td><span class="badge danger" style="padding:2px 8px;">Short</span></td>
+          <td class="num">192.40</td>
+          <td class="num">192.10</td>
+          <td class="num pos">+ 180 €</td>
+          <td class="num pos">+0.6 R</td>
+          <td><span class="badge success"><span class="dot"></span>Gain</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:24px;">
+    <div class="card">
+      <h4>Couleurs de séries</h4>
+      <p>Pour les graphiques multi-séries (par symbole, stratégie, etc.), utiliser cette séquence dans l'ordre :</p>
+      <div class="row" style="margin-top:14px;">
+        <span style="display:inline-block;width:38px;height:38px;border-radius:6px;background:#2d7952;"></span>
+        <span style="display:inline-block;width:38px;height:38px;border-radius:6px;background:#2c6e8f;"></span>
+        <span style="display:inline-block;width:38px;height:38px;border-radius:6px;background:#c98a2b;"></span>
+        <span style="display:inline-block;width:38px;height:38px;border-radius:6px;background:#45587a;"></span>
+        <span style="display:inline-block;width:38px;height:38px;border-radius:6px;background:#9bc7af;"></span>
+        <span style="display:inline-block;width:38px;height:38px;border-radius:6px;background:#b5384a;"></span>
+      </div>
+      <p class="muted" style="font-size:13px;margin-top:12px;">Le rouge n'est utilisé qu'en dernier — pour ne pas court-circuiter sa fonction de "perte / alerte".</p>
+    </div>
+    <div class="card">
+      <h4>Règles d'affichage des chiffres</h4>
+      <ul style="font-size:14px;color:var(--gray-700);padding-left:20px;">
+        <li>Toujours en <b>JetBrains Mono</b>, <code class="inline">tabular-nums</code>.</li>
+        <li>Aligner les colonnes numériques à droite.</li>
+        <li>Signe <b>+</b> ou <b>−</b> explicite pour les variations de P&amp;L.</li>
+        <li>Espace insécable comme séparateur de milliers : <code class="inline">2 480.55</code>.</li>
+        <li>Devise après le montant, séparée par un espace : <code class="inline">+ 620 €</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============== LAYOUT ============== -->
+<section id="espaces">
+  <div class="section-head">
+    <span class="eyebrow">08 · Layout</span>
+    <h2>Espacements, rayons &amp; ombres</h2>
+    <p>Système basé sur une unité de 4&nbsp;px. Tous les paddings, gaps, margins doivent être un multiple de cette unité.</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">Échelle d'espacement</h3>
+  <div class="card space-list">
+    <div class="space-row"><span class="token">space-1</span><div><div class="bar" style="width:4px;"></div></div><span class="px">4 px</span></div>
+    <div class="space-row"><span class="token">space-2</span><div><div class="bar" style="width:8px;"></div></div><span class="px">8 px</span></div>
+    <div class="space-row"><span class="token">space-3</span><div><div class="bar" style="width:12px;"></div></div><span class="px">12 px</span></div>
+    <div class="space-row"><span class="token">space-4</span><div><div class="bar" style="width:16px;"></div></div><span class="px">16 px</span></div>
+    <div class="space-row"><span class="token">space-6</span><div><div class="bar" style="width:24px;"></div></div><span class="px">24 px</span></div>
+    <div class="space-row"><span class="token">space-8</span><div><div class="bar" style="width:32px;"></div></div><span class="px">32 px</span></div>
+    <div class="space-row"><span class="token">space-12</span><div><div class="bar" style="width:48px;"></div></div><span class="px">48 px</span></div>
+    <div class="space-row"><span class="token">space-16</span><div><div class="bar" style="width:64px;"></div></div><span class="px">64 px</span></div>
+  </div>
+
+  <h3 style="margin-top:32px;margin-bottom:12px;">Rayons de bordure</h3>
+  <div class="radii">
+    <div class="r-tile" style="border-radius:0;"><span class="tag">none · 0</span></div>
+    <div class="r-tile" style="border-radius:4px;"><span class="tag">sm · 4</span></div>
+    <div class="r-tile" style="border-radius:8px;"><span class="tag">md · 8</span></div>
+    <div class="r-tile" style="border-radius:12px;"><span class="tag">lg · 12</span></div>
+    <div class="r-tile" style="border-radius:16px;"><span class="tag">xl · 16</span></div>
+  </div>
+  <p class="muted" style="font-size:13px;margin-top:8px;"><code class="inline">md (8)</code> est la valeur par défaut pour boutons et champs. <code class="inline">lg (12)</code> pour les cards et panneaux. Réserver <code class="inline">xl (16)</code> aux grands conteneurs (hero, modals).</p>
+
+  <h3 style="margin-top:32px;margin-bottom:12px;">Élévation</h3>
+  <div class="grid cols-4">
+    <div class="card" style="box-shadow:none;">
+      <p class="muted" style="font-size:12px;">shadow-none</p>
+      <p style="font-family:var(--font-mono);font-size:11px;">surfaces planes / tables</p>
+    </div>
+    <div class="card" style="box-shadow:var(--shadow-sm);">
+      <p class="muted" style="font-size:12px;">shadow-sm</p>
+      <p style="font-family:var(--font-mono);font-size:11px;">cards par défaut</p>
+    </div>
+    <div class="card" style="box-shadow:var(--shadow-md);">
+      <p class="muted" style="font-size:12px;">shadow-md</p>
+      <p style="font-family:var(--font-mono);font-size:11px;">menus / popovers</p>
+    </div>
+    <div class="card" style="box-shadow:var(--shadow-lg);">
+      <p class="muted" style="font-size:12px;">shadow-lg</p>
+      <p style="font-family:var(--font-mono);font-size:11px;">modales</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============== DARK MODE ============== -->
+<section id="dark">
+  <div class="section-head">
+    <span class="eyebrow">09 · Dark mode</span>
+    <h2>Mode sombre</h2>
+    <p>Mode privilégié sur les longues sessions de trading. Mêmes règles sémantiques, surfaces basées sur la palette Navy.</p>
+  </div>
+
+  <div class="dark-preview">
+    <h3>Vue dashboard — dark</h3>
+    <div class="grid cols-3" style="margin-top:16px;">
+      <div class="panel">
+        <div class="label" style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">P&amp;L total</div>
+        <div class="value" style="font-family:var(--font-mono);font-size:24px;font-weight:700;margin-top:6px;">+ 8 240 €</div>
+        <div style="color:#6bad8a;font-weight:600;font-size:13px;margin-top:4px;">▲ +12.4 %</div>
+      </div>
+      <div class="panel">
+        <div class="label" style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Win rate</div>
+        <div class="value" style="font-family:var(--font-mono);font-size:24px;font-weight:700;margin-top:6px;">62 %</div>
+        <div style="color:#6bad8a;font-weight:600;font-size:13px;margin-top:4px;">▲ +3 pts</div>
+      </div>
+      <div class="panel">
+        <div class="label" style="font-size:12px;text-transform:uppercase;letter-spacing:0.08em;">Drawdown</div>
+        <div class="value" style="font-family:var(--font-mono);font-size:24px;font-weight:700;margin-top:6px;">-4.2 %</div>
+        <div style="color:#93a3b9;font-size:13px;margin-top:4px;">stable</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:20px;">
+      <button class="btn btn-success">+ Nouveau trade</button>
+      <button class="btn" style="background:transparent;color:#e8e8e6;border-color:#354560;">Filtres</button>
+      <span class="badge" style="background:rgba(70,146,107,0.18);color:#9bc7af;">12 trades</span>
+      <span class="badge" style="background:rgba(181,56,74,0.18);color:#e88a96;">3 stop</span>
+    </div>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:16px;">
+    <div class="card stack-12">
+      <h4>Surfaces dark</h4>
+      <div class="row"><span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:#1f2a3c;"></span><span class="muted">background — Navy 900</span></div>
+      <div class="row"><span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:#1a2435;border:1px solid #354560;"></span><span class="muted">surface élevée — #1A2435</span></div>
+      <div class="row"><span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:#283449;"></span><span class="muted">hover — Navy 800</span></div>
+      <div class="row"><span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:#354560;"></span><span class="muted">border — Navy 700</span></div>
+    </div>
+    <div class="card stack-12">
+      <h4>Texte sur dark</h4>
+      <p style="color:#e8e8e6;">Cream — texte primaire (<code class="inline">#E8E8E6</code>)</p>
+      <p style="color:#93a3b9;">Navy 300 — texte secondaire (<code class="inline">#93A3B9</code>)</p>
+      <p style="color:#6bad8a;">Green 400 — gain</p>
+      <p style="color:#e88a96;">Loss — <code class="inline">#E88A96</code></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============== DO / DON'T ============== -->
+<section id="dodont">
+  <div class="section-head">
+    <span class="eyebrow">10 · Bonnes pratiques</span>
+    <h2>Do &amp; Don't sur le logo</h2>
+    <p>Quelques règles non-négociables pour préserver la lisibilité et la cohérence de la marque.</p>
+  </div>
+
+  <div class="dodont">
+    <div class="item do">
+      <div class="head">✓ Faire</div>
+      <div class="preview">
+        <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+      </div>
+      <div class="caption">Sur fond clair neutre, taille suffisante, zone de protection respectée.</div>
+    </div>
+
+    <div class="item dont">
+      <div class="head">✗ Éviter</div>
+      <div class="preview bad-bg">
+        <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+      </div>
+      <div class="caption">Sur un fond saturé / contrasté avec les couleurs du logo.</div>
+    </div>
+
+    <div class="item dont">
+      <div class="head">✗ Éviter</div>
+      <div class="preview bad-stretch">
+        <div class="logo-wrap"><svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg></div>
+      </div>
+      <div class="caption"><b>Étirer ou compresser le logo.</b> Les proportions sont fixes — toujours redimensionner avec un ratio constant (CSS&nbsp;: <code class="inline">aspect-ratio: 1 / 1</code>).</div>
+    </div>
+
+    <div class="item dont">
+      <div class="head">✗ Éviter</div>
+      <div class="preview bad-contrast">
+        <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools" style="color:#1f2a3c"><use href="#logo-mark"/></svg>
+      </div>
+      <div class="caption"><b>Utiliser la mauvaise variante pour le fond.</b> Sur un fond Navy, le « 2A » et la signature deviennent illisibles — basculer sur la version <em>dark</em> (texte crème).</div>
+    </div>
+
+  </div>
+
+  <div class="note" style="margin-top:24px;">
+    <b>Autres interdictions&nbsp;:</b> recolorer le « 2A » ou la signature dans des teintes hors charte, ajouter ombres / glows / effets 3D, ajouter un contour, retirer les barres ou le « 2 », séparer les éléments, pivoter le logo, ou le surimposer sur une photo non neutre.
+  </div>
+</section>
+
+<!-- ============== TON ============== -->
+<section id="ton">
+  <div class="section-head">
+    <span class="eyebrow">11 · Ton de la marque</span>
+    <h2>Voix &amp; ton éditorial</h2>
+    <p>2A Trading Tools parle comme un coach de méthode&nbsp;: factuel, posé, jamais sensationnaliste. La marque n'est pas un signal de trading — c'est un miroir de pratique.</p>
+  </div>
+
+  <div class="voice-grid">
+    <div class="voice-card">
+      <h4>Nous sommes</h4>
+      <div class="row" style="margin-top:10px;"><span class="pill">précis</span><span class="pill">sobre</span><span class="pill">technique</span><span class="pill">factuel</span><span class="pill">méthodique</span></div>
+    </div>
+    <div class="voice-card">
+      <h4>Nous ne sommes pas</h4>
+      <div class="row" style="margin-top:10px;"><span class="pill" style="background:#f7e1e4;color:#b5384a;">racoleur</span><span class="pill" style="background:#f7e1e4;color:#b5384a;">euphorique</span><span class="pill" style="background:#f7e1e4;color:#b5384a;">moralisateur</span><span class="pill" style="background:#f7e1e4;color:#b5384a;">prescriptif</span></div>
+    </div>
+    <div class="voice-card">
+      <h4>Plutôt dire</h4>
+      <div class="row"><span class="ok">✓</span>«&nbsp;Votre win rate cette semaine&nbsp;: 58&nbsp;%&nbsp;»</div>
+      <div class="row"><span class="ok">✓</span>«&nbsp;3 trades clôturés en perte sur GBPJPY&nbsp;»</div>
+      <div class="row"><span class="ok">✓</span>«&nbsp;Drawdown maximum atteint&nbsp;: -4.2&nbsp;%&nbsp;»</div>
+    </div>
+    <div class="voice-card">
+      <h4>Plutôt éviter</h4>
+      <div class="row"><span class="ko">✗</span>«&nbsp;Bravo, tu es un pro&nbsp;!&nbsp;»</div>
+      <div class="row"><span class="ko">✗</span>«&nbsp;Attention, c'est mauvais ce que tu fais&nbsp;»</div>
+      <div class="row"><span class="ko">✗</span>«&nbsp;🚀 Performance de fou ce mois-ci&nbsp;!&nbsp;»</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============== TOKENS ============== -->
+<section id="tokens">
+  <div class="section-head">
+    <span class="eyebrow">12 · Référence dev</span>
+    <h2>Design tokens</h2>
+    <p>Variables CSS prêtes à coller dans un <code class="inline">:root</code> ou à mapper sur un <code class="inline">tailwind.config.js</code>.</p>
+  </div>
+
+  <div class="card" style="background:#1f2a3c;color:#e8e8e6;border-color:#283449;padding:24px;border-radius:var(--radius-lg);">
+    <pre style="margin:0;font-family:var(--font-mono);font-size:13px;line-height:1.65;white-space:pre-wrap;color:#e8e8e6;">:root {
+  /* Brand */
+  --brand-navy-900: #1F2A3C;
+  --brand-navy-800: #283449;
+  --brand-navy-700: #354560;
+  --brand-green-800: #1F5E3F;
+  --brand-green-700: #2D7952;
+  --brand-green-500: #46926B;
+  --brand-green-400: #6BAD8A;
+  --brand-green-300: #9BC7AF;
+  --brand-green-100: #E3F0E9;
+  --brand-cream:    #E8E8E6;
+
+  /* Semantic */
+  --success: #2D7952;
+  --danger:  #B5384A;
+  --warning: #C98A2B;
+  --info:    #2C6E8F;
+
+  /* Neutrals */
+  --gray-50:  #F7F7F5;
+  --gray-100: #ECECEA;
+  --gray-200: #D8D8D4;
+  --gray-300: #B6B6B0;
+  --gray-400: #8B8B85;
+  --gray-500: #6B6E75;
+  --gray-700: #3A3D44;
+  --gray-900: #16181C;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(31,42,60,.06);
+  --shadow-md: 0 4px 12px rgba(31,42,60,.08);
+  --shadow-lg: 0 12px 32px rgba(31,42,60,.12);
+
+  /* Spacing scale (multiples of 4) */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+  --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --space-12: 48px; --space-16: 64px;
+}</pre>
+  </div>
+
+  <div class="note" style="margin-top:20px;">
+    <b>Note d'implémentation</b> — les valeurs proposées ici partent des couleurs effectivement présentes dans les logos. Si l'application en production utilise déjà une palette légèrement différente (par exemple un vert ou un navy plus saturé), il suffit d'ajuster les tokens <code class="inline">--brand-*</code>&nbsp;; le reste du système (échelle, sémantique, neutres) reste valide tel quel.
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div>
+    <b>2A Trading Tools</b> · Charte graphique v1.0 · avril 2026
+  </div>
+  <div>Document interne — ne pas diffuser à l'externe sans validation.</div>
+</footer>
+
+<div class="toast" id="toast">Couleur copiée</div>
+
+<script>
+  // Click-to-copy on color swatches
+  document.querySelectorAll('.swatch').forEach(s => {
+    s.addEventListener('click', () => {
+      const c = s.dataset.color;
+      navigator.clipboard?.writeText(c).then(() => {
+        s.classList.add('copied');
+        const t = document.getElementById('toast');
+        t.textContent = c + ' copié';
+        t.classList.add('show');
+        setTimeout(() => { s.classList.remove('copied'); t.classList.remove('show'); }, 1400);
+      });
+    });
+  });
+
+  // Highlight current section in nav
+  const links = [...document.querySelectorAll('.nav-links a')];
+  const sections = links.map(l => document.querySelector(l.getAttribute('href'))).filter(Boolean);
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const id = '#' + e.target.id;
+        links.forEach(l => {
+          const active = l.getAttribute('href') === id;
+          l.style.color = active ? 'var(--brand-navy-900)' : '';
+          l.style.background = active ? 'var(--gray-100)' : '';
+        });
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
