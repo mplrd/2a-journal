@@ -15,6 +15,11 @@ COPY . .
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=${VITE_API_URL}
 
+# VITE_ADMIN_URL must be available at build time so Vite bakes it into the
+# bundle. When unset, the cross-link to the admin SPA stays hidden.
+ARG VITE_ADMIN_URL=
+ENV VITE_ADMIN_URL=${VITE_ADMIN_URL}
+
 RUN npm run build
 
 # --- Stage 2: Serve with Nginx ---
