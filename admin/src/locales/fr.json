@@ -25,7 +25,8 @@
     "email": "Email",
     "password": "Mot de passe",
     "submit": "Se connecter",
-    "submitting": "Connexion en cours..."
+    "submitting": "Connexion en cours...",
+    "sso_loading": "Connexion via le SPA principal..."
   },
   "users": {
     "title": "Gestion des utilisateurs",
@@ -96,6 +97,7 @@
       "token_expired": "Session expirée, veuillez vous reconnecter",
       "token_invalid": "Session invalide",
       "refresh_token_invalid": "Session expirée, veuillez vous reconnecter",
+      "sso_code_invalid": "Le code SSO est invalide ou a expiré, veuillez réessayer",
       "account_locked": "Compte temporairement verrouillé suite à trop de tentatives. Réessayez dans 15 minutes."
     }
   },

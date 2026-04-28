@@ -3,8 +3,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { authService } from '@/services/auth'
 import { useTheme } from '@/composables/useTheme'
 import { useOnboarding } from '@/composables/useOnboarding'
+import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
 import FlagIcon from '@/components/common/FlagIcon.vue'
@@ -12,13 +14,32 @@ import FlagIcon from '@/components/common/FlagIcon.vue'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
 const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || ''
 
-const isAdmin = computed(() => authStore.user?.role === 'ADMIN')
-
 const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const toast = useToast()
 const { initTheme, toggleTheme, getCurrentTheme } = useTheme()
 const { isRouteAllowed } = useOnboarding()
+
+const isAdmin = computed(() => authStore.user?.role === 'ADMIN')
+
+async function openAdmin() {
+  if (!ADMIN_URL) return
+  try {
+    const response = await authService.ssoIssueCode()
+    const code = response.data.code
+    const url = new URL(ADMIN_URL)
+    url.searchParams.set('code', code)
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  } catch (err) {
+    toast.add({
+      severity: 'error',
+      summary: t('common.error'),
+      detail: t(err.messageKey || 'error.internal'),
+      life: 5000,
+    })
+  }
+}
 
 const userMenuRef = ref(null)
 const localeMenuRef = ref(null)
@@ -254,18 +275,17 @@ async function handleLogout() {
               <span>{{ link.label }}</span>
             </span>
           </template>
-          <a
+          <button
             v-if="isAdmin && ADMIN_URL"
-            :href="ADMIN_URL"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="mt-auto flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3"
+            type="button"
+            class="mt-auto flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
             data-testid="admin-link"
+            @click="openAdmin"
           >
             <i class="pi pi-shield"></i>
             <span>{{ t('nav.go_to_admin') }}</span>
             <i class="pi pi-external-link ml-auto text-xs"></i>
-          </a>
+          </button>
         </nav>
       </aside>
 

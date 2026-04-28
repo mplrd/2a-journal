@@ -40,6 +40,7 @@ use App\Repositories\StatsRepository;
 use App\Repositories\SymbolAliasRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\RefreshTokenRepository;
+use App\Repositories\SsoCodeRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\UserRepository;
@@ -64,6 +65,7 @@ use App\Services\Import\ImportService;
 use App\Services\Import\FileParserService;
 use App\Services\Import\ColumnMapperService;
 use App\Services\Import\RowGroupingService;
+use App\Services\SsoService;
 use App\Services\StatsService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
@@ -104,7 +106,9 @@ $resetTokenRepo = new PasswordResetTokenRepository($pdo);
 $platformSettingsService = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
 $emailService = new EmailService($mailConfig, $platformSettingsService);
 $authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig, $platformSettingsService);
-$authController = new AuthController($authService);
+$ssoCodeRepo = new SsoCodeRepository($pdo);
+$ssoService = new SsoService($ssoCodeRepo, $authService);
+$authController = new AuthController($authService, $ssoService);
 $authMiddleware = new AuthMiddleware($authConfig['jwt_secret']);
 
 // Rate limiting
@@ -133,6 +137,18 @@ $forgotPasswordRateLimit = new RateLimitMiddleware(
     $securityConfig['rate_limits']['forgot_password']['window_seconds'],
     '/auth/forgot-password'
 );
+$ssoIssueRateLimit = new RateLimitMiddleware(
+    $rateLimitRepo,
+    $securityConfig['rate_limits']['sso_issue']['max_attempts'],
+    $securityConfig['rate_limits']['sso_issue']['window_seconds'],
+    '/auth/sso/code'
+);
+$ssoExchangeRateLimit = new RateLimitMiddleware(
+    $rateLimitRepo,
+    $securityConfig['rate_limits']['sso_exchange']['max_attempts'],
+    $securityConfig['rate_limits']['sso_exchange']['window_seconds'],
+    '/auth/sso/exchange'
+);
 
 $router->post('/auth/register', [$authController, 'register'], [$registerRateLimit]);
 $router->post('/auth/login', [$authController, 'login'], [$loginRateLimit]);
@@ -149,6 +165,8 @@ $router->get('/auth/verify-email', [$authController, 'verifyEmail']);
 $router->post('/auth/resend-verification', [$authController, 'resendVerification'], [$authMiddleware]);
 $router->post('/auth/forgot-password', [$authController, 'forgotPassword'], [$forgotPasswordRateLimit]);
 $router->post('/auth/reset-password', [$authController, 'resetPassword']);
+$router->post('/auth/sso/code', [$authController, 'ssoIssueCode'], [$authMiddleware, $ssoIssueRateLimit]);
+$router->post('/auth/sso/exchange', [$authController, 'ssoExchange'], [$ssoExchangeRateLimit]);
 
 // ── Billing (Stripe) ────────────────────────────────────────────
 $billingConfig = require __DIR__ . '/billing.php';

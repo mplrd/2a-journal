@@ -69,6 +69,7 @@
       "token_expired": "Session expired, please sign in again",
       "token_invalid": "Invalid session",
       "refresh_token_invalid": "Session expired, please sign in again",
+      "sso_code_invalid": "The SSO code is invalid or expired, please try again",
       "email_too_long": "Email is too long (255 characters maximum)",
       "field_too_long": "This field is too long",
       "invalid_locale": "Unsupported language",

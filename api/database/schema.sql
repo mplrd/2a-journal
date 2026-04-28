@@ -297,6 +297,24 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
+-- 12bis. SSO_CODES (cross-SPA one-time auth codes, see migration 011)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sso_codes (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    code_hash CHAR(64) NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_sso_codes_hash (code_hash),
+    KEY idx_sso_codes_user (user_id),
+    KEY idx_sso_codes_expires (expires_at),
+    CONSTRAINT fk_sso_codes_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
 -- 13. RATE_LIMITS (brute-force protection)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS rate_limits (
