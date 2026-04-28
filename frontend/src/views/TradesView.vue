@@ -406,7 +406,7 @@ function pnlClass(pnl) {
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">
-            <Button v-if="data.status !== TradeStatus.CLOSED" icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
+            <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button v-if="data.status !== TradeStatus.CLOSED" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
             <Button
               v-if="data.status !== TradeStatus.CLOSED && getNextObjective(data)"

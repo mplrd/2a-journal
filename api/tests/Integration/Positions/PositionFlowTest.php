@@ -240,6 +240,25 @@ class PositionFlowTest extends TestCase
         }
     }
 
+    public function testUpdatePositionAllowedWhenTradeClosed(): void
+    {
+        $positionId = $this->insertPosition();
+
+        $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, closed_at, remaining_size, status, avg_exit_price)
+             VALUES (:pid, NOW(), NOW(), 0, 'CLOSED', 18600.00000)"
+        )->execute(['pid' => $positionId]);
+
+        $response = $this->router->dispatch($this->authRequest('PUT', "/positions/{$positionId}", [
+            'entry_price' => 18550,
+            'setup' => ['Pullback'],
+        ]));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertEquals(18550, (float) $response->getBody()['data']['entry_price']);
+        $this->assertSame('["Pullback"]', $response->getBody()['data']['setup']);
+    }
+
     // ── Delete ──────────────────────────────────────────────────
 
     public function testDeletePositionSuccess(): void
