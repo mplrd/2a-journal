@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { authService } from '@/services/auth'
 import { useTheme } from '@/composables/useTheme'
@@ -17,6 +17,7 @@ const ADMIN_URL = import.meta.env.VITE_ADMIN_URL || ''
 
 const { t, locale } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const toast = useToast()
 const { initTheme, toggleTheme, getCurrentTheme } = useTheme()
@@ -95,6 +96,11 @@ const localeOptions = [
   { code: 'fr', label: 'Français' },
   { code: 'en', label: 'English' },
 ]
+
+function isActiveLink(linkTo) {
+  if (linkTo === '/') return route.path === '/'
+  return route.path === linkTo || route.path.startsWith(linkTo + '/')
+}
 
 const navLinks = computed(() => [
   { to: '/', name: 'dashboard', label: t('nav.dashboard'), icon: 'pi pi-home' },
@@ -282,8 +288,13 @@ async function handleLogout() {
                 v-if="isRouteAllowed(link.name)"
                 v-tooltip.right="!showLabels ? link.label : null"
                 :to="link.to"
-                class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                :class="!showLabels ? 'justify-center' : ''"
+                class="flex items-center gap-3 px-3 py-2 rounded-md"
+                :class="[
+                  !showLabels ? 'justify-center' : '',
+                  isActiveLink(link.to)
+                    ? 'bg-brand-green-100 dark:bg-brand-green-700/20 text-brand-green-800 dark:text-brand-green-300 font-semibold'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700',
+                ]"
                 @click="handleNavClick"
               >
                 <i :class="link.icon"></i>
