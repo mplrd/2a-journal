@@ -1,17 +1,24 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   size: { type: [Number, String], default: 32 },
   mark: { type: Boolean, default: false },
+})
+
+const height = computed(() => {
+  const num = Number(props.size)
+  return props.mark ? Math.round(num * 332 / 485) : Math.round(num * 413 / 485)
 })
 </script>
 
 <template>
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    :viewBox="mark ? '260 290 510 360' : '0 0 1024 1024'"
+    :viewBox="mark ? '269 304 485 332' : '269 304 485 413'"
     fill-rule="evenodd"
     :width="size"
-    :height="size"
+    :height="height"
     role="img"
     aria-label="2A Trading Tools"
     data-testid="brand-logo"
