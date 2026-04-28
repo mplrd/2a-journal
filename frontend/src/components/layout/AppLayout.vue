@@ -275,34 +275,36 @@ async function handleLogout() {
         class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden shrink-0"
         :class="sidebarWidthClass"
       >
-        <nav class="p-2 flex flex-col gap-1 overflow-y-auto h-full">
-          <template v-for="link in navLinks" :key="link.to">
-            <RouterLink
-              v-if="isRouteAllowed(link.name)"
-              v-tooltip.right="!showLabels ? link.label : null"
-              :to="link.to"
-              class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-              :class="!showLabels ? 'justify-center' : ''"
-              @click="handleNavClick"
-            >
-              <i :class="link.icon"></i>
-              <span v-if="showLabels">{{ link.label }}</span>
-            </RouterLink>
-            <span
-              v-else
-              v-tooltip.right="!showLabels ? link.label : null"
-              class="flex items-center gap-3 px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
-              :class="!showLabels ? 'justify-center' : ''"
-            >
-              <i :class="link.icon"></i>
-              <span v-if="showLabels">{{ link.label }}</span>
-            </span>
-          </template>
+        <nav class="p-2 flex flex-col overflow-y-auto h-full">
+          <div class="flex-1 flex flex-col justify-center gap-1">
+            <template v-for="link in navLinks" :key="link.to">
+              <RouterLink
+                v-if="isRouteAllowed(link.name)"
+                v-tooltip.right="!showLabels ? link.label : null"
+                :to="link.to"
+                class="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                :class="!showLabels ? 'justify-center' : ''"
+                @click="handleNavClick"
+              >
+                <i :class="link.icon"></i>
+                <span v-if="showLabels">{{ link.label }}</span>
+              </RouterLink>
+              <span
+                v-else
+                v-tooltip.right="!showLabels ? link.label : null"
+                class="flex items-center gap-3 px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
+                :class="!showLabels ? 'justify-center' : ''"
+              >
+                <i :class="link.icon"></i>
+                <span v-if="showLabels">{{ link.label }}</span>
+              </span>
+            </template>
+          </div>
           <button
             v-if="isAdmin && ADMIN_URL"
             v-tooltip.right="!showLabels ? t('nav.go_to_admin') : null"
             type="button"
-            class="mt-auto flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
+            class="flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
             :class="!showLabels ? 'justify-center' : ''"
             data-testid="admin-link"
             @click="openAdmin"
