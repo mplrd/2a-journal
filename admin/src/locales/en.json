@@ -118,7 +118,8 @@
         "email_verification_enabled": "Require email verification on registration",
         "mail_enabled": "Enable email delivery (password reset, notifications, etc.)",
         "mail_from_address": "From address for outgoing emails",
-        "billing_grace_days": "Grace period after a failed Stripe payment (days)"
+        "billing_grace_days": "Grace period after a failed Stripe payment (days)",
+        "trade_transfer_enabled": "Enables the trade-transfer feature between accounts"
       }
     }
   },
