@@ -24,10 +24,10 @@ async function logout() {
           <h1 class="font-bold text-lg">{{ t('app.title') }}</h1>
         </div>
         <nav class="flex gap-4">
-          <router-link to="/users" class="text-sm hover:underline" active-class="font-semibold text-blue-600">
+          <router-link to="/users" class="text-sm hover:underline" active-class="font-semibold text-brand-green-700 dark:text-brand-green-400">
             {{ t('nav.users') }}
           </router-link>
-          <router-link to="/settings" class="text-sm hover:underline" active-class="font-semibold text-blue-600">
+          <router-link to="/settings" class="text-sm hover:underline" active-class="font-semibold text-brand-green-700 dark:text-brand-green-400">
             {{ t('nav.settings') }}
           </router-link>
         </nav>

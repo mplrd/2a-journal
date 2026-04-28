@@ -91,7 +91,7 @@ function typeSeverity(type) {
   <div>
     <div
       v-if="isOnboarding"
-      class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-800 dark:text-blue-200"
+      class="mb-4 p-4 bg-info-bg dark:bg-info/20 border border-info/30 dark:border-info/40 rounded-lg text-info dark:text-info-bg"
       data-testid="onboarding-banner"
     >
       <p class="mb-3">{{ t('onboarding.step_symbols_description') }}</p>

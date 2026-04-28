@@ -54,12 +54,12 @@ async function handleLogin() {
       </form>
 
       <p class="text-center mt-3 text-sm">
-        <RouterLink to="/forgot-password" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.forgot_password') }}</RouterLink>
+        <RouterLink to="/forgot-password" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.forgot_password') }}</RouterLink>
       </p>
 
       <p class="text-center mt-2 text-sm text-gray-600 dark:text-gray-400">
         {{ t('auth.no_account') }}
-        <RouterLink to="/register" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.register_button') }}</RouterLink>
+        <RouterLink to="/register" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.register_button') }}</RouterLink>
       </p>
     </div>
   </div>

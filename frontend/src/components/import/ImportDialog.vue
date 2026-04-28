@@ -377,7 +377,7 @@ function close() {
               <input
                 type="file"
                 :accept="acceptedFileTypes"
-                class="text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
+                class="text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-green-100 file:text-brand-green-800 hover:file:bg-brand-green-300 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
                 @change="onFileSelect"
               />
             </div>
@@ -536,7 +536,7 @@ function close() {
                 <p class="text-xs text-gray-500">{{ t('import.total_rows') }}</p>
               </div>
               <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
-                <p class="text-2xl font-bold text-blue-600">{{ preview.total_positions }}</p>
+                <p class="text-2xl font-bold font-mono tabular-nums text-info">{{ preview.total_positions }}</p>
                 <p class="text-xs text-gray-500">{{ t('import.total_positions') }}</p>
               </div>
               <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">

@@ -66,7 +66,7 @@ async function handleRegister() {
 
       <p class="text-center mt-4 text-sm text-gray-600 dark:text-gray-400">
         {{ t('auth.has_account') }}
-        <RouterLink to="/login" class="text-blue-600 dark:text-blue-400 hover:underline">{{ t('auth.login_button') }}</RouterLink>
+        <RouterLink to="/login" class="text-brand-green-700 dark:text-brand-green-400 hover:underline">{{ t('auth.login_button') }}</RouterLink>
       </p>
     </div>
   </div>

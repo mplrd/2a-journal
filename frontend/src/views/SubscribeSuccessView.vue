@@ -35,7 +35,7 @@ function goToDashboard() {
   <div class="min-h-screen flex items-center justify-center p-4 bg-gray-50 dark:bg-gray-900">
     <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center" data-testid="subscribe-success-view">
       <template v-if="state === 'polling'">
-        <i class="pi pi-spin pi-spinner text-4xl text-blue-600 mb-4"></i>
+        <i class="pi pi-spin pi-spinner text-4xl text-brand-navy-900 dark:text-brand-cream mb-4"></i>
         <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2" data-testid="polling-title">
           {{ t('billing.success.polling_title') }}
         </h1>

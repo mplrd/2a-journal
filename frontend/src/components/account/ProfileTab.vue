@@ -106,7 +106,7 @@ async function handleSave() {
       <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('account.profile_picture') }}</label>
       <button
         type="button"
-        class="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer group focus:outline-none focus:ring-2 focus:ring-blue-500"
+        class="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer group focus:outline-none focus:ring-2 focus:ring-brand-green-500"
         data-testid="avatar-upload"
         @click="triggerFileInput"
       >
@@ -119,7 +119,7 @@ async function handleSave() {
         />
         <span
           v-else
-          class="w-full h-full bg-blue-600 text-white flex items-center justify-center text-2xl font-semibold"
+          class="w-full h-full bg-brand-navy-900 text-white flex items-center justify-center text-2xl font-semibold"
           data-testid="avatar-initials"
         >
           {{ avatarInitials }}

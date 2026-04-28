@@ -26,7 +26,7 @@ function formatRatio(value) {
 
 function pnlClass(value) {
   if (value == null) return 'text-gray-500'
-  return Number(value) >= 0 ? 'text-green-600' : 'text-red-600'
+  return Number(value) >= 0 ? 'text-success' : 'text-danger'
 }
 </script>
 
@@ -54,8 +54,8 @@ function pnlClass(value) {
 
     <KpiCard :label="t('dashboard.best_worst')">
       <div class="flex flex-col">
-        <span class="text-sm font-bold text-green-600">{{ formatPnl(overview?.best_trade) }}</span>
-        <span class="text-sm font-bold text-red-600">{{ formatPnl(overview?.worst_trade) }}</span>
+        <span class="text-sm font-bold font-mono tabular-nums text-success">{{ formatPnl(overview?.best_trade) }}</span>
+        <span class="text-sm font-bold font-mono tabular-nums text-danger">{{ formatPnl(overview?.worst_trade) }}</span>
       </div>
     </KpiCard>
   </div>

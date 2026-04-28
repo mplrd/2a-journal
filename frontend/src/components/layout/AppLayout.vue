@@ -204,7 +204,7 @@ async function handleLogout() {
             />
             <span
               v-else
-              class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-semibold"
+              class="w-8 h-8 rounded-full bg-brand-navy-900 text-white flex items-center justify-center text-sm font-semibold"
               data-testid="user-avatar"
             >
               {{ userInitials }}
