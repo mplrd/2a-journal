@@ -405,9 +405,9 @@ function pnlClass(pnl) {
         </template>
       </Column>
 
-      <Column :header="''">
+      <Column :header="''" headerClass="text-right" bodyClass="text-right">
         <template #body="{ data }">
-          <div class="flex items-center divide-x divide-gray-200 dark:divide-gray-700">
+          <div class="inline-flex items-center divide-x divide-gray-200 dark:divide-gray-700">
             <!-- Group: trade management -->
             <div v-if="data.status !== TradeStatus.CLOSED" class="flex gap-1 pr-2">
               <Button
