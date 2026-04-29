@@ -51,8 +51,15 @@ const dialogData = computed(() => {
   return map[dialogDimension.value] || []
 })
 
-// Equity curve: initial capital from selected account (or sum of all)
+// Equity curve: initial capital aggregated from the selected accounts.
+// Backwards compat with the legacy single account_id filter.
 const initialCapital = computed(() => {
+  const ids = statsStore.filters?.account_ids
+  if (Array.isArray(ids) && ids.length > 0) {
+    return accountsStore.accounts
+      .filter((a) => ids.includes(a.id))
+      .reduce((sum, a) => sum + Number(a.initial_capital || 0), 0)
+  }
   const accountId = statsStore.filters?.account_id
   if (accountId) {
     const account = accountsStore.accounts.find((a) => a.id === accountId)

@@ -15,8 +15,6 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
-import Select from 'primevue/select'
-import MultiSelect from 'primevue/multiselect'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
@@ -25,6 +23,7 @@ import { usePositionsStore } from '@/stores/positions'
 import { tradesService } from '@/services/trades'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/enums'
 
 const route = useRoute()
@@ -68,7 +67,7 @@ const closePrefill = ref(null)
 const showShare = ref(false)
 const sharePositionId = ref(null)
 
-const filterAccountId = ref(null)
+const filterAccountIds = ref([])
 const filterStatuses = ref([])
 
 const statusOptions = Object.values(TradeStatus).map((value) => ({
@@ -114,7 +113,7 @@ function formatCustomFieldValue(value, fieldType) {
 
 async function applyFilters() {
   const filters = {}
-  if (filterAccountId.value) filters.account_id = filterAccountId.value
+  if (filterAccountIds.value.length > 0) filters.account_ids = filterAccountIds.value
   if (filterStatuses.value && filterStatuses.value.length > 0) {
     filters.statuses = filterStatuses.value
   }
@@ -322,29 +321,22 @@ function pnlClass(pnl) {
       <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
     </div>
 
-    <div class="flex gap-4 mb-4">
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('trades.account') }}</label>
-        <Select
-          v-model="filterAccountId"
-          :options="[{ label: t('trades.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
-          optionLabel="label"
-          optionValue="value"
-          class="w-56"
+    <div class="flex flex-col gap-3 mb-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.account') }}</span>
+        <BadgeFilter
+          v-model="filterAccountIds"
+          :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+          multi
           @change="applyFilters"
         />
       </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('trades.status') }}</label>
-        <MultiSelect
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.status') }}</span>
+        <BadgeFilter
           v-model="filterStatuses"
           :options="statusOptions"
-          optionLabel="label"
-          optionValue="value"
-          :placeholder="t('trades.all_statuses')"
-          :show-toggle-all="false"
-          class="w-56"
-          display="chip"
+          multi
           @change="applyFilters"
         />
       </div>

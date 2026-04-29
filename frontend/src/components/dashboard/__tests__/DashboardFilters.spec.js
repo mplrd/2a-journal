@@ -43,9 +43,9 @@ function mountFilters() {
     global: {
       plugins: [pinia, i18n],
       stubs: {
-        Select: { template: '<select><slot /></select>', props: ['modelValue'] },
-        DatePicker: { template: '<input type="text" />', props: ['modelValue'] },
         MultiSelect: { template: '<div class="multiselect-stub" />', props: ['modelValue'] },
+        BadgeFilter: { template: '<div class="badge-filter-stub" />', props: ['modelValue', 'options', 'multi'] },
+        DateRangePicker: { template: '<div class="date-range-stub" />', props: ['from', 'to'] },
         Button: {
           template: '<button @click="$emit(\'click\')">{{ label }}</button>',
           props: ['label'],
@@ -57,25 +57,18 @@ function mountFilters() {
 }
 
 describe('DashboardFilters', () => {
-  it('renders filter panel with apply and reset buttons', () => {
+  it('renders a reset button but no apply button (autosubmit)', () => {
     const wrapper = mountFilters()
     const buttons = wrapper.findAll('button')
-    expect(buttons.length).toBe(2)
-  })
-
-  it('emits apply event with filters', async () => {
-    const wrapper = mountFilters()
-    const buttons = wrapper.findAll('button')
+    const resetBtn = buttons.find((b) => b.text().includes('Reset'))
     const applyBtn = buttons.find((b) => b.text().includes('Apply'))
-    await applyBtn.trigger('click')
-    expect(wrapper.emitted('apply')).toBeTruthy()
-    expect(wrapper.emitted('apply')[0][0]).toBeTypeOf('object')
+    expect(resetBtn).toBeTruthy()
+    expect(applyBtn).toBeFalsy()
   })
 
   it('emits reset event', async () => {
     const wrapper = mountFilters()
-    const buttons = wrapper.findAll('button')
-    const resetBtn = buttons.find((b) => b.text().includes('Reset'))
+    const resetBtn = wrapper.findAll('button').find((b) => b.text().includes('Reset'))
     await resetBtn.trigger('click')
     expect(wrapper.emitted('reset')).toBeTruthy()
   })
@@ -83,5 +76,18 @@ describe('DashboardFilters', () => {
   it('renders title', () => {
     const wrapper = mountFilters()
     expect(wrapper.text()).toContain('Filters')
+  })
+
+  it('collapses when title is clicked, hiding the body and reset button', async () => {
+    const wrapper = mountFilters()
+    // Initially expanded: reset visible
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(true)
+    // Click the title toggle (button containing "Filters")
+    const toggle = wrapper.findAll('button').find((b) => b.text().includes('Filters'))
+    await toggle.trigger('click')
+    // After collapse: no Reset, body stubs gone
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(false)
+    expect(wrapper.find('.badge-filter-stub').exists()).toBe(false)
+    expect(wrapper.find('.date-range-stub').exists()).toBe(false)
   })
 })

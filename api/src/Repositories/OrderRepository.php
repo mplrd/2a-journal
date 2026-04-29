@@ -51,12 +51,28 @@ class OrderRepository
         $where = 'WHERE p.user_id = :user_id';
         $params = ['user_id' => $userId];
 
-        if (!empty($filters['account_id'])) {
+        if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
+            $placeholders = [];
+            foreach (array_values($filters['account_ids']) as $i => $id) {
+                $key = "account_id_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = (int) $id;
+            }
+            $where .= ' AND p.account_id IN (' . implode(', ', $placeholders) . ')';
+        } elseif (!empty($filters['account_id'])) {
             $where .= ' AND p.account_id = :account_id';
             $params['account_id'] = $filters['account_id'];
         }
 
-        if (!empty($filters['status'])) {
+        if (!empty($filters['statuses']) && is_array($filters['statuses'])) {
+            $placeholders = [];
+            foreach (array_values($filters['statuses']) as $i => $s) {
+                $key = "status_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = $s;
+            }
+            $where .= ' AND o.status IN (' . implode(', ', $placeholders) . ')';
+        } elseif (!empty($filters['status'])) {
             $where .= ' AND o.status = :status';
             $params['status'] = $filters['status'];
         }

@@ -17,7 +17,18 @@
     "no": "Non",
     "no_options": "Aucune option disponible",
     "error": "Erreur",
-    "success": "Succès"
+    "success": "Succès",
+    "from": "Du",
+    "to": "Au",
+    "range": {
+      "placeholder": "Sélectionner une période",
+      "last_7_days": "7 derniers jours",
+      "last_30_days": "30 derniers jours",
+      "this_month": "Ce mois",
+      "this_quarter": "Ce trimestre",
+      "year_to_date": "Depuis le 1er janvier",
+      "clear": "Effacer"
+    }
   },
   "nav": {
     "dashboard": "Tableau de bord",
@@ -135,6 +146,7 @@
     "filters": "Filtres",
     "date_from": "Du",
     "date_to": "Au",
+    "date_range": "Période",
     "direction": "Direction",
     "all_directions": "Toutes les directions",
     "symbols": "Symboles",

@@ -188,7 +188,20 @@ class StatsService
     {
         $validated = [];
 
-        if (!empty($filters['account_id'])) {
+        if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
+            $ids = array_values(array_filter(array_map('intval', $filters['account_ids']), fn($id) => $id > 0));
+            $checked = [];
+            foreach ($ids as $id) {
+                $account = $this->accountRepo->findById($id);
+                if (!$account || (int) $account['user_id'] !== $userId) {
+                    throw new ForbiddenException('accounts.error.forbidden');
+                }
+                $checked[] = $id;
+            }
+            if (!empty($checked)) {
+                $validated['account_ids'] = array_values(array_unique($checked));
+            }
+        } elseif (!empty($filters['account_id'])) {
             $accountId = (int) $filters['account_id'];
             $account = $this->accountRepo->findById($accountId);
 

@@ -17,7 +17,18 @@
     "no": "No",
     "no_options": "No available options",
     "error": "Error",
-    "success": "Success"
+    "success": "Success",
+    "from": "From",
+    "to": "To",
+    "range": {
+      "placeholder": "Select a period",
+      "last_7_days": "Last 7 days",
+      "last_30_days": "Last 30 days",
+      "this_month": "This month",
+      "this_quarter": "This quarter",
+      "year_to_date": "Year to date",
+      "clear": "Clear"
+    }
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -135,6 +146,7 @@
     "filters": "Filters",
     "date_from": "From",
     "date_to": "To",
+    "date_range": "Date range",
     "direction": "Direction",
     "all_directions": "All directions",
     "symbols": "Symbols",
