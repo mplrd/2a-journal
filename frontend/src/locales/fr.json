@@ -353,6 +353,7 @@
   "trades": {
     "title": "Trades",
     "create": "Nouveau trade",
+    "edit": "Modifier le trade",
     "empty": "Aucun trade. Créez votre premier trade pour commencer.",
     "account": "Compte",
     "select_account": "Sélectionner un compte",

@@ -353,6 +353,7 @@
   "trades": {
     "title": "Trades",
     "create": "New trade",
+    "edit": "Edit trade",
     "empty": "No trades yet. Create your first trade to get started.",
     "account": "Account",
     "select_account": "Select an account",
