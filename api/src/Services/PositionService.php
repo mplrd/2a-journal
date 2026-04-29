@@ -40,7 +40,12 @@ class PositionService
     {
         $validFilters = [];
 
-        if (!empty($filters['account_id'])) {
+        if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
+            $ids = array_values(array_filter(array_map('intval', $filters['account_ids']), fn($id) => $id > 0));
+            if (!empty($ids)) {
+                $validFilters['account_ids'] = array_unique($ids);
+            }
+        } elseif (!empty($filters['account_id'])) {
             $validFilters['account_id'] = (int) $filters['account_id'];
         }
 
@@ -51,7 +56,12 @@ class PositionService
     {
         $validFilters = [];
 
-        if (!empty($filters['account_id'])) {
+        if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
+            $ids = array_values(array_filter(array_map('intval', $filters['account_ids']), fn($id) => $id > 0));
+            if (!empty($ids)) {
+                $validFilters['account_ids'] = array_unique($ids);
+            }
+        } elseif (!empty($filters['account_id'])) {
             $validFilters['account_id'] = (int) $filters['account_id'];
         }
 

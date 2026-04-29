@@ -51,7 +51,15 @@ class OrderRepository
         $where = 'WHERE p.user_id = :user_id';
         $params = ['user_id' => $userId];
 
-        if (!empty($filters['account_id'])) {
+        if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
+            $placeholders = [];
+            foreach (array_values($filters['account_ids']) as $i => $id) {
+                $key = "account_id_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = (int) $id;
+            }
+            $where .= ' AND p.account_id IN (' . implode(', ', $placeholders) . ')';
+        } elseif (!empty($filters['account_id'])) {
             $where .= ' AND p.account_id = :account_id';
             $params['account_id'] = $filters['account_id'];
         }

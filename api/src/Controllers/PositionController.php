@@ -27,6 +27,10 @@ class PositionController extends Controller
         if ($accountId !== null && $accountId !== '') {
             $filters['account_id'] = $accountId;
         }
+        $accountIds = $request->getQuery('account_ids');
+        if (is_array($accountIds) && !empty($accountIds)) {
+            $filters['account_ids'] = $accountIds;
+        }
         $data = $this->positionService->listAggregated($userId, $filters);
 
         return $this->jsonSuccess($data);

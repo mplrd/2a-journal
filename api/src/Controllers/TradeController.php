@@ -36,6 +36,12 @@ class TradeController extends Controller
             $filters['statuses'] = $statuses;
         }
 
+        // account_ids (multi-select) — same pattern as statuses.
+        $accountIds = $request->getQuery('account_ids');
+        if (is_array($accountIds) && !empty($accountIds)) {
+            $filters['account_ids'] = $accountIds;
+        }
+
         $result = $this->tradeService->list($userId, $filters);
 
         return $this->jsonSuccess($result['data'], $result['meta']);

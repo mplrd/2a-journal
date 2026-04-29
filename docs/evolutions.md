@@ -28,77 +28,18 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ## UX
 
-### Filtres "légers" en badges plutôt qu'en dropdowns
+### Auto-refresh des filtres Performance (pas de bouton "Appliquer")
 
-**Contexte** : sur des écrans avec peu d'options (Trades : compte + statut, ~3-5 valeurs), un dropdown PrimeVue est ergonomiquement lourd : ça demande un click + scroll + click. Pour des sélections fréquentes, un système de **badges cliquables** (toggle inline, multi ou single selon le cas) est plus rapide et visuellement plus moderne. Les `MultiSelect display="chip"` font déjà la moitié du chemin mais en mode dropdown.
-
-**Cibles potentielles** :
-- `TradesView` : filter compte + filter statut → barre de badges au-dessus de la grid
-- `OrdersView` : idem
-- `PositionsView` : filter compte
-- Les filtres "lourds" du dashboard (`DashboardFilters` avec dates / direction / symbols / setups) gardent leur format dropdown — c'est un cas riche
+**Contexte** : sur `PerformanceView` (et `DashboardFilters`), changer un filtre nécessite de cliquer "Appliquer" pour voir le résultat. Sur les écrans Trades / Orders / Positions, les filtres se rafraîchissent à la volée (chaque toggle de badge → fetch immédiat). L'inconsistance UX vaut alignement.
 
 **À faire** :
-- Composant `<BadgeFilter>` réutilisable (single / multi)
-- Sweep TradesView, OrdersView, PositionsView
-- Garder DashboardFilters tel quel
+- Sur chaque modification d'un input dans `DashboardFilters`, déclencher `applyFilters` directement (avec petit debounce ~250ms pour les inputs rapides)
+- Retirer ou cacher le bouton "Appliquer" (ou le garder en "Reset" only)
+- Vérifier l'effet sur le Dashboard et la Performance (les deux consomment ce composant)
 
 **Repéré le** : 2026-04-29.
-**Statut** : noté pour après la fin de l'audit UI charte.
-**Priorité** : moyenne — gain UX réel sur les écrans listes.
-
----
-
-### Sélecteur de plage de dates "à la Airbnb" sur Performance
-
-**Contexte** : `PerformanceView` (et `DashboardFilters`) utilisent deux DatePicker séparés "Du" / "Au". Pour une sélection de période, un **range-picker unique** avec affichage calendrier 2-mois et raccourcis ("7 derniers jours", "Ce mois", "30 jours", "Ce trimestre", "YTD") est nettement plus fluide.
-
-**Pistes techniques** :
-- PrimeVue `DatePicker` supporte `selectionMode="range"` → mais le rendu reste 2 inputs en visu
-- Évaluer un composant tiers (e.g. `vue-tailwind-datepicker`) ou builder un custom léger
-- Garder la compat back-end : émet `{date_from, date_to}` comme aujourd'hui
-
-**Cibles** :
-- `DashboardFilters.vue` (déjà groupé visuellement, juste un swap)
-- `PerformanceView` (en haut)
-- À terme, le `closed_at` du `CloseTradeDialog` reste une date single, pas concerné
-
-**À faire** :
-- Composant `<DateRangePicker>` avec presets
-- Sweep des 2 vues consommatrices
-- i18n des presets
-
-**Repéré le** : 2026-04-29.
-**Statut** : noté pour après la fin de l'audit UI charte.
-**Priorité** : moyenne — confort utilisateur sur les analyses temporelles.
-
----
-
-## Import
-
-### Template d'import multi-format (CSV / XLS / ODS)
-
-**Contexte** : aujourd'hui le bouton "Télécharger le template" sert un fichier `.csv` uniquement (`api/...endpoint /imports/template-file` côté back, `link.download = 'import-template.csv'` côté `frontend/src/services/imports.js`). Côté upload, le frontend accepte déjà `.csv,.xlsx,.xls,.xlsm,.xml` — l'asymétrie est gênante : on accepte des Excel mais on ne sert qu'un template CSV.
-
-**Cible** : proposer le template dans **3 formats interchangeables** (même structure de colonnes) :
-- `.csv` (existant)
-- `.xls` ou `.xlsx` (Excel)
-- `.ods` (LibreOffice Calc, OpenDocument)
-
-À l'import, détecter le format via l'extension + magic bytes pour le parser approprié.
-
-**À faire** :
-- Backend :
-  - Endpoint `/imports/template-file?format=csv|xlsx|ods` (param query) au lieu d'un `template-file` fixe
-  - PhpSpreadsheet (déjà dans `composer.json`) gère xlsx + ods via writers dédiés
-  - Vérifier que le `FileParserService` lit déjà xls/xlsx ; ajouter ODS si manque
-- Frontend :
-  - `ImportDialog.vue` + `ImportView.vue` : 3 boutons de téléchargement ou un Select format
-  - Étendre `acceptedFileTypes` à `.ods`
-
-**Repéré le** : 2026-04-29.
-**Statut** : noté pour plus tard.
-**Priorité** : basse — confort utilisateur, pas de blocage. Beaucoup d'utilisateurs ouvrent toujours leur CSV dans Excel/LibreOffice avant edit, donc un template natif tableur évite l'étape de conversion.
+**Statut** : noté pour plus tard (après validation de la pass UI badge + date range).
+**Priorité** : moyenne — confort utilisateur, alignement avec le reste des filtres de l'app.
 
 ---
 
