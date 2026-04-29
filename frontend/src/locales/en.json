@@ -21,6 +21,7 @@
     "from": "From",
     "to": "To",
     "range": {
+      "placeholder": "Select a period",
       "last_7_days": "Last 7 days",
       "last_30_days": "Last 30 days",
       "this_month": "This month",
