@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChartOptions } from '@/composables/useChartOptions'
+import { CHART_PALETTE } from '@/constants/chartPalette'
 import ChartCard from '@/components/performance/ChartCard.vue'
 
 const { t } = useI18n()
@@ -17,8 +18,8 @@ const chartData = computed(() => {
     labels: [t('dashboard.wins'), t('dashboard.losses'), t('dashboard.breakeven')],
     datasets: [{
       data: [props.data.win, props.data.loss, props.data.be],
-      backgroundColor: ['#22c55e', '#ef4444', '#f59e0b'],
-      hoverBackgroundColor: ['#16a34a', '#dc2626', '#d97706'],
+      backgroundColor: [CHART_PALETTE.positive, CHART_PALETTE.negative, CHART_PALETTE.warning],
+      hoverBackgroundColor: [CHART_PALETTE.positiveLt, '#9c2d3a', '#a8741f'],
     }],
   }
 })
