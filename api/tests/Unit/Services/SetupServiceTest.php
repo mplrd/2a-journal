@@ -136,4 +136,63 @@ class SetupServiceTest extends TestCase
 
         $this->service->delete(1, 0);
     }
+
+    // ── Update ───────────────────────────────────────────────────
+
+    public function testUpdateAcceptsAllSupportedCategories(): void
+    {
+        foreach (['timeframe', 'pattern', 'context'] as $category) {
+            $repo = $this->createMock(SetupRepository::class);
+            $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Breakout', 'category' => 'pattern'];
+            $repo->method('findById')->willReturn($setup);
+            $repo->expects($this->once())
+                ->method('update')
+                ->with(1, ['category' => $category])
+                ->willReturn(array_merge($setup, ['category' => $category]));
+
+            $service = new SetupService($repo);
+            $result = $service->update(1, 1, ['category' => $category]);
+
+            $this->assertSame($category, $result['category']);
+        }
+    }
+
+    public function testUpdateRejectsInvalidCategory(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Breakout', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('setups.error.invalid_category');
+
+        $this->service->update(1, 1, ['category' => 'something-else']);
+    }
+
+    public function testUpdateThrowsWhenNotFound(): void
+    {
+        $this->repo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+        $this->expectExceptionMessage('setups.error.not_found');
+
+        $this->service->update(1, 999, ['category' => 'pattern']);
+    }
+
+    public function testUpdateThrowsForbiddenWhenNotOwner(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 2, 'label' => 'Breakout', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+
+        $this->expectException(ForbiddenException::class);
+
+        $this->service->update(1, 1, ['category' => 'pattern']);
+    }
+
+    public function testUpdateThrowsWhenIdIsZero(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('error.invalid_id');
+
+        $this->service->update(1, 0, ['category' => 'pattern']);
+    }
 }

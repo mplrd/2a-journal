@@ -41,6 +41,35 @@ class SetupService
         return $this->repo->create(['user_id' => $userId, 'label' => $label]);
     }
 
+    private const SUPPORTED_CATEGORIES = ['timeframe', 'pattern', 'context'];
+
+    public function update(int $userId, int $id, array $data): array
+    {
+        if ($id <= 0) {
+            throw new ValidationException('error.invalid_id', 'id');
+        }
+
+        $setup = $this->repo->findById($id);
+
+        if (!$setup) {
+            throw new NotFoundException('setups.error.not_found');
+        }
+
+        if ((int)$setup['user_id'] !== $userId) {
+            throw new ForbiddenException('setups.error.forbidden');
+        }
+
+        $patch = [];
+        if (array_key_exists('category', $data)) {
+            if (!in_array($data['category'], self::SUPPORTED_CATEGORIES, true)) {
+                throw new ValidationException('setups.error.invalid_category', 'category');
+            }
+            $patch['category'] = $data['category'];
+        }
+
+        return $this->repo->update($id, $patch);
+    }
+
     public function delete(int $userId, int $id): void
     {
         if ($id <= 0) {

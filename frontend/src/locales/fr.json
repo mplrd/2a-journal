@@ -468,6 +468,12 @@
   "setups": {
     "title": "Mes Setups",
     "label": "Label",
+    "category_header": "Catégorie",
+    "category": {
+      "timeframe": "Timeframe",
+      "pattern": "Pattern",
+      "context": "Contexte"
+    },
     "add": "Ajouter",
     "placeholder": "Nom du setup...",
     "empty": "Aucun setup configuré",
@@ -478,10 +484,12 @@
       "not_found": "Setup non trouvé",
       "forbidden": "Accès non autorisé",
       "duplicate_label": "Ce setup existe déjà",
-      "label_too_long": "Le label est trop long (100 caractères max)"
+      "label_too_long": "Le label est trop long (100 caractères max)",
+      "invalid_category": "Catégorie invalide (timeframe, pattern, context)"
     },
     "success": {
       "created": "Setup créé avec succès",
+      "updated": "Setup mis à jour",
       "deleted": "Setup supprimé avec succès"
     }
   },

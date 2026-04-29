@@ -7,11 +7,18 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
 import Dialog from 'primevue/dialog'
 
 const { t } = useI18n()
 const toast = useToast()
 const store = useSetupsStore()
+
+const categoryOptions = [
+  { value: 'timeframe', label: t('setups.category.timeframe') },
+  { value: 'pattern', label: t('setups.category.pattern') },
+  { value: 'context', label: t('setups.category.context') },
+]
 
 const showAddRow = ref(false)
 const newLabel = ref('')
@@ -53,6 +60,16 @@ async function handleAdd() {
 function handleKeyup(event) {
   if (event.key === 'Enter') handleAdd()
   if (event.key === 'Escape') cancelAdd()
+}
+
+async function handleCategoryChange(setup, category) {
+  if (category === setup.category) return
+  try {
+    await store.updateSetup(setup.id, { category })
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('setups.success.updated'), life: 2000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  }
 }
 
 function confirmDelete(setup) {
@@ -131,6 +148,19 @@ defineExpose({ newLabel, confirmDelete })
       data-testid="setups-table"
     >
       <Column field="label" :header="t('setups.label')" />
+      <Column field="category" :header="t('setups.category_header')">
+        <template #body="{ data }">
+          <Select
+            :modelValue="data.category"
+            :options="categoryOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-40"
+            data-testid="category-select"
+            @update:modelValue="(v) => handleCategoryChange(data, v)"
+          />
+        </template>
+      </Column>
       <Column :header="''">
         <template #body="{ data }">
           <Button

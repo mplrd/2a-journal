@@ -15,6 +15,7 @@ import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import OrderForm from '@/components/order/OrderForm.vue'
 import { formatSize } from '@/utils/format'
+import { useSetupCategory } from '@/utils/setupCategory'
 import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
@@ -28,6 +29,7 @@ const store = useOrdersStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
+const { classFor: setupTagClass } = useSetupCategory()
 const authStore = useAuthStore()
 
 const positionsStore = usePositionsStore()
@@ -278,7 +280,14 @@ function statusSeverity(status) {
       <Column field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
-            <Tag v-for="s in parseSetup(data.setup)" :key="s" :value="s" severity="info" />
+            <span
+              v-for="s in parseSetup(data.setup)"
+              :key="s"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+              :class="setupTagClass(s)"
+            >
+              {{ s }}
+            </span>
           </div>
         </template>
       </Column>

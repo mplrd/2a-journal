@@ -32,6 +32,15 @@ class SetupController extends Controller
         return $this->jsonSuccess($setup, null, 201);
     }
 
+    public function update(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $setupId = (int)$request->getRouteParam('id');
+        $setup = $this->setupService->update($userId, $setupId, $request->getBody());
+
+        return $this->jsonSuccess($setup);
+    }
+
     public function destroy(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

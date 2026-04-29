@@ -54,6 +54,11 @@ function createWrapper(setups = []) {
           props: ['modelValue', 'placeholder'],
           emits: ['update:modelValue', 'keyup'],
         },
+        Select: {
+          template: '<select :data-testid="$attrs[\'data-testid\']"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option></select>',
+          props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
+          emits: ['update:modelValue'],
+        },
         Dialog: {
           template: '<div v-if="visible" data-testid="confirm-dialog"><slot /><slot name="footer" /></div>',
           props: ['visible', 'header', 'modal'],
@@ -171,6 +176,7 @@ describe('SetupsTab', () => {
           Column: { template: '<td></td>', props: ['field', 'header'] },
           Button: { template: '<button @click="$emit(\'click\')">{{ label }}</button>', props: ['label', 'icon', 'severity', 'size', 'text', 'loading', 'disabled'], emits: ['click'] },
           InputText: { template: '<input />', props: ['modelValue', 'placeholder'] },
+          Select: { template: '<select></select>', props: ['modelValue', 'options', 'optionLabel', 'optionValue'] },
           Dialog: { template: '<div></div>', props: ['visible', 'header', 'modal'] },
         },
       },
