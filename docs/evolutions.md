@@ -74,4 +74,32 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ---
 
+## Import
+
+### Template d'import multi-format (CSV / XLS / ODS)
+
+**Contexte** : aujourd'hui le bouton "Télécharger le template" sert un fichier `.csv` uniquement (`api/...endpoint /imports/template-file` côté back, `link.download = 'import-template.csv'` côté `frontend/src/services/imports.js`). Côté upload, le frontend accepte déjà `.csv,.xlsx,.xls,.xlsm,.xml` — l'asymétrie est gênante : on accepte des Excel mais on ne sert qu'un template CSV.
+
+**Cible** : proposer le template dans **3 formats interchangeables** (même structure de colonnes) :
+- `.csv` (existant)
+- `.xls` ou `.xlsx` (Excel)
+- `.ods` (LibreOffice Calc, OpenDocument)
+
+À l'import, détecter le format via l'extension + magic bytes pour le parser approprié.
+
+**À faire** :
+- Backend :
+  - Endpoint `/imports/template-file?format=csv|xlsx|ods` (param query) au lieu d'un `template-file` fixe
+  - PhpSpreadsheet (déjà dans `composer.json`) gère xlsx + ods via writers dédiés
+  - Vérifier que le `FileParserService` lit déjà xls/xlsx ; ajouter ODS si manque
+- Frontend :
+  - `ImportDialog.vue` + `ImportView.vue` : 3 boutons de téléchargement ou un Select format
+  - Étendre `acceptedFileTypes` à `.ods`
+
+**Repéré le** : 2026-04-29.
+**Statut** : noté pour plus tard.
+**Priorité** : basse — confort utilisateur, pas de blocage. Beaucoup d'utilisateurs ouvrent toujours leur CSV dans Excel/LibreOffice avant edit, donc un template natif tableur évite l'étape de conversion.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
