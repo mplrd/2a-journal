@@ -146,7 +146,17 @@ class OrderService
             $validFilters['account_id'] = (int) $filters['account_id'];
         }
 
-        if (!empty($filters['status']) && OrderStatus::tryFrom($filters['status'])) {
+        if (!empty($filters['statuses']) && is_array($filters['statuses'])) {
+            $valid = [];
+            foreach ($filters['statuses'] as $s) {
+                if (is_string($s) && OrderStatus::tryFrom($s)) {
+                    $valid[] = $s;
+                }
+            }
+            if (!empty($valid)) {
+                $validFilters['statuses'] = array_values(array_unique($valid));
+            }
+        } elseif (!empty($filters['status']) && OrderStatus::tryFrom($filters['status'])) {
             $validFilters['status'] = $filters['status'];
         }
 

@@ -33,6 +33,11 @@ class OrderController extends Controller
             $filters['account_ids'] = $accountIds;
         }
 
+        $statuses = $request->getQuery('statuses');
+        if (is_array($statuses) && !empty($statuses)) {
+            $filters['statuses'] = $statuses;
+        }
+
         $result = $this->orderService->list($userId, $filters);
 
         return $this->jsonSuccess($result['data'], $result['meta']);

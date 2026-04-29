@@ -64,7 +64,15 @@ class OrderRepository
             $params['account_id'] = $filters['account_id'];
         }
 
-        if (!empty($filters['status'])) {
+        if (!empty($filters['statuses']) && is_array($filters['statuses'])) {
+            $placeholders = [];
+            foreach (array_values($filters['statuses']) as $i => $s) {
+                $key = "status_{$i}";
+                $placeholders[] = ":{$key}";
+                $params[$key] = $s;
+            }
+            $where .= ' AND o.status IN (' . implode(', ', $placeholders) . ')';
+        } elseif (!empty($filters['status'])) {
             $where .= ' AND o.status = :status';
             $params['status'] = $filters['status'];
         }
