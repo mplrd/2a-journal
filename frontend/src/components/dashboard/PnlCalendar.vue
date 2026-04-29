@@ -86,9 +86,9 @@ function nextMonth() {
 
 function cellClass(day) {
   if (day.pnl == null) return ''
-  if (day.pnl > 0) return 'bg-success-bg dark:bg-success/25 text-success-fg dark:text-brand-green-300'
-  if (day.pnl < 0) return 'bg-danger-bg dark:bg-danger/25 text-danger dark:text-danger-fg-dark'
-  return 'bg-warning-bg dark:bg-warning/25 text-warning dark:text-warning-bg'
+  if (day.pnl > 0) return 'bg-green-500/80 text-white'
+  if (day.pnl < 0) return 'bg-red-500/80 text-white'
+  return 'bg-amber-500/80 text-white'
 }
 
 function formatDayPnl(pnl) {
