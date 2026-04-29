@@ -34,7 +34,7 @@ class SetupRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, label, created_at
+            'SELECT id, user_id, label, category, created_at
              FROM setups WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
@@ -46,7 +46,7 @@ class SetupRepository
     public function findAllByUserId(int $userId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, label, created_at
+            'SELECT id, user_id, label, category, created_at
              FROM setups WHERE user_id = :user_id AND deleted_at IS NULL ORDER BY label ASC'
         );
         $stmt->execute(['user_id' => $userId]);
@@ -57,13 +57,34 @@ class SetupRepository
     public function findByUserAndLabel(int $userId, string $label): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, user_id, label, created_at
+            'SELECT id, user_id, label, category, created_at
              FROM setups WHERE user_id = :user_id AND label = :label AND deleted_at IS NULL'
         );
         $stmt->execute(['user_id' => $userId, 'label' => $label]);
         $row = $stmt->fetch();
 
         return $row ?: null;
+    }
+
+    public function update(int $id, array $data): ?array
+    {
+        $fields = [];
+        $params = ['id' => $id];
+
+        if (array_key_exists('category', $data)) {
+            $fields[] = 'category = :category';
+            $params['category'] = $data['category'];
+        }
+
+        if (empty($fields)) {
+            return $this->findById($id);
+        }
+
+        $sql = 'UPDATE setups SET ' . implode(', ', $fields) . ' WHERE id = :id AND deleted_at IS NULL';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return $this->findById($id);
     }
 
     public function softDelete(int $id): bool

@@ -41,6 +41,24 @@ export const useSetupsStore = defineStore('setups', () => {
     }
   }
 
+  async function updateSetup(id, data) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await setupsService.update(id, data)
+      const index = setups.value.findIndex((s) => s.id === id)
+      if (index !== -1) {
+        setups.value[index] = response.data
+      }
+      return response.data
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function deleteSetup(id) {
     loading.value = true
     error.value = null
@@ -70,6 +88,7 @@ export const useSetupsStore = defineStore('setups', () => {
     setupOptions,
     fetchSetups,
     createSetup,
+    updateSetup,
     deleteSetup,
     $reset,
   }

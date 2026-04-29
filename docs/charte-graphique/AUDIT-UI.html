@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Audit UI — 2A Trading Tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* === Mêmes tokens que votre charte-graphique.html === */
+    --brand-navy-900: #1f2a3c;
+    --brand-navy-800: #283449;
+    --brand-navy-700: #354560;
+    --brand-navy-600: #45587a;
+
+    --brand-green-800: #1f5e3f;
+    --brand-green-700: #2d7952;
+    --brand-green-500: #46926b;
+    --brand-green-400: #6bad8a;
+    --brand-green-300: #9bc7af;
+    --brand-green-100: #e3f0e9;
+
+    --brand-cream: #e8e8e6;
+
+    --success: #2d7952;
+    --success-bg: #e3f0e9;
+    --danger: #b5384a;
+    --danger-bg: #f7e1e4;
+    --warning: #c98a2b;
+    --warning-bg: #fbeed4;
+    --info: #2c6e8f;
+    --info-bg: #dceaf1;
+
+    --gray-50: #f7f7f5;
+    --gray-100: #ececea;
+    --gray-200: #d8d8d4;
+    --gray-300: #b6b6b0;
+    --gray-400: #8b8b85;
+    --gray-500: #6b6e75;
+    --gray-600: #4d5058;
+    --gray-700: #3a3d44;
+    --gray-800: #25282e;
+    --gray-900: #16181c;
+
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    --shadow-sm: 0 1px 2px rgba(31, 42, 60, 0.06);
+    --shadow-md: 0 4px 12px rgba(31, 42, 60, 0.08);
+    --shadow-lg: 0 12px 32px rgba(31, 42, 60, 0.12);
+
+    --container: 1180px;
+    --nav-h: 64px;
+
+    --bg: var(--gray-50);
+    --surface: #ffffff;
+    --surface-2: var(--gray-50);
+    --text: var(--brand-navy-900);
+    --text-muted: var(--gray-700);
+    --text-subtle: var(--gray-500);
+    --border: var(--gray-200);
+    --border-light: var(--gray-100);
+  }
+
+  /* Dark mode override (le doc lui-même est switchable, voir toggle) */
+  [data-theme="dark"] {
+    --bg: #0a0f17;
+    --surface: #131a26;
+    --surface-2: #1c2433;
+    --text: var(--brand-cream);
+    --text-muted: #c0c8d4;
+    --text-subtle: #8995a5;
+    --border: rgba(255,255,255,0.08);
+    --border-light: rgba(255,255,255,0.05);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  /* === Top nav === */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    height: var(--nav-h);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: saturate(140%) blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    max-width: var(--container);
+    margin: 0 auto;
+    padding: 0 24px;
+    height: 100%;
+    display: flex; align-items: center; gap: 32px;
+  }
+  .nav-brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; color: var(--text);
+    text-decoration: none; font-size: 14px; letter-spacing: 0.02em;
+  }
+  .nav-brand svg { width: 28px; height: 28px; }
+  .nav-links { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+  .nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 6px 10px; border-radius: var(--radius-sm);
+  }
+  .nav-links a:hover { background: var(--surface-2); color: var(--text); }
+
+  .theme-toggle {
+    margin-left: 8px;
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-full);
+    padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+    font-family: var(--font-sans);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .theme-toggle:hover { border-color: var(--brand-navy-700); }
+
+  /* === Layout === */
+  main { max-width: var(--container); margin: 0 auto; padding: 0 24px 96px; }
+  section { padding: 64px 0 24px; scroll-margin-top: calc(var(--nav-h) + 16px); }
+  section + section { border-top: 1px solid var(--border); }
+
+  h1, h2, h3, h4 { color: var(--text); font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; margin: 0; }
+  h1 { font-size: clamp(36px, 5vw, 52px); font-weight: 800; letter-spacing: -0.02em; }
+  h2 { font-size: 28px; }
+  h3 { font-size: 18px; font-weight: 600; }
+  h4 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-subtle); }
+
+  p { color: var(--text-muted); margin: 12px 0; }
+  .lead { font-size: 17px; color: var(--text-muted); max-width: 720px; }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px; font-weight: 600;
+    color: var(--brand-green-700); letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--brand-green-100); padding: 4px 10px; border-radius: var(--radius-full);
+    margin-bottom: 14px;
+  }
+  [data-theme="dark"] .eyebrow { background: rgba(70,146,107,0.18); color: var(--brand-green-300); }
+
+  .section-head { margin-bottom: 32px; }
+  .section-head h2 + p { margin-top: 8px; max-width: 760px; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 900px) {
+    .grid.cols-3, .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid.cols-2 { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+  }
+
+  .pill {
+    display: inline-flex; align-items: center;
+    background: var(--surface-2); color: var(--text-muted);
+    font-size: 12px; font-weight: 500;
+    padding: 3px 10px; border-radius: var(--radius-full);
+  }
+
+  /* === Hero === */
+  .hero {
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(1200px 400px at 90% -10%, rgba(70,146,107,0.16), transparent 60%),
+      radial-gradient(900px 360px at 0% 110%, rgba(31,42,60,0.10), transparent 60%),
+      var(--surface);
+  }
+  .hero-inner {
+    max-width: var(--container); margin: 0 auto; padding: 64px 24px 56px;
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 48px; align-items: center;
+  }
+  @media (max-width: 900px) { .hero-inner { grid-template-columns: 1fr; padding: 40px 24px; } }
+  .hero h1 span { color: var(--brand-green-700); }
+  [data-theme="dark"] .hero h1 span { color: var(--brand-green-400); }
+  .hero .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px; color: var(--text-subtle); font-size: 13px; }
+  .hero .meta b { color: var(--text); font-weight: 600; }
+
+  .hero-summary {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 28px;
+  }
+  .hero-summary h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-subtle); }
+  .hero-summary .stat { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 32px; color: var(--text); margin-top: 6px; }
+  .hero-summary .row { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-top: 1px dashed var(--border); }
+  .hero-summary .row:first-of-type { border-top: 0; }
+  .hero-summary .row .label { font-size: 13px; color: var(--text-muted); }
+  .hero-summary .row .val { font-family: var(--font-mono); font-weight: 600; font-size: 14px; color: var(--text); }
+  .hero-summary .severity-3 { color: var(--danger); }
+  .hero-summary .severity-2 { color: var(--warning); }
+  .hero-summary .severity-1 { color: var(--info); }
+
+  /* === Top wins table === */
+  .wins {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); overflow: hidden;
+  }
+  .wins table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .wins th, .wins td { padding: 14px 18px; text-align: left; }
+  .wins thead th {
+    background: var(--surface-2); color: var(--text-subtle);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .wins tbody tr + tr { border-top: 1px solid var(--border-light); }
+  .wins .num { color: var(--text-subtle); font-family: var(--font-mono); font-weight: 600; width: 40px; }
+  .wins .effort, .wins .impact { white-space: nowrap; text-align: center; width: 80px; font-family: var(--font-mono); font-size: 12px; }
+  .wins .impact-3 { color: var(--danger); }
+  .wins .impact-2 { color: var(--warning); }
+  .wins .impact-1 { color: var(--info); }
+
+  /* === Before / after === */
+  .ba {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  @media (max-width: 700px) { .ba { grid-template-columns: 1fr; } }
+  .ba > div { padding: 24px; min-height: 140px; display: flex; flex-direction: column; gap: 14px; justify-content: center; align-items: flex-start; }
+  .ba .head {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    padding: 4px 10px; border-radius: var(--radius-full);
+    align-self: flex-start;
+  }
+  .ba .before { background: linear-gradient(180deg, var(--danger-bg) 0%, var(--surface) 30%); }
+  .ba .after { background: linear-gradient(180deg, var(--success-bg) 0%, var(--surface) 30%); border-left: 1px solid var(--border); }
+  [data-theme="dark"] .ba .before { background: linear-gradient(180deg, rgba(181,56,74,0.16) 0%, var(--surface) 30%); }
+  [data-theme="dark"] .ba .after { background: linear-gradient(180deg, rgba(45,121,82,0.16) 0%, var(--surface) 30%); }
+  .ba .before .head { background: var(--danger-bg); color: var(--danger); }
+  .ba .after .head { background: var(--success-bg); color: var(--success); }
+  [data-theme="dark"] .ba .before .head { background: rgba(181,56,74,0.2); color: #f5a8b3; }
+  [data-theme="dark"] .ba .after .head { background: rgba(45,121,82,0.25); color: var(--brand-green-300); }
+  .ba .label { font-size: 12px; color: var(--text-subtle); font-family: var(--font-mono); }
+
+  /* === Buttons (current vs proposed) === */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-sans); font-weight: 600; font-size: 14px;
+    padding: 10px 16px; border-radius: var(--radius-md); cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+    text-decoration: none;
+  }
+  /* Current — buggy */
+  .btn-current { background: #45587a; color: white; }
+  .btn-current:hover { background: #3a4a68; }
+  /* Proposed — brand */
+  .btn-proposed { background: var(--brand-navy-900); color: white; }
+  .btn-proposed:hover { background: var(--brand-navy-700); }
+  [data-theme="dark"] .btn-proposed { background: var(--brand-cream); color: var(--brand-navy-900); }
+  /* Current dark mode (the invisible one) */
+  .btn-dark-broken { background: #18181b; color: white; border: 1px solid #2a2a2e; }
+
+  .btn-success { background: var(--brand-green-700); color: white; }
+  .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--brand-navy-700); }
+
+  /* === Color swatches === */
+  .swatch {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .swatch .chip { height: 80px; }
+  .swatch .meta { padding: 10px 12px; }
+  .swatch .name { font-weight: 600; font-size: 13px; color: var(--text); }
+  .swatch .hex { font-family: var(--font-mono); font-size: 11px; color: var(--text-subtle); margin-top: 2px; }
+
+  /* === Badge demo === */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-full);
+  }
+  .badge.success { background: var(--success-bg); color: var(--success); }
+  .badge.danger { background: var(--danger-bg); color: var(--danger); }
+  .badge.warning { background: var(--warning-bg); color: var(--warning); }
+  .badge.info { background: var(--info-bg); color: var(--info); }
+  .badge.neutral { background: var(--gray-100); color: var(--gray-700); }
+  [data-theme="dark"] .badge.neutral { background: rgba(255,255,255,0.08); color: var(--text-muted); }
+  [data-theme="dark"] .badge.success { background: rgba(45,121,82,0.18); color: var(--brand-green-300); }
+  [data-theme="dark"] .badge.danger { background: rgba(181,56,74,0.18); color: #f5a8b3; }
+  [data-theme="dark"] .badge.warning { background: rgba(201,138,43,0.18); color: #ecc78a; }
+  [data-theme="dark"] .badge.info { background: rgba(44,110,143,0.2); color: #93c8de; }
+
+  /* App-style "broken" badges (uniform blue) */
+  .badge-app-blue { background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-full); }
+  [data-theme="dark"] .badge-app-blue { background: #1e3a5f; color: #93c5fd; }
+
+  /* === Tag taxonomy proposed === */
+  .tag-tf, .tag-setup, .tag-ctx {
+    font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-full);
+    display: inline-block; margin: 2px;
+  }
+  .tag-tf { background: rgba(31,42,60,0.08); color: var(--brand-navy-900); border: 1px solid rgba(31,42,60,0.12); }
+  .tag-setup { background: var(--brand-green-100); color: var(--brand-green-800); }
+  .tag-ctx { background: rgba(201,138,43,0.12); color: var(--warning); }
+  [data-theme="dark"] .tag-tf { background: rgba(201,200,196,0.06); color: var(--brand-cream); border-color: rgba(255,255,255,0.1); }
+  [data-theme="dark"] .tag-setup { background: rgba(70,146,107,0.18); color: var(--brand-green-300); }
+  [data-theme="dark"] .tag-ctx { background: rgba(201,138,43,0.18); color: #ecc78a; }
+
+  /* === KPI cards === */
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 18px;
+  }
+  .kpi .label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-subtle); }
+  .kpi .value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 22px; color: var(--text); margin-top: 4px; }
+  .kpi.hero-kpi { padding: 24px 28px; }
+  .kpi.hero-kpi .value { font-size: 36px; }
+  .kpi.hero-kpi .delta { font-size: 13px; margin-top: 6px; color: var(--danger); font-weight: 600; }
+
+  /* === Empty state demo === */
+  .empty-state {
+    background: var(--surface); border: 1px dashed var(--border);
+    border-radius: var(--radius-lg); padding: 48px 24px;
+    text-align: center;
+  }
+  .empty-state .icon {
+    width: 64px; height: 64px; margin: 0 auto 16px;
+    background: var(--surface-2); border-radius: var(--radius-full);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-subtle); font-size: 28px;
+  }
+  .empty-state h4 { color: var(--text); margin-bottom: 6px; font-size: 16px; text-transform: none; letter-spacing: 0; }
+  .empty-state p { font-size: 14px; max-width: 360px; margin: 0 auto 20px; }
+
+  /* === Surface levels demo (dark) === */
+  .surfaces {
+    background: #0a0f17;
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    color: var(--brand-cream);
+  }
+  .surfaces .row { display: grid; grid-template-columns: 100px 1fr 100px; gap: 16px; align-items: center; padding: 8px 16px; border-radius: var(--radius-md); margin-bottom: 8px; }
+  .surfaces .row.s0 { background: #0a0f17; border: 1px solid rgba(255,255,255,0.06); }
+  .surfaces .row.s1 { background: #131a26; }
+  .surfaces .row.s2 { background: #1c2433; }
+  .surfaces .row.s3 { background: #2a3346; }
+  .surfaces .name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+  .surfaces .desc { font-size: 13px; opacity: 0.85; }
+  .surfaces .hex { font-family: var(--font-mono); font-size: 11px; opacity: 0.6; text-align: right; }
+
+  /* === Code === */
+  pre.code, code.inline {
+    font-family: var(--font-mono);
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+  }
+  pre.code { padding: 16px 18px; font-size: 13px; line-height: 1.55; overflow-x: auto; margin: 16px 0; }
+  code.inline { padding: 2px 6px; font-size: 12.5px; border-radius: var(--radius-sm); }
+  pre.code .comment { color: var(--text-subtle); font-style: italic; }
+  pre.code .key { color: var(--brand-green-700); }
+  [data-theme="dark"] pre.code .key { color: var(--brand-green-300); }
+  pre.code .val { color: var(--brand-navy-700); }
+  [data-theme="dark"] pre.code .val { color: var(--brand-cream); }
+  pre.code .ok { color: var(--success); }
+  pre.code .ko { color: var(--danger); }
+
+  /* === Note callouts === */
+  .callout {
+    background: var(--info-bg); border-left: 3px solid var(--info);
+    padding: 14px 18px; border-radius: var(--radius-sm);
+    color: var(--text-muted); font-size: 14px;
+    margin: 16px 0;
+  }
+  .callout.danger { background: var(--danger-bg); border-color: var(--danger); }
+  .callout.success { background: var(--success-bg); border-color: var(--success); }
+  [data-theme="dark"] .callout { background: rgba(44,110,143,0.16); }
+  [data-theme="dark"] .callout.danger { background: rgba(181,56,74,0.14); }
+  [data-theme="dark"] .callout.success { background: rgba(45,121,82,0.14); }
+  .callout strong { color: var(--text); }
+
+  /* === Table generic === */
+  table.simple { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  table.simple th, table.simple td { padding: 10px 16px; text-align: left; }
+  table.simple thead th { background: var(--surface-2); color: var(--text-subtle); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  table.simple tbody tr + tr { border-top: 1px solid var(--border-light); }
+  table.simple .ok { color: var(--success); font-weight: 600; }
+  table.simple .warn { color: var(--warning); font-weight: 600; }
+  table.simple .ko { color: var(--danger); font-weight: 600; }
+
+  /* App mockup — dashboard kpi grid */
+  .kpi-grid-current { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .kpi-grid-proposed { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) {
+    .kpi-grid-current, .kpi-grid-proposed { grid-template-columns: repeat(2, 1fr); }
+    .kpi-grid-proposed > :first-child { grid-column: span 2; }
+  }
+  .kpi-mini .label { font-size: 10px; }
+  .kpi-mini .value { font-size: 16px; }
+
+  /* === Footer === */
+  footer { border-top: 1px solid var(--border); padding: 32px 24px 64px; color: var(--text-subtle); font-size: 13px; max-width: var(--container); margin: 64px auto 0; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  /* Helpers */
+  .stack-12 > * + * { margin-top: 12px; }
+  .stack-16 > * + * { margin-top: 16px; }
+  .stack-24 > * + * { margin-top: 24px; }
+  .row-gap { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--text-subtle); }
+
+  svg.logo { color: var(--brand-navy-900); display: block; max-width: 100%; height: auto; }
+  [data-theme="dark"] svg.logo { color: var(--brand-cream); }
+
+  @media print {
+    .nav { display: none; }
+    section { break-inside: avoid; padding: 24px 0; }
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<!-- Logo SVG symbol (réutilisé partout) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo-mark" viewBox="0 0 1024 1024">
+    <path fill="#2d7952" d="M709.75 636.38L657.25 636.38L654.88 634L654.88 466.25L703.62 410.25L710.5 404.38L711.12 497.5L712.88 522.75L711.38 534.5L711.62 634.5L709.75 636.38ZM643 636.38L593.75 636.38L590.25 636.12L588.62 634.5L588.62 491L602.88 475L606.75 472.38L643.25 472.38L645.38 474.25L645.38 632.5L644.62 635.5L643 636.38ZM576 636.38L523.25 636.38L521.12 634.5L521.38 549L527 542.12L537.5 533.38L576 533.12L577.88 534.5L578.12 634.5L576 636.38ZM498 636.62L458.5 636.38L456.38 635.25L456.12 586L458.5 583.88L486 582.62L508.5 560.62L510.75 559.88L511.88 567L512.38 632.25L509.5 635.62L498 636.62Z"/>
+    <path fill="#46926b" d="M657 518.62L655.38 517.25L655.62 465.25L704.12 410.25L708.75 406.88L710.12 409.5L710.88 420L710.62 480.25L694.5 484.88L685 489.62L676.38 497.25L657 518.62ZM592 569.12L589.38 567.5L589.12 516L590.88 488.5L605.75 473.12L643.75 473.12L645.12 476L644.12 529.5L633.5 535.88L607.5 560.88L592 569.12ZM523.25 585.88L521.62 584.5L521.88 549L523.75 545.88L538.5 533.62L573.75 533.62L575.88 535L577.12 556L576.25 573.88L569.75 573.88L553.25 568.88L544.25 568.88L537.25 572.38L523.25 585.88ZM486.25 624.88L466.25 620.62L458.25 622.12L456.62 621.25L456.88 585.75L458.75 584.38L486 583.12L510.25 560.62L511.38 567L511.62 610.75L499.5 619.88L486.25 624.88Z"/>
+    <path fill="currentColor" d="M443 635.88L271.5 635.88L269.88 634.75L271.88 625.5L281.88 603.25L292.38 586L305.62 568L347.12 523.5L430.62 439L436.38 431L440.12 422L442.38 410L442.12 398.25L439.62 388L435.12 378.5L425.5 368.12L418.5 363.38L409.5 359.88L400.25 358.12L390 358.38L379 361.12L368.5 366.88L361.88 372.75L356.12 380.5L350.38 394L347.25 419.62L301 420.38L293.5 420.12L291.12 418.75L291.38 401.75L294.62 383.25L301.38 364.75L309.38 350.25L319.38 337.75L335.75 322.88L352 313.38L370.25 306.88L388 304.12L412 304.88L433 310.12L451.75 319.38L469 332.88L483.12 349L492.38 365.5L498.88 384.75L501.38 405L499.62 426.25L494.62 444L485.12 463L467.62 485L380.62 573.25L382 574.62L387.25 574.88L443 574.88L444.62 576L444.88 634L443 635.88ZM494.75 549.88L486.25 549.12L485.12 547.5L486.12 541.5L569.88 308.75L572.25 307.12L581.25 306.88L640.75 307.38L677.38 406L678.38 409.25L677.38 413.75L643.38 452.5L639.5 456.38L637.25 456.88L632.62 448L608.12 380.75L605.25 378.12L603.12 381.5L557.62 514.5L555.5 515.88L529.75 516.62L494.75 549.88ZM751 635.88L713 635.88L711.12 634.25L710.88 534.5L712 523.12L719.62 540.25L751.38 624.25L754.12 634.25L751 635.88Z"/>
+  </symbol>
+</svg>
+
+<!-- Top nav -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-brand" href="#top">
+      <svg viewBox="0 0 1024 1024" class="logo" aria-label="Logo 2A Trading Tools"><use href="#logo-mark"/></svg>
+      Audit UI
+    </a>
+    <div class="nav-links">
+      <a href="#wins">Top wins</a>
+      <a href="#charte">Charte</a>
+      <a href="#hierarchie">Hiérarchie</a>
+      <a href="#composants">Composants</a>
+      <a href="#dark">Dark mode</a>
+      <a href="#tokens">Tokens</a>
+      <a href="#plan">Plan</a>
+      <button class="theme-toggle" id="themeToggle">
+        <span id="themeIcon">🌙</span>
+        <span id="themeLabel">Dark</span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<header class="hero" id="top">
+  <div class="hero-inner">
+    <div>
+      <span class="eyebrow">Audit UI/UX · 28 avril 2026</span>
+      <h1>L'app est <span>solide</span>, mais elle ne porte pas encore la marque.</h1>
+      <p class="lead">Audit du Trading Journal en mode clair et sombre. Une charte graphique a été définie, des tokens existent — mais l'implémentation passe à côté du brand navy et des verts. Quelques corrections ciblées suffisent à transformer l'identité visuelle.</p>
+      <div class="meta">
+        <span><b>Périmètre</b> · Dashboard, Comptes, Positions, Ordres, Trades, Performance</span>
+        <span><b>Modes</b> · Light + Dark</span>
+        <span><b>Méthode</b> · Inspection visuelle + lecture des tokens CSS</span>
+      </div>
+    </div>
+    <div class="hero-summary">
+      <h3>Résumé exécutif</h3>
+      <div class="row">
+        <span class="label">Items audités</span>
+        <span class="val">37</span>
+      </div>
+      <div class="row">
+        <span class="label">Quick wins identifiés</span>
+        <span class="val">10</span>
+      </div>
+      <div class="row">
+        <span class="label severity-3">Bloquants brand 🔥</span>
+        <span class="val severity-3">2</span>
+      </div>
+      <div class="row">
+        <span class="label severity-2">Améliorations majeures</span>
+        <span class="val severity-2">8</span>
+      </div>
+      <div class="row">
+        <span class="label severity-1">Polish</span>
+        <span class="val severity-1">17</span>
+      </div>
+      <p style="margin-top:14px; font-size:13px; color: var(--text-muted);">Le passage <strong>« faire les 3 premiers quick wins »</strong> change <em>visuellement</em> l'app immédiatement. Estimation : 1 sprint d'1 jour.</p>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- Top 10 wins -->
+<section id="wins">
+  <div class="section-head">
+    <span class="eyebrow">À faire en priorité</span>
+    <h2>Top 10 quick wins</h2>
+    <p>Triés par ratio impact / effort. Les 3 premiers ont un effet « wow » immédiat. Le #1 à lui seul reconfigure l'identité de l'app en quelques lignes de CSS.</p>
+  </div>
+
+  <div class="wins">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Quick win</th>
+          <th class="effort">Effort</th>
+          <th class="impact">Impact</th>
+          <th>Section</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="num">1</td><td><strong>Pointer <code class="inline">--p-primary-color</code> sur le brand navy</strong> au lieu du navy gris désaturé</td><td class="effort">5 min</td><td class="impact impact-3">🔥🔥🔥</td><td><a href="#charte">Charte</a></td></tr>
+        <tr><td class="num">2</td><td><strong>Charts</strong> — palette navy + verts brand au lieu de bleu/violet</td><td class="effort">2-4 h</td><td class="impact impact-3">🔥🔥🔥</td><td><a href="#charte">Charte</a></td></tr>
+        <tr><td class="num">3</td><td><strong>CTA "Nouveau X"</strong> — vrai navy + texte cream, fonctionne en dark mode</td><td class="effort">30 min</td><td class="impact impact-2">🔥🔥</td><td><a href="#composants">Composants</a></td></tr>
+        <tr><td class="num">4</td><td><strong>Empty states</strong> sur Ordres / Positions / Trades vides</td><td class="effort">2-3 h</td><td class="impact impact-2">🔥🔥</td><td><a href="#hierarchie">Hiérarchie</a></td></tr>
+        <tr><td class="num">5</td><td><strong>Hiérarchie KPIs</strong> dashboard — P&L total dominant, autres en taille réduite</td><td class="effort">1-2 h</td><td class="impact impact-2">🔥🔥</td><td><a href="#hierarchie">Hiérarchie</a></td></tr>
+        <tr><td class="num">6</td><td><strong>Setup tags</strong> — couleur sémantique au lieu du bleu uniforme</td><td class="effort">1-2 h</td><td class="impact impact-2">🔥🔥</td><td><a href="#composants">Composants</a></td></tr>
+        <tr><td class="num">7</td><td><strong>Dark mode CTA &amp; pagination</strong> — remonter contraste</td><td class="effort">1 h</td><td class="impact impact-2">🔥🔥</td><td><a href="#dark">Dark mode</a></td></tr>
+        <tr><td class="num">8</td><td><strong>Sidebar active state</strong> — fond <code class="inline">green-100</code> + icône+texte navy</td><td class="effort">30 min</td><td class="impact impact-1">🔥</td><td><a href="#composants">Composants</a></td></tr>
+        <tr><td class="num">9</td><td><strong>Filtres tronqués</strong> ("Filtrer par com...") → label séparé + width fix</td><td class="effort">30 min</td><td class="impact impact-1">🔥</td><td><a href="#composants">Composants</a></td></tr>
+        <tr><td class="num">10</td><td><strong>Logo header</strong> — padding + version compacte favicon</td><td class="effort">30 min</td><td class="impact impact-1">🔥</td><td><a href="#charte">Charte</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 1. Charte -->
+<section id="charte">
+  <div class="section-head">
+    <span class="eyebrow">01 · Cohérence avec la charte</span>
+    <h2>L'app n'utilise pas vos vrais tokens de marque</h2>
+    <p>Vos tokens <code class="inline">--color-brand-*</code> sont parfaitement définis et alignés sur le logo. Le problème : la chaîne <code class="inline">--p-primary-*</code> de PrimeVue (qui pilote tous les composants UI) ne pointe pas dessus.</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">1.1 — Le bug le plus impactant : <code class="inline">--p-primary-color</code></h3>
+  <p>J'ai inspecté les CSS variables de l'app en prod. Voici ce qui est défini :</p>
+
+<pre class="code"><span class="comment">/* Tokens "brand" — corrects ✅ */</span>
+<span class="key">--color-brand-navy-900</span>:  <span class="val">#1f2a3c</span>;  <span class="ok">/* navy du logo */</span>
+<span class="key">--color-brand-green-700</span>: <span class="val">#2d7952</span>;  <span class="ok">/* vert foncé du logo */</span>
+<span class="key">--color-brand-green-500</span>: <span class="val">#46926b</span>;  <span class="ok">/* vert clair du logo */</span>
+<span class="key">--color-brand-cream</span>:     <span class="val">#e8e8e6</span>;  <span class="ok">/* off-white dark mode */</span>
+
+<span class="comment">/* Tokens "primary" PrimeVue — utilisés partout */</span>
+<span class="key">--p-primary-color</span>: <span class="val">#45587a</span>;  <span class="ko">/* ❌ navy DÉSATURÉ — pas la marque */</span>
+<span class="key">--p-primary-400</span>:   <span class="val">#45587a</span>;  <span class="ko">/* ❌ idem */</span>
+<span class="key">--p-primary-500</span>:   <span class="val">#1f2a3c</span>;  <span class="ok">/* ✅ le bon navy est ici, mais inutilisé ! */</span></pre>
+
+  <div class="callout danger">
+    <strong>Conséquence :</strong> chaque bouton primaire, focus ring, lien primaire, highlight de l'app utilise le navy gris fade (<code class="inline">#45587a</code>) au lieu du navy punchy de votre logo (<code class="inline">#1f2a3c</code>).
+  </div>
+
+  <h4 style="margin-top:24px;">Comparaison visuelle</h4>
+  <div class="ba" style="margin-top:12px;">
+    <div class="before">
+      <span class="head">Actuel</span>
+      <button class="btn btn-current">+ Nouveau trade</button>
+      <span class="label">background: #45587a</span>
+      <p style="font-size:13px;color:var(--text-muted);margin:0;">Look "neutre", proche d'un bouton secondaire. Manque de personnalité.</p>
+    </div>
+    <div class="after">
+      <span class="head">Proposé</span>
+      <button class="btn btn-proposed">+ Nouveau trade</button>
+      <span class="label">background: var(--brand-navy-900)</span>
+      <p style="font-size:13px;color:var(--text-muted);margin:0;">Identité immédiate. Cohérent avec le logo.</p>
+    </div>
+  </div>
+
+  <h4 style="margin-top:24px;">Fix</h4>
+<pre class="code"><span class="comment">/* Dans votre theme override PrimeVue */</span>
+:root {
+  <span class="key">--p-primary-color</span>:          <span class="val">var(--color-brand-navy-900)</span>;
+  <span class="key">--p-primary-contrast-color</span>: <span class="val">var(--color-brand-cream)</span>;
+  <span class="comment">/* Ré-aligner toute la chaîne primary-50..950 sur l'échelle navy */</span>
+  <span class="key">--p-primary-50</span>:  <span class="val">#e7eaf0</span>;
+  <span class="key">--p-primary-100</span>: <span class="val">#c9d1de</span>;
+  <span class="key">--p-primary-300</span>: <span class="val">#6d7c98</span>;
+  <span class="key">--p-primary-500</span>: <span class="val">#1f2a3c</span>;  <span class="comment">/* déjà OK */</span>
+  <span class="key">--p-primary-600</span>: <span class="val">#16202f</span>;
+  <span class="key">--p-primary-700</span>: <span class="val">#0f1722</span>;
+}</pre>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">1.2 — Charts complètement off-brand</h3>
+  <p>Inventaire des couleurs vues sur les charts du dashboard et de Performance :</p>
+
+  <table class="simple" style="margin:16px 0;">
+    <thead><tr><th>Chart</th><th>Couleur(s)</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>P&amp;L cumulé (line)</td><td><code class="inline">#3B82F6</code> bleu vif</td><td class="ko">❌ off-brand</td></tr>
+      <tr><td>Courbe d'equity (area)</td><td><code class="inline">#A855F7</code> violet</td><td class="ko">❌ off-brand</td></tr>
+      <tr><td>Win Rate &amp; R:R par symbole / setup / session</td><td>bleu + violet</td><td class="ko">❌ off-brand</td></tr>
+      <tr><td>P&amp;L par symbole / période</td><td>green/red génériques</td><td class="warn">⚠️ ok mais nuances génériques</td></tr>
+      <tr><td>Donut gains/pertes</td><td>green/red flashy</td><td class="warn">⚠️ trop saturé</td></tr>
+      <tr><td>Heatmap jour/heure</td><td>red/green pâle</td><td class="ok">✅ OK</td></tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top:24px;">Palette charts proposée</h4>
+  <div class="grid cols-4">
+    <div class="swatch"><div class="chip" style="background:#1f2a3c"></div><div class="meta"><div class="name">Series neutre</div><div class="hex">#1f2a3c · navy-900</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#2d7952"></div><div class="meta"><div class="name">Positif (gains)</div><div class="hex">#2d7952 · green-700</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#46926b"></div><div class="meta"><div class="name">Secondaire</div><div class="hex">#46926b · green-500</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#b5384a"></div><div class="meta"><div class="name">Négatif (pertes)</div><div class="hex">#b5384a · danger</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#c98a2b"></div><div class="meta"><div class="name">Alerte (BE / sécurisé)</div><div class="hex">#c98a2b · warning</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#9bc7af"></div><div class="meta"><div class="name">Accent (R:R, win rate)</div><div class="hex">#9bc7af · green-300</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#6b6e75"></div><div class="meta"><div class="name">Neutre (axes, grille)</div><div class="hex">#6b6e75 · gray-500</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#283449"></div><div class="meta"><div class="name">Variation foncée</div><div class="hex">#283449 · navy-800</div></div></div>
+  </div>
+
+  <p style="margin-top:14px;">Pour les charts à 2 séries (Win Rate + R:R) : <strong>navy-900</strong> + <strong>green-500</strong> au lieu de bleu + violet. Visuellement c'est immédiatement plus marque, et ça lie les charts à la sidebar et au logo.</p>
+
+<pre class="code"><span class="comment">// Configuration ApexCharts / Chart.js</span>
+<span class="key">const</span> CHART_PALETTE = {
+  primary:    <span class="val">'#1f2a3c'</span>,  <span class="comment">// brand-navy-900    (séries neutres, equity)</span>
+  positive:   <span class="val">'#2d7952'</span>,  <span class="comment">// brand-green-700   (gains, P&amp;L positif)</span>
+  positiveLt: <span class="val">'#46926b'</span>,  <span class="comment">// brand-green-500   (variation, secondary)</span>
+  negative:   <span class="val">'#b5384a'</span>,  <span class="comment">// danger            (pertes)</span>
+  warning:    <span class="val">'#c98a2b'</span>,  <span class="comment">// warning           (breakeven, sécurisé)</span>
+  neutral:    <span class="val">'#6b6e75'</span>,  <span class="comment">// gray-500          (axes, grille)</span>
+  accent:     <span class="val">'#9bc7af'</span>,  <span class="comment">// brand-green-300   (R:R, win rate)</span>
+};</pre>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">1.3 — Typographie</h3>
+  <p>L'app utilise Inter pour le body (cohérent avec votre charte). ✅</p>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li>Les titres <code class="inline">&lt;h1&gt;</code> ("Tableau de bord", "Comptes"…) sont en weight 600/700 — OK ; pourrait passer en 700 plus assumé pour matcher l'esprit du logo.</li>
+    <li>Les valeurs numériques (<code class="inline">104</code>, <code class="inline">48.08%</code>, <code class="inline">-3407.51</code>) ne sont <strong>pas en tabular-nums</strong> → les chiffres sautillent dans les colonnes (visible sur la colonne PnL des Trades).</li>
+  </ul>
+
+<pre class="code">.numeric, td.value, .kpi-value {
+  <span class="key">font-variant-numeric</span>: <span class="val">tabular-nums</span>;
+  <span class="key">font-family</span>: <span class="val">var(--font-mono)</span>;
+}</pre>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">1.4 — Logo</h3>
+  <p>Le logo passe correctement en cream en dark mode. ✅</p>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li>Le logo touche le bord gauche du header → ajouter <code class="inline">~16-24px</code> de padding.</li>
+    <li>En sidebar collapsed (rail étroit), prévoir une <strong>version monogramme « 2A »</strong> sans signature pour ne pas être tronqué.</li>
+  </ul>
+</section>
+
+<!-- 2. Hiérarchie -->
+<section id="hierarchie">
+  <div class="section-head">
+    <span class="eyebrow">02 · Hiérarchie visuelle</span>
+    <h2>Le contenu est là, la lecture ne l'est pas (encore)</h2>
+    <p>Tout est affiché avec la même importance — y compris des KPIs phares qui méritent d'écraser le reste.</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">2.1 — Dashboard : 6 KPIs égaux sans hiérarchie</h3>
+  <p>Les 6 cards ont même taille, même poids de label, même taille de valeur. Or le P&amp;L total est <em>la</em> métrique du journal — il devrait dominer.</p>
+
+  <div class="ba" style="margin-top:16px; min-height:200px;">
+    <div class="before" style="padding:16px;">
+      <span class="head">Actuel</span>
+      <div class="kpi-grid-current" style="width:100%;">
+        <div class="kpi kpi-mini"><div class="label">Total trades</div><div class="value">104</div></div>
+        <div class="kpi kpi-mini"><div class="label">Réussite</div><div class="value" style="color:var(--success)">48.08%</div></div>
+        <div class="kpi kpi-mini"><div class="label">P&amp;L total</div><div class="value" style="color:var(--danger)">-3407.51</div></div>
+        <div class="kpi kpi-mini"><div class="label">Profit Factor</div><div class="value">0.57</div></div>
+        <div class="kpi kpi-mini"><div class="label">R:R moyen</div><div class="value">-0.34</div></div>
+        <div class="kpi kpi-mini"><div class="label">Best/Worst</div><div class="value" style="font-size:11px;">+1277 / -650</div></div>
+      </div>
+    </div>
+    <div class="after" style="padding:16px;">
+      <span class="head">Proposé</span>
+      <div class="kpi-grid-proposed" style="width:100%;">
+        <div class="kpi hero-kpi">
+          <div class="label">P&amp;L total · 30 derniers jours</div>
+          <div class="value" style="color:var(--danger)">-3 407,51</div>
+          <div class="delta">▼ -3.5% sur la période</div>
+        </div>
+        <div class="kpi kpi-mini"><div class="label">Réussite</div><div class="value" style="color:var(--success)">48%</div></div>
+        <div class="kpi kpi-mini"><div class="label">Profit F.</div><div class="value">0.57</div></div>
+        <div class="kpi kpi-mini"><div class="label">R:R</div><div class="value">-0.34</div></div>
+        <div class="kpi kpi-mini"><div class="label">Trades</div><div class="value">104</div></div>
+      </div>
+    </div>
+  </div>
+  <p class="muted" style="font-size:13px;margin-top:8px;">Card P&amp;L : 2x plus large, valeur en <code class="inline">font-size: 2.5rem</code>, delta de tendance dessous.</p>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">2.2 — Tableaux : densité et alignement</h3>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li><strong>Trades</strong> (13 colonnes) : "Compte" wrap sur 2 lignes ; "Direction" pourrait être iconisée (↑/↓) ; "PnL" mal aligné (gauche au lieu de droite avec tabular-nums).</li>
+    <li><strong>Setup</strong> (3 tags par row) : peuvent prendre 3 lignes en wrap → soit ellipsis "+2 more", soit dédier plus de largeur.</li>
+    <li><strong>Comptes / Positions</strong> : énormément d'espace vide sous le tableau (50%+ de la viewport). Pistes : footer avec stats globales, ou conteneur en <code class="inline">min-content</code>.</li>
+  </ul>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">2.3 — Empty states inexistants</h3>
+  <p>La page <strong>Ordres</strong> vide affiche un tableau headers + pagination + 2 dropdowns. Aucune indication "vous n'avez pas encore d'ordres". L'utilisateur ne sait pas s'il doit attendre, créer, ou importer.</p>
+
+  <div class="ba" style="margin-top:16px; min-height:240px;">
+    <div class="before" style="padding:16px;">
+      <span class="head">Actuel</span>
+      <div style="width:100%; padding:12px; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md);">
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <div style="background: var(--surface-2); padding: 6px 12px; border-radius: var(--radius-md); font-size: 12px; color: var(--text-subtle);">Filtrer par com... ▾</div>
+          <div style="background: var(--surface-2); padding: 6px 12px; border-radius: var(--radius-md); font-size: 12px; color: var(--text-subtle);">Filtrer par statut ▾</div>
+        </div>
+        <div style="display:flex; gap: 16px; padding: 6px 0; border-bottom: 1px solid var(--border-light); font-size:11px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.06em;">
+          <span>Compte</span><span>Symbole</span><span>Direction</span><span>Prix</span><span>Taille</span><span>Statut</span>
+        </div>
+        <div style="text-align:center; padding: 24px; font-size: 12px; color: var(--text-subtle);">[ pagination minuscule ]</div>
+      </div>
+    </div>
+    <div class="after" style="padding:16px;">
+      <span class="head">Proposé</span>
+      <div class="empty-state" style="width:100%;">
+        <div class="icon">📋</div>
+        <h4>Aucun ordre pour le moment</h4>
+        <p>Créez votre premier ordre limit ou stop pour commencer à suivre vos entrées planifiées.</p>
+        <button class="btn btn-proposed">+ Nouvel ordre</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. Composants -->
+<section id="composants">
+  <div class="section-head">
+    <span class="eyebrow">03 · Composants &amp; micro-interactions</span>
+    <h2>Composants en place, identité absente</h2>
+    <p>Les patterns UI existent (boutons, badges, tags, modals) mais utilisent des couleurs/tailles génériques au lieu des tokens brand.</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">3.1 — Boutons CTA "Nouveau X"</h3>
+
+  <div class="grid cols-2">
+    <div class="card stack-12">
+      <h4>Light mode</h4>
+      <div class="ba" style="border:0; background:transparent;">
+        <div class="before" style="padding: 20px; min-height: 100px;">
+          <span class="head">Actuel</span>
+          <button class="btn btn-current">+ Nouveau trade</button>
+        </div>
+        <div class="after" style="padding: 20px; min-height: 100px;">
+          <span class="head">Proposé</span>
+          <button class="btn btn-proposed">+ Nouveau trade</button>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-muted);margin:0;">Look "neutre" gris-navy → vrai brand navy.</p>
+    </div>
+    <div class="card stack-12" style="background: #0a0f17; border-color: rgba(255,255,255,0.1);">
+      <h4 style="color: var(--brand-cream);">Dark mode</h4>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 20px 0;">
+        <div style="text-align:center;">
+          <button class="btn btn-dark-broken">+ Nouveau trade</button>
+          <p style="font-size:11px; color: rgba(255,255,255,0.5); margin-top:8px;">Actuel · quasi invisible</p>
+        </div>
+        <div style="text-align:center;">
+          <button class="btn" style="background: var(--brand-cream); color: var(--brand-navy-900);">+ Nouveau trade</button>
+          <p style="font-size:11px; color: rgba(255,255,255,0.5); margin-top:8px;">Proposé · cream sur navy</p>
+        </div>
+      </div>
+      <p style="font-size:13px; color: rgba(255,255,255,0.7); margin:0;">L'inversion (cream/navy) garantit le contraste tout en restant brand.</p>
+    </div>
+  </div>
+
+<pre class="code"><span class="key">.btn-primary</span> {
+  <span class="key">background</span>: <span class="val">var(--brand-navy-900)</span>;
+  <span class="key">color</span>: <span class="val">var(--brand-cream)</span>;
+}
+[<span class="key">data-theme=</span><span class="val">"dark"</span>] <span class="key">.btn-primary</span> {
+  <span class="key">background</span>: <span class="val">var(--brand-cream)</span>;
+  <span class="key">color</span>: <span class="val">var(--brand-navy-900)</span>;
+}</pre>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">3.2 — Badges &amp; tags</h3>
+  <p>Inventaire de l'app actuelle :</p>
+
+  <table class="simple" style="margin:16px 0;">
+    <thead><tr><th>Badge</th><th>Sémantique</th><th>Couleur actuelle</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge warning">Prop Firm</span></td><td>type compte</td><td>orange saturé</td><td class="warn">⚠️ trop saturé</td></tr>
+      <tr><td><span class="badge success">Funded</span></td><td>phase compte</td><td>vert</td><td class="ok">✅ OK</td></tr>
+      <tr><td><span class="badge warning">Challenge</span></td><td>phase compte</td><td>amber</td><td class="warn">⚠️ confusion avec "Sécurisé"</td></tr>
+      <tr><td><span class="badge success">Achat</span></td><td>direction trade</td><td>vert</td><td class="ok">✅ OK</td></tr>
+      <tr><td><span class="badge danger">Vente</span></td><td>direction trade</td><td>rouge</td><td class="ok">✅ OK</td></tr>
+      <tr><td><span class="badge-app-blue">Demand</span> <span class="badge-app-blue">h1</span> <span class="badge-app-blue">Combo</span></td><td>setups</td><td>tous bleu pâle</td><td class="ko">❌ tous identiques</td></tr>
+      <tr><td><span class="badge success">Fermé</span></td><td>statut trade</td><td>vert</td><td class="warn">⚠️ vert = succès, mais Fermé est neutre</td></tr>
+      <tr><td><span class="badge warning">Sécurisé</span></td><td>statut trade</td><td>amber</td><td class="warn">⚠️ confusion avec "Challenge"</td></tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top:24px;">Setup tags : avant / après</h4>
+  <div class="ba" style="margin-top:12px; min-height:130px;">
+    <div class="before">
+      <span class="head">Actuel · monochrome</span>
+      <div style="margin-top: 8px;">
+        <span class="badge-app-blue">Demand</span>
+        <span class="badge-app-blue">h1</span>
+        <span class="badge-app-blue">Combo</span>
+        <span class="badge-app-blue">h4</span>
+        <span class="badge-app-blue">BB Magique</span>
+        <span class="badge-app-blue">Réintégration</span>
+        <span class="badge-app-blue">m5</span>
+        <span class="badge-app-blue">Open cash</span>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);margin:0;">Tous identiques → impossible de scanner par catégorie.</p>
+    </div>
+    <div class="after">
+      <span class="head">Proposé · sémantique</span>
+      <div style="margin-top: 8px;">
+        <span class="tag-setup">Demand</span>
+        <span class="tag-tf">h1</span>
+        <span class="tag-setup">Combo</span>
+        <span class="tag-tf">h4</span>
+        <span class="tag-setup">BB Magique</span>
+        <span class="tag-setup">Réintégration</span>
+        <span class="tag-tf">m5</span>
+        <span class="tag-ctx">Open cash</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 11px; color: var(--text-subtle); display: flex; gap: 12px; flex-wrap: wrap;">
+        <span><span class="tag-tf">tf</span> timeframe</span>
+        <span><span class="tag-setup">setup</span> pattern</span>
+        <span><span class="tag-ctx">ctx</span> contexte</span>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">3.3 — Action icons (edit / delete / share)</h3>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li>Taille ~16px → en dessous de la cible tactile recommandée (24-32px min).</li>
+    <li>En dark mode, le gris du <em>edit</em> disparaît ; rouge et bleu visibles.</li>
+    <li>Pas de tooltip systématique. Hover affiche "Modifier" sur certains, pas tous.</li>
+    <li>Sets différents entre Trades (edit/delete/share) et Comptes (upload/edit/delete) → pas immédiatement compréhensibles.</li>
+    <li><strong>Recommandation</strong> : tooltip systématique, padding 8px (target 32×32), couleur unifiée <code class="inline">text-muted</code> au repos avec sémantique au hover (delete devient red).</li>
+  </ul>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">3.4 — Filtres et inputs</h3>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li><strong>"Filtrer par com..."</strong> → tronqué. Soit width plus large (200px min), soit label séparé au-dessus :</li>
+  </ul>
+
+<pre class="code">&lt;<span class="key">label</span> <span class="val">class</span>=<span class="val">"label"</span>&gt;Compte&lt;/<span class="key">label</span>&gt;
+&lt;<span class="key">select</span> <span class="val">class</span>=<span class="val">"input"</span>&gt;…&lt;/<span class="key">select</span>&gt;</pre>
+
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li>Date pickers "Du / Au" sur Performance : pas de placeholder visible, juste un cadre vide. Ajouter <code class="inline">placeholder="JJ/MM/AAAA"</code> ou un label "Date début".</li>
+  </ul>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">3.5 — Calendar P&amp;L journalier (dashboard)</h3>
+  <p>Bonne idée mais sous-exploitée : couleurs trop saturées (rouge/vert flashy), pas de hover state, pas de légende sur l'intensité.</p>
+  <div class="callout">
+    <strong>Piste d'évolution</strong> : hover sur une cellule → mini-popover avec <code class="inline">5 trades · 3W/2L · win 60% · +49€</code>. Les couleurs : reprendre les verts brand au lieu des rouges/verts génériques.
+  </div>
+</section>
+
+<!-- 4. Dark mode -->
+<section id="dark">
+  <div class="section-head">
+    <span class="eyebrow">04 · Dark mode</span>
+    <h2>Largement fonctionnel, pas encore "soigné"</h2>
+    <p>Peu de bugs visuels, mais quelques ajustements le feront passer de "fonctionne" à "designed".</p>
+  </div>
+
+  <h3 style="margin-bottom:12px;">4.1 — Échelle de surfaces actuellement trop plate</h3>
+  <p>Le manque de séparation visuelle entre body et cards rend la hiérarchie floue en dark mode. Recommandation : adopter une échelle de surface en 3-4 niveaux.</p>
+
+  <div class="surfaces" style="margin-top:16px;">
+    <div class="row s0"><span class="name">surface-base</span><span class="desc">Canvas / body</span><span class="hex">#0a0f17</span></div>
+    <div class="row s1"><span class="name">surface-1</span><span class="desc">Cards, table rows</span><span class="hex">#131a26</span></div>
+    <div class="row s2"><span class="name">surface-2</span><span class="desc">Nested (modal, popover)</span><span class="hex">#1c2433</span></div>
+    <div class="row s3"><span class="name">surface-3</span><span class="desc">Hover state, focused row</span><span class="hex">#2a3346</span></div>
+  </div>
+
+  <p style="margin-top:16px;">Avec un border <code class="inline">1px solid rgba(255,255,255,0.06)</code> sur les cards, le contraste devient suffisant <em>sans</em> monter le niveau de gris.</p>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">4.2 — Charts en dark mode</h3>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li>Le P&amp;L cumulé en bleu vif sur fond très sombre = <strong>agressif</strong> pour les yeux.</li>
+    <li>Passer les courbes "neutres" en <code class="inline">--brand-green-300</code> ou <code class="inline">--brand-cream</code> à 80% d'opacité.</li>
+    <li>Les axes/grilles en gris-zinc-600 (parfait en light) deviennent quasi invisibles en dark → différencier :</li>
+  </ul>
+<pre class="code">[<span class="key">data-theme=</span><span class="val">"light"</span>] <span class="key">.chart-axis</span> { <span class="key">stroke</span>: <span class="val">#6b6e75</span>; }
+[<span class="key">data-theme=</span><span class="val">"dark"</span>]  <span class="key">.chart-axis</span> { <span class="key">stroke</span>: <span class="val">#a1a1aa</span>; }</pre>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">4.3 — Boutons primaires invisibles</h3>
+  <p>Le <code class="inline">+ Nouveau trade</code> en dark a un fond <code class="inline">#18181b</code> ≈ identique au body bg. Quasi-fantôme. C'est le bug le plus visible du dark mode.</p>
+  <div class="callout danger">
+    <strong>Fix immédiat</strong> : cf §3.1 — passer en <code class="inline">background: var(--brand-cream); color: var(--brand-navy-900);</code> en dark mode.
+  </div>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">4.4 — Liens secondaires faiblement contrastés</h3>
+  <p>"Voir tout →" sur le dashboard : barely visible en dark. Relever à <code class="inline">--brand-green-300</code> ou <code class="inline">--p-primary-200</code>.</p>
+
+  <h3 style="margin-top:48px;margin-bottom:12px;">4.5 — Modal "Modifier la position"</h3>
+  <ul style="color:var(--text-muted);font-size:14px;line-height:1.7;">
+    <li>Fond du modal ≈ fond de page → ajouter <code class="inline">border: 1px solid rgba(255,255,255,0.1)</code> ou drop-shadow plus marqué.</li>
+    <li>"Enregistrer" CTA quasi invisible (cf §4.3).</li>
+    <li>Inputs ont un fond <strong>plus foncé</strong> que le modal lui-même → inverser : modal <code class="inline">surface-1</code>, inputs <code class="inline">surface-2</code>.</li>
+  </ul>
+</section>
+
+<!-- 5. Tokens proposés -->
+<section id="tokens">
+  <div class="section-head">
+    <span class="eyebrow">05 · Annexe</span>
+    <h2>Tokens à figer (proposition)</h2>
+    <p>Drop-in CSS pour aligner l'implémentation sur la charte. À placer en override en bas du theme PrimeVue.</p>
+  </div>
+
+<pre class="code">:root {
+  <span class="comment">/* === Brand (déjà OK) === */</span>
+  <span class="key">--color-brand-navy-900</span>: <span class="val">#1f2a3c</span>;
+  <span class="key">--color-brand-navy-700</span>: <span class="val">#354560</span>;
+  <span class="key">--color-brand-green-700</span>: <span class="val">#2d7952</span>;
+  <span class="key">--color-brand-green-500</span>: <span class="val">#46926b</span>;
+  <span class="key">--color-brand-green-300</span>: <span class="val">#9bc7af</span>;
+  <span class="key">--color-brand-green-100</span>: <span class="val">#e3f0e9</span>;
+  <span class="key">--color-brand-cream</span>: <span class="val">#e8e8e6</span>;
+
+  <span class="comment">/* === Sémantique (chart + status) === */</span>
+  <span class="key">--color-positive</span>:    <span class="val">var(--color-brand-green-700)</span>;
+  <span class="key">--color-positive-bg</span>: <span class="val">var(--color-brand-green-100)</span>;
+  <span class="key">--color-negative</span>:    <span class="val">#b5384a</span>;
+  <span class="key">--color-negative-bg</span>: <span class="val">#f7e1e4</span>;
+  <span class="key">--color-warning</span>:     <span class="val">#c98a2b</span>;
+  <span class="key">--color-warning-bg</span>:  <span class="val">#fbeed4</span>;
+
+  <span class="comment">/* === PrimeVue override (LE FIX CRITIQUE) === */</span>
+  <span class="key">--p-primary-color</span>:          <span class="val">var(--color-brand-navy-900)</span>;
+  <span class="key">--p-primary-contrast-color</span>: <span class="val">var(--color-brand-cream)</span>;
+  <span class="key">--p-primary-50</span>:  <span class="val">#e7eaf0</span>;
+  <span class="key">--p-primary-100</span>: <span class="val">#c9d1de</span>;
+  <span class="key">--p-primary-300</span>: <span class="val">#6d7c98</span>;
+  <span class="key">--p-primary-500</span>: <span class="val">#1f2a3c</span>;
+  <span class="key">--p-primary-600</span>: <span class="val">#16202f</span>;
+  <span class="key">--p-primary-700</span>: <span class="val">#0f1722</span>;
+
+  <span class="comment">/* === Surfaces dark mode === */</span>
+}
+[<span class="key">data-theme=</span><span class="val">"dark"</span>] {
+  <span class="key">--surface-base</span>:    <span class="val">#0a0f17</span>;
+  <span class="key">--surface-1</span>:       <span class="val">#131a26</span>;
+  <span class="key">--surface-2</span>:       <span class="val">#1c2433</span>;
+  <span class="key">--surface-3</span>:       <span class="val">#2a3346</span>;
+  <span class="key">--border-subtle</span>:  <span class="val">rgba(255,255,255,0.06)</span>;
+  <span class="key">--border-strong</span>:  <span class="val">rgba(255,255,255,0.12)</span>;
+}
+
+<span class="comment">/* === Numerics tabular partout === */</span>
+.numeric, td.value, .kpi-value, .pnl {
+  <span class="key">font-variant-numeric</span>: <span class="val">tabular-nums</span>;
+  <span class="key">font-family</span>: <span class="val">'JetBrains Mono', monospace</span>;
+}</pre>
+</section>
+
+<!-- 6. Plan -->
+<section id="plan">
+  <div class="section-head">
+    <span class="eyebrow">06 · Roadmap</span>
+    <h2>Ordre d'attaque suggéré</h2>
+    <p>5 sprints d'1 semaine. Le 1er sprint suffit à transformer visuellement l'app.</p>
+  </div>
+
+  <div class="grid cols-2">
+    <div class="card stack-12">
+      <h4>Semaine 1 · Tokens</h4>
+      <p>Override de la chaîne <code class="inline">--p-primary-*</code> sur le brand navy, padding logo, alignement filtres.</p>
+      <p style="font-size:12px;color:var(--text-subtle);margin-top:auto;"><strong>Effet :</strong> l'app a immédiatement l'air "2A".</p>
+    </div>
+    <div class="card stack-12">
+      <h4>Semaine 2 · Charts</h4>
+      <p>Configuration ApexCharts/Chart.js avec la palette navy + verts. Adaptations dark mode (axes plus contrastés, courbes en cream).</p>
+      <p style="font-size:12px;color:var(--text-subtle);margin-top:auto;"><strong>Effet :</strong> dashboard et Performance enfin cohérents.</p>
+    </div>
+    <div class="card stack-12">
+      <h4>Semaine 3 · Composants</h4>
+      <p>CTA navy/cream, badges &amp; tags taxonomie sémantique, action icons agrandis avec tooltip systématique.</p>
+      <p style="font-size:12px;color:var(--text-subtle);margin-top:auto;"><strong>Effet :</strong> l'UI semble "designed", pas "componenté".</p>
+    </div>
+    <div class="card stack-12">
+      <h4>Semaine 4 · Empty states &amp; hiérarchie</h4>
+      <p>Empty states sur Ordres/Positions/Trades, refonte hiérarchie KPIs dashboard, micro-interactions calendar.</p>
+      <p style="font-size:12px;color:var(--text-subtle);margin-top:auto;"><strong>Effet :</strong> l'app devient "agréable" à utiliser.</p>
+    </div>
+    <div class="card stack-12" style="grid-column: span 2;">
+      <h4>Semaine 5 · Dark mode polish</h4>
+      <p>Échelle de surfaces (4 niveaux), modal border, focus states, parité de contraste avec le light mode.</p>
+      <p style="font-size:12px;color:var(--text-subtle);margin-top:auto;"><strong>Effet :</strong> dark mode "premium" — pas un simple inverse du light.</p>
+    </div>
+  </div>
+
+  <div class="callout success" style="margin-top:32px;">
+    <strong>Si tu cherches le « wow effect » rapide</strong> : fais juste les 3 premiers quick wins (primary color · charts · CTA) en un sprint dédié d'une journée. C'est le meilleur ROI de tout le doc.
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span>Audit UI · 2A Trading Tools · 28 avril 2026</span>
+  <span>Réalisé par Claude · disponible pour itérer sur n'importe quelle section.</span>
+</footer>
+
+<script>
+  // Theme toggle
+  const root = document.body;
+  const btn = document.getElementById('themeToggle');
+  const icon = document.getElementById('themeIcon');
+  const label = document.getElementById('themeLabel');
+  function setTheme(t) {
+    root.setAttribute('data-theme', t);
+    icon.textContent = t === 'dark' ? '☀️' : '🌙';
+    label.textContent = t === 'dark' ? 'Light' : 'Dark';
+    try { localStorage.setItem('audit-theme', t); } catch (e) {}
+  }
+  btn.addEventListener('click', () => {
+    const cur = root.getAttribute('data-theme') || 'light';
+    setTheme(cur === 'light' ? 'dark' : 'light');
+  });
+  try {
+    const saved = localStorage.getItem('audit-theme');
+    if (saved) setTheme(saved);
+    else if (matchMedia('(prefers-color-scheme: dark)').matches) setTheme('dark');
+  } catch (e) {}
+</script>
+
+</body>
+</html>
