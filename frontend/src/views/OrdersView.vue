@@ -217,24 +217,28 @@ function statusSeverity(status) {
     </div>
 
     <div class="flex gap-4 mb-4">
-      <Select
-        v-model="filterAccountId"
-        :options="[{ label: t('orders.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
-        optionLabel="label"
-        optionValue="value"
-        :placeholder="t('orders.filter_account')"
-        class="w-48"
-        @change="applyFilters"
-      />
-      <Select
-        v-model="filterStatus"
-        :options="statusOptions"
-        optionLabel="label"
-        optionValue="value"
-        :placeholder="t('orders.filter_status')"
-        class="w-48"
-        @change="applyFilters"
-      />
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('orders.account') }}</label>
+        <Select
+          v-model="filterAccountId"
+          :options="[{ label: t('orders.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
+          optionLabel="label"
+          optionValue="value"
+          class="w-56"
+          @change="applyFilters"
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('orders.status') }}</label>
+        <Select
+          v-model="filterStatus"
+          :options="statusOptions"
+          optionLabel="label"
+          optionValue="value"
+          class="w-56"
+          @change="applyFilters"
+        />
+      </div>
     </div>
 
     <DataTable
