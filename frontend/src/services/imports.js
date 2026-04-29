@@ -49,10 +49,10 @@ export const importsService = {
     return api.upload('/imports/confirm', formData)
   },
 
-  async downloadTemplate() {
+  async downloadTemplate(format = 'csv') {
     const token = api.getAccessToken()
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost/api'
-    const resp = await fetch(`${baseUrl}/imports/template-file`, {
+    const resp = await fetch(`${baseUrl}/imports/template-file?format=${format}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: 'include',
     })
@@ -60,7 +60,7 @@ export const importsService = {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'import-template.csv'
+    link.download = `import-template.${format}`
     link.click()
     window.URL.revokeObjectURL(url)
   },

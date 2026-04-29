@@ -7,7 +7,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class FileParserService
 {
-    private const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'xlsm', 'csv', 'xml'];
+    private const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'xlsm', 'csv', 'xml', 'ods'];
     private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
     /**

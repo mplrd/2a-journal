@@ -78,7 +78,7 @@ function sampleValue(headerName) {
 }
 
 const acceptedFileTypes = computed(() => {
-  if (isCustom.value) return '.csv,.xlsx,.xls,.xlsm,.xml'
+  if (isCustom.value) return '.csv,.xlsx,.xls,.xlsm,.xml,.ods'
   const tpl = templates.value.find(tp => tp.broker === selectedBroker.value)
   const types = tpl?.file_types || ['xlsx', 'csv', 'xml']
   return types.map(ext => '.' + ext).join(',')
@@ -366,20 +366,22 @@ function close() {
                 class="w-52"
                 size="small"
               />
-              <Button
+              <div
                 v-if="selectedBroker === 'generic'"
-                :label="t('import.download_template')"
-                icon="pi pi-download"
-                severity="secondary"
-                size="small"
-                @click="importsService.downloadTemplate()"
-              />
+                class="inline-flex items-center gap-1 px-2 py-0.5 border border-dashed border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 rounded-md"
+              >
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('import.template_format_label') }}</span>
+                <Button label="CSV" icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('import.download_template')" @click="importsService.downloadTemplate('csv')" />
+                <Button label="XLSX" icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('import.download_template')" @click="importsService.downloadTemplate('xlsx')" />
+                <Button label="ODS" icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('import.download_template')" @click="importsService.downloadTemplate('ods')" />
+              </div>
               <input
                 type="file"
                 :accept="acceptedFileTypes"
-                class="text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-green-100 file:text-brand-green-800 hover:file:bg-brand-green-300 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
+                class="text-transparent w-44 text-sm file:mr-3 file:py-1.5 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-brand-green-100 file:text-brand-green-800 hover:file:bg-brand-green-300 dark:file:bg-gray-700 dark:file:text-gray-200 cursor-pointer"
                 @change="onFileSelect"
               />
+              <span v-if="fileName" class="text-sm text-gray-600 dark:text-gray-300 truncate max-w-[200px]">{{ fileName }}</span>
             </div>
 
             <!-- Custom mapping: auto-fetch headers then show mapping -->
