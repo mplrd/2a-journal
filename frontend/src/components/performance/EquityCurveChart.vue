@@ -2,10 +2,11 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChartOptions } from '@/composables/useChartOptions'
+import { primaryFor, withAlpha } from '@/constants/chartPalette'
 import ChartCard from './ChartCard.vue'
 
 const { t } = useI18n()
-const { lineChartOptions } = useChartOptions()
+const { lineChartOptions, isDark } = useChartOptions()
 
 const props = defineProps({
   cumulativePnl: { type: Array, default: () => [] },
@@ -24,8 +25,8 @@ const chartData = computed(() => {
       label: t('performance.equity_curve_title'),
       data: props.cumulativePnl.map((d) => capital + d.cumulative_pnl),
       fill: true,
-      borderColor: '#8b5cf6',
-      backgroundColor: 'rgba(139, 92, 246, 0.1)',
+      borderColor: primaryFor(isDark.value),
+      backgroundColor: withAlpha(primaryFor(isDark.value), 0.1),
       tension: 0.3,
       pointRadius: 3,
       pointHoverRadius: 6,

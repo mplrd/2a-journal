@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChartOptions } from '@/composables/useChartOptions'
+import { CHART_PALETTE } from '@/constants/chartPalette'
 import ChartCard from './ChartCard.vue'
 
 const { t } = useI18n()
@@ -30,9 +31,9 @@ const chartData = computed(() => {
       data: props.data.map((d) => Number(d.count)),
       backgroundColor: props.data.map((d) => {
         const bucket = d.bucket
-        if (bucket.startsWith('<') || bucket.startsWith('-')) return '#ef4444'
-        if (bucket === '0-1') return '#f59e0b'
-        return '#22c55e'
+        if (bucket.startsWith('<') || bucket.startsWith('-')) return CHART_PALETTE.negative
+        if (bucket === '0-1') return CHART_PALETTE.warning
+        return CHART_PALETTE.positive
       }),
       borderRadius: 4,
     }],

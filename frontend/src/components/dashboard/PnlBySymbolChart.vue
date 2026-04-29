@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChartOptions } from '@/composables/useChartOptions'
+import { CHART_PALETTE } from '@/constants/chartPalette'
 import ChartCard from '@/components/performance/ChartCard.vue'
 
 const { t } = useI18n()
@@ -18,7 +19,7 @@ const chartData = computed(() => {
     datasets: [{
       label: t('dashboard.pnl_by_symbol'),
       data: props.data.map((d) => Number(d.total_pnl)),
-      backgroundColor: props.data.map((d) => (Number(d.total_pnl) >= 0 ? '#22c55e' : '#ef4444')),
+      backgroundColor: props.data.map((d) => (Number(d.total_pnl) >= 0 ? CHART_PALETTE.positive : CHART_PALETTE.negative)),
       borderRadius: 4,
     }],
   }
