@@ -35,6 +35,15 @@
   /* Surface dark mode élevée (panels, cards) */
   --color-surface-dark: #1a2435;
 
+  /* Dark surface elevation scale (charte audit §4.1).
+     base = body / canvas (deepest), 1 = cards, 2 = nested (modals, popovers),
+     3 = hover / focused row. Each level a notch lighter to give visual depth
+     without touching the brand navy palette used for buttons & accents. */
+  --color-surface-dark-base: #1f2a3c;
+  --color-surface-dark-1: #1a2435;
+  --color-surface-dark-2: #283449;
+  --color-surface-dark-3: #354560;
+
   /* Tailwind gray scale tinted to charte palette.
      Light tones: charte's warm neutrals.
      Dark tones (700+): retargeted to navy surfaces so dark:bg-gray-900
@@ -102,4 +111,20 @@ table .num,
 .dark-mode .p-button-secondary.p-button-text:hover:not(:disabled) {
   color: var(--color-brand-cream);
   background-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Dark mode polish (charte audit §4.5).
+   - Modal lifts above body via surface-2 + visible border + stronger shadow.
+   - Inputs inside the modal go even lighter (surface-3) so they read as
+     interactive zones instead of sinking into the modal bg. */
+.dark-mode .p-dialog {
+  background-color: var(--color-surface-dark-2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+.dark-mode .p-dialog .p-inputtext,
+.dark-mode .p-dialog .p-inputnumber-input,
+.dark-mode .p-dialog .p-textarea,
+.dark-mode .p-dialog .p-select {
+  background-color: var(--color-surface-dark-3);
 }
