@@ -59,7 +59,7 @@ function accountName(accountId) {
   return a ? a.name : '-'
 }
 
-const filterAccountId = ref(null)
+const filterAccountIds = ref([])
 const filterStatus = ref(null)
 
 const statusOptions = [
@@ -78,7 +78,7 @@ onMounted(async () => {
 
 async function applyFilters() {
   const filters = {}
-  if (filterAccountId.value) filters.account_id = filterAccountId.value
+  if (filterAccountIds.value.length > 0) filters.account_ids = filterAccountIds.value
   if (filterStatus.value) filters.status = filterStatus.value
   store.setFilters(filters)
   store.page = 1
@@ -223,8 +223,9 @@ function statusSeverity(status) {
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('orders.account') }}</span>
         <BadgeFilter
-          v-model="filterAccountId"
-          :options="[{ label: t('orders.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
+          v-model="filterAccountIds"
+          :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+          multi
           @change="applyFilters"
         />
       </div>

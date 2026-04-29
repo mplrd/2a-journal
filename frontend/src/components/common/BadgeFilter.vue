@@ -36,10 +36,10 @@ function toggle(value) {
       v-for="opt in options"
       :key="String(opt.value)"
       type="button"
-      class="px-3 py-1 rounded-full text-sm font-medium transition-colors cursor-pointer"
+      class="px-3 py-1 rounded-full text-sm border transition-colors cursor-pointer"
       :class="isActive(opt.value)
-        ? 'bg-brand-green-100 dark:bg-brand-green-700/30 text-brand-green-800 dark:text-brand-green-300'
-        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+        ? 'bg-brand-green-700 border-brand-green-700 text-white font-semibold shadow-sm dark:bg-brand-green-500 dark:border-brand-green-500 dark:text-white'
+        : 'bg-transparent border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'"
       @click="toggle(opt.value)"
     >
       {{ opt.label }}

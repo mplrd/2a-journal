@@ -26,4 +26,21 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ---
 
+## UX
+
+### Auto-refresh des filtres Performance (pas de bouton "Appliquer")
+
+**Contexte** : sur `PerformanceView` (et `DashboardFilters`), changer un filtre nécessite de cliquer "Appliquer" pour voir le résultat. Sur les écrans Trades / Orders / Positions, les filtres se rafraîchissent à la volée (chaque toggle de badge → fetch immédiat). L'inconsistance UX vaut alignement.
+
+**À faire** :
+- Sur chaque modification d'un input dans `DashboardFilters`, déclencher `applyFilters` directement (avec petit debounce ~250ms pour les inputs rapides)
+- Retirer ou cacher le bouton "Appliquer" (ou le garder en "Reset" only)
+- Vérifier l'effet sur le Dashboard et la Performance (les deux consomment ce composant)
+
+**Repéré le** : 2026-04-29.
+**Statut** : noté pour plus tard (après validation de la pass UI badge + date range).
+**Priorité** : moyenne — confort utilisateur, alignement avec le reste des filtres de l'app.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

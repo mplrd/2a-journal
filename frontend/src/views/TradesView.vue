@@ -67,7 +67,7 @@ const closePrefill = ref(null)
 const showShare = ref(false)
 const sharePositionId = ref(null)
 
-const filterAccountId = ref(null)
+const filterAccountIds = ref([])
 const filterStatuses = ref([])
 
 const statusOptions = Object.values(TradeStatus).map((value) => ({
@@ -113,7 +113,7 @@ function formatCustomFieldValue(value, fieldType) {
 
 async function applyFilters() {
   const filters = {}
-  if (filterAccountId.value) filters.account_id = filterAccountId.value
+  if (filterAccountIds.value.length > 0) filters.account_ids = filterAccountIds.value
   if (filterStatuses.value && filterStatuses.value.length > 0) {
     filters.statuses = filterStatuses.value
   }
@@ -325,8 +325,9 @@ function pnlClass(pnl) {
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.account') }}</span>
         <BadgeFilter
-          v-model="filterAccountId"
-          :options="[{ label: t('trades.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
+          v-model="filterAccountIds"
+          :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+          multi
           @change="applyFilters"
         />
       </div>
