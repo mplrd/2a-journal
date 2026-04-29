@@ -26,4 +26,52 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ---
 
+## UX
+
+### Filtres "légers" en badges plutôt qu'en dropdowns
+
+**Contexte** : sur des écrans avec peu d'options (Trades : compte + statut, ~3-5 valeurs), un dropdown PrimeVue est ergonomiquement lourd : ça demande un click + scroll + click. Pour des sélections fréquentes, un système de **badges cliquables** (toggle inline, multi ou single selon le cas) est plus rapide et visuellement plus moderne. Les `MultiSelect display="chip"` font déjà la moitié du chemin mais en mode dropdown.
+
+**Cibles potentielles** :
+- `TradesView` : filter compte + filter statut → barre de badges au-dessus de la grid
+- `OrdersView` : idem
+- `PositionsView` : filter compte
+- Les filtres "lourds" du dashboard (`DashboardFilters` avec dates / direction / symbols / setups) gardent leur format dropdown — c'est un cas riche
+
+**À faire** :
+- Composant `<BadgeFilter>` réutilisable (single / multi)
+- Sweep TradesView, OrdersView, PositionsView
+- Garder DashboardFilters tel quel
+
+**Repéré le** : 2026-04-29.
+**Statut** : noté pour après la fin de l'audit UI charte.
+**Priorité** : moyenne — gain UX réel sur les écrans listes.
+
+---
+
+### Sélecteur de plage de dates "à la Airbnb" sur Performance
+
+**Contexte** : `PerformanceView` (et `DashboardFilters`) utilisent deux DatePicker séparés "Du" / "Au". Pour une sélection de période, un **range-picker unique** avec affichage calendrier 2-mois et raccourcis ("7 derniers jours", "Ce mois", "30 jours", "Ce trimestre", "YTD") est nettement plus fluide.
+
+**Pistes techniques** :
+- PrimeVue `DatePicker` supporte `selectionMode="range"` → mais le rendu reste 2 inputs en visu
+- Évaluer un composant tiers (e.g. `vue-tailwind-datepicker`) ou builder un custom léger
+- Garder la compat back-end : émet `{date_from, date_to}` comme aujourd'hui
+
+**Cibles** :
+- `DashboardFilters.vue` (déjà groupé visuellement, juste un swap)
+- `PerformanceView` (en haut)
+- À terme, le `closed_at` du `CloseTradeDialog` reste une date single, pas concerné
+
+**À faire** :
+- Composant `<DateRangePicker>` avec presets
+- Sweep des 2 vues consommatrices
+- i18n des presets
+
+**Repéré le** : 2026-04-29.
+**Statut** : noté pour après la fin de l'audit UI charte.
+**Priorité** : moyenne — confort utilisateur sur les analyses temporelles.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
