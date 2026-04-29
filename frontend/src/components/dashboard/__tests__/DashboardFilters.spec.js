@@ -43,9 +43,9 @@ function mountFilters() {
     global: {
       plugins: [pinia, i18n],
       stubs: {
-        Select: { template: '<select><slot /></select>', props: ['modelValue'] },
-        DatePicker: { template: '<input type="text" />', props: ['modelValue'] },
         MultiSelect: { template: '<div class="multiselect-stub" />', props: ['modelValue'] },
+        BadgeFilter: { template: '<div class="badge-filter-stub" />', props: ['modelValue', 'options', 'multi'] },
+        DateRangePicker: { template: '<div class="date-range-stub" />', props: ['from', 'to'] },
         Button: {
           template: '<button @click="$emit(\'click\')">{{ label }}</button>',
           props: ['label'],
@@ -57,25 +57,16 @@ function mountFilters() {
 }
 
 describe('DashboardFilters', () => {
-  it('renders filter panel with apply and reset buttons', () => {
+  it('renders only a reset button (autosubmit, no apply)', () => {
     const wrapper = mountFilters()
     const buttons = wrapper.findAll('button')
-    expect(buttons.length).toBe(2)
-  })
-
-  it('emits apply event with filters', async () => {
-    const wrapper = mountFilters()
-    const buttons = wrapper.findAll('button')
-    const applyBtn = buttons.find((b) => b.text().includes('Apply'))
-    await applyBtn.trigger('click')
-    expect(wrapper.emitted('apply')).toBeTruthy()
-    expect(wrapper.emitted('apply')[0][0]).toBeTypeOf('object')
+    expect(buttons.length).toBe(1)
+    expect(buttons[0].text()).toContain('Reset')
   })
 
   it('emits reset event', async () => {
     const wrapper = mountFilters()
-    const buttons = wrapper.findAll('button')
-    const resetBtn = buttons.find((b) => b.text().includes('Reset'))
+    const resetBtn = wrapper.findAll('button').find((b) => b.text().includes('Reset'))
     await resetBtn.trigger('click')
     expect(wrapper.emitted('reset')).toBeTruthy()
   })
