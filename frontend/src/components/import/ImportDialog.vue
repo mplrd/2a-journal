@@ -78,7 +78,7 @@ function sampleValue(headerName) {
 }
 
 const acceptedFileTypes = computed(() => {
-  if (isCustom.value) return '.csv,.xlsx,.xls,.xlsm,.xml'
+  if (isCustom.value) return '.csv,.xlsx,.xls,.xlsm,.xml,.ods'
   const tpl = templates.value.find(tp => tp.broker === selectedBroker.value)
   const types = tpl?.file_types || ['xlsx', 'csv', 'xml']
   return types.map(ext => '.' + ext).join(',')
@@ -366,14 +366,12 @@ function close() {
                 class="w-52"
                 size="small"
               />
-              <Button
-                v-if="selectedBroker === 'generic'"
-                :label="t('import.download_template')"
-                icon="pi pi-download"
-                severity="secondary"
-                size="small"
-                @click="importsService.downloadTemplate()"
-              />
+              <template v-if="selectedBroker === 'generic'">
+                <span class="text-xs text-gray-500 dark:text-gray-400 self-center ml-2">{{ t('import.template_format_label') }}</span>
+                <Button label="CSV" icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('import.download_template')" @click="importsService.downloadTemplate('csv')" />
+                <Button label="XLSX" icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('import.download_template')" @click="importsService.downloadTemplate('xlsx')" />
+                <Button label="ODS" icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('import.download_template')" @click="importsService.downloadTemplate('ods')" />
+              </template>
               <input
                 type="file"
                 :accept="acceptedFileTypes"
