@@ -116,10 +116,43 @@ class ImportController extends Controller
 
     public function downloadTemplate(Request $request): never
     {
-        $filePath = __DIR__ . '/../../public/templates/import-template.csv';
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="import-template.csv"');
-        readfile($filePath);
+        $format = strtolower((string) ($request->getQuery('format') ?? 'csv'));
+        if (!in_array($format, ['csv', 'xlsx', 'ods'], true)) {
+            $format = 'csv';
+        }
+
+        if ($format === 'csv') {
+            $filePath = __DIR__ . '/../../public/templates/import-template.csv';
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="import-template.csv"');
+            readfile($filePath);
+            exit;
+        }
+
+        // xlsx / ods — built on the fly from the same column structure as the
+        // CSV template so all formats stay in sync from a single source of truth.
+        $headers = ['Symbol', 'Direction', 'Entry Price', 'Size', 'Open Date', 'Close Date', 'Exit Price'];
+        $sampleRows = [
+            ['EURUSD', 'BUY', 1.1000, 1.0, '2024-01-15 09:30:00', '2024-01-15 10:00:00', 1.1050],
+            ['NASDAQ', 'SELL', 18500, 2, '2024-01-16 14:00:00', '', ''],
+        ];
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray($headers, null, 'A1');
+        $sheet->fromArray($sampleRows, null, 'A2');
+
+        if ($format === 'xlsx') {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="import-template.xlsx"');
+        } else {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Ods($spreadsheet);
+            header('Content-Type: application/vnd.oasis.opendocument.spreadsheet');
+            header('Content-Disposition: attachment; filename="import-template.ods"');
+        }
+
+        $writer->save('php://output');
         exit;
     }
 
