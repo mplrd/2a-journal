@@ -24,6 +24,7 @@ import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
 import { tradesService } from '@/services/trades'
 import { useSetupCategory } from '@/utils/setupCategory'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/enums'
 
 const route = useRoute()
@@ -349,7 +350,17 @@ function pnlClass(pnl) {
       </div>
     </div>
 
+    <EmptyState
+      v-if="!store.loading && store.totalRecords === 0"
+      icon="pi pi-arrow-right-arrow-left"
+      :title="t('trades.empty_title')"
+      :description="t('trades.empty')"
+    >
+      <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
+    </EmptyState>
+
     <DataTable
+      v-else
       :value="store.trades"
       :loading="store.loading"
       lazy
