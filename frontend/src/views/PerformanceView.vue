@@ -6,6 +6,7 @@ import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
 import { useChartOptions } from '@/composables/useChartOptions'
+import { CHART_PALETTE, primaryFor, withAlpha } from '@/constants/chartPalette'
 import Select from 'primevue/select'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
@@ -19,7 +20,7 @@ const statsStore = useStatsStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
-const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions } = useChartOptions()
+const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions, isDark } = useChartOptions()
 
 const periodGroup = ref('month')
 const periodGroupOptions = [
@@ -114,7 +115,7 @@ function pnlBarData(items, labelField) {
     datasets: [{
       label: t('performance.total_pnl'),
       data: items.map((d) => Number(d.total_pnl)),
-      backgroundColor: items.map((d) => (Number(d.total_pnl) >= 0 ? '#22c55e' : '#ef4444')),
+      backgroundColor: items.map((d) => (Number(d.total_pnl) >= 0 ? CHART_PALETTE.positive : CHART_PALETTE.negative)),
       borderRadius: 4,
     }],
   }
@@ -131,14 +132,14 @@ function dualMetricData(items, labelField, labelTranslator = null) {
       {
         label: t('performance.win_rate'),
         data: items.map((d) => Number(d.win_rate)),
-        backgroundColor: '#3b82f6',
+        backgroundColor: CHART_PALETTE.primary,
         borderRadius: 4,
         yAxisID: 'y',
       },
       {
         label: t('performance.avg_rr'),
         data: items.map((d) => Number(d.avg_rr || 0)),
-        backgroundColor: '#a855f7',
+        backgroundColor: CHART_PALETTE.positiveLt,
         borderRadius: 4,
         yAxisID: 'y1',
       },
@@ -172,8 +173,8 @@ const cumulativePnlChartData = computed(() => {
       label: t('dashboard.cumulative_pnl'),
       data: data.map((d) => d.cumulative_pnl),
       fill: true,
-      borderColor: '#3b82f6',
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      borderColor: primaryFor(isDark.value),
+      backgroundColor: withAlpha(primaryFor(isDark.value), 0.1),
       tension: 0.3,
       pointRadius: 3,
       pointHoverRadius: 6,
@@ -188,7 +189,7 @@ const winLossChartData = computed(() => {
     labels: [t('dashboard.wins'), t('dashboard.losses'), t('dashboard.breakeven')],
     datasets: [{
       data: [data.win, data.loss, data.be],
-      backgroundColor: ['#22c55e', '#ef4444', '#f59e0b'],
+      backgroundColor: [CHART_PALETTE.positive, CHART_PALETTE.negative, CHART_PALETTE.warning],
     }],
   }
 })

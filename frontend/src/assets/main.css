@@ -73,3 +73,14 @@ body {
 .p-datepicker {
   min-width: 0 !important;
 }
+
+/* Numerics use mono + tabular-nums by default. Charte rule for any column
+   showing numbers: mono font + fixed-width digits to prevent visual jitter.
+   Component-level overrides (e.g. KpiCard) already enforce this; this is a
+   safety net for any cell that slipped through. */
+table .num,
+.numeric,
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
