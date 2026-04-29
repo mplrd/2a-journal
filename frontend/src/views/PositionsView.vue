@@ -11,6 +11,7 @@ import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import { Direction } from '@/constants/enums'
 import { formatSize } from '@/utils/format'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const { t } = useI18n()
 const store = usePositionsStore()
@@ -75,7 +76,15 @@ function directionSeverity(direction) {
       </div>
     </div>
 
+    <EmptyState
+      v-if="!store.loading && store.totalRecords === 0"
+      icon="pi pi-chart-line"
+      :title="t('positions.empty_title')"
+      :description="t('positions.empty')"
+    />
+
     <DataTable
+      v-else
       :value="store.positions"
       :loading="store.loading"
       lazy
