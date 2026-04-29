@@ -403,7 +403,7 @@ async function handleSymbolCreate(data) {
         </div>
       </div>
 
-      <div v-if="sharePreviewText" class="border border-gray-200 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-700">
+      <div v-if="sharePreviewText && !isEdit" class="border border-gray-200 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-700">
         <div class="flex items-center justify-between mb-2">
           <label class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('share.preview') }}</label>
           <Button icon="pi pi-copy" :label="t('share.copy')" severity="secondary" size="small" text @click="copyPreview" />
