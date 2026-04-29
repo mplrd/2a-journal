@@ -23,6 +23,13 @@ const direction = ref(null)
 const selectedSymbols = ref([])
 const selectedSetups = ref([])
 
+// Collapsible state, persisted across navigations within the session
+const expanded = ref(localStorage.getItem('dashboardFiltersExpanded') !== 'false')
+function toggleExpanded() {
+  expanded.value = !expanded.value
+  localStorage.setItem('dashboardFiltersExpanded', String(expanded.value))
+}
+
 const directionOptions = [
   { label: 'BUY', value: 'BUY' },
   { label: 'SELL', value: 'SELL' },
@@ -76,9 +83,17 @@ function resetFilters() {
 
 <template>
   <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.filters') }}</h3>
+    <div class="flex items-center justify-between" :class="expanded ? 'mb-3' : ''">
+      <button
+        type="button"
+        class="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer"
+        @click="toggleExpanded"
+      >
+        <i class="pi text-xs" :class="expanded ? 'pi-chevron-down' : 'pi-chevron-right'"></i>
+        {{ t('dashboard.filters') }}
+      </button>
       <Button
+        v-if="expanded"
         :label="t('dashboard.reset_filters')"
         icon="pi pi-times"
         size="small"
@@ -88,42 +103,51 @@ function resetFilters() {
       />
     </div>
 
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20">{{ t('dashboard.filter_account') }}</span>
-        <BadgeFilter
-          v-model="accountIds"
-          :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
-          multi
-        />
-      </div>
+    <div v-if="expanded" class="flex flex-col gap-3">
+      <!-- Row 1: account + period -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20">{{ t('dashboard.filter_account') }}</span>
+          <div class="flex-1 min-w-0">
+            <BadgeFilter
+              v-model="accountIds"
+              :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+              multi
+            />
+          </div>
+        </div>
 
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20">{{ t('dashboard.date_range') }}</span>
-        <div class="flex-1 max-w-md">
-          <DateRangePicker v-model:from="dateFrom" v-model:to="dateTo" />
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20">{{ t('dashboard.date_range') }}</span>
+          <div class="flex-1 min-w-0 max-w-md">
+            <DateRangePicker v-model:from="dateFrom" v-model:to="dateTo" />
+          </div>
         </div>
       </div>
 
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20">{{ t('dashboard.direction') }}</span>
-        <BadgeFilter
-          v-model="direction"
-          :options="directionOptions"
-        />
-      </div>
-
-      <div class="flex items-start gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20 mt-1">{{ t('dashboard.symbols') }}</span>
-        <div class="flex-1 min-w-0">
+      <!-- Row 2: direction + symbols -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20">{{ t('dashboard.direction') }}</span>
           <BadgeFilter
-            v-model="selectedSymbols"
-            :options="symbolsStore.symbolOptions"
-            multi
+            v-model="direction"
+            :options="directionOptions"
           />
         </div>
+
+        <div class="flex items-start gap-3 flex-wrap">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20 mt-1">{{ t('dashboard.symbols') }}</span>
+          <div class="flex-1 min-w-0">
+            <BadgeFilter
+              v-model="selectedSymbols"
+              :options="symbolsStore.symbolOptions"
+              multi
+            />
+          </div>
+        </div>
       </div>
 
+      <!-- Row 3: setups -->
       <div class="flex items-start gap-3 flex-wrap">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20 mt-1">{{ t('dashboard.setups') }}</span>
         <div class="flex-1 min-w-0">

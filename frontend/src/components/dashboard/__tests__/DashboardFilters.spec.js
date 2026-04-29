@@ -57,11 +57,13 @@ function mountFilters() {
 }
 
 describe('DashboardFilters', () => {
-  it('renders only a reset button (autosubmit, no apply)', () => {
+  it('renders a reset button but no apply button (autosubmit)', () => {
     const wrapper = mountFilters()
     const buttons = wrapper.findAll('button')
-    expect(buttons.length).toBe(1)
-    expect(buttons[0].text()).toContain('Reset')
+    const resetBtn = buttons.find((b) => b.text().includes('Reset'))
+    const applyBtn = buttons.find((b) => b.text().includes('Apply'))
+    expect(resetBtn).toBeTruthy()
+    expect(applyBtn).toBeFalsy()
   })
 
   it('emits reset event', async () => {
@@ -74,5 +76,18 @@ describe('DashboardFilters', () => {
   it('renders title', () => {
     const wrapper = mountFilters()
     expect(wrapper.text()).toContain('Filters')
+  })
+
+  it('collapses when title is clicked, hiding the body and reset button', async () => {
+    const wrapper = mountFilters()
+    // Initially expanded: reset visible
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(true)
+    // Click the title toggle (button containing "Filters")
+    const toggle = wrapper.findAll('button').find((b) => b.text().includes('Filters'))
+    await toggle.trigger('click')
+    // After collapse: no Reset, body stubs gone
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(false)
+    expect(wrapper.find('.badge-filter-stub').exists()).toBe(false)
+    expect(wrapper.find('.date-range-stub').exists()).toBe(false)
   })
 })

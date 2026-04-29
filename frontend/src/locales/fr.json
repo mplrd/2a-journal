@@ -21,6 +21,7 @@
     "from": "Du",
     "to": "Au",
     "range": {
+      "placeholder": "Sélectionner une période",
       "last_7_days": "7 derniers jours",
       "last_30_days": "30 derniers jours",
       "this_month": "Ce mois",
