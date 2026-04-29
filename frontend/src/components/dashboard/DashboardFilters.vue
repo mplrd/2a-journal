@@ -5,9 +5,9 @@ import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
 import Select from 'primevue/select'
-import DatePicker from 'primevue/datepicker'
 import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 
 const { t } = useI18n()
 
@@ -78,13 +78,9 @@ function resetFilters() {
           class="w-full"
         />
       </div>
-      <div>
-        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ t('dashboard.date_from') }}</label>
-        <DatePicker v-model="dateFrom" dateFormat="yy-mm-dd" class="w-full" showIcon />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ t('dashboard.date_to') }}</label>
-        <DatePicker v-model="dateTo" dateFormat="yy-mm-dd" class="w-full" showIcon />
+      <div class="sm:col-span-2">
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ t('dashboard.date_range') }}</label>
+        <DateRangePicker v-model:from="dateFrom" v-model:to="dateTo" />
       </div>
       <div>
         <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ t('dashboard.direction') }}</label>

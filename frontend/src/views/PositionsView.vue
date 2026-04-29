@@ -8,10 +8,10 @@ import { useAuthStore } from '@/stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Tag from 'primevue/tag'
-import Select from 'primevue/select'
 import { Direction } from '@/constants/enums'
 import { formatSize } from '@/utils/format'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BadgeFilter from '@/components/common/BadgeFilter.vue'
 
 const { t } = useI18n()
 const store = usePositionsStore()
@@ -62,18 +62,13 @@ function directionSeverity(direction) {
       <h1 class="text-2xl font-bold">{{ t('positions.title') }}</h1>
     </div>
 
-    <div class="flex gap-4 mb-4">
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('positions.account') }}</label>
-        <Select
-          v-model="filterAccountId"
-          :options="[{ label: t('positions.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
-          optionLabel="label"
-          optionValue="value"
-          class="w-56"
-          @change="applyFilters"
-        />
-      </div>
+    <div class="flex items-center gap-3 flex-wrap mb-4">
+      <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('positions.account') }}</span>
+      <BadgeFilter
+        v-model="filterAccountId"
+        :options="[{ label: t('positions.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
+        @change="applyFilters"
+      />
     </div>
 
     <EmptyState

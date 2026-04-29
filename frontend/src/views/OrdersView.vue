@@ -12,11 +12,11 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
-import Select from 'primevue/select'
 import OrderForm from '@/components/order/OrderForm.vue'
 import { formatSize } from '@/utils/format'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
@@ -219,26 +219,20 @@ function statusSeverity(status) {
       <Button :label="t('orders.create')" icon="pi pi-plus" @click="showForm = true" />
     </div>
 
-    <div class="flex gap-4 mb-4">
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('orders.account') }}</label>
-        <Select
+    <div class="flex flex-col gap-3 mb-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('orders.account') }}</span>
+        <BadgeFilter
           v-model="filterAccountId"
           :options="[{ label: t('orders.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
-          optionLabel="label"
-          optionValue="value"
-          class="w-56"
           @change="applyFilters"
         />
       </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('orders.status') }}</label>
-        <Select
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('orders.status') }}</span>
+        <BadgeFilter
           v-model="filterStatus"
           :options="statusOptions"
-          optionLabel="label"
-          optionValue="value"
-          class="w-56"
           @change="applyFilters"
         />
       </div>
