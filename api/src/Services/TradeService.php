@@ -427,6 +427,144 @@ class TradeService
         $this->positionRepo->delete((int) $trade['position_id']);
     }
 
+    public function update(int $userId, int $tradeId, array $data): array
+    {
+        // Ownership + presence check
+        $trade = $this->get($userId, $tradeId);
+
+        $this->validatePartialPositionFields($data);
+
+        if (array_key_exists('opened_at', $data)) {
+            $this->validateDateTime($data['opened_at'], 'trades.error.invalid_opened_at', 'opened_at');
+        }
+
+        if (array_key_exists('closed_at', $data) && $data['closed_at'] !== null) {
+            if ($trade['status'] !== TradeStatus::CLOSED->value) {
+                throw new ValidationException('trades.error.closed_at_not_closed', 'closed_at');
+            }
+            $this->validateDateTime($data['closed_at'], 'trades.error.invalid_closed_at', 'closed_at');
+        }
+
+        // Recompute derived position prices when their inputs are touched.
+        $direction = $data['direction'] ?? $trade['direction'];
+        $entryPrice = isset($data['entry_price']) ? (float) $data['entry_price'] : (float) $trade['entry_price'];
+
+        $positionUpdates = [];
+        $positionFields = ['direction', 'symbol', 'entry_price', 'size', 'sl_points', 'be_points', 'be_size', 'notes', 'setup', 'targets'];
+        foreach ($positionFields as $field) {
+            if (array_key_exists($field, $data)) {
+                $positionUpdates[$field] = $data[$field];
+            }
+        }
+
+        // sl_price always tracks (entry_price, sl_points, direction); recompute
+        // whenever any of the three is in scope.
+        if (isset($positionUpdates['entry_price']) || isset($positionUpdates['sl_points']) || isset($positionUpdates['direction'])) {
+            $slPoints = isset($data['sl_points']) ? (float) $data['sl_points'] : (float) $trade['sl_points'];
+            $positionUpdates['sl_price'] = $this->calculateSlPrice($entryPrice, $slPoints, $direction);
+        }
+
+        if (array_key_exists('be_points', $data)) {
+            if ($data['be_points'] !== null && $data['be_points'] !== '') {
+                $positionUpdates['be_price'] = $this->calculateBePrice($entryPrice, (float) $data['be_points'], $direction);
+            } else {
+                $positionUpdates['be_price'] = null;
+                $positionUpdates['be_size'] = null;
+            }
+        }
+
+        if (array_key_exists('targets', $data)) {
+            $targets = is_string($data['targets']) ? json_decode($data['targets'], true) : $data['targets'];
+            if (is_array($targets)) {
+                $targets = $this->calculateTargetPrices($targets, $entryPrice, $direction);
+                $positionUpdates['targets'] = json_encode($targets);
+            } elseif ($targets === null) {
+                $positionUpdates['targets'] = null;
+            }
+        }
+
+        if (isset($positionUpdates['setup']) && is_array($positionUpdates['setup'])) {
+            if ($this->setupRepo) {
+                $this->setupRepo->ensureExist($userId, $positionUpdates['setup']);
+            }
+            $positionUpdates['setup'] = json_encode($positionUpdates['setup']);
+        }
+
+        if (!empty($positionUpdates)) {
+            $this->positionRepo->update((int) $trade['position_id'], $positionUpdates);
+        }
+
+        // Trade-level fields (opened_at, closed_at)
+        $tradeUpdates = [];
+        foreach (['opened_at', 'closed_at'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $tradeUpdates[$field] = $data[$field];
+            }
+        }
+        if (!empty($tradeUpdates)) {
+            $this->tradeRepo->update($tradeId, $tradeUpdates);
+        }
+
+        // Custom fields (whole-list replacement)
+        if (array_key_exists('custom_fields', $data) && $this->customFieldService) {
+            $this->customFieldService->validateAndSaveValues($userId, $tradeId, $data['custom_fields'] ?? []);
+        }
+
+        return $this->get($userId, $tradeId);
+    }
+
+    private function validatePartialPositionFields(array $data): void
+    {
+        if (isset($data['direction']) && !Direction::tryFrom($data['direction'])) {
+            throw new ValidationException('trades.error.invalid_direction', 'direction');
+        }
+        if (isset($data['symbol']) && (empty($data['symbol']) || mb_strlen($data['symbol']) > 50)) {
+            throw new ValidationException('trades.error.invalid_symbol', 'symbol');
+        }
+        if (isset($data['entry_price']) && (float) $data['entry_price'] <= 0) {
+            throw new ValidationException('trades.error.invalid_price', 'entry_price');
+        }
+        if (isset($data['size']) && (float) $data['size'] <= 0) {
+            throw new ValidationException('trades.error.invalid_size', 'size');
+        }
+        if (isset($data['setup'])) {
+            if (!is_array($data['setup']) || count($data['setup']) === 0 || count($data['setup']) > 20) {
+                throw new ValidationException('trades.error.invalid_setup', 'setup');
+            }
+            foreach ($data['setup'] as $label) {
+                if (!is_string($label) || mb_strlen(trim($label)) === 0 || mb_strlen($label) > 100) {
+                    throw new ValidationException('trades.error.invalid_setup', 'setup');
+                }
+            }
+        }
+        if (isset($data['sl_points']) && (float) $data['sl_points'] <= 0) {
+            throw new ValidationException('trades.error.invalid_sl_points', 'sl_points');
+        }
+        if (isset($data['be_points']) && $data['be_points'] !== null && (float) $data['be_points'] <= 0) {
+            throw new ValidationException('trades.error.invalid_be_points', 'be_points');
+        }
+        if (isset($data['be_size']) && $data['be_size'] !== null && (float) $data['be_size'] < 0) {
+            throw new ValidationException('trades.error.invalid_be_size', 'be_size');
+        }
+        if (isset($data['notes']) && mb_strlen($data['notes']) > 10000) {
+            throw new ValidationException('trades.error.notes_too_long', 'notes');
+        }
+        if (isset($data['targets'])) {
+            $this->validateTargets($data['targets']);
+        }
+    }
+
+    private function validateDateTime(string $value, string $messageKey, string $field): void
+    {
+        if (!is_string($value) || trim($value) === '') {
+            throw new ValidationException($messageKey, $field);
+        }
+        $ts = strtotime($value);
+        if ($ts === false) {
+            throw new ValidationException($messageKey, $field);
+        }
+    }
+
     private function validatePositionFields(array $data): void
     {
         $this->validateRequired($data, 'direction', 'trades.error.field_required');

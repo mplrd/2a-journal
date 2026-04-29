@@ -509,6 +509,103 @@ class TradeFlowTest extends TestCase
         $this->assertSame('TP', $body['data'][0]['partial_exits'][0]['exit_type']);
     }
 
+    // ── Update ──────────────────────────────────────────────────
+
+    public function testUpdateTradeOpenedAt(): void
+    {
+        $trade = $this->createTrade();
+
+        $response = $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", [
+                'opened_at' => '2026-02-01 09:30:00',
+            ])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('2026-02-01 09:30:00', $body['data']['opened_at']);
+    }
+
+    public function testUpdateTradePositionFields(): void
+    {
+        $trade = $this->createTrade();
+
+        $response = $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", [
+                'entry_price' => 19000,
+                'sl_points' => 80,
+                'notes' => 'Updated entry after re-analysis',
+            ])
+        );
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertEquals(19000, (float) $body['data']['entry_price']);
+        // BUY: sl_price = entry - sl_points = 19000 - 80 = 18920
+        $this->assertEquals(18920, (float) $body['data']['sl_price']);
+        $this->assertSame('Updated entry after re-analysis', $body['data']['notes']);
+    }
+
+    public function testUpdateTradeClosedAtRequiresClosedStatus(): void
+    {
+        $trade = $this->createTrade();
+
+        try {
+            $this->router->dispatch(
+                $this->authRequest('PUT', "/trades/{$trade['id']}", [
+                    'closed_at' => '2026-02-01 16:00:00',
+                ])
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+        }
+    }
+
+    public function testUpdateTradeRejectsCrossUserAccess(): void
+    {
+        $trade = $this->createTrade();
+
+        // Create a second user and use their token
+        $otherEmail = 'other-' . uniqid() . '@test.com';
+        $register = $this->router->dispatch(
+            Request::create('POST', '/auth/register', [
+                'email' => $otherEmail,
+                'password' => 'Test1234!',
+                'first_name' => 'Other',
+                'last_name' => 'User',
+            ])
+        );
+        $otherToken = $register->getBody()['data']['access_token'];
+
+        try {
+            $this->router->dispatch(
+                Request::create('PUT', "/trades/{$trade['id']}", [
+                    'entry_price' => 99999,
+                ], [], ['Authorization' => "Bearer {$otherToken}"])
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertContains($e->getStatusCode(), [403, 404]);
+        }
+    }
+
+    public function testUpdateTradeRequiresAuth(): void
+    {
+        $trade = $this->createTrade();
+
+        $request = Request::create('PUT', "/trades/{$trade['id']}", [
+            'entry_price' => 19000,
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
     // ── Delete ──────────────────────────────────────────────────
 
     // ── BE Hit ──────────────────────────────────────────────────

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
     locale VARCHAR(5) NOT NULL DEFAULT 'fr',
     theme VARCHAR(20) NOT NULL DEFAULT 'light',
     be_threshold_percent DECIMAL(6,4) NOT NULL DEFAULT 0,
+    default_page_size INT UNSIGNED NOT NULL DEFAULT 10,
     bypass_subscription TINYINT(1) NOT NULL DEFAULT 0,
     grace_period_end TIMESTAMP NULL DEFAULT NULL,
     stripe_customer_id VARCHAR(255) NULL DEFAULT NULL,

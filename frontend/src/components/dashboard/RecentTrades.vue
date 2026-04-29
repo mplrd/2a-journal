@@ -12,6 +12,7 @@ import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import { Direction } from '@/constants/enums'
+import { formatSize } from '@/utils/format'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -97,7 +98,7 @@ function viewAll() {
             </Column>
             <Column field="size" :header="t('positions.size')">
               <template #body="{ data }">
-                {{ Number(data.size) }}
+                <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
               </template>
             </Column>
             <Column field="opened_at" :header="t('trades.opened_at')">

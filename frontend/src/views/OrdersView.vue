@@ -7,12 +7,14 @@ import { useOrdersStore } from '@/stores/orders'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
+import { useAuthStore } from '@/stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import OrderForm from '@/components/order/OrderForm.vue'
+import { formatSize } from '@/utils/format'
 import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
@@ -26,6 +28,7 @@ const store = useOrdersStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
+const authStore = useAuthStore()
 
 const positionsStore = usePositionsStore()
 
@@ -65,6 +68,7 @@ const statusOptions = [
 ]
 
 onMounted(async () => {
+  store.perPage = Number(authStore.user?.default_page_size) || 10
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
   await store.fetchOrders()
 })
@@ -262,7 +266,11 @@ function statusSeverity(status) {
           {{ Number(data.entry_price).toLocaleString() }}
         </template>
       </Column>
-      <Column field="size" :header="t('positions.size')" />
+      <Column field="size" :header="t('positions.size')">
+        <template #body="{ data }">
+          <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
+        </template>
+      </Column>
       <Column field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">

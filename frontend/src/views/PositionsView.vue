@@ -4,16 +4,19 @@ import { useI18n } from 'vue-i18n'
 import { usePositionsStore } from '@/stores/positions'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
+import { useAuthStore } from '@/stores/auth'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Tag from 'primevue/tag'
 import Select from 'primevue/select'
 import { Direction } from '@/constants/enums'
+import { formatSize } from '@/utils/format'
 
 const { t } = useI18n()
 const store = usePositionsStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
+const authStore = useAuthStore()
 
 function symbolName(code) {
   const s = symbolsStore.symbols.find((sym) => sym.code === code)
@@ -28,6 +31,7 @@ function accountName(accountId) {
 const filterAccountId = ref(null)
 
 onMounted(async () => {
+  store.perPage = Number(authStore.user?.default_page_size) || 10
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols()])
   await store.fetchAggregated()
 })
@@ -93,7 +97,11 @@ function directionSeverity(direction) {
           <Tag :value="t(`positions.directions.${data.direction}`)" :severity="directionSeverity(data.direction)" />
         </template>
       </Column>
-      <Column field="total_size" :header="t('positions.total_size')" />
+      <Column field="total_size" :header="t('positions.total_size')">
+        <template #body="{ data }">
+          <span class="font-mono tabular-nums">{{ formatSize(data.total_size) }}</span>
+        </template>
+      </Column>
       <Column field="pru" :header="t('positions.pru')">
         <template #body="{ data }">
           {{ Number(data.pru).toLocaleString() }}

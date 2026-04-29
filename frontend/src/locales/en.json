@@ -77,6 +77,7 @@
       "invalid_currency": "Invalid currency",
       "invalid_theme": "Invalid theme",
       "invalid_be_threshold": "BE threshold must be a number between 0 and 5 (%)",
+      "invalid_page_size": "Page size must be 10, 25, 50, or 100",
       "invalid_current_password": "Current password is incorrect",
       "email_confirmation_mismatch": "The email you entered does not match your account",
       "user_not_found": "User not found",
@@ -352,6 +353,7 @@
   "trades": {
     "title": "Trades",
     "create": "New trade",
+    "edit": "Edit trade",
     "empty": "No trades yet. Create your first trade to get started.",
     "account": "Account",
     "select_account": "Select an account",
@@ -409,12 +411,16 @@
       "notes_too_long": "Notes are too long (10000 characters max)",
       "invalid_targets": "Invalid targets format",
       "invalid_target_points": "Target points must be positive",
-      "invalid_target_size": "Target size must be positive"
+      "invalid_target_size": "Target size must be positive",
+      "invalid_opened_at": "Invalid opened-at date",
+      "invalid_closed_at": "Invalid closed-at date",
+      "closed_at_not_closed": "Closed-at can only be edited on a closed trade"
     },
     "success": {
       "created": "Trade created successfully",
       "closed": "Trade closed successfully",
-      "deleted": "Trade deleted successfully"
+      "deleted": "Trade deleted successfully",
+      "updated": "Trade updated"
     }
   },
   "symbols": {
@@ -502,6 +508,8 @@
     "email": "Email",
     "timezone": "Timezone",
     "default_currency": "Default currency",
+    "default_page_size": "Rows per page (default)",
+    "default_page_size_hint": "Number of rows shown by default in lists (trades, positions, accounts…).",
     "theme": "Theme",
     "locale": "Language",
     "profile_picture": "Profile picture",

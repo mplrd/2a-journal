@@ -77,6 +77,7 @@
       "invalid_currency": "Devise invalide",
       "invalid_theme": "Thème invalide",
       "invalid_be_threshold": "Le seuil BE doit être un nombre entre 0 et 5 (%)",
+      "invalid_page_size": "La pagination doit valoir 10, 25, 50 ou 100",
       "invalid_current_password": "Le mot de passe actuel est incorrect",
       "email_confirmation_mismatch": "L'email saisi ne correspond pas à celui de votre compte",
       "user_not_found": "Utilisateur introuvable",
@@ -352,6 +353,7 @@
   "trades": {
     "title": "Trades",
     "create": "Nouveau trade",
+    "edit": "Modifier le trade",
     "empty": "Aucun trade. Créez votre premier trade pour commencer.",
     "account": "Compte",
     "select_account": "Sélectionner un compte",
@@ -409,12 +411,16 @@
       "notes_too_long": "Les notes sont trop longues (10000 caractères max)",
       "invalid_targets": "Format des objectifs invalide",
       "invalid_target_points": "Les points de l'objectif doivent être positifs",
-      "invalid_target_size": "La taille de l'objectif doit être positive"
+      "invalid_target_size": "La taille de l'objectif doit être positive",
+      "invalid_opened_at": "Date d'ouverture invalide",
+      "invalid_closed_at": "Date de clôture invalide",
+      "closed_at_not_closed": "La date de clôture ne peut être modifiée que sur un trade clôturé"
     },
     "success": {
       "created": "Trade créé avec succès",
       "closed": "Trade fermé avec succès",
-      "deleted": "Trade supprimé avec succès"
+      "deleted": "Trade supprimé avec succès",
+      "updated": "Trade mis à jour"
     }
   },
   "symbols": {
@@ -502,6 +508,8 @@
     "email": "Email",
     "timezone": "Fuseau horaire",
     "default_currency": "Devise par défaut",
+    "default_page_size": "Lignes par page (par défaut)",
+    "default_page_size_hint": "Nombre de lignes affichées par défaut dans les listes (trades, positions, comptes…).",
     "theme": "Thème",
     "locale": "Langue",
     "profile_picture": "Photo de profil",

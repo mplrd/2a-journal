@@ -58,6 +58,15 @@ class TradeController extends Controller
         return $this->jsonSuccess($trade);
     }
 
+    public function update(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $tradeId = (int) $request->getRouteParam('id');
+        $trade = $this->tradeService->update($userId, $tradeId, $request->getBody());
+
+        return $this->jsonSuccess($trade);
+    }
+
     public function close(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

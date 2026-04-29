@@ -8,7 +8,7 @@ export const usePositionsStore = defineStore('positions', () => {
   const error = ref(null)
   const filters = ref({})
   const page = ref(1)
-  const perPage = ref(25)
+  const perPage = ref(10)
   const totalRecords = ref(0)
 
   async function fetchPositions() {
@@ -120,7 +120,7 @@ export const usePositionsStore = defineStore('positions', () => {
     error.value = null
     filters.value = {}
     page.value = 1
-    perPage.value = 25
+    perPage.value = 10
     totalRecords.value = 0
   }
 

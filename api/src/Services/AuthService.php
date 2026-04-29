@@ -431,7 +431,8 @@ class AuthService
 
     private const SUPPORTED_LOCALES = ['fr', 'en'];
     private const SUPPORTED_THEMES = ['light', 'dark'];
-    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent'];
+    private const SUPPORTED_PAGE_SIZES = [10, 25, 50, 100];
+    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'default_page_size'];
     private const BE_THRESHOLD_MAX = 5.0;
     private const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     private const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2 MB
@@ -475,6 +476,19 @@ class AuthService
             if (!in_array($filtered['locale'], self::SUPPORTED_LOCALES, true)) {
                 throw new ValidationException('auth.error.invalid_locale', 'locale');
             }
+        }
+
+        // Validate default page size (allow-list to keep DB queries bounded)
+        if (array_key_exists('default_page_size', $filtered)) {
+            $raw = $filtered['default_page_size'];
+            if (!is_int($raw) && (!is_string($raw) || !ctype_digit($raw))) {
+                throw new ValidationException('auth.error.invalid_page_size', 'default_page_size');
+            }
+            $size = (int) $raw;
+            if (!in_array($size, self::SUPPORTED_PAGE_SIZES, true)) {
+                throw new ValidationException('auth.error.invalid_page_size', 'default_page_size');
+            }
+            $filtered['default_page_size'] = $size;
         }
 
         // Validate BE threshold (% of entry price, 0 disables the rule)
