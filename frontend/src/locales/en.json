@@ -410,12 +410,16 @@
       "notes_too_long": "Notes are too long (10000 characters max)",
       "invalid_targets": "Invalid targets format",
       "invalid_target_points": "Target points must be positive",
-      "invalid_target_size": "Target size must be positive"
+      "invalid_target_size": "Target size must be positive",
+      "invalid_opened_at": "Invalid opened-at date",
+      "invalid_closed_at": "Invalid closed-at date",
+      "closed_at_not_closed": "Closed-at can only be edited on a closed trade"
     },
     "success": {
       "created": "Trade created successfully",
       "closed": "Trade closed successfully",
-      "deleted": "Trade deleted successfully"
+      "deleted": "Trade deleted successfully",
+      "updated": "Trade updated"
     }
   },
   "symbols": {

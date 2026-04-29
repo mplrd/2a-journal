@@ -145,7 +145,7 @@ class TradeRepository
 
         $allowedFields = [
             'remaining_size', 'be_reached', 'avg_exit_price', 'pnl', 'pnl_percent',
-            'risk_reward', 'duration_minutes', 'status', 'exit_type', 'closed_at',
+            'risk_reward', 'duration_minutes', 'status', 'exit_type', 'opened_at', 'closed_at',
         ];
 
         foreach ($allowedFields as $field) {
