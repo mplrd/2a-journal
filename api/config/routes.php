@@ -277,6 +277,7 @@ $tradeController = new TradeController($tradeService);
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades', [$tradeController, 'store'], [$authMiddleware, $requireSubscription]);
 $router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->put('/trades/{id}', [$tradeController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware, $requireSubscription]);
 $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware, $requireSubscription]);

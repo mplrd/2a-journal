@@ -27,9 +27,13 @@ const props = defineProps({
   setups: { type: Array, default: () => [] },
   customFieldDefinitions: { type: Array, default: () => [] },
   loading: Boolean,
+  trade: { type: Object, default: null },
 })
 
 const emit = defineEmits(['update:visible', 'save'])
+
+const isEdit = computed(() => !!props.trade)
+const isClosedTrade = computed(() => props.trade?.status === 'CLOSED')
 
 const showSymbolForm = ref(false)
 const filteredSetups = ref([])
@@ -65,7 +69,52 @@ function getDefaultForm() {
     notes: '',
     targets: [],
     opened_at: new Date(),
+    closed_at: null,
     custom_fields: {},
+  }
+}
+
+function parseSetup(setup) {
+  if (Array.isArray(setup)) return setup
+  if (!setup) return []
+  try { return JSON.parse(setup) } catch { return [setup] }
+}
+
+function customFieldsToMap(list, definitions) {
+  const map = {}
+  for (const entry of list || []) {
+    const def = definitions.find((d) => d.id === entry.field_id)
+    if (!def) continue
+    if (def.field_type === CustomFieldType.BOOLEAN) {
+      map[entry.field_id] = entry.value === 'true' || entry.value === true
+    } else if (def.field_type === CustomFieldType.NUMBER) {
+      map[entry.field_id] = entry.value !== null && entry.value !== '' ? Number(entry.value) : null
+    } else {
+      map[entry.field_id] = entry.value
+    }
+  }
+  return map
+}
+
+function populateFromTrade(trade) {
+  const targets = trade.targets
+    ? typeof trade.targets === 'string' ? JSON.parse(trade.targets) : trade.targets
+    : []
+  return {
+    account_id: trade.account_id ?? null,
+    entry_price: Number(trade.entry_price),
+    size: Number(trade.size),
+    sl_points: Number(trade.sl_points),
+    be_points: trade.be_points != null ? Number(trade.be_points) : null,
+    be_size: trade.be_size != null ? Number(trade.be_size) : null,
+    direction: trade.direction,
+    symbol: trade.symbol,
+    setup: parseSetup(trade.setup),
+    notes: trade.notes || '',
+    targets: targets || [],
+    opened_at: trade.opened_at ? new Date(trade.opened_at) : new Date(),
+    closed_at: trade.closed_at ? new Date(trade.closed_at) : null,
+    custom_fields: customFieldsToMap(trade.custom_fields, props.customFieldDefinitions),
   }
 }
 
@@ -73,7 +122,7 @@ watch(
   () => props.visible,
   (val) => {
     if (val) {
-      form.value = getDefaultForm()
+      form.value = isEdit.value ? populateFromTrade(props.trade) : getDefaultForm()
     }
   },
 )
@@ -145,6 +194,18 @@ function handleSave() {
   }
   data.opened_at = formatDateTime(data.opened_at)
 
+  if (isEdit.value && isClosedTrade.value) {
+    data.closed_at = data.closed_at ? formatDateTime(data.closed_at) : null
+  } else {
+    delete data.closed_at
+  }
+
+  // In edit mode the account is fixed; the parent uses the trade id, not
+  // account_id, so don't ship a stale value from the form.
+  if (isEdit.value) {
+    delete data.account_id
+  }
+
   // Build custom_fields array from the map
   const cfMap = data.custom_fields || {}
   data.custom_fields = Object.entries(cfMap)
@@ -177,7 +238,7 @@ async function handleSymbolCreate(data) {
 <template>
   <Dialog
     :visible="visible"
-    :header="t('trades.create')"
+    :header="isEdit ? t('trades.edit') : t('trades.create')"
     :modal="true"
     :closable="true"
     :style="{ width: '600px' }"
@@ -185,7 +246,7 @@ async function handleSymbolCreate(data) {
     @update:visible="handleClose"
   >
     <div class="flex flex-col gap-4">
-      <div>
+      <div v-if="!isEdit">
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('trades.account') }} *</label>
         <Select
           v-model="form.account_id"
@@ -289,9 +350,15 @@ async function handleSymbolCreate(data) {
         </div>
       </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('trades.opened_at') }} *</label>
-        <DatePicker v-model="form.opened_at" showTime hourFormat="24" class="w-full" />
+      <div :class="isEdit && isClosedTrade ? 'grid grid-cols-2 gap-4' : ''">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('trades.opened_at') }} *</label>
+          <DatePicker v-model="form.opened_at" showTime hourFormat="24" class="w-full" />
+        </div>
+        <div v-if="isEdit && isClosedTrade">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('trades.closed_at') }}</label>
+          <DatePicker v-model="form.closed_at" showTime hourFormat="24" class="w-full" />
+        </div>
       </div>
 
       <div>
@@ -336,7 +403,7 @@ async function handleSymbolCreate(data) {
         </div>
       </div>
 
-      <div v-if="sharePreviewText" class="border border-gray-200 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-700">
+      <div v-if="sharePreviewText && !isEdit" class="border border-gray-200 dark:border-gray-600 rounded-md p-3 bg-gray-50 dark:bg-gray-700">
         <div class="flex items-center justify-between mb-2">
           <label class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('share.preview') }}</label>
           <Button icon="pi pi-copy" :label="t('share.copy')" severity="secondary" size="small" text @click="copyPreview" />
@@ -347,7 +414,7 @@ async function handleSymbolCreate(data) {
 
     <template #footer>
       <Button :label="t('common.cancel')" severity="secondary" @click="handleClose" />
-      <Button :label="t('common.create')" :loading="loading" @click="handleSave" />
+      <Button :label="isEdit ? t('common.save') : t('common.create')" :loading="loading" @click="handleSave" />
     </template>
 
     <SymbolForm

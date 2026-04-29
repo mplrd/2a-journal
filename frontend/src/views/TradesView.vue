@@ -19,10 +19,10 @@ import Select from 'primevue/select'
 import MultiSelect from 'primevue/multiselect'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
-import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
+import { tradesService } from '@/services/trades'
 import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/enums'
 
 const route = useRoute()
@@ -39,7 +39,7 @@ const authStore = useAuthStore()
 const positionsStore = usePositionsStore()
 
 const showForm = ref(false)
-const editingPosition = ref(null)
+const editingTrade = ref(null)
 const showEditForm = ref(false)
 const transferringPosition = ref(null)
 const showTransfer = ref(false)
@@ -248,14 +248,17 @@ function openShare(trade) {
 }
 
 async function openEdit(trade) {
-  editingPosition.value = await positionsStore.fetchPosition(trade.position_id)
+  // Fetch the full trade (incl. position fields, opened_at, closed_at,
+  // and custom_field values) so the edit form can mirror the create one.
+  const response = await tradesService.get(trade.id)
+  editingTrade.value = response.data
   showEditForm.value = true
 }
 
 async function handleEditSave(data) {
   try {
-    await positionsStore.updatePosition(editingPosition.value.id, data)
-    toast.add({ severity: 'success', summary: t('common.success'), detail: t('positions.success.updated'), life: 3000 })
+    await tradesService.update(editingTrade.value.id, data)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.success.updated'), life: 3000 })
     showEditForm.value = false
     await store.fetchTrades()
   } catch (err) {
@@ -479,12 +482,14 @@ function pnlClass(pnl) {
       @close="handleClose"
     />
 
-    <PositionForm
+    <TradeForm
       v-model:visible="showEditForm"
-      :position="editingPosition"
+      :trade="editingTrade"
+      :accounts="accountsStore.accounts"
       :symbols="symbolsStore.symbolOptions"
       :setups="setupsStore.setupOptions"
-      :loading="positionsStore.loading"
+      :customFieldDefinitions="customFieldsStore.activeDefinitions"
+      :loading="store.loading"
       @save="handleEditSave"
     />
 

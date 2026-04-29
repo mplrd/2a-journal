@@ -353,6 +353,7 @@
   "trades": {
     "title": "Trades",
     "create": "Nouveau trade",
+    "edit": "Modifier le trade",
     "empty": "Aucun trade. Créez votre premier trade pour commencer.",
     "account": "Compte",
     "select_account": "Sélectionner un compte",
@@ -410,12 +411,16 @@
       "notes_too_long": "Les notes sont trop longues (10000 caractères max)",
       "invalid_targets": "Format des objectifs invalide",
       "invalid_target_points": "Les points de l'objectif doivent être positifs",
-      "invalid_target_size": "La taille de l'objectif doit être positive"
+      "invalid_target_size": "La taille de l'objectif doit être positive",
+      "invalid_opened_at": "Date d'ouverture invalide",
+      "invalid_closed_at": "Date de clôture invalide",
+      "closed_at_not_closed": "La date de clôture ne peut être modifiée que sur un trade clôturé"
     },
     "success": {
       "created": "Trade créé avec succès",
       "closed": "Trade fermé avec succès",
-      "deleted": "Trade supprimé avec succès"
+      "deleted": "Trade supprimé avec succès",
+      "updated": "Trade mis à jour"
     }
   },
   "symbols": {

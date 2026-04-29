@@ -29,6 +29,10 @@ export const tradesService = {
     return api.post('/trades', data)
   },
 
+  async update(id, data) {
+    return api.put(`/trades/${id}`, data)
+  },
+
   async close(id, data) {
     return api.post(`/trades/${id}/close`, data)
   },
