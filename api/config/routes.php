@@ -212,6 +212,7 @@ $setupController = new SetupController($setupService);
 
 $router->get('/setups', [$setupController, 'index'], [$authMiddleware, $requireSubscription]);
 $router->post('/setups', [$setupController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->put('/setups/{id}', [$setupController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/setups/{id}', [$setupController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Custom Fields ──────────────────────────────────────────────

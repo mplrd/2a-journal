@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS setups (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
     label VARCHAR(100) NOT NULL,
+    category ENUM('timeframe','pattern','context') NOT NULL DEFAULT 'pattern',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL DEFAULT NULL,
     KEY idx_setups_user_id (user_id),

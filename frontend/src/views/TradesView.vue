@@ -23,6 +23,7 @@ import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
 import { tradesService } from '@/services/trades'
+import { useSetupCategory } from '@/utils/setupCategory'
 import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/enums'
 
 const route = useRoute()
@@ -33,6 +34,7 @@ const store = useTradesStore()
 const accountsStore = useAccountsStore()
 const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
+const { classFor: setupTagClass } = useSetupCategory()
 const customFieldsStore = useCustomFieldsStore()
 const authStore = useAuthStore()
 
@@ -384,7 +386,14 @@ function pnlClass(pnl) {
       <Column field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
-            <Tag v-for="s in parseSetup(data.setup)" :key="s" :value="s" severity="info" />
+            <span
+              v-for="s in parseSetup(data.setup)"
+              :key="s"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+              :class="setupTagClass(s)"
+            >
+              {{ s }}
+            </span>
           </div>
         </template>
       </Column>
