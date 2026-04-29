@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
-import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
@@ -114,29 +113,24 @@ function resetFilters() {
         />
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('dashboard.symbols') }}</label>
-          <MultiSelect
+      <div class="flex items-start gap-3 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20 mt-1">{{ t('dashboard.symbols') }}</span>
+        <div class="flex-1 min-w-0">
+          <BadgeFilter
             v-model="selectedSymbols"
             :options="symbolsStore.symbolOptions"
-            optionLabel="label"
-            optionValue="value"
-            :placeholder="t('dashboard.symbols')"
-            display="chip"
-            class="w-full"
+            multi
           />
         </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('dashboard.setups') }}</label>
-          <MultiSelect
+      </div>
+
+      <div class="flex items-start gap-3 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20 mt-1">{{ t('dashboard.setups') }}</span>
+        <div class="flex-1 min-w-0">
+          <BadgeFilter
             v-model="selectedSetups"
             :options="setupsStore.setupOptions.map((s) => ({ label: s, value: s }))"
-            optionLabel="label"
-            optionValue="value"
-            :placeholder="t('dashboard.setups')"
-            display="chip"
-            class="w-full"
+            multi
           />
         </div>
       </div>
