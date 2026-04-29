@@ -56,25 +56,15 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
-// Sidebar: two distinct states.
-// Desktop: compact (icons only) ↔ expanded (icons + labels), persisted.
-// Mobile: closed (hidden) ↔ open (full overlay), ephemeral.
-const sidebarExpanded = ref(getSidebarDefault())
+// Navigation:
+// Desktop: a permanent dock-style sidebar (icons only, label on hover).
+// Mobile:  a drop-down panel that takes the full width and shows the
+// sections as a grid of square tiles.
 const mobileOpen = ref(false)
 
-function getSidebarDefault() {
-  const saved = localStorage.getItem('sidebarExpanded')
-  if (saved !== null) return saved === 'true'
-  return false
-}
-
 function toggleSidebar() {
-  if (isMobile.value) {
-    mobileOpen.value = !mobileOpen.value
-  } else {
-    sidebarExpanded.value = !sidebarExpanded.value
-    localStorage.setItem('sidebarExpanded', String(sidebarExpanded.value))
-  }
+  // Burger button is md:hidden, so this only fires on mobile.
+  mobileOpen.value = !mobileOpen.value
 }
 
 function handleNavClick() {
@@ -82,15 +72,6 @@ function handleNavClick() {
     mobileOpen.value = false
   }
 }
-
-const showLabels = computed(() =>
-  isMobile.value ? mobileOpen.value : sidebarExpanded.value,
-)
-
-const sidebarWidthClass = computed(() => {
-  if (isMobile.value) return mobileOpen.value ? 'w-64' : 'w-0'
-  return sidebarExpanded.value ? 'w-64' : 'w-14'
-})
 
 const localeOptions = [
   { code: 'fr', label: 'Français' },
@@ -164,7 +145,7 @@ async function handleLogout() {
         <!-- Left: Burger + Title -->
         <div class="flex items-center gap-3">
           <button
-            class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+            class="md:hidden text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer"
             data-testid="burger-menu"
             :aria-label="t('nav.menu')"
             @click="toggleSidebar"
@@ -269,63 +250,92 @@ async function handleLogout() {
 
     <!-- Body: Sidebar + Content -->
     <div class="flex flex-1 min-h-0">
-      <!-- Backdrop (mobile only) -->
+      <!-- Mobile dropdown backdrop -->
       <div
-        v-if="mobileOpen && isMobile"
-        class="fixed inset-0 bg-black/30 z-20"
+        v-if="mobileOpen"
+        class="md:hidden fixed inset-0 top-[53px] bg-black/40 z-20"
         @click="toggleSidebar"
       />
 
-      <!-- Sidebar (below header) -->
-      <aside
-        class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden shrink-0"
-        :class="sidebarWidthClass"
-      >
-        <nav class="p-2 flex flex-col overflow-y-auto h-full">
+      <!-- Desktop dock (always icons only, label on hover) -->
+      <aside class="hidden md:flex md:flex-col w-14 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shrink-0">
+        <nav class="p-2 flex flex-col h-full overflow-y-auto">
           <div class="flex-1 flex flex-col justify-center gap-1">
             <template v-for="link in navLinks" :key="link.to">
               <RouterLink
                 v-if="isRouteAllowed(link.name)"
-                v-tooltip.right="!showLabels ? link.label : null"
+                v-tooltip.right="link.label"
                 :to="link.to"
-                class="flex items-center gap-3 px-3 py-2 rounded-md"
-                :class="[
-                  !showLabels ? 'justify-center' : '',
-                  isActiveLink(link.to)
-                    ? 'bg-brand-green-100 dark:bg-brand-green-700/20 text-brand-green-800 dark:text-brand-green-300 font-semibold'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700',
-                ]"
-                @click="handleNavClick"
+                class="flex items-center justify-center px-3 py-2 rounded-md"
+                :class="isActiveLink(link.to)
+                  ? 'bg-brand-green-100 dark:bg-brand-green-700/20 text-brand-green-800 dark:text-brand-green-300'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'"
               >
                 <i :class="link.icon"></i>
-                <span v-if="showLabels">{{ link.label }}</span>
               </RouterLink>
               <span
                 v-else
-                v-tooltip.right="!showLabels ? link.label : null"
-                class="flex items-center gap-3 px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
-                :class="!showLabels ? 'justify-center' : ''"
+                v-tooltip.right="link.label"
+                class="flex items-center justify-center px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
               >
                 <i :class="link.icon"></i>
-                <span v-if="showLabels">{{ link.label }}</span>
               </span>
             </template>
           </div>
           <button
             v-if="isAdmin && ADMIN_URL"
-            v-tooltip.right="!showLabels ? t('nav.go_to_admin') : null"
+            v-tooltip.right="t('nav.go_to_admin')"
             type="button"
-            class="flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
-            :class="!showLabels ? 'justify-center' : ''"
+            class="flex items-center justify-center px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer w-full"
             data-testid="admin-link"
             @click="openAdmin"
           >
             <i class="pi pi-shield"></i>
-            <span v-if="showLabels">{{ t('nav.go_to_admin') }}</span>
-            <i v-if="showLabels" class="pi pi-external-link ml-auto text-xs"></i>
           </button>
         </nav>
       </aside>
+
+      <!-- Mobile dropdown menu (full-width grid of square tiles) -->
+      <div
+        v-if="mobileOpen"
+        class="md:hidden fixed top-[53px] left-0 right-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-xl max-h-[calc(100vh-53px)] overflow-y-auto"
+        data-testid="mobile-menu"
+      >
+        <div class="grid grid-cols-3 gap-3 p-4">
+          <template v-for="link in navLinks" :key="link.to">
+            <RouterLink
+              v-if="isRouteAllowed(link.name)"
+              :to="link.to"
+              class="aspect-square flex flex-col items-center justify-center gap-2 rounded-lg border"
+              :class="isActiveLink(link.to)
+                ? 'bg-brand-green-100 dark:bg-brand-green-700/20 border-brand-green-300 dark:border-brand-green-700 text-brand-green-800 dark:text-brand-green-300 font-semibold'
+                : 'bg-gray-50 dark:bg-gray-700/40 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'"
+              @click="handleNavClick"
+            >
+              <i :class="link.icon" class="text-3xl"></i>
+              <span class="text-xs text-center px-1">{{ link.label }}</span>
+            </RouterLink>
+            <span
+              v-else
+              class="aspect-square flex flex-col items-center justify-center gap-2 rounded-lg border bg-gray-50 dark:bg-gray-700/40 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600"
+            >
+              <i :class="link.icon" class="text-3xl"></i>
+              <span class="text-xs text-center px-1">{{ link.label }}</span>
+            </span>
+          </template>
+        </div>
+        <button
+          v-if="isAdmin && ADMIN_URL"
+          type="button"
+          class="w-full flex items-center justify-center gap-3 py-4 text-amber-700 dark:text-amber-400 border-t border-gray-200 dark:border-gray-700 cursor-pointer"
+          data-testid="admin-link-mobile"
+          @click="openAdmin"
+        >
+          <i class="pi pi-shield text-xl"></i>
+          <span class="text-base font-medium">{{ t('nav.go_to_admin') }}</span>
+          <i class="pi pi-external-link text-sm"></i>
+        </button>
+      </div>
 
       <!-- Main content (only this area scrolls) -->
       <main class="flex-1 overflow-y-auto px-4 py-6 min-w-0">
