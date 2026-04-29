@@ -43,9 +43,10 @@ export const usePositionsStore = defineStore('positions', () => {
         per_page: perPage.value,
       })
       positions.value = response.data
-      if (response.meta) {
-        totalRecords.value = response.meta.total || 0
-      }
+      // The aggregated endpoint returns the whole list (no pagination meta).
+      // Without this fallback, totalRecords stayed at 0 and the EmptyState
+      // wrapper hid a non-empty grid.
+      totalRecords.value = response.meta?.total ?? (Array.isArray(response.data) ? response.data.length : 0)
       return response
     } catch (err) {
       error.value = err.messageKey || 'error.internal'

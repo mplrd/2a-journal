@@ -143,6 +143,24 @@ describe('positions store', () => {
     expect(positionsService.listAggregated).toHaveBeenCalledWith({ page: 1, per_page: 10 })
   })
 
+  it('fetchAggregated derives totalRecords from data length when meta is absent', async () => {
+    // Regression: the aggregated endpoint returns no meta (it lists everything,
+    // not paginated). Without the fallback, totalRecords stays at 0 and the
+    // EmptyState wrapper hid a non-empty grid.
+    positionsService.listAggregated.mockResolvedValue({
+      success: true,
+      data: [
+        { account_id: 1, symbol: 'NASDAQ', direction: 'BUY' },
+        { account_id: 1, symbol: 'EURUSD', direction: 'SELL' },
+        { account_id: 2, symbol: 'BTC', direction: 'BUY' },
+      ],
+    })
+
+    await store.fetchAggregated()
+
+    expect(store.totalRecords).toBe(3)
+  })
+
   it('fetchAggregated passes filters', async () => {
     positionsService.listAggregated.mockResolvedValue({ success: true, data: [] })
     store.setFilters({ account_id: 5 })
