@@ -320,26 +320,31 @@ function pnlClass(pnl) {
     </div>
 
     <div class="flex gap-4 mb-4">
-      <Select
-        v-model="filterAccountId"
-        :options="[{ label: t('trades.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
-        optionLabel="label"
-        optionValue="value"
-        :placeholder="t('trades.filter_account')"
-        class="w-48"
-        @change="applyFilters"
-      />
-      <MultiSelect
-        v-model="filterStatuses"
-        :options="statusOptions"
-        optionLabel="label"
-        optionValue="value"
-        :placeholder="t('trades.filter_status')"
-        :show-toggle-all="false"
-        class="w-48"
-        display="chip"
-        @change="applyFilters"
-      />
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('trades.account') }}</label>
+        <Select
+          v-model="filterAccountId"
+          :options="[{ label: t('trades.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
+          optionLabel="label"
+          optionValue="value"
+          class="w-56"
+          @change="applyFilters"
+        />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{{ t('trades.status') }}</label>
+        <MultiSelect
+          v-model="filterStatuses"
+          :options="statusOptions"
+          optionLabel="label"
+          optionValue="value"
+          :placeholder="t('trades.all_statuses')"
+          :show-toggle-all="false"
+          class="w-56"
+          display="chip"
+          @change="applyFilters"
+        />
+      </div>
     </div>
 
     <DataTable

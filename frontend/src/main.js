@@ -16,6 +16,11 @@ import './assets/main.css'
 
 // Brand preset: PrimeVue's "primary" anchored on the charte's navy
 // (btn-primary = #1f2a3c). Hover/active tones go darker (600/700).
+//
+// Dark mode flips the surface relationship: primary CTAs render in
+// brand-cream over navy text. Without this override, Aura defaults to
+// `{primary.400}` (#45587a) for the dark-mode primary background, which
+// blends into the navy surface and produces near-invisible CTAs.
 const Brand = definePreset(Aura, {
   semantic: {
     primary: {
@@ -30,6 +35,16 @@ const Brand = definePreset(Aura, {
       800: '#0d0e10',
       900: '#080809',
       950: '#040405',
+    },
+    colorScheme: {
+      dark: {
+        primary: {
+          color: '#e8e8e6',
+          contrastColor: '#1f2a3c',
+          hoverColor: '#d8d8d4',
+          activeColor: '#c9d1de',
+        },
+      },
     },
   },
 })
