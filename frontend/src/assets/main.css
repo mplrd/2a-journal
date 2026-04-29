@@ -84,3 +84,22 @@ table .num,
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* Action icon buttons in DataTable cells: enforce a 32×32 touch target
+   (charte audit §3.3). PrimeVue's size="small" gives ~28px which sits
+   under the recommended tactile target. */
+.p-datatable .p-button.p-button-icon-only {
+  min-width: 2rem;
+  min-height: 2rem;
+}
+
+/* Secondary text-only icon buttons (the "edit" pattern) need a visible
+   color in dark mode — the default Aura secondary token disappears against
+   the navy surface. Anchor on the brand navy ramp instead. */
+.dark-mode .p-button-secondary.p-button-text {
+  color: var(--color-brand-navy-300);
+}
+.dark-mode .p-button-secondary.p-button-text:hover:not(:disabled) {
+  color: var(--color-brand-cream);
+  background-color: rgba(255, 255, 255, 0.06);
+}

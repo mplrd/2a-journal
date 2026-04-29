@@ -16,6 +16,7 @@ import Select from 'primevue/select'
 import OrderForm from '@/components/order/OrderForm.vue'
 import { formatSize } from '@/utils/format'
 import { useSetupCategory } from '@/utils/setupCategory'
+import EmptyState from '@/components/common/EmptyState.vue'
 import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
@@ -243,7 +244,17 @@ function statusSeverity(status) {
       </div>
     </div>
 
+    <EmptyState
+      v-if="!store.loading && store.totalRecords === 0"
+      icon="pi pi-list"
+      :title="t('orders.empty_title')"
+      :description="t('orders.empty')"
+    >
+      <Button :label="t('orders.create')" icon="pi pi-plus" @click="showForm = true" />
+    </EmptyState>
+
     <DataTable
+      v-else
       :value="store.orders"
       :loading="store.loading"
       lazy
