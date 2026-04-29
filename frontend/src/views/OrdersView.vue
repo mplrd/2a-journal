@@ -60,15 +60,12 @@ function accountName(accountId) {
 }
 
 const filterAccountIds = ref([])
-const filterStatus = ref(null)
+const filterStatuses = ref([])
 
-const statusOptions = [
-  { label: t('orders.all_statuses'), value: null },
-  ...Object.values(OrderStatus).map((value) => ({
-    label: t(`orders.statuses.${value}`),
-    value,
-  })),
-]
+const statusOptions = Object.values(OrderStatus).map((value) => ({
+  label: t(`orders.statuses.${value}`),
+  value,
+}))
 
 onMounted(async () => {
   store.perPage = Number(authStore.user?.default_page_size) || 10
@@ -79,7 +76,7 @@ onMounted(async () => {
 async function applyFilters() {
   const filters = {}
   if (filterAccountIds.value.length > 0) filters.account_ids = filterAccountIds.value
-  if (filterStatus.value) filters.status = filterStatus.value
+  if (filterStatuses.value.length > 0) filters.statuses = filterStatuses.value
   store.setFilters(filters)
   store.page = 1
   await store.fetchOrders()
@@ -232,8 +229,9 @@ function statusSeverity(status) {
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('orders.status') }}</span>
         <BadgeFilter
-          v-model="filterStatus"
+          v-model="filterStatuses"
           :options="statusOptions"
+          multi
           @change="applyFilters"
         />
       </div>

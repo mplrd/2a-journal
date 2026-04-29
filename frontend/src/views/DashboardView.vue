@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStatsStore } from '@/stores/stats'
 import { useAccountsStore } from '@/stores/accounts'
-import Select from 'primevue/select'
+import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner.vue'
 import KpiCards from '@/components/dashboard/KpiCards.vue'
 import CumulativePnlChart from '@/components/dashboard/CumulativePnlChart.vue'
@@ -16,7 +16,7 @@ const { t } = useI18n()
 const statsStore = useStatsStore()
 const accountsStore = useAccountsStore()
 
-const filterAccountId = ref(null)
+const filterAccountIds = ref([])
 
 onMounted(async () => {
   statsStore.setFilters({})
@@ -31,7 +31,7 @@ onMounted(async () => {
 
 async function applyFilters() {
   const filters = {}
-  if (filterAccountId.value) filters.account_id = filterAccountId.value
+  if (filterAccountIds.value.length > 0) filters.account_ids = filterAccountIds.value
   statsStore.setFilters(filters)
   await Promise.all([
     statsStore.fetchDashboard(),
@@ -45,15 +45,12 @@ async function applyFilters() {
 <template>
   <div>
     <EmailVerificationBanner />
-    <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
       <h1 class="text-2xl font-bold dark:text-gray-100">{{ t('dashboard.title') }}</h1>
-      <Select
-        v-model="filterAccountId"
-        :options="[{ label: t('dashboard.all_accounts'), value: null }, ...accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))]"
-        optionLabel="label"
-        optionValue="value"
-        :placeholder="t('dashboard.filter_account')"
-        class="w-48"
+      <BadgeFilter
+        v-model="filterAccountIds"
+        :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+        multi
         @change="applyFilters"
       />
     </div>
