@@ -123,6 +123,15 @@ class StatsController extends Controller
             $filters['account_id'] = $accountId;
         }
 
+        $accountIds = $request->getQuery('account_ids');
+        if (is_array($accountIds) && !empty($accountIds)) {
+            $filters['account_ids'] = $accountIds;
+        } elseif (is_string($accountIds) && $accountIds !== '') {
+            // Frontend stats service serializes arrays as comma-joined for
+            // backwards compat with how symbols/setups are sent.
+            $filters['account_ids'] = explode(',', $accountIds);
+        }
+
         $dateFrom = $request->getQuery('date_from');
         if ($dateFrom !== null && $dateFrom !== '') {
             $filters['date_from'] = $dateFrom;
