@@ -56,25 +56,15 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
-// Sidebar: two distinct states.
-// Desktop: compact (icons only) ↔ expanded (icons + labels), persisted.
-// Mobile: closed (hidden) ↔ open (full overlay), ephemeral.
-const sidebarExpanded = ref(getSidebarDefault())
+// Sidebar:
+// Desktop: always compact (dock-style icons-only, hover label), no toggle.
+// Mobile: closed by default, opens as a generous overlay with bigger
+// touch targets and labels visible.
 const mobileOpen = ref(false)
 
-function getSidebarDefault() {
-  const saved = localStorage.getItem('sidebarExpanded')
-  if (saved !== null) return saved === 'true'
-  return false
-}
-
 function toggleSidebar() {
-  if (isMobile.value) {
-    mobileOpen.value = !mobileOpen.value
-  } else {
-    sidebarExpanded.value = !sidebarExpanded.value
-    localStorage.setItem('sidebarExpanded', String(sidebarExpanded.value))
-  }
+  // Burger is hidden on desktop; this only fires on mobile.
+  mobileOpen.value = !mobileOpen.value
 }
 
 function handleNavClick() {
@@ -83,13 +73,11 @@ function handleNavClick() {
   }
 }
 
-const showLabels = computed(() =>
-  isMobile.value ? mobileOpen.value : sidebarExpanded.value,
-)
+const showLabels = computed(() => isMobile.value && mobileOpen.value)
 
 const sidebarWidthClass = computed(() => {
-  if (isMobile.value) return mobileOpen.value ? 'w-64' : 'w-0'
-  return sidebarExpanded.value ? 'w-64' : 'w-14'
+  if (isMobile.value) return mobileOpen.value ? 'w-72' : 'w-0'
+  return 'w-14'
 })
 
 const localeOptions = [
@@ -164,7 +152,7 @@ async function handleLogout() {
         <!-- Left: Burger + Title -->
         <div class="flex items-center gap-3">
           <button
-            class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+            class="md:hidden text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer"
             data-testid="burger-menu"
             :aria-label="t('nav.menu')"
             @click="toggleSidebar"
@@ -281,32 +269,32 @@ async function handleLogout() {
         class="fixed md:static top-[53px] md:top-0 left-0 z-30 h-[calc(100vh-53px)] md:h-auto bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 overflow-hidden shrink-0"
         :class="sidebarWidthClass"
       >
-        <nav class="p-2 flex flex-col overflow-y-auto h-full">
-          <div class="flex-1 flex flex-col justify-center gap-1">
+        <nav class="p-2 flex flex-col overflow-y-auto h-full" :class="showLabels ? 'gap-2 p-3' : ''">
+          <div class="flex-1 flex flex-col justify-center" :class="showLabels ? 'gap-2' : 'gap-1'">
             <template v-for="link in navLinks" :key="link.to">
               <RouterLink
                 v-if="isRouteAllowed(link.name)"
                 v-tooltip.right="!showLabels ? link.label : null"
                 :to="link.to"
-                class="flex items-center gap-3 px-3 py-2 rounded-md"
+                class="flex items-center rounded-md"
                 :class="[
-                  !showLabels ? 'justify-center' : '',
+                  showLabels ? 'gap-4 px-4 py-4 text-base' : 'gap-3 px-3 py-2 justify-center',
                   isActiveLink(link.to)
                     ? 'bg-brand-green-100 dark:bg-brand-green-700/20 text-brand-green-800 dark:text-brand-green-300 font-semibold'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700',
                 ]"
                 @click="handleNavClick"
               >
-                <i :class="link.icon"></i>
+                <i :class="[link.icon, showLabels ? 'text-2xl' : '']"></i>
                 <span v-if="showLabels">{{ link.label }}</span>
               </RouterLink>
               <span
                 v-else
                 v-tooltip.right="!showLabels ? link.label : null"
-                class="flex items-center gap-3 px-3 py-2 text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
-                :class="!showLabels ? 'justify-center' : ''"
+                class="flex items-center text-gray-400 dark:text-gray-600 cursor-not-allowed rounded-md"
+                :class="showLabels ? 'gap-4 px-4 py-4 text-base' : 'gap-3 px-3 py-2 justify-center'"
               >
-                <i :class="link.icon"></i>
+                <i :class="[link.icon, showLabels ? 'text-2xl' : '']"></i>
                 <span v-if="showLabels">{{ link.label }}</span>
               </span>
             </template>
@@ -315,14 +303,14 @@ async function handleLogout() {
             v-if="isAdmin && ADMIN_URL"
             v-tooltip.right="!showLabels ? t('nav.go_to_admin') : null"
             type="button"
-            class="flex items-center gap-3 px-3 py-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
-            :class="!showLabels ? 'justify-center' : ''"
+            class="flex items-center text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 rounded-md border-t border-gray-200 dark:border-gray-700 pt-3 cursor-pointer text-left w-full"
+            :class="showLabels ? 'gap-4 px-4 py-4 text-base' : 'gap-3 px-3 py-2 justify-center'"
             data-testid="admin-link"
             @click="openAdmin"
           >
-            <i class="pi pi-shield"></i>
+            <i :class="['pi pi-shield', showLabels ? 'text-2xl' : '']"></i>
             <span v-if="showLabels">{{ t('nav.go_to_admin') }}</span>
-            <i v-if="showLabels" class="pi pi-external-link ml-auto text-xs"></i>
+            <i v-if="showLabels" class="pi pi-external-link ml-auto text-sm"></i>
           </button>
         </nav>
       </aside>
