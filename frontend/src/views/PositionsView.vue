@@ -58,10 +58,6 @@ function directionSeverity(direction) {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-2xl font-bold">{{ t('positions.title') }}</h1>
-    </div>
-
     <div class="flex items-center gap-3 flex-wrap mb-4">
       <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('positions.account') }}</span>
       <BadgeFilter

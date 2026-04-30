@@ -152,8 +152,7 @@ function balanceVariation(account) {
       {{ t('onboarding.welcome') }}
     </div>
 
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-2xl font-bold">{{ t('accounts.title') }}</h1>
+    <div class="flex items-center justify-end mb-4">
       <Button :label="t('accounts.create')" icon="pi pi-plus" @click="openCreate" />
     </div>
 
