@@ -18,6 +18,7 @@ const categoryOptions = [
   { value: 'timeframe', label: t('setups.category.timeframe') },
   { value: 'pattern', label: t('setups.category.pattern') },
   { value: 'context', label: t('setups.category.context') },
+  { value: null, label: t('setups.category.uncategorized') },
 ]
 
 const showAddRow = ref(false)
