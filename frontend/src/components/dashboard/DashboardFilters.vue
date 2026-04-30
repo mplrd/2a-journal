@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
+import { Direction } from '@/constants/enums'
 import Button from 'primevue/button'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
@@ -31,8 +32,8 @@ function toggleExpanded() {
 }
 
 const directionOptions = [
-  { label: 'BUY', value: 'BUY' },
-  { label: 'SELL', value: 'SELL' },
+  { label: Direction.BUY, value: Direction.BUY },
+  { label: Direction.SELL, value: Direction.SELL },
 ]
 
 // Color hint per category — used by BadgeFilter to tint each setup
