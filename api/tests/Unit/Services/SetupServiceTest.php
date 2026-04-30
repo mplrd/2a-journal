@@ -157,6 +157,34 @@ class SetupServiceTest extends TestCase
         }
     }
 
+    public function testUpdateAcceptsNullCategory(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Breakout', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        $this->repo->expects($this->once())
+            ->method('update')
+            ->with(1, ['category' => null])
+            ->willReturn(array_merge($setup, ['category' => null]));
+
+        $result = $this->service->update(1, 1, ['category' => null]);
+
+        $this->assertNull($result['category']);
+    }
+
+    public function testUpdateTreatsEmptyStringCategoryAsNull(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Breakout', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        $this->repo->expects($this->once())
+            ->method('update')
+            ->with(1, ['category' => null])
+            ->willReturn(array_merge($setup, ['category' => null]));
+
+        $result = $this->service->update(1, 1, ['category' => '']);
+
+        $this->assertNull($result['category']);
+    }
+
     public function testUpdateRejectsInvalidCategory(): void
     {
         $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Breakout', 'category' => 'pattern'];

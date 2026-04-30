@@ -10,6 +10,18 @@ export const useSetupsStore = defineStore('setups', () => {
 
   const setupOptions = computed(() => setups.value.map((s) => s.label))
 
+  // Setups grouped by category, ordered timeframe → pattern → context → uncategorized.
+  // Returns { timeframe: [labels], pattern: [labels], context: [labels], uncategorized: [labels] }.
+  // Empty categories are still present so callers can decide whether to render them.
+  const setupsByCategory = computed(() => {
+    const groups = { timeframe: [], pattern: [], context: [], uncategorized: [] }
+    for (const s of setups.value) {
+      const key = s.category && groups[s.category] ? s.category : 'uncategorized'
+      groups[key].push(s.label)
+    }
+    return groups
+  })
+
   async function fetchSetups(force = false) {
     if (loaded.value && !force) return
     loading.value = true
@@ -86,6 +98,7 @@ export const useSetupsStore = defineStore('setups', () => {
     loaded,
     error,
     setupOptions,
+    setupsByCategory,
     fetchSetups,
     createSetup,
     updateSetup,

@@ -100,10 +100,19 @@ foreach ($symbols as [$code, $name, $type, $pointValue, $currency]) {
 echo "Created " . count($symbols) . " symbols\n";
 
 // ── 4. Create setups ────────────────────────────────────────
-$setups = ['Breakout', 'Pullback', 'Range', 'Trend Follow', 'Reversal'];
-foreach ($setups as $label) {
-    $pdo->prepare("INSERT INTO setups (user_id, label) VALUES (:uid, :label)")
-        ->execute(['uid' => $userId, 'label' => $label]);
+// Each setup is tagged with a category so the demo showcases all four
+// visual buckets (timeframe / pattern / context / uncategorized) on the
+// Performance filter.
+$setups = [
+    ['Breakout',     'pattern'],
+    ['Pullback',     'pattern'],
+    ['Range',        'context'],
+    ['Trend Follow', 'timeframe'],
+    ['Reversal',     null], // outlier — uncategorized bucket
+];
+foreach ($setups as [$label, $category]) {
+    $pdo->prepare("INSERT INTO setups (user_id, label, category) VALUES (:uid, :label, :cat)")
+        ->execute(['uid' => $userId, 'label' => $label, 'cat' => $category]);
 }
 echo "Created " . count($setups) . " setups\n";
 
