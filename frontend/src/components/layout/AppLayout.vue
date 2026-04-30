@@ -163,7 +163,7 @@ async function handleLogout() {
             <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100 hidden sm:inline">{{ t('app.title') }}</h1>
           </RouterLink>
           <span v-if="pageTitle" class="text-gray-300 dark:text-gray-600 hidden sm:inline" aria-hidden="true">·</span>
-          <span v-if="pageTitle" class="text-lg font-medium text-gray-600 dark:text-gray-300 truncate" data-testid="page-title">{{ pageTitle }}</span>
+          <span v-if="pageTitle" class="text-lg font-semibold text-gray-500 dark:text-gray-400 truncate" data-testid="page-title">{{ pageTitle }}</span>
         </div>
 
         <!-- Right: Locale selector + Dark mode toggle + Avatar + User menu -->
