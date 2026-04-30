@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAccountsStore } from '@/stores/accounts'
 import { useSymbolsStore } from '@/stores/symbols'
@@ -34,6 +34,31 @@ const directionOptions = [
   { label: 'BUY', value: 'BUY' },
   { label: 'SELL', value: 'SELL' },
 ]
+
+// Color hint per category — used by BadgeFilter to tint each setup
+// badge so the user can read its typology at a glance, while the
+// fill/outline still encodes selected vs not.
+const SETUP_CATEGORY_COLOR = {
+  timeframe: 'blue',
+  pattern: 'purple',
+  context: 'amber',
+}
+
+const setupOptions = computed(() => {
+  const cats = setupsStore.setupsByCategory
+  const order = ['timeframe', 'pattern', 'context', 'uncategorized']
+  const out = []
+  for (const cat of order) {
+    for (const label of cats[cat] || []) {
+      out.push({
+        label,
+        value: label,
+        color: SETUP_CATEGORY_COLOR[cat] || 'gray',
+      })
+    }
+  }
+  return out
+})
 
 function formatDate(date) {
   if (!date) return null
@@ -147,13 +172,13 @@ function resetFilters() {
         </div>
       </div>
 
-      <!-- Row 3: setups -->
+      <!-- Row 3: setups (flat row, badges tinted by category) -->
       <div class="flex items-start gap-3 flex-wrap">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-20 mt-1">{{ t('dashboard.setups') }}</span>
         <div class="flex-1 min-w-0">
           <BadgeFilter
             v-model="selectedSetups"
-            :options="setupsStore.setupOptions.map((s) => ({ label: s, value: s }))"
+            :options="setupOptions"
             multi
           />
         </div>

@@ -61,10 +61,14 @@ class SetupService
 
         $patch = [];
         if (array_key_exists('category', $data)) {
-            if (!in_array($data['category'], self::SUPPORTED_CATEGORIES, true)) {
+            $category = $data['category'];
+            if ($category === '' || $category === null) {
+                $patch['category'] = null;
+            } elseif (!in_array($category, self::SUPPORTED_CATEGORIES, true)) {
                 throw new ValidationException('setups.error.invalid_category', 'category');
+            } else {
+                $patch['category'] = $category;
             }
-            $patch['category'] = $data['category'];
         }
 
         return $this->repo->update($id, $patch);
