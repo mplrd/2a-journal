@@ -328,27 +328,28 @@ class TradeService
         // Calculate avg exit price (weighted average)
         $avgExitPrice = $this->calculateAvgExitPrice($allExits);
 
+        // Realized metrics are computed on EVERY exit (partial or full) so the
+        // running P&L is visible immediately for swing trades.
+        $metrics = $this->calculateRealizedMetrics($trade, $allExits, $exitedAt);
+
         $previousStatus = $trade['status'];
         $updateData = [
             'remaining_size' => $newRemainingSize,
             'avg_exit_price' => $avgExitPrice,
+            'pnl' => $metrics['pnl'],
+            'pnl_percent' => $metrics['pnl_percent'],
+            'risk_reward' => $metrics['risk_reward'],
         ];
 
-        // Check if fully closed
         if (abs($newRemainingSize) < 0.0001) {
-            $metrics = $this->calculateFinalMetrics($trade, $allExits, $exitedAt);
+            // Full close — set terminal fields. duration is meaningful only here.
             $updateData['status'] = TradeStatus::CLOSED->value;
             $updateData['exit_type'] = $exitTypeValue;
             $updateData['closed_at'] = $exitedAt;
-            $updateData['pnl'] = $metrics['pnl'];
-            $updateData['pnl_percent'] = $metrics['pnl_percent'];
-            $updateData['risk_reward'] = $metrics['risk_reward'];
             $updateData['duration_minutes'] = $metrics['duration_minutes'];
-        } else {
-            // Mark as SECURED if first exit or BE reached
-            if ($previousStatus === TradeStatus::OPEN->value) {
-                $updateData['status'] = TradeStatus::SECURED->value;
-            }
+        } elseif ($previousStatus === TradeStatus::OPEN->value) {
+            // First partial transitions OPEN → SECURED.
+            $updateData['status'] = TradeStatus::SECURED->value;
         }
 
         $updated = $this->tradeRepo->update($tradeId, $updateData);
@@ -714,7 +715,16 @@ class TradeService
         return $totalSize > 0 ? round($totalWeighted / $totalSize, 5) : 0;
     }
 
-    private function calculateFinalMetrics(array $trade, array $exits, string $closedAt): array
+    /**
+     * Aggregate realized metrics across all partial exits to date. Called on every
+     * close() invocation: returns running P&L for partial exits, final P&L when
+     * remaining_size is 0. The signature is identical regardless — only the caller
+     * decides whether to also persist terminal fields (status, closed_at, …).
+     *
+     * `closedAt` is the current exit's timestamp; used solely for `duration_minutes`,
+     * which the caller persists only when the trade is fully closed.
+     */
+    private function calculateRealizedMetrics(array $trade, array $exits, string $closedAt): array
     {
         $totalPnl = 0;
         foreach ($exits as $exit) {

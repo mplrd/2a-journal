@@ -555,6 +555,116 @@ class TradeServiceTest extends TestCase
         ]);
     }
 
+    // ── Close: realized P&L update on every exit ────────────────
+    // Covers swing-trader behavior where partial TPs must reflect on the trade
+    // row immediately rather than waiting for full close.
+
+    public function testClosePartialExitUpdatesRunningPnl(): void
+    {
+        // Size 2 BUY @18500, partial of 1 @18600 → realized +100
+        // pnl_percent = 100 / (18500 * 2) * 100 ≈ 0.2703
+        // risk_reward = 100 / (size * sl_points) = 100 / (2 * 50) = 1.0
+        $trade = $this->fakeTrade([
+            'remaining_size' => '2.0000', 'size' => '2.0000',
+            'direction' => 'BUY', 'entry_price' => '18500.00000',
+            'sl_points' => '50.00',
+        ]);
+        $this->tradeRepo->method('findById')->willReturn($trade);
+        $this->partialExitRepo->method('create')->willReturn([
+            'id' => 1, 'trade_id' => 1, 'exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00',
+        ]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+        ]);
+
+        $this->tradeRepo->expects($this->once())->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertEquals(100.0, $data['pnl']);
+            $this->assertEqualsWithDelta(0.2703, (float) $data['pnl_percent'], 0.001);
+            $this->assertEqualsWithDelta(1.0, (float) $data['risk_reward'], 0.001);
+            $this->assertSame('SECURED', $data['status']);
+            $this->assertArrayNotHasKey('closed_at', $data);
+            $this->assertArrayNotHasKey('exit_type', $data);
+            return $this->fakeTrade(['status' => 'SECURED', 'remaining_size' => '1.0000']);
+        });
+
+        $this->service->close(1, 1, [
+            'exit_price' => 18600,
+            'exit_size' => 1,
+            'exit_type' => 'TP',
+        ]);
+    }
+
+    public function testCloseSecondPartialAccumulatesRealizedPnl(): void
+    {
+        // Trade size 3, already SECURED (one prior +100 partial). Second partial of 1 @18700 → +200.
+        // Cumulative realized: 100 + 200 = 300.
+        // risk_reward = 300 / (3 * 50) = 2.0
+        $trade = $this->fakeTrade([
+            'remaining_size' => '2.0000', 'size' => '3.0000',
+            'direction' => 'BUY', 'entry_price' => '18500.00000',
+            'sl_points' => '50.00', 'status' => 'SECURED',
+            'pnl' => '100.00',
+        ]);
+        $this->tradeRepo->method('findById')->willReturn($trade);
+        $this->partialExitRepo->method('create')->willReturn([
+            'id' => 2, 'trade_id' => 1, 'exit_price' => '18700.00000', 'size' => '1.0000', 'pnl' => '200.00',
+        ]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+            ['exit_price' => '18700.00000', 'size' => '1.0000', 'pnl' => '200.00'],
+        ]);
+
+        $this->tradeRepo->expects($this->once())->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertEquals(300.0, $data['pnl']);
+            $this->assertEqualsWithDelta(2.0, (float) $data['risk_reward'], 0.001);
+            // Already SECURED → no status key in the patch
+            $this->assertArrayNotHasKey('status', $data);
+            return $this->fakeTrade(['remaining_size' => '1.0000']);
+        });
+
+        $this->service->close(1, 1, [
+            'exit_price' => 18700,
+            'exit_size' => 1,
+            'exit_type' => 'TP',
+        ]);
+    }
+
+    public function testCloseSlAfterPartialFinalizesWithCumulativePnl(): void
+    {
+        // Trade size 2 with one prior +100 partial (SECURED, remaining 1).
+        // SL hit on the last unit @18450 → -50 on the rest.
+        // Final pnl = 100 + (-50) = 50, status CLOSED, exit_type SL set.
+        $trade = $this->fakeTrade([
+            'remaining_size' => '1.0000', 'size' => '2.0000',
+            'direction' => 'BUY', 'entry_price' => '18500.00000',
+            'sl_points' => '50.00', 'status' => 'SECURED',
+            'pnl' => '100.00',
+        ]);
+        $this->tradeRepo->method('findById')->willReturn($trade);
+        $this->partialExitRepo->method('create')->willReturn([
+            'id' => 2, 'trade_id' => 1, 'exit_price' => '18450.00000', 'size' => '1.0000', 'pnl' => '-50.00',
+        ]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+            ['exit_price' => '18450.00000', 'size' => '1.0000', 'pnl' => '-50.00'],
+        ]);
+
+        $this->tradeRepo->expects($this->once())->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertEquals(50.0, $data['pnl']);
+            $this->assertEqualsWithDelta(0.5, (float) $data['risk_reward'], 0.001);
+            $this->assertSame('CLOSED', $data['status']);
+            $this->assertSame('SL', $data['exit_type']);
+            $this->assertNotEmpty($data['closed_at']);
+            return $this->fakeTrade(['status' => 'CLOSED', 'remaining_size' => '0.0000']);
+        });
+
+        $this->service->close(1, 1, [
+            'exit_price' => 18450,
+            'exit_size' => 1,
+            'exit_type' => 'SL',
+        ]);
+    }
+
     // ── Close: validation errors ────────────────────────────────
 
     public function testCloseThrowsWhenAlreadyClosed(): void

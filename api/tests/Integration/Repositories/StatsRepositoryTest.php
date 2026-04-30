@@ -167,6 +167,62 @@ class StatsRepositoryTest extends TestCase
         ]);
     }
 
+    /**
+     * SECURED trade with a single partial exit. Mirrors the new TradeService
+     * behavior where trades.pnl/pnl_percent/risk_reward are populated on every
+     * partial exit, not just on full close.
+     */
+    private function createSecuredTradeWithPartial(float $partialPnl, array $overrides = []): array
+    {
+        $entryPrice = (float) ($overrides['entry_price'] ?? 18500);
+        $size = (float) ($overrides['size'] ?? 2);
+
+        $position = $this->positionRepo->create([
+            'user_id' => $this->userId,
+            'account_id' => $overrides['account_id'] ?? $this->accountId,
+            'direction' => $overrides['direction'] ?? 'BUY',
+            'symbol' => $overrides['symbol'] ?? 'NASDAQ',
+            'entry_price' => $entryPrice,
+            'size' => $size,
+            'setup' => $overrides['setup'] ?? '["Breakout"]',
+            'sl_points' => '50.00',
+            'sl_price' => '18450.00000',
+            'position_type' => 'TRADE',
+        ]);
+
+        $trade = $this->tradeRepo->create([
+            'position_id' => (int) $position['id'],
+            'opened_at' => $overrides['opened_at'] ?? '2026-01-15 10:00:00',
+            'remaining_size' => $size - 1, // 1 unit exited as partial
+            'status' => 'SECURED',
+        ]);
+
+        $entryValue = $entryPrice * $size;
+        $pnlPercent = $entryValue > 0 ? round($partialPnl / $entryValue * 100, 4) : 0.0;
+        $rr = round($partialPnl / ($size * 50.0), 4);
+
+        $this->tradeRepo->update((int) $trade['id'], [
+            'pnl' => $partialPnl,
+            'pnl_percent' => $pnlPercent,
+            'risk_reward' => $rr,
+        ]);
+
+        $exitedAt = $overrides['exited_at'] ?? '2026-01-15 11:00:00';
+        $this->pdo->prepare(
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
+             VALUES (:trade_id, :exited_at, :exit_price, :size, :exit_type, :pnl)"
+        )->execute([
+            'trade_id' => (int) $trade['id'],
+            'exited_at' => $exitedAt,
+            'exit_price' => 18550.00,
+            'size' => 1.0,
+            'exit_type' => 'TP',
+            'pnl' => $partialPnl,
+        ]);
+
+        return $this->tradeRepo->findById((int) $trade['id']);
+    }
+
     // ── getOverview ─────────────────────────────────────────────
 
     public function testGetOverviewCountsAndPnlMetrics(): void
@@ -212,8 +268,9 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(100.0, (float) $overview['total_pnl']);
     }
 
-    public function testGetOverviewExcludesNonClosedTrades(): void
+    public function testGetOverviewExcludesOpenTradesWithoutExits(): void
     {
+        // OPEN trades with no partial exits are still excluded — no realized P&L yet.
         $this->createClosedTrade(100.0, 'TP');
         $this->createOpenTrade();
 
@@ -221,6 +278,34 @@ class StatsRepositoryTest extends TestCase
 
         $this->assertSame(1, $overview['total_trades']);
         $this->assertEquals(100.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetOverviewIncludesSecuredTradesWithRealizedPnl(): void
+    {
+        // SECURED trades hold realized P&L from partial exits — they must count.
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createSecuredTradeWithPartial(50.0);
+
+        $overview = $this->repo->getOverview($this->userId);
+
+        $this->assertSame(2, $overview['total_trades']);
+        $this->assertEquals(150.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetOverviewFiltersDateRangeUsesPartialExitDateForSecured(): void
+    {
+        // SECURED trade with last partial in February → excluded by January filter.
+        $this->createSecuredTradeWithPartial(50.0, [
+            'opened_at' => '2026-02-10 10:00:00',
+            'exited_at' => '2026-02-15 11:00:00',
+        ]);
+
+        $overview = $this->repo->getOverview($this->userId, [
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-31',
+        ]);
+
+        $this->assertSame(0, $overview['total_trades']);
     }
 
     public function testGetOverviewEmptyState(): void

@@ -15,15 +15,34 @@ class StatsRepository
     }
 
     /**
+     * SQL expression for the trade's "effective realized date":
+     * - For CLOSED trades, that's `closed_at`.
+     * - For SECURED trades (partials taken but not fully closed), that's the
+     *   timestamp of the latest partial exit. Used to filter SECURED trades by
+     *   date range without requiring a denormalized column.
+     */
+    private function effectiveDate(): string
+    {
+        return "COALESCE(t.closed_at, (SELECT MAX(pe.exited_at) FROM partial_exits pe WHERE pe.trade_id = t.id))";
+    }
+
+    /**
      * Build WHERE clause and params from filters.
      * BE threshold classification is injected via `injectBeThreshold()` into the SQL itself,
      * not via bound param (emulated prepares are OFF and named placeholders cannot be repeated).
+     *
+     * Trades are included when status is CLOSED or SECURED — both have realized P&L
+     * worth aggregating. OPEN trades (no partial exits yet) are excluded.
      * @return array{0: string, 1: array}
      */
     private function buildWhereClause(int $userId, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status = :status';
-        $params = ['user_id' => $userId, 'status' => TradeStatus::CLOSED->value];
+        $where = "WHERE p.user_id = :user_id AND t.status IN (:status_closed, :status_secured)";
+        $params = [
+            'user_id' => $userId,
+            'status_closed' => TradeStatus::CLOSED->value,
+            'status_secured' => TradeStatus::SECURED->value,
+        ];
 
         if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
             $placeholders = [];
@@ -38,13 +57,14 @@ class StatsRepository
             $params['account_id'] = (int) $filters['account_id'];
         }
 
+        $effective = $this->effectiveDate();
         if (!empty($filters['date_from'])) {
-            $where .= ' AND t.closed_at >= :date_from';
+            $where .= " AND {$effective} >= :date_from";
             $params['date_from'] = $filters['date_from'] . ' 00:00:00';
         }
 
         if (!empty($filters['date_to'])) {
-            $where .= ' AND t.closed_at <= :date_to';
+            $where .= " AND {$effective} <= :date_to";
             $params['date_to'] = $filters['date_to'] . ' 23:59:59';
         }
 
@@ -295,11 +315,12 @@ class StatsRepository
         [$where, $params] = $this->buildWhereClause($userId, $filters);
         $select = $this->dimensionStatsSelect();
 
+        $eff = $this->effectiveDate();
         $periodExpr = match ($group) {
-            'day' => "DATE_FORMAT(t.closed_at, '%Y-%m-%d')",
-            'week' => "DATE_FORMAT(t.closed_at, '%x-W%v')",
-            'year' => "DATE_FORMAT(t.closed_at, '%Y')",
-            default => "DATE_FORMAT(t.closed_at, '%Y-%m')",
+            'day' => "DATE_FORMAT({$eff}, '%Y-%m-%d')",
+            'week' => "DATE_FORMAT({$eff}, '%x-W%v')",
+            'year' => "DATE_FORMAT({$eff}, '%Y')",
+            default => "DATE_FORMAT({$eff}, '%Y-%m')",
         };
 
         $sql = "SELECT {$periodExpr} AS period, {$select}
@@ -342,11 +363,12 @@ class StatsRepository
 
     private function localClosedAt(string $tzOffset): string
     {
+        $eff = $this->effectiveDate();
         if ($tzOffset === '+00:00') {
-            return 't.closed_at';
+            return $eff;
         }
         $tzSafe = $this->pdo->quote($tzOffset);
-        return "CONVERT_TZ(t.closed_at, '+00:00', {$tzSafe})";
+        return "CONVERT_TZ({$eff}, '+00:00', {$tzSafe})";
     }
 
     public function getHeatmap(int $userId, array $filters = [], string $tzOffset = '+00:00'): array
@@ -372,17 +394,20 @@ class StatsRepository
     }
 
     /**
-     * Fetch closed trades with fields needed for session classification in PHP.
+     * Fetch trades (CLOSED + SECURED) with fields needed for session classification.
+     * The "closed_at" column in the result holds the effective realized date —
+     * for SECURED trades that's the latest partial exit timestamp.
      */
     public function getTradesForSessionStats(int $userId, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
+        $eff = $this->effectiveDate();
 
-        $sql = "SELECT t.closed_at, t.pnl, t.risk_reward
+        $sql = "SELECT {$eff} AS closed_at, t.pnl, t.risk_reward
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 {$where}
-                ORDER BY t.closed_at";
+                ORDER BY closed_at";
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
