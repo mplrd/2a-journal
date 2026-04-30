@@ -211,8 +211,7 @@ function statusSeverity(status) {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-2xl font-bold">{{ t('orders.title') }}</h1>
+    <div class="flex items-center justify-end mb-4">
       <Button :label="t('orders.create')" icon="pi pi-plus" @click="showForm = true" />
     </div>
 

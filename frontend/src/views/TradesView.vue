@@ -316,8 +316,7 @@ function pnlClass(pnl) {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-2xl font-bold">{{ t('trades.title') }}</h1>
+    <div class="flex items-center justify-end mb-4">
       <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
     </div>
 
