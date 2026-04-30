@@ -145,11 +145,6 @@ describe('AccountView', () => {
     expect(wrapper.find('[data-testid="tab-panel-setups"]').exists()).toBe(true)
   })
 
-  it('renders page title', () => {
-    const wrapper = createWrapper()
-    expect(wrapper.find('h2').exists()).toBe(true)
-  })
-
   it('has profile tab as default active', () => {
     const wrapper = createWrapper()
     expect(wrapper.vm.activeTab).toBe('profile')

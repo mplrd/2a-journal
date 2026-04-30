@@ -45,8 +45,7 @@ async function applyFilters() {
 <template>
   <div>
     <EmailVerificationBanner />
-    <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-      <h1 class="text-2xl font-bold dark:text-gray-100">{{ t('dashboard.title') }}</h1>
+    <div class="flex items-center justify-end flex-wrap gap-3 mb-4">
       <BadgeFilter
         v-model="filterAccountIds"
         :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"

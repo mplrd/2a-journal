@@ -25,6 +25,12 @@ const { isRouteAllowed } = useOnboarding()
 
 const isAdmin = computed(() => authStore.user?.role === 'ADMIN')
 
+// Current page title from route meta — shown next to the brand in the header.
+const pageTitle = computed(() => {
+  const key = route.meta?.titleKey
+  return key ? t(key) : ''
+})
+
 async function openAdmin() {
   if (!ADMIN_URL) return
   try {
@@ -154,8 +160,10 @@ async function handleLogout() {
           </button>
           <RouterLink to="/" class="flex items-center gap-2">
             <BrandLogo :size="40" class="text-brand-navy-900 dark:text-brand-cream" />
-            <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ t('app.title') }}</h1>
+            <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100 hidden sm:inline">{{ t('app.title') }}</h1>
           </RouterLink>
+          <span v-if="pageTitle" class="text-gray-300 dark:text-gray-600 hidden sm:inline" aria-hidden="true">·</span>
+          <span v-if="pageTitle" class="text-lg font-medium text-gray-600 dark:text-gray-300 truncate" data-testid="page-title">{{ pageTitle }}</span>
         </div>
 
         <!-- Right: Locale selector + Dark mode toggle + Avatar + User menu -->

@@ -204,8 +204,6 @@ const winLossChartData = computed(() => {
 
 <template>
   <div>
-    <h1 class="text-2xl font-bold dark:text-gray-100 mb-4">{{ t('performance.title') }}</h1>
-
     <DashboardFilters @apply="onApplyFilters" @reset="onResetFilters" />
 
     <div class="relative">

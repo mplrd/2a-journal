@@ -48,8 +48,6 @@ async function handleStartTrading() {
       <Button :label="t('onboarding.start_trading')" icon="pi pi-play" @click="handleStartTrading" data-testid="start-trading-btn" />
     </div>
 
-    <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">{{ t('account.title') }}</h2>
-
     <Tabs v-model:value="activeTab">
       <TabList>
         <Tab value="profile">{{ t('account.tabs.profile') }}</Tab>
