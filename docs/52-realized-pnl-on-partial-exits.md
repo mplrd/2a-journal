@@ -15,6 +15,7 @@ Avant, l'update était conditionné à `remaining_size ≈ 0`. Maintenant, à ch
 - `pnl`, `pnl_percent`, `risk_reward` sont recalculés via `calculateRealizedMetrics()` (renommée depuis `calculateFinalMetrics()` — la sémantique a glissé de « final » à « réalisé à ce jour »).
 - L'agrégation se fait sur la liste à jour des `partial_exits` (récupérée *après* `partialExitRepo->create()`, donc le partial courant est inclus).
 - Seuls les champs terminaux (`status=CLOSED`, `exit_type`, `closed_at`, `duration_minutes`) restent gated derrière `remaining_size ≈ 0`.
+- En complément, un helper défensif **`recalcRealizedMetrics(tradeId)`** est appelé depuis `markBeReached()` et `update()`. Il re-dérive en partant des entrées actuelles du trade : si `entry_price`, `direction`, `size` ou `sl_points` changent via `update()`, **chaque `partial_exits.pnl` est recalculé** (`(exit_price - entry_price) * size * direction_multiplier`) avant d'agréger en `trades.pnl`. Sinon les formules diveregent (la somme des partials reste sur l'ancien `entry_price` alors que `pnl_percent`/`risk_reward` utilisent le nouveau).
 - La transition `OPEN → SECURED` est restreinte au cas **`exit_type === BE`** : seul un allégement au BE (= SL ramené au cours d'entrée) sécurise réellement le trade. Un partial TP laisse le SL en place sur le restant — le trade reste OPEN, même s'il a réalisé du P&L. Cohérent avec le métier : « secured » signifie « plus de risque sur le restant ». Le flow `markBeReached()` (BE atteint sans partial) reste inchangé et continue de promouvoir OPEN → SECURED.
 
 Les formules sont inchangées, seulement leur fréquence d'exécution :
@@ -93,8 +94,8 @@ Pour aller plus loin (P&L flottant sur la portion encore ouverte d'un SECURED), 
 |---|---|
 | Backend — `TradeServiceTest` | 49/49 ✓ (4 nouveaux : `testCloseTpPartialUpdatesPnlButKeepsTradeOpen`, `testCloseBePartialPromotesOpenToSecured`, `testCloseSecondPartialAccumulatesRealizedPnl`, `testCloseSlAfterPartialFinalizesWithCumulativePnl`) |
 | Backend — `StatsRepositoryTest` | 59/59 ✓ (3 nouveaux : `testGetOverviewIncludesSecuredTradesWithRealizedPnl`, `testGetOverviewIncludesOpenTradesWithPartialExits`, `testGetOverviewFiltersDateRangeUsesPartialExitDateForSecured`, plus le rename de `testGetOverviewExcludesNonClosedTrades` → `testGetOverviewExcludesOpenTradesWithoutExits`) |
-| Backend — `TradeFlowTest` (intégration) | 30/30 ✓ (les scénarios « partial → SECURED » utilisent maintenant `exit_type=BE` au lieu de `exit_type=TP`) |
-| Backend — suite globale | 1057/1057 ✓ |
+| Backend — `TradeFlowTest` (intégration) | 31/31 ✓ (les scénarios « partial → SECURED » utilisent maintenant `exit_type=BE`, plus un nouveau `testUpdateEntryPriceRecomputesPartialAndTradePnl`) |
+| Backend — suite globale | 1058/1058 ✓ |
 | Migration 015 | exécutée localement OK, idempotente |
 
 Couverture spécifique du cas user (partial puis SL sur le reste, "financé" ou non) : `testCloseSlAfterPartialFinalizesWithCumulativePnl`.

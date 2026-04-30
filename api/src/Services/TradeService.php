@@ -413,6 +413,9 @@ class TradeService
             ]);
         }
 
+        // Defensive recalc — no-op if no partials, idempotent otherwise.
+        $this->recalcRealizedMetrics($tradeId);
+
         $updated['partial_exits'] = $this->partialExitRepo->findByTradeId($tradeId);
 
         return $updated;
@@ -518,6 +521,10 @@ class TradeService
         if (array_key_exists('custom_fields', $data) && $this->customFieldService) {
             $this->customFieldService->validateAndSaveValues($userId, $tradeId, $data['custom_fields'] ?? []);
         }
+
+        // Defensive recalc — important when entry_price / size / sl_points
+        // changed via this update (pnl_percent and risk_reward depend on them).
+        $this->recalcRealizedMetrics($tradeId);
 
         return $this->get($userId, $tradeId);
     }
@@ -716,6 +723,58 @@ class TradeService
         }
 
         return $totalSize > 0 ? round($totalWeighted / $totalSize, 5) : 0;
+    }
+
+    /**
+     * Re-derives realized metrics for a trade from the ground up:
+     * 1. Recomputes each partial_exit.pnl from the trade's current entry_price
+     *    and direction (so an entry_price edit propagates to historical exits).
+     * 2. Aggregates into trade.pnl / pnl_percent / risk_reward.
+     *
+     * No-op for trades with zero partial exits.
+     *
+     * Called from any flow that touches a trade (close, markBeReached, update),
+     * so the realized P&L stays consistent across all entry-affecting edits.
+     */
+    private function recalcRealizedMetrics(int $tradeId): void
+    {
+        $trade = $this->tradeRepo->findById($tradeId);
+        if (!$trade) {
+            return;
+        }
+        $partials = $this->partialExitRepo->findByTradeId($tradeId);
+        if (empty($partials)) {
+            return;
+        }
+
+        $entryPrice = (float) $trade['entry_price'];
+        $direction = $trade['direction'];
+        $directionMultiplier = $direction === Direction::BUY->value ? 1 : -1;
+
+        // 1. Recompute each partial's pnl using the current entry_price + direction.
+        $totalPnl = 0;
+        foreach ($partials as $partial) {
+            $newPnl = ((float) $partial['exit_price'] - $entryPrice)
+                * (float) $partial['size']
+                * $directionMultiplier;
+            $newPnl = round($newPnl, 2);
+            if (abs($newPnl - (float) $partial['pnl']) > 0.001) {
+                $this->partialExitRepo->updatePnl((int) $partial['id'], $newPnl);
+            }
+            $totalPnl += $newPnl;
+        }
+
+        // 2. Aggregate at the trade level.
+        $entrySize = (float) $trade['size'];
+        $slPoints = (float) $trade['sl_points'];
+        $entryValue = $entryPrice * $entrySize;
+        $riskAmount = $entrySize * $slPoints;
+
+        $this->tradeRepo->update($tradeId, [
+            'pnl' => round($totalPnl, 2),
+            'pnl_percent' => $entryValue > 0 ? round($totalPnl / $entryValue * 100, 4) : 0,
+            'risk_reward' => $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : 0,
+        ]);
     }
 
     /**

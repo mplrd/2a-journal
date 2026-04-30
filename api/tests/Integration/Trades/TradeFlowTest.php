@@ -393,6 +393,39 @@ class TradeFlowTest extends TestCase
         $this->assertSame('CLOSED', $body['data']['status']);
     }
 
+    public function testUpdateEntryPriceRecomputesPartialAndTradePnl(): void
+    {
+        // BUY 2 @18500, partial 1 @18600 → realized 100.
+        $trade = $this->createTrade(['size' => 2]);
+        $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/close", [
+                'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+            ])
+        );
+
+        $afterPartial = $this->router->dispatch($this->authRequest('GET', "/trades/{$trade['id']}"));
+        $body = $afterPartial->getBody()['data'];
+        $this->assertEquals(100.0, (float) $body['pnl']);
+        $this->assertEquals(100.0, (float) $body['partial_exits'][0]['pnl']);
+
+        // Edit entry_price down to 18400. Partial pnl should follow:
+        // (18600 - 18400) * 1 * 1 = 200. Trade pnl too.
+        $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", [
+                'entry_price' => 18400,
+            ])
+        );
+
+        $afterEdit = $this->router->dispatch($this->authRequest('GET', "/trades/{$trade['id']}"));
+        $body = $afterEdit->getBody()['data'];
+        $this->assertEquals(200.0, (float) $body['partial_exits'][0]['pnl']);
+        $this->assertEquals(200.0, (float) $body['pnl']);
+        // pnl_percent = 200 / (18400 * 2) * 100 ≈ 0.5435
+        $this->assertEqualsWithDelta(0.5435, (float) $body['pnl_percent'], 0.001);
+        // risk_reward = 200 / (2 * 50) = 2.0
+        $this->assertEquals(2.0, (float) $body['risk_reward']);
+    }
+
     public function testCloseTradeCalculatesPnlSell(): void
     {
         $trade = $this->createTrade(['direction' => 'SELL', 'size' => 1]);
