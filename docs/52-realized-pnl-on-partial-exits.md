@@ -25,11 +25,11 @@ pnl_percent = pnl / (entry_price * size) * 100
 risk_reward = pnl / (size * sl_points)
 ```
 
-### `StatsRepository` inclut SECURED + filtre date sur la dernière sortie
+### `StatsRepository` filtre sur P&L réalisé + date effective
 
 Deux changements dans `buildWhereClause()` :
 
-1. Le filtre statut passe de `t.status = CLOSED` à `t.status IN (CLOSED, SECURED)`. Les OPEN sans partials restent exclus (P&L NULL = pas de réalisé).
+1. Le filtre statut est remplacé par **`t.pnl IS NOT NULL`**. Le critère devient *« le trade a-t-il du P&L réalisé »*, indépendant du statut. C'est délibéré : un trade peut avoir pris un partial TP et rester en `OPEN` (par exemple si le SL n'a pas été remonté à BE — le trader ne considère pas le trade sécurisé). Filtrer sur `status IN (CLOSED, SECURED)` raterait ce cas. Puisque `TradeService::close()` alimente `trades.pnl` à chaque sortie, `pnl IS NULL` veut exactement dire « aucune sortie jamais prise ».
 2. Le filtre date utilise désormais une **« date effective »** par trade :
    ```sql
    COALESCE(t.closed_at, (SELECT MAX(pe.exited_at) FROM partial_exits pe WHERE pe.trade_id = t.id))
@@ -92,8 +92,8 @@ Pour aller plus loin (P&L flottant sur la portion encore ouverte d'un SECURED), 
 | Surface | Tests |
 |---|---|
 | Backend — `TradeServiceTest` | 48/48 ✓ (3 nouveaux : `testClosePartialExitUpdatesRunningPnl`, `testCloseSecondPartialAccumulatesRealizedPnl`, `testCloseSlAfterPartialFinalizesWithCumulativePnl`) |
-| Backend — `StatsRepositoryTest` | 58/58 ✓ (2 nouveaux : `testGetOverviewIncludesSecuredTradesWithRealizedPnl`, `testGetOverviewFiltersDateRangeUsesPartialExitDateForSecured`, plus le rename de l'ancien `testGetOverviewExcludesNonClosedTrades` → `testGetOverviewExcludesOpenTradesWithoutExits`) |
-| Backend — suite globale | 1055/1055 ✓ |
+| Backend — `StatsRepositoryTest` | 59/59 ✓ (3 nouveaux : `testGetOverviewIncludesSecuredTradesWithRealizedPnl`, `testGetOverviewIncludesOpenTradesWithPartialExits`, `testGetOverviewFiltersDateRangeUsesPartialExitDateForSecured`, plus le rename de `testGetOverviewExcludesNonClosedTrades` → `testGetOverviewExcludesOpenTradesWithoutExits`) |
+| Backend — suite globale | 1056/1056 ✓ |
 | Migration 015 | exécutée localement OK, idempotente |
 
 Couverture spécifique du cas user (partial puis SL sur le reste, "financé" ou non) : `testCloseSlAfterPartialFinalizesWithCumulativePnl`.

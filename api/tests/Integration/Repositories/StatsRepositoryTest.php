@@ -168,14 +168,17 @@ class StatsRepositoryTest extends TestCase
     }
 
     /**
-     * SECURED trade with a single partial exit. Mirrors the new TradeService
-     * behavior where trades.pnl/pnl_percent/risk_reward are populated on every
-     * partial exit, not just on full close.
+     * Trade that has taken at least one partial exit but is not fully closed.
+     * `status` defaults to SECURED (matches TradeService auto-promotion) but can
+     * be overridden — for example, a workflow where the user takes a partial TP
+     * without moving the SL to BE keeps the trade in OPEN. Stats inclusion is
+     * driven by `trades.pnl IS NOT NULL`, not by status.
      */
-    private function createSecuredTradeWithPartial(float $partialPnl, array $overrides = []): array
+    private function createTradeWithPartial(float $partialPnl, array $overrides = []): array
     {
         $entryPrice = (float) ($overrides['entry_price'] ?? 18500);
         $size = (float) ($overrides['size'] ?? 2);
+        $status = $overrides['status'] ?? 'SECURED';
 
         $position = $this->positionRepo->create([
             'user_id' => $this->userId,
@@ -194,7 +197,7 @@ class StatsRepositoryTest extends TestCase
             'position_id' => (int) $position['id'],
             'opened_at' => $overrides['opened_at'] ?? '2026-01-15 10:00:00',
             'remaining_size' => $size - 1, // 1 unit exited as partial
-            'status' => 'SECURED',
+            'status' => $status,
         ]);
 
         $entryValue = $entryPrice * $size;
@@ -284,7 +287,7 @@ class StatsRepositoryTest extends TestCase
     {
         // SECURED trades hold realized P&L from partial exits — they must count.
         $this->createClosedTrade(100.0, 'TP');
-        $this->createSecuredTradeWithPartial(50.0);
+        $this->createTradeWithPartial(50.0);
 
         $overview = $this->repo->getOverview($this->userId);
 
@@ -292,10 +295,24 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(150.0, (float) $overview['total_pnl']);
     }
 
+    public function testGetOverviewIncludesOpenTradesWithPartialExits(): void
+    {
+        // A trade can keep status OPEN after taking a partial TP (e.g. when the
+        // SL is left at the original level — the trade is not "secured" in the
+        // trader's sense). Realized P&L from that partial must still appear.
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createTradeWithPartial(75.0, ['status' => 'OPEN']);
+
+        $overview = $this->repo->getOverview($this->userId);
+
+        $this->assertSame(2, $overview['total_trades']);
+        $this->assertEquals(175.0, (float) $overview['total_pnl']);
+    }
+
     public function testGetOverviewFiltersDateRangeUsesPartialExitDateForSecured(): void
     {
         // SECURED trade with last partial in February → excluded by January filter.
-        $this->createSecuredTradeWithPartial(50.0, [
+        $this->createTradeWithPartial(50.0, [
             'opened_at' => '2026-02-10 10:00:00',
             'exited_at' => '2026-02-15 11:00:00',
         ]);

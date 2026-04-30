@@ -31,18 +31,18 @@ class StatsRepository
      * BE threshold classification is injected via `injectBeThreshold()` into the SQL itself,
      * not via bound param (emulated prepares are OFF and named placeholders cannot be repeated).
      *
-     * Trades are included when status is CLOSED or SECURED — both have realized P&L
-     * worth aggregating. OPEN trades (no partial exits yet) are excluded.
+     * Inclusion criterion is `t.pnl IS NOT NULL` — i.e. "trade has realized P&L".
+     * That's status-agnostic on purpose: a trade can have taken a partial exit
+     * while still being marked OPEN (the SL hasn't been moved to BE, so the user
+     * doesn't consider the trade secured). Filtering on status would miss those.
+     * Since TradeService::close() now sets trades.pnl on every exit, NULL pnl
+     * exactly means "no exit ever taken".
      * @return array{0: string, 1: array}
      */
     private function buildWhereClause(int $userId, array $filters = []): array
     {
-        $where = "WHERE p.user_id = :user_id AND t.status IN (:status_closed, :status_secured)";
-        $params = [
-            'user_id' => $userId,
-            'status_closed' => TradeStatus::CLOSED->value,
-            'status_secured' => TradeStatus::SECURED->value,
-        ];
+        $where = "WHERE p.user_id = :user_id AND t.pnl IS NOT NULL";
+        $params = ['user_id' => $userId];
 
         if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
             $placeholders = [];
