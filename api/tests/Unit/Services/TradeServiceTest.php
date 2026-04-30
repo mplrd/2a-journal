@@ -390,13 +390,16 @@ class TradeServiceTest extends TestCase
 
     public function testClosePartialExitSuccess(): void
     {
+        // Happy path on a BE-typed partial offload: status flips to SECURED,
+        // history is logged. TP partial behavior (no status change) is covered
+        // by testCloseTpPartialUpdatesPnlButKeepsTradeOpen.
         $trade = $this->fakeTrade(['remaining_size' => '2.0000', 'size' => '2.0000']);
         $this->tradeRepo->method('findById')->willReturn($trade);
         $this->partialExitRepo->method('create')->willReturn([
-            'id' => 1, 'trade_id' => 1, 'exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00',
+            'id' => 1, 'trade_id' => 1, 'exit_price' => '18500.00000', 'size' => '1.0000', 'pnl' => '0.00',
         ]);
         $this->partialExitRepo->method('findByTradeId')->willReturn([
-            ['exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+            ['exit_price' => '18500.00000', 'size' => '1.0000', 'pnl' => '0.00'],
         ]);
         $this->tradeRepo->method('update')->willReturn($this->fakeTrade([
             'remaining_size' => '1.0000', 'status' => 'SECURED',
@@ -404,9 +407,9 @@ class TradeServiceTest extends TestCase
         $this->historyRepo->expects($this->once())->method('create');
 
         $result = $this->service->close(1, 1, [
-            'exit_price' => 18600,
+            'exit_price' => 18500,
             'exit_size' => 1,
-            'exit_type' => 'TP',
+            'exit_type' => 'BE',
         ]);
 
         $this->assertSame('SECURED', $result['status']);
@@ -559,11 +562,11 @@ class TradeServiceTest extends TestCase
     // Covers swing-trader behavior where partial TPs must reflect on the trade
     // row immediately rather than waiting for full close.
 
-    public function testClosePartialExitUpdatesRunningPnl(): void
+    public function testCloseTpPartialUpdatesPnlButKeepsTradeOpen(): void
     {
-        // Size 2 BUY @18500, partial of 1 @18600 → realized +100
-        // pnl_percent = 100 / (18500 * 2) * 100 ≈ 0.2703
-        // risk_reward = 100 / (size * sl_points) = 100 / (2 * 50) = 1.0
+        // Size 2 BUY @18500, TP partial of 1 @18600 → realized +100.
+        // The SL is still on the original level on the remainder, so the trade
+        // stays OPEN — only a BE-typed exit promotes to SECURED.
         $trade = $this->fakeTrade([
             'remaining_size' => '2.0000', 'size' => '2.0000',
             'direction' => 'BUY', 'entry_price' => '18500.00000',
@@ -581,16 +584,47 @@ class TradeServiceTest extends TestCase
             $this->assertEquals(100.0, $data['pnl']);
             $this->assertEqualsWithDelta(0.2703, (float) $data['pnl_percent'], 0.001);
             $this->assertEqualsWithDelta(1.0, (float) $data['risk_reward'], 0.001);
-            $this->assertSame('SECURED', $data['status']);
+            $this->assertArrayNotHasKey('status', $data);
             $this->assertArrayNotHasKey('closed_at', $data);
             $this->assertArrayNotHasKey('exit_type', $data);
-            return $this->fakeTrade(['status' => 'SECURED', 'remaining_size' => '1.0000']);
+            return $this->fakeTrade(['status' => 'OPEN', 'remaining_size' => '1.0000']);
         });
+        // No status change → no history log
+        $this->historyRepo->expects($this->never())->method('create');
 
         $this->service->close(1, 1, [
             'exit_price' => 18600,
             'exit_size' => 1,
             'exit_type' => 'TP',
+        ]);
+    }
+
+    public function testCloseBePartialPromotesOpenToSecured(): void
+    {
+        // BE-typed partial offload: the SL has been moved to BE before/at this
+        // point, so the trade is now actually secured. Status flips OPEN → SECURED.
+        $trade = $this->fakeTrade([
+            'remaining_size' => '2.0000', 'size' => '2.0000',
+            'direction' => 'BUY', 'entry_price' => '18500.00000',
+            'sl_points' => '50.00',
+        ]);
+        $this->tradeRepo->method('findById')->willReturn($trade);
+        $this->partialExitRepo->method('create')->willReturn([
+            'id' => 1, 'trade_id' => 1, 'exit_price' => '18500.00000', 'size' => '1.0000', 'pnl' => '0.00',
+        ]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['exit_price' => '18500.00000', 'size' => '1.0000', 'pnl' => '0.00'],
+        ]);
+
+        $this->tradeRepo->expects($this->once())->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertSame('SECURED', $data['status']);
+            return $this->fakeTrade(['status' => 'SECURED', 'remaining_size' => '1.0000']);
+        });
+
+        $this->service->close(1, 1, [
+            'exit_price' => 18500,
+            'exit_size' => 1,
+            'exit_type' => 'BE',
         ]);
     }
 

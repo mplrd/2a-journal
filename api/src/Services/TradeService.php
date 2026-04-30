@@ -347,8 +347,11 @@ class TradeService
             $updateData['exit_type'] = $exitTypeValue;
             $updateData['closed_at'] = $exitedAt;
             $updateData['duration_minutes'] = $metrics['duration_minutes'];
-        } elseif ($previousStatus === TradeStatus::OPEN->value) {
-            // First partial transitions OPEN → SECURED.
+        } elseif ($previousStatus === TradeStatus::OPEN->value && $exitTypeValue === ExitType::BE->value) {
+            // Only a BE exit secures the trade — the SL has been moved to BE,
+            // so the remainder is risk-free. A TP partial does not promote OPEN
+            // to SECURED on its own (the SL is still on the original level on
+            // the remaining position, the trade is not actually secured).
             $updateData['status'] = TradeStatus::SECURED->value;
         }
 

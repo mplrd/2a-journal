@@ -230,10 +230,11 @@ class TradeFlowTest extends TestCase
     {
         // OPEN
         $openTrade = $this->createTrade(['symbol' => 'NASDAQ']);
-        // SECURED: create + partial close 0.5 on size 2
+        // SECURED: create + BE-typed partial offload (only BE moves OPEN → SECURED;
+        // a TP partial keeps the trade OPEN since the SL is still on the original level).
         $secTrade = $this->createTrade(['symbol' => 'NASDAQ', 'size' => 2]);
         $this->router->dispatch($this->authRequest('POST', "/trades/{$secTrade['id']}/close", [
-            'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+            'exit_price' => 18500, 'exit_size' => 1, 'exit_type' => 'BE',
         ]));
         // CLOSED: create + full close
         $closedTrade = $this->createTrade(['symbol' => 'NASDAQ', 'size' => 1]);
@@ -340,12 +341,13 @@ class TradeFlowTest extends TestCase
         $this->assertSame('OPEN', $trade['status']);
         $this->assertEquals(2.0, (float) $trade['remaining_size']);
 
-        // Partial close: exit 1 lot at 18600 → SECURED
+        // BE-typed partial offload at entry price → SECURED.
+        // BE means "SL moved to entry", so the remainder is no longer at risk.
         $response = $this->router->dispatch(
             $this->authRequest('POST', "/trades/{$trade['id']}/close", [
-                'exit_price' => 18600,
+                'exit_price' => 18500,
                 'exit_size' => 1,
-                'exit_type' => 'TP',
+                'exit_type' => 'BE',
             ])
         );
         $body = $response->getBody();
@@ -366,11 +368,11 @@ class TradeFlowTest extends TestCase
         $this->assertSame('CLOSED', $body['data']['status']);
         $this->assertEquals(0, (float) $body['data']['remaining_size']);
 
-        // Verify PnL: (18600-18500)*1 + (18650-18500)*1 = 100 + 150 = 250
-        $this->assertEquals(250.0, (float) $body['data']['pnl']);
+        // Verify PnL: BE 1 lot (0) + TP 1 lot (18650-18500)*1 = 0 + 150 = 150
+        $this->assertEquals(150.0, (float) $body['data']['pnl']);
 
-        // Verify avg exit price: (18600*1 + 18650*1) / 2 = 18625
-        $this->assertEquals(18625.0, (float) $body['data']['avg_exit_price']);
+        // Verify avg exit price: (18500*1 + 18650*1) / 2 = 18575
+        $this->assertEquals(18575.0, (float) $body['data']['avg_exit_price']);
     }
 
     public function testCloseTradeCalculatesPnlBuy(): void
