@@ -28,17 +28,7 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ## Code / conventions
 
-### `Direction` enum non miroir côté frontend
-
-**Contexte** : `DashboardFilters.vue:34-36` hardcode les valeurs `'BUY'` / `'SELL'` dans `directionOptions`. Côté backend, l'enum `Direction` existe (`api/src/Enums/Direction.php`) mais il n'a pas de miroir dans `frontend/src/constants/`. Soulevé par `/check-quality` lors de l'étape 47.
-
-**À faire** :
-- Créer `frontend/src/constants/direction.js` avec `export const DIRECTION = { BUY: 'BUY', SELL: 'SELL' }` (suivre la convention des autres constants déjà présents pour les autres enums).
-- Remplacer les littéraux dans `DashboardFilters.vue` (et chercher d'autres occurrences avec `grep -rn "'BUY'\|'SELL'" frontend/src/`).
-
-**Repéré le** : 2026-04-29.
-**Statut** : warning préexistant, hors scope de l'étape 47.
-**Priorité** : faible (purement cosmétique tant qu'aucune autre valeur ne s'ajoute à l'enum).
+*(rien à traiter actuellement)*
 
 ---
 

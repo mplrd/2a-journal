@@ -165,12 +165,13 @@ class EmailService
     private function wrapLayout(string $title, string $content): string
     {
         $appName = htmlspecialchars($this->config['from_name'], ENT_QUOTES, 'UTF-8');
+        $frontendUrl = htmlspecialchars(rtrim((string) ($this->config['frontend_url'] ?? ''), '/'), ENT_QUOTES, 'UTF-8');
 
         $layout = file_get_contents("{$this->templateDir}/layout.html");
 
         return str_replace(
-            ['{{title}}', '{{content}}', '{{app_name}}'],
-            [$title, $content, $appName],
+            ['{{title}}', '{{content}}', '{{app_name}}', '{{frontend_url}}'],
+            [$title, $content, $appName, $frontendUrl],
             $layout
         );
     }
