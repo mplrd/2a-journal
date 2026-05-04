@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
@@ -57,8 +57,37 @@ function mountFilters() {
 }
 
 describe('DashboardFilters', () => {
-  it('renders a reset button but no apply button (autosubmit)', () => {
+  // Source of truth for the per-test default: the component initialises
+  // collapsed unless localStorage says otherwise. Each test resets the
+  // storage to start from the same baseline.
+  beforeEach(() => {
+    localStorage.removeItem('dashboardFiltersExpanded')
+  })
+
+  async function mountAndExpand() {
     const wrapper = mountFilters()
+    const toggle = wrapper.findAll('button').find((b) => b.text().includes('Filters'))
+    await toggle.trigger('click')
+    return wrapper
+  }
+
+  it('renders collapsed by default — body and reset hidden', () => {
+    const wrapper = mountFilters()
+    expect(wrapper.text()).toContain('Filters')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(false)
+    expect(wrapper.find('.badge-filter-stub').exists()).toBe(false)
+    expect(wrapper.find('.date-range-stub').exists()).toBe(false)
+  })
+
+  it('expands when title is clicked, revealing reset and body', async () => {
+    const wrapper = await mountAndExpand()
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(true)
+    expect(wrapper.find('.badge-filter-stub').exists()).toBe(true)
+    expect(wrapper.find('.date-range-stub').exists()).toBe(true)
+  })
+
+  it('renders a reset button but no apply button (autosubmit) when expanded', async () => {
+    const wrapper = await mountAndExpand()
     const buttons = wrapper.findAll('button')
     const resetBtn = buttons.find((b) => b.text().includes('Reset'))
     const applyBtn = buttons.find((b) => b.text().includes('Apply'))
@@ -66,26 +95,17 @@ describe('DashboardFilters', () => {
     expect(applyBtn).toBeFalsy()
   })
 
-  it('emits reset event', async () => {
-    const wrapper = mountFilters()
+  it('emits reset event when reset is clicked', async () => {
+    const wrapper = await mountAndExpand()
     const resetBtn = wrapper.findAll('button').find((b) => b.text().includes('Reset'))
     await resetBtn.trigger('click')
     expect(wrapper.emitted('reset')).toBeTruthy()
   })
 
-  it('renders title', () => {
-    const wrapper = mountFilters()
-    expect(wrapper.text()).toContain('Filters')
-  })
-
-  it('collapses when title is clicked, hiding the body and reset button', async () => {
-    const wrapper = mountFilters()
-    // Initially expanded: reset visible
-    expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(true)
-    // Click the title toggle (button containing "Filters")
+  it('collapses on second click, hiding the body and reset again', async () => {
+    const wrapper = await mountAndExpand()
     const toggle = wrapper.findAll('button').find((b) => b.text().includes('Filters'))
     await toggle.trigger('click')
-    // After collapse: no Reset, body stubs gone
     expect(wrapper.findAll('button').some((b) => b.text().includes('Reset'))).toBe(false)
     expect(wrapper.find('.badge-filter-stub').exists()).toBe(false)
     expect(wrapper.find('.date-range-stub').exists()).toBe(false)
