@@ -40,6 +40,7 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 | [D-04](#d-04) | Rappel "seuil BE" sur le graphe gains/pertes/BE | Doc/UX | Haute | Faible | 🟢 |
 | [D-05](#d-05) | Onboarding 2 use cases : actif vs passif | Doc/UX | Moyenne | Moyen | 🟡 |
 | [D-06](#d-06) | "Custom import" — mode d'emploi & valorisation produit | Doc/UX | Moyenne | Moyen | 🟡 |
+| [D-07](#d-07) | Liste des comptes : badge "étape" fusionné dans la colonne "type" | Doc/UX | Basse | Faible | ✅ |
 | [Q-01](#q-01) | Comment est calculé le R:R ? | Assistance | — | — | 🟡 |
 | [Q-02](#q-02) | Une alerte est-elle déclenchée si le DD est dépassé ? | Assistance | — | — | 🟡 |
 | [S-01](#s-01) | Présenter à "rod" / proposition à IVT | Stratégie | — | — | 💡 |
@@ -232,6 +233,14 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 > "Pense à personnaliser tes setups d'entrées… Se mettre à la place de celui qui ne connait pas et qui puisse se dire 'ah mais je peux vraiment tout personnaliser c'est top'."
 
 - **Type** : doc/onboarding mettant en avant la flexibilité du custom import.
+
+<a id="d-07"></a>
+#### D-07. Liste des comptes — badge "étape" fusionné dans la colonne "type" — ✅
+
+Polish UX repéré en revue. Sur la liste des comptes, le badge **étape** (Challenge / Vérification / Funded) avait sa propre colonne et affichait `-` pour les comptes non-PF, créant du bruit visuel. Le badge est désormais affiché **dans la même cellule** que le badge "type de compte", à droite, et n'apparaît que pour les PF.
+
+- **Livré** : `frontend/src/views/AccountsView.vue` — colonne `account_type` rendu en `<div class="flex items-center gap-1 flex-wrap">` qui agrège les deux `<Tag>`. La colonne `stage` autonome a été supprimée.
+- **Effort** : faible.
 
 ---
 

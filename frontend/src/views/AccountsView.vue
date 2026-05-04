@@ -170,13 +170,10 @@ function balanceVariation(account) {
       <Column field="name" :header="t('accounts.name')" />
       <Column field="account_type" :header="t('accounts.account_type')">
         <template #body="{ data }">
-          <Tag :value="t(`accounts.types.${data.account_type}`)" :severity="typeSeverity(data.account_type)" />
-        </template>
-      </Column>
-      <Column field="stage" :header="t('accounts.stage')">
-        <template #body="{ data }">
-          <Tag v-if="data.stage" :value="t(`accounts.stages.${data.stage}`)" :severity="stageSeverity(data.stage)" />
-          <span v-else>-</span>
+          <div class="flex items-center gap-1 flex-wrap">
+            <Tag :value="t(`accounts.types.${data.account_type}`)" :severity="typeSeverity(data.account_type)" />
+            <Tag v-if="data.stage" :value="t(`accounts.stages.${data.stage}`)" :severity="stageSeverity(data.stage)" />
+          </div>
         </template>
       </Column>
       <Column field="currency" :header="t('accounts.currency')" />
