@@ -88,6 +88,40 @@ class EmailService
         $this->send($toEmail, $subject, $body);
     }
 
+    /**
+     * DD-approach alert. $type is 'max' or 'daily'. $status is the row produced
+     * by DrawdownService::computeForAccount (account_name, currency,
+     * max/daily_used_amount/percent, max_drawdown, daily_drawdown).
+     */
+    public function sendDdAlertEmail(string $toEmail, string $locale, string $type, array $status): void
+    {
+        $isMax = $type === 'max';
+        $usedPercent = $isMax ? ($status['max_used_percent'] ?? 0) : ($status['daily_used_percent'] ?? 0);
+        $usedAmount = $isMax ? ($status['max_used_amount'] ?? 0) : ($status['daily_used_amount'] ?? 0);
+        $ddTotal = $isMax ? ($status['max_drawdown'] ?? 0) : ($status['daily_drawdown'] ?? 0);
+
+        if ($locale === 'fr') {
+            $ddLabel = $isMax ? 'drawdown maximum' : 'drawdown journalier';
+            $subject = "Alerte {$ddLabel} — compte {$status['account_name']}";
+            $title = $isMax ? 'Approche du drawdown maximum' : 'Approche du drawdown journalier';
+        } else {
+            $ddLabel = $isMax ? 'max drawdown' : 'daily drawdown';
+            $subject = "{$ddLabel} alert — account {$status['account_name']}";
+            $title = $isMax ? 'Max drawdown approaching' : 'Daily drawdown approaching';
+        }
+
+        $content = $this->loadTemplate('dd-alert', $locale, [
+            'dd_label' => $ddLabel,
+            'account_name' => (string) $status['account_name'],
+            'used_percent' => (string) $usedPercent,
+            'used_amount' => number_format((float) $usedAmount, 2, '.', ''),
+            'dd_total' => number_format((float) $ddTotal, 2, '.', ''),
+            'currency' => (string) ($status['currency'] ?? ''),
+        ]);
+        $body = $this->wrapLayout($title, $content);
+        $this->send($toEmail, $subject, $body);
+    }
+
     private function send(string $to, string $subject, string $htmlBody): void
     {
         if (!$this->isEnabled()) {

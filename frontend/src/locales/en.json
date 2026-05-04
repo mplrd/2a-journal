@@ -88,6 +88,7 @@
       "invalid_currency": "Invalid currency",
       "invalid_theme": "Invalid theme",
       "invalid_be_threshold": "BE threshold must be a number between 0 and 5 (%)",
+      "invalid_dd_alert_threshold": "DD alert threshold must be a number between 1 and 50 (%)",
       "invalid_page_size": "Page size must be 10, 25, 50, or 100",
       "invalid_current_password": "Current password is incorrect",
       "email_confirmation_mismatch": "The email you entered does not match your account",
@@ -119,6 +120,12 @@
   "dashboard": {
     "title": "Dashboard",
     "welcome": "Welcome, {name}",
+    "dd_alert": {
+      "title": "Drawdown approaching",
+      "max_dd": "{used} of max drawdown used",
+      "daily_dd": "{used} of daily drawdown used",
+      "hint": "Review your open positions to avoid breaching the rule. You can adjust the threshold in your preferences."
+    },
     "total_trades": "Total Trades",
     "win_rate": "Win Rate",
     "total_pnl": "Total P&L",
@@ -545,6 +552,9 @@
     "stats_preferences": "Stats preferences",
     "be_threshold": "BE threshold (%)",
     "be_threshold_hint": "A trade closed within this % of the entry price will be classified as break-even in stats (to absorb the spread). 0 = disabled.",
+    "dd_alert_threshold": "DD alert threshold (%)",
+    "dd_alert_threshold_hint": "You receive an alert (dashboard banner + email) when a propfirm account has consumed at least (100 − this %) of its max or daily drawdown. Default 5%, range 1–50%.",
+    "global_preferences": "General preferences",
     "tabs": {
       "profile": "Profile",
       "preferences": "Preferences",

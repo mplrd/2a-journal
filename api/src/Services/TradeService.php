@@ -27,6 +27,7 @@ class TradeService
     private StatusHistoryRepository $historyRepo;
     private ?SetupRepository $setupRepo;
     private ?CustomFieldService $customFieldService;
+    private ?DrawdownService $drawdownService;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -35,7 +36,8 @@ class TradeService
         AccountRepository $accountRepo,
         StatusHistoryRepository $historyRepo,
         ?SetupRepository $setupRepo = null,
-        ?CustomFieldService $customFieldService = null
+        ?CustomFieldService $customFieldService = null,
+        ?DrawdownService $drawdownService = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -44,6 +46,7 @@ class TradeService
         $this->historyRepo = $historyRepo;
         $this->setupRepo = $setupRepo;
         $this->customFieldService = $customFieldService;
+        $this->drawdownService = $drawdownService;
     }
 
     public function create(int $userId, array $data): array
@@ -371,6 +374,12 @@ class TradeService
         }
 
         $updated['partial_exits'] = $allExits;
+
+        // Fire-and-forget DD-approach alert (E-08). Internal try/catch keeps
+        // any email/dedup failure from breaking the trade-close response.
+        if ($this->drawdownService !== null) {
+            $this->drawdownService->checkAndNotifyForAccount((int) $trade['account_id'], $userId);
+        }
 
         return $updated;
     }
@@ -773,7 +782,7 @@ class TradeService
         $this->tradeRepo->update($tradeId, [
             'pnl' => round($totalPnl, 2),
             'pnl_percent' => $entryValue > 0 ? round($totalPnl / $entryValue * 100, 4) : 0,
-            'risk_reward' => $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : 0,
+            'risk_reward' => $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : null,
         ]);
     }
 
@@ -796,7 +805,7 @@ class TradeService
         $entrySize = (float) $trade['size'];
         $slPoints = (float) $trade['sl_points'];
         $riskAmount = $entrySize * $slPoints;
-        $riskReward = $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : 0;
+        $riskReward = $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : null;
 
         // PnL percent based on entry value
         $entryPrice = (float) $trade['entry_price'];

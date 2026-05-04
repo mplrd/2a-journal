@@ -51,6 +51,7 @@ use App\Services\AuthService;
 use App\Services\AdminUserService;
 use App\Services\BillingService;
 use App\Services\PlatformSettingsService;
+use App\Services\DrawdownService;
 use App\Services\EmailService;
 use App\Services\OrderService;
 use App\Services\PositionService;
@@ -227,20 +228,23 @@ $router->get('/custom-fields/{id}', [$customFieldController, 'show'], [$authMidd
 $router->put('/custom-fields/{id}', [$customFieldController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/custom-fields/{id}', [$customFieldController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
+// ── Shared repos for Orders, Trades & Share (instantiated up here so
+//    DrawdownService can take a dependency on them in the Accounts block). ──
+$tradeRepo = new TradeRepository($pdo);
+$partialExitRepo = new PartialExitRepository($pdo);
+
 // ── Accounts ────────────────────────────────────────────────────
 // $accountRepo already instantiated in the Symbols section above.
 $accountService = new AccountService($accountRepo);
-$accountController = new AccountController($accountService);
+$drawdownService = new DrawdownService($accountRepo, $tradeRepo, $userRepo, $emailService);
+$accountController = new AccountController($accountService, $drawdownService);
 
 $router->get('/accounts', [$accountController, 'index'], [$authMiddleware, $requireSubscription]);
 $router->post('/accounts', [$accountController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/accounts/dd-status', [$accountController, 'ddStatus'], [$authMiddleware, $requireSubscription]);
 $router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware, $requireSubscription]);
 $router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware, $requireSubscription]);
-
-// ── Shared repos for Orders, Trades & Share ──────────────────
-$tradeRepo = new TradeRepository($pdo);
-$partialExitRepo = new PartialExitRepository($pdo);
 
 // ── Positions ──────────────────────────────────────────────────
 $positionRepo = new PositionRepository($pdo);
@@ -272,7 +276,7 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware, $requireSubscription]);
 
 // ── Trades ─────────────────────────────────────────────────────
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);

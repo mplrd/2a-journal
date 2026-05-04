@@ -432,8 +432,10 @@ class AuthService
     private const SUPPORTED_LOCALES = ['fr', 'en'];
     private const SUPPORTED_THEMES = ['light', 'dark'];
     private const SUPPORTED_PAGE_SIZES = [10, 25, 50, 100];
-    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'default_page_size'];
+    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'dd_alert_threshold_percent', 'default_page_size'];
     private const BE_THRESHOLD_MAX = 5.0;
+    private const DD_ALERT_THRESHOLD_MIN = 1.0;
+    private const DD_ALERT_THRESHOLD_MAX = 50.0;
     private const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     private const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2 MB
     private const IMAGE_EXTENSIONS = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
@@ -502,6 +504,19 @@ class AuthService
                 throw new ValidationException('auth.error.invalid_be_threshold', 'be_threshold_percent');
             }
             $filtered['be_threshold_percent'] = $value;
+        }
+
+        // Validate DD alert threshold (% of full DD allowance, range 1–10)
+        if (array_key_exists('dd_alert_threshold_percent', $filtered)) {
+            $raw = $filtered['dd_alert_threshold_percent'];
+            if (!is_numeric($raw)) {
+                throw new ValidationException('auth.error.invalid_dd_alert_threshold', 'dd_alert_threshold_percent');
+            }
+            $value = (float) $raw;
+            if ($value < self::DD_ALERT_THRESHOLD_MIN || $value > self::DD_ALERT_THRESHOLD_MAX) {
+                throw new ValidationException('auth.error.invalid_dd_alert_threshold', 'dd_alert_threshold_percent');
+            }
+            $filtered['dd_alert_threshold_percent'] = $value;
         }
 
         return $this->userRepo->updateProfile($userId, $filtered);

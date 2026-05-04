@@ -265,6 +265,28 @@ class StatsServiceTest extends TestCase
         $this->assertEquals(0.83, $europe['avg_rr']);
     }
 
+    public function testGetStatsBySessionExcludesNullRiskRewardFromAvg(): void
+    {
+        // 3 EUROPE trades, but one has no SL → risk_reward stored as null.
+        // avg_rr must be computed only over non-null trades (2.0 + 1.0) / 2 = 1.5.
+        // total_trades stays 3 because pnl is realized for all.
+        $trades = [
+            ['closed_at' => '2026-01-15 10:00:00', 'pnl' => 200.0, 'risk_reward' => 2.0],
+            ['closed_at' => '2026-01-15 11:00:00', 'pnl' => 50.0,  'risk_reward' => null],
+            ['closed_at' => '2026-01-15 12:00:00', 'pnl' => 100.0, 'risk_reward' => 1.0],
+        ];
+
+        $this->statsRepo->method('getTradesForSessionStats')->willReturn($trades);
+
+        $result = $this->service->getStatsBySession(1);
+
+        $this->assertCount(1, $result);
+        $europe = $result[0];
+        $this->assertSame('EUROPE', $europe['session']);
+        $this->assertSame(3, $europe['total_trades']);
+        $this->assertEquals(1.5, $europe['avg_rr']);
+    }
+
     public function testGetStatsBySessionValidatesFilters(): void
     {
         $this->accountRepo->method('findById')->willReturn(['id' => 5, 'user_id' => 99]);

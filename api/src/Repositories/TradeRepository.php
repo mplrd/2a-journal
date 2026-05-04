@@ -184,4 +184,45 @@ class TradeRepository
 
         return $stmt->rowCount() > 0;
     }
+
+    /**
+     * Sum of realized P&L for an account, all-time. Used by drawdown computation.
+     * Includes any trade with a non-null pnl (i.e. SECURED with partials taken
+     * AND fully CLOSED). Returns 0.0 if no trades or all pnl null.
+     */
+    public function sumRealizedPnlForAccount(int $accountId): float
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(t.pnl), 0)
+             FROM trades t
+             INNER JOIN positions p ON p.id = t.position_id
+             WHERE p.account_id = :account_id AND t.pnl IS NOT NULL'
+        );
+        $stmt->execute(['account_id' => $accountId]);
+
+        return (float) $stmt->fetchColumn();
+    }
+
+    /**
+     * Sum of realized P&L for an account from a given UTC datetime onward.
+     * Used to compute "today's P&L" relative to the user's local-midnight.
+     * Caller passes a UTC-formatted timestamp ('Y-m-d H:i:s').
+     */
+    public function sumRealizedPnlForAccountSince(int $accountId, string $sinceUtc): float
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(t.pnl), 0)
+             FROM trades t
+             INNER JOIN positions p ON p.id = t.position_id
+             WHERE p.account_id = :account_id
+               AND t.pnl IS NOT NULL
+               AND t.closed_at >= :since'
+        );
+        $stmt->execute([
+            'account_id' => $accountId,
+            'since' => $sinceUtc,
+        ]);
+
+        return (float) $stmt->fetchColumn();
+    }
 }

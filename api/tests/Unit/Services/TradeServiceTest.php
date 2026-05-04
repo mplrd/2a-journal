@@ -562,6 +562,37 @@ class TradeServiceTest extends TestCase
     // Covers swing-trader behavior where partial TPs must reflect on the trade
     // row immediately rather than waiting for full close.
 
+    public function testCloseTpPartialWithoutSlStoresNullRiskReward(): void
+    {
+        // Custom-imported trade (or trade created without SL): sl_points = null.
+        // Risk amount cannot be derived → risk_reward must be stored as NULL,
+        // not 0 (which would pollute AVG(risk_reward) downstream).
+        $trade = $this->fakeTrade([
+            'remaining_size' => '2.0000', 'size' => '2.0000',
+            'direction' => 'BUY', 'entry_price' => '18500.00000',
+            'sl_points' => null, 'sl_price' => null,
+        ]);
+        $this->tradeRepo->method('findById')->willReturn($trade);
+        $this->partialExitRepo->method('create')->willReturn([
+            'id' => 1, 'trade_id' => 1, 'exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00',
+        ]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+        ]);
+
+        $this->tradeRepo->expects($this->once())->method('update')->willReturnCallback(function ($id, $data) {
+            $this->assertEquals(100.0, $data['pnl']);
+            $this->assertNull($data['risk_reward']);
+            return $this->fakeTrade(['status' => 'OPEN', 'remaining_size' => '1.0000']);
+        });
+
+        $this->service->close(1, 1, [
+            'exit_price' => 18600,
+            'exit_size' => 1,
+            'exit_type' => 'TP',
+        ]);
+    }
+
     public function testCloseTpPartialUpdatesPnlButKeepsTradeOpen(): void
     {
         // Size 2 BUY @18500, TP partial of 1 @18600 → realized +100.
