@@ -17,9 +17,12 @@ use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use PDO;
 
 class TradeService
 {
+    private const BULK_DELETE_MAX = 500;
+
     private TradeRepository $tradeRepo;
     private PartialExitRepository $partialExitRepo;
     private PositionRepository $positionRepo;
@@ -28,6 +31,7 @@ class TradeService
     private ?SetupRepository $setupRepo;
     private ?CustomFieldService $customFieldService;
     private ?DrawdownService $drawdownService;
+    private ?PDO $pdo;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -37,7 +41,8 @@ class TradeService
         StatusHistoryRepository $historyRepo,
         ?SetupRepository $setupRepo = null,
         ?CustomFieldService $customFieldService = null,
-        ?DrawdownService $drawdownService = null
+        ?DrawdownService $drawdownService = null,
+        ?PDO $pdo = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -47,6 +52,7 @@ class TradeService
         $this->setupRepo = $setupRepo;
         $this->customFieldService = $customFieldService;
         $this->drawdownService = $drawdownService;
+        $this->pdo = $pdo;
     }
 
     public function create(int $userId, array $data): array
@@ -192,6 +198,15 @@ class TradeService
                     'field_id' => (int) $cf['field_id'],
                     'value' => $cf['value'],
                 ];
+            }
+        }
+
+        // Date range filter on opened_at. Format YYYY-MM-DD; malformed values
+        // are silently dropped (never 400 the whole listing on a query param).
+        foreach (['date_from', 'date_to'] as $dateField) {
+            if (!empty($filters[$dateField]) && is_string($filters[$dateField])
+                && preg_match('/^\d{4}-\d{2}-\d{2}$/', $filters[$dateField])) {
+                $validFilters[$dateField] = $filters[$dateField];
             }
         }
 
@@ -428,6 +443,55 @@ class TradeService
         $updated['partial_exits'] = $this->partialExitRepo->findByTradeId($tradeId);
 
         return $updated;
+    }
+
+    /**
+     * Bulk delete: takes an array of trade IDs, validates ownership in a
+     * single round-trip, then deletes the parent positions inside a PDO
+     * transaction (CASCADE handles trades + partial_exits cleanup). All-or-
+     * nothing semantics — a single delete failure rolls back the whole batch.
+     *
+     * Plafond at BULK_DELETE_MAX (500) to prevent DoS via huge payloads;
+     * legitimate "delete a whole challenge" use cases stay within bounds.
+     */
+    public function deleteBulk(int $userId, array $tradeIds): int
+    {
+        if (empty($tradeIds)) {
+            throw new ValidationException('trades.error.bulk_delete_empty', 'ids');
+        }
+        $tradeIds = array_values(array_unique(array_map('intval', $tradeIds)));
+        if (count($tradeIds) > self::BULK_DELETE_MAX) {
+            throw new ValidationException('trades.error.bulk_delete_too_many', 'ids');
+        }
+
+        $found = $this->tradeRepo->findByIdsForUser($userId, $tradeIds);
+        if (count($found) !== count($tradeIds)) {
+            throw new ForbiddenException('trades.error.forbidden');
+        }
+
+        $positionIds = array_values(array_unique(array_map(fn($r) => (int) $r['position_id'], $found)));
+
+        if ($this->pdo === null) {
+            // Test path without a PDO — execute the deletes without transaction.
+            // Production wiring always provides one (cf. routes.php).
+            foreach ($positionIds as $positionId) {
+                $this->positionRepo->delete($positionId);
+            }
+            return count($tradeIds);
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($positionIds as $positionId) {
+                $this->positionRepo->delete($positionId);
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return count($tradeIds);
     }
 
     public function delete(int $userId, int $tradeId): void

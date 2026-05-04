@@ -754,4 +754,111 @@ class TradeFlowTest extends TestCase
             $this->assertSame(403, $e->getStatusCode());
         }
     }
+
+    // ── Bulk delete ──────────────────────────────────────────────
+
+    public function testBulkDeleteTradesSuccess(): void
+    {
+        $t1 = $this->createTrade();
+        $t2 = $this->createTrade();
+        $t3 = $this->createTrade();
+
+        $response = $this->router->dispatch(
+            $this->authRequest('POST', '/trades/bulk-delete', [
+                'ids' => [$t1['id'], $t2['id'], $t3['id']],
+            ])
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $body = $response->getBody();
+        $this->assertSame(3, $body['data']['deleted_count']);
+        $this->assertSame('trades.success.bulk_deleted', $body['data']['message_key']);
+
+        // All 3 trades + their parent positions are gone (CASCADE).
+        foreach ([$t1, $t2, $t3] as $t) {
+            $stmt = $this->pdo->prepare('SELECT 1 FROM trades WHERE id = :id');
+            $stmt->execute(['id' => $t['id']]);
+            $this->assertFalse($stmt->fetch());
+        }
+    }
+
+    public function testBulkDeleteForbiddenWhenAnyIdBelongsToAnotherUser(): void
+    {
+        $mine = $this->createTrade();
+
+        // Register another user and create a trade for them
+        $response = $this->router->dispatch(
+            Request::create('POST', '/auth/register', ['email' => 'other@test.com', 'password' => 'Test1234'])
+        );
+        $otherToken = $response->getBody()['data']['access_token'];
+        $otherUserStmt = $this->pdo->prepare('SELECT id FROM users WHERE email = :email');
+        $otherUserStmt->execute(['email' => 'other@test.com']);
+        $otherUserId = (int) $otherUserStmt->fetchColumn();
+
+        // Create an account + position + trade for the other user (raw SQL,
+        // simpler than re-registering through the API).
+        $this->pdo->prepare('INSERT INTO accounts (user_id, name, currency, initial_capital, current_capital) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$otherUserId, 'Other Acc', 'EUR', 10000, 10000]);
+        $otherAccountId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare('INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, position_type) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$otherUserId, $otherAccountId, 'BUY', 'NAS100', 18000, 1, 'TRADE']);
+        $otherPositionId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare('INSERT INTO trades (position_id, opened_at, remaining_size, status) VALUES (?, ?, ?, ?)')
+            ->execute([$otherPositionId, '2026-01-15 10:00:00', 1, 'OPEN']);
+        $otherTradeId = (int) $this->pdo->lastInsertId();
+
+        try {
+            $this->router->dispatch(
+                $this->authRequest('POST', '/trades/bulk-delete', [
+                    'ids' => [$mine['id'], $otherTradeId],
+                ])
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+
+        // Both trades still exist (rolled back / never started).
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM trades WHERE id IN (?, ?)');
+        $stmt->execute([$mine['id'], $otherTradeId]);
+        $this->assertSame(2, (int) $stmt->fetchColumn());
+    }
+
+    public function testBulkDeleteEmptyIdsValidation(): void
+    {
+        try {
+            $this->router->dispatch(
+                $this->authRequest('POST', '/trades/bulk-delete', ['ids' => []])
+            );
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('trades.error.bulk_delete_empty', $e->getMessageKey());
+        }
+    }
+
+    public function testListTradesFilterByDateRange(): void
+    {
+        // Create 3 trades with explicit opened_at by patching after create.
+        $t1 = $this->createTrade();
+        $t2 = $this->createTrade();
+        $t3 = $this->createTrade();
+
+        $this->pdo->prepare('UPDATE trades SET opened_at = ? WHERE id = ?')->execute(['2026-01-10 10:00:00', $t1['id']]);
+        $this->pdo->prepare('UPDATE trades SET opened_at = ? WHERE id = ?')->execute(['2026-01-15 10:00:00', $t2['id']]);
+        $this->pdo->prepare('UPDATE trades SET opened_at = ? WHERE id = ?')->execute(['2026-01-20 10:00:00', $t3['id']]);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/trades', [], [
+                'date_from' => '2026-01-12',
+                'date_to' => '2026-01-18',
+            ])
+        );
+
+        $body = $response->getBody();
+        $ids = array_map(fn($t) => $t['id'], $body['data']);
+        $this->assertContains($t2['id'], $ids);
+        $this->assertNotContains($t1['id'], $ids);
+        $this->assertNotContains($t3['id'], $ids);
+    }
 }
