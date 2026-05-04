@@ -773,7 +773,7 @@ class TradeService
         $this->tradeRepo->update($tradeId, [
             'pnl' => round($totalPnl, 2),
             'pnl_percent' => $entryValue > 0 ? round($totalPnl / $entryValue * 100, 4) : 0,
-            'risk_reward' => $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : 0,
+            'risk_reward' => $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : null,
         ]);
     }
 
@@ -796,7 +796,7 @@ class TradeService
         $entrySize = (float) $trade['size'];
         $slPoints = (float) $trade['sl_points'];
         $riskAmount = $entrySize * $slPoints;
-        $riskReward = $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : 0;
+        $riskReward = $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : null;
 
         // PnL percent based on entry value
         $entryPrice = (float) $trade['entry_price'];

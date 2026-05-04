@@ -149,11 +149,13 @@ class ShareService
                 : "Exit: {$trade['exit_type']}";
         }
 
-        // R/R
-        $rr = $this->num((float) $trade['risk_reward']);
-        $lines[] = $withEmojis
-            ? "⚖️ R/R: {$rr}"
-            : "R/R: {$rr}";
+        // R/R (omitted when not calculable, e.g. trade without SL renseigned)
+        if ($trade['risk_reward'] !== null) {
+            $rr = $this->num((float) $trade['risk_reward']);
+            $lines[] = $withEmojis
+                ? "⚖️ R/R: {$rr}"
+                : "R/R: {$rr}";
+        }
 
         // Duration
         if ($trade['duration_minutes'] !== null) {

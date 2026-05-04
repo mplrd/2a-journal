@@ -145,7 +145,7 @@ function dualMetricData(items, labelField, labelTranslator = null) {
       },
       {
         label: t('performance.avg_rr'),
-        data: items.map((d) => Number(d.avg_rr || 0)),
+        data: items.map((d) => (d.avg_rr == null ? null : Number(d.avg_rr))),
         backgroundColor: CHART_PALETTE.positiveLt,
         borderRadius: 4,
         yAxisID: 'y1',

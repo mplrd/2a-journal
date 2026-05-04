@@ -5,7 +5,7 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 **Légende statut** :
 - 🟢 à traiter
 - 🟡 à clarifier / discuter
-- 🔴 ne sera pas traité
+- 🚫 ne sera pas traité
 - ✅ déjà fait / déjà couvert
 - ⏳ en cours
 
@@ -22,7 +22,7 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 
 ### ✅ DONE
 
-Tickets livrés (code mergé sur `develop`, doc rédigée).
+Tickets résolus (code mergé sur `develop` + doc rédigée, ou réponse formulée pour les questions).
 
 | ID | Titre | Type | Livraison |
 |----|-------|------|-----------|
@@ -30,6 +30,10 @@ Tickets livrés (code mergé sur `develop`, doc rédigée).
 | [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | `docs/54-account-risk-params-toggle.md` |
 | [D-02](#d-02) | Renommer "Zone dangereuse" sur Profil | Doc/UX | MAJ `docs/27-account-danger-zone.md` |
 | [D-07](#d-07) | Liste des comptes : badge "étape" fusionné dans la colonne "type" | Doc/UX | inline (cf. `AccountsView.vue`) |
+| [Q-01](#q-01) | Comment est calculé le R:R ? | Assistance | Réponse formulée (2026-05-04) |
+| [Q-02](#q-02) | Une alerte est-elle déclenchée si le DD est dépassé ? | Assistance | Réponse formulée (2026-05-04) |
+| [Q-03](#q-03) | Trade BE ouvert en parallèle compté dans les stats _(ex-B-01)_ | Assistance | Réponse formulée (2026-05-04) |
+| [Q-04](#q-04) | "Taux de réussite" — BE compté comme non-réussite ? _(ex-B-02)_ | Assistance | Réponse formulée (2026-05-04) |
 
 ### 🟡 TODO
 
@@ -37,9 +41,7 @@ Tickets restants à traiter / arbitrer / clarifier.
 
 | ID | Titre | Type | Priorité | Effort | Statut |
 |----|-------|------|----------|--------|--------|
-| [B-01](#b-01) | Trade BE ouvert en parallèle compté dans les stats | Bug | Moyenne | ? | 🟡 |
-| [B-02](#b-02) | "Taux de réussite" — BE compté comme non-réussite ? | Bug | Moyenne | ? | 🟡 |
-| [B-03](#b-03) | Champ "prix d'entrée" obligatoire en import custom mais non utilisé | Bug | Haute | Faible | 🟢 |
+| [B-03](#b-03) | Champ "prix d'entrée" obligatoire en import custom mais non utilisé | Bug | — | — | 🚫 |
 | [E-02](#e-02) | Source d'import : Ouinex | Évol | Moyenne | Moyen | 🟡 |
 | [E-03](#e-03) | Espace "questions / remarques" pour utilisateurs | Évol | Moyenne | Moyen | 🟡 |
 | [E-04](#e-04) | Imports scindés / sélection des données à analyser | Évol | À arbitrer | Élevé | 🟡 |
@@ -52,8 +54,6 @@ Tickets restants à traiter / arbitrer / clarifier.
 | [D-04](#d-04) | Rappel "seuil BE" sur le graphe gains/pertes/BE | Doc/UX | Haute | Faible | 🟢 |
 | [D-05](#d-05) | Onboarding 2 use cases : actif vs passif | Doc/UX | Moyenne | Moyen | 🟡 |
 | [D-06](#d-06) | "Custom import" — mode d'emploi & valorisation produit | Doc/UX | Moyenne | Moyen | 🟡 |
-| [Q-01](#q-01) | Comment est calculé le R:R ? | Assistance | — | — | 🟡 |
-| [Q-02](#q-02) | Une alerte est-elle déclenchée si le DD est dépassé ? | Assistance | — | — | 🟡 |
 | [S-01](#s-01) | Présenter à "rod" / proposition à IVT | Stratégie | — | — | 💡 |
 | [S-02](#s-02) | Compliments puissance/ergonomie — réutiliser en com | Stratégie | — | — | 💡 |
 | [S-03](#s-03) | Maintenir la valeur ajoutée 2A vs FTMO natif | Stratégie | — | — | 💡 |
@@ -64,32 +64,16 @@ Tickets restants à traiter / arbitrer / clarifier.
 
 ### Bugs / comportements à investiguer
 
-<a id="b-01"></a>
-#### B-01. Trade BE ouvert en parallèle compté dans les stats — 🟡
-
-> "La 2ᵉ ligne correspond à la ligne qui a été BE (ouverte presque en même temps que l'autre, le temps du clic) mais ça me compte comme un trade alors que ça a été BE : elle ne devrait pas être comptée dans les stats je pense."
-
-- **Type** : possiblement un bug, possiblement un choix produit assumé.
-- **À faire** : vérifier comment les trades BE sont comptés dans `StatsRepository` / `StatsService` (taux de réussite, nombre de trades). Définir si BE = trade neutre à exclure des perdants mais compté, ou exclu complètement.
-- **Priorité** : moyenne.
-
-<a id="b-02"></a>
-#### B-02. "Taux de réussite" — BE compté comme non-réussite ? — 🟡
-
-> "J'imagine qu'il considère un BE comme une non-réussite. D'où le 56%. Or t'as forcément un BE à minima sur un solde qui court… donc un trade où tu fais TP1 TP2 TP3 et BE sur le solde t'amènerait une non-réussite."
-
-- **Type** : règle de calcul à clarifier.
-- **À faire** : confirmer la formule actuelle du winrate (TradeStatus = WIN seulement ? WIN + SECURED ? BE inclus ?). Cf. récents commits `feat(trades): include SECURED in stats`. Possiblement déjà adressé partiellement, à confirmer avec un cas concret de son compte.
-- **Priorité** : moyenne.
-
 <a id="b-03"></a>
-#### B-03. Champ "prix d'entrée" obligatoire en import custom mais non utilisé — 🟢
+#### B-03. Champ "prix d'entrée" obligatoire en import custom mais non utilisé — 🚫
 
 > "Dans import 'custom' le champ 'prix d'entrée' est obligatoire. Dans mes statistiques je ne le prends pas en compte… à voir si obligatoire pour l'analyse ?"
 
-- **Type** : friction d'import — contrainte à relâcher si non nécessaire.
-- **À faire** : vérifier dans `ImportCustomService` / mapping si `entry_price` est vraiment nécessaire pour le calcul des stats (R:R, P&L). Si non → rendre optionnel.
-- **Priorité** : haute (quick win).
+- **Verdict** (2026-05-04) : **ne sera pas traité**.
+- **Analyse** :
+  - Côté stats agrégées (winrate, P&L absolu), `entry_price` n'est en effet pas utilisé sur les imports custom (`sl_points` reste `null` post-import → pas de R:R dérivé). Le beta-testeur a raison sur son cas d'usage.
+  - Côté modèle, `positions.entry_price` est `NOT NULL` (cf. `api/database/schema.sql:119`) : c'est une donnée d'identité de la position (détail trade, partage, dérivation R:R future si l'utilisateur ajoute son SL a posteriori). Le rendre optionnel impose une migration de schéma + audit complet de tous les consommateurs (affichage, edit, share-position, etc.) — blast radius disproportionné pour le bénéfice.
+- **Conclusion** : on garde `entry_price` requis. Pas de tooltip ajouté pour l'instant ; si la friction remonte sur d'autres beta-testeurs, on pourra ajouter un helper `Utilisé pour le détail trade et le R:R futur — tes stats agrégées P&L ne dépendent pas de ce champ.`
 
 ---
 
@@ -256,18 +240,50 @@ Polish UX repéré en revue. Sur la liste des comptes, le badge **étape** (Chal
 ### Questions / assistance (réponses à donner, pas du dev)
 
 <a id="q-01"></a>
-#### Q-01. Comment est calculé le R:R ? — 🟡
+#### Q-01. Comment est calculé le R:R ? — ✅
 
 > "Comment il calcule les RR ? Car pour ça il faut avoir le niveau de stop et des TP non ?"
 
-- **Réponse à formuler** : `rr = totalPnl / (size × slPoints)` (cf. `TradeService::calculateFinalMetrics`). Donc oui, nécessite un SL renseigné. Si SL absent → R:R non calculable.
+- **Réponse formulée à transmettre** (2026-05-04) :
+  - Formule par trade : `R:R = totalPnl / (size × slPoints)`.
+  - Concrètement : P&L net du trade (somme signée de toutes les sorties partielles) divisé par le risque initial (taille × distance entrée→SL).
+  - Nécessite donc un **SL renseigné** sur le trade pour être calculable.
+- ⚠️ **Gotcha relevé puis corrigé** : si SL absent, R:R était stocké à `0` (et non `NULL`) → tirait la moyenne `AVG(t.risk_reward)` vers le bas. Fix livré → cf. `docs/55-rr-null-when-no-sl.md`.
+- **Source code** : `TradeService.php:799` (`riskAmount > 0 ? totalPnl/riskAmount : 0`), `StatsRepository.php:143` (`ROUND(AVG(t.risk_reward), 2) AS avg_rr`).
 
 <a id="q-02"></a>
-#### Q-02. Une alerte est-elle déclenchée si le DD est dépassé ? — 🟡
+#### Q-02. Une alerte est-elle déclenchée si le DD est dépassé ? — ✅
 
 > "Comment ça se passe derrière ? Ça alerte si ça dépasse ?"
 
-- **Réponse à formuler** : à vérifier. Si non → cf. [E-05](#e-05) (b).
+- **Réponse formulée à transmettre** (2026-05-04) :
+  - **Aucune alerte n'est déclenchée aujourd'hui.** `max_drawdown` / `daily_drawdown` sur compte propfirm sont des **paramètres de référence statiques** (affichage uniquement), pas de surveillance temps réel ni de notification.
+  - Évolution prévue → cf. [E-08](#e-08) (canal à définir : badge in-app / e-mail / les deux ; seuils 80% / 100% configurables ; calcul à chaque sortie partielle ou job périodique).
+- **Source code** : `api/database/schema.sql` (pas de colonne breach), `AccountService.php:126-132` (validation des valeurs uniquement, aucune surveillance runtime), pas d'infra notification.
+
+<a id="q-03"></a>
+#### Q-03. Trade BE ouvert en parallèle compté dans les stats — ✅ _(ex-B-01)_
+
+> "La 2ᵉ ligne correspond à la ligne qui a été BE (ouverte presque en même temps que l'autre, le temps du clic) mais ça me compte comme un trade alors que ça a été BE : elle ne devrait pas être comptée dans les stats je pense."
+
+- **Verdict** (2026-05-04) : **comportement assumé**, pas un bug — initialement classé `B-01`, reclassé `Q-03` car c'est une question sur le fonctionnement, pas un bug.
+- **Réponse formulée à transmettre** :
+  - Le 2ᵉ trade BE est compté volontairement dans le **nombre total de trades** (denominator), mais **pas dans le winrate** (numerator). Il rejoint une catégorie "BE" séparée, visible à part dans les stats.
+  - Logique produit : conserver une trace de toutes les décisions de trading (fréquence d'activité). Exclure les BE rendrait le compte de trades trompeur.
+  - Si masquer les BE devient un besoin récurrent, on créera un filtre dédié — pas un changement de statut.
+- **Source code** : `StatsRepository.php:44, 123-132` (denominator = `pnl IS NOT NULL`, numerator = `pnl_percent > be_threshold`).
+
+<a id="q-04"></a>
+#### Q-04. "Taux de réussite" — BE compté comme non-réussite ? — ✅ _(ex-B-02)_
+
+> "J'imagine qu'il considère un BE comme une non-réussite. D'où le 56%. Or t'as forcément un BE à minima sur un solde qui court… donc un trade où tu fais TP1 TP2 TP3 et BE sur le solde t'amènerait une non-réussite."
+
+- **Verdict** (2026-05-04) : **inquiétude infondée pour le cas TP1+TP2+TP3+BE-solde**, comportement correct — initialement classé `B-02`, reclassé `Q-04` car c'est une question sur le fonctionnement, pas un bug.
+- **Réponse formulée à transmettre** :
+  - Le winrate ne regarde pas le chemin parcouru, il regarde le **P&L net réalisé du trade entier**. TP1+TP2+TP3 encaissés puis solde sorti à BE → P&L net largement positif → **classé en victoire**.
+  - Un trade tombe en BE uniquement si son P&L final agrégé est dans la **zone seuil BE configurable** (défaut 0%, jusqu'à 5% selon préférences utilisateur).
+  - Donc le 56% de Robin ne vient pas de ce cas. Plus probablement : pertes nettes, ou trades dans la bande de tolérance BE selon son seuil configuré. Demander un exemple concret pour valider.
+- **Source code** : `TradeService.php:332-342` (`calculateRealizedMetrics` agrège tout le réalisé sur chaque sortie partielle, `pnl` et `pnl_percent` sont mis à jour à chaque exit).
 
 ---
 

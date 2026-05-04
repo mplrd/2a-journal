@@ -204,6 +204,20 @@ class ShareServiceTest extends TestCase
         $this->assertStringContainsString('🎯 Exit: SL', $text);
     }
 
+    public function testGenerateTextForClosedTradeWithoutRiskReward(): void
+    {
+        // Trade closed without an SL renseigned (e.g. custom-imported) → risk_reward null.
+        // The R/R line must be omitted (don't show "R/R: 0" — that's misleading).
+        $position = $this->fakePosition(['position_type' => 'TRADE']);
+        $trade = $this->fakeTrade(['risk_reward' => null]);
+        $this->positionRepo->method('findById')->willReturn($position);
+        $this->tradeRepo->method('findByPositionId')->willReturn($trade);
+
+        $text = $this->service->generateText(1, 10);
+
+        $this->assertStringNotContainsString('R/R', $text);
+    }
+
     public function testDurationFormatHoursAndMinutes(): void
     {
         $position = $this->fakePosition(['position_type' => 'TRADE']);

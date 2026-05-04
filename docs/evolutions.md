@@ -32,4 +32,19 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ---
 
+## Docs
+
+### Tracker beta : splitter "DONE" en "OK prod" / "En attente de livraison"
+
+**Contexte** : `docs/retours-beta-tests.md` a aujourd'hui un tableau `✅ DONE` qui mélange deux états bien distincts :
+- mergé sur `develop` mais pas encore sur `main` (= pas en prod) ;
+- mergé sur `main` (= effectivement livré aux beta-testeurs).
+
+**À faire** : scinder le tableau DONE en deux sous-tableaux **"En attente de livraison"** (develop) et **"Livré en prod"** (main), avec un critère clair (présence sur `main` au moment de la mise à jour). Mettre à jour la convention en tête du fichier en conséquence.
+
+**Repéré le** : 2026-05-04 (après merge D-02).
+**Priorité** : basse, à faire à la prochaine mise à jour du tracker.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

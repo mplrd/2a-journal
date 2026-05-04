@@ -131,13 +131,17 @@ class StatsService
         $losses = 0;
         $totalPnl = 0.0;
         $sumRr = 0.0;
+        $rrCount = 0;
         $grossProfit = 0.0;
         $grossLoss = 0.0;
 
         foreach ($trades as $t) {
             $pnl = (float) $t['pnl'];
             $totalPnl += $pnl;
-            $sumRr += (float) ($t['risk_reward'] ?? 0);
+            if ($t['risk_reward'] !== null) {
+                $sumRr += (float) $t['risk_reward'];
+                $rrCount++;
+            }
 
             if ($pnl > 0) {
                 $wins++;
@@ -155,7 +159,7 @@ class StatsService
             'losses' => $losses,
             'win_rate' => $total > 0 ? round($wins * 100.0 / $total, 2) : 0,
             'total_pnl' => round($totalPnl, 2),
-            'avg_rr' => $total > 0 ? round($sumRr / $total, 2) : 0,
+            'avg_rr' => $rrCount > 0 ? round($sumRr / $rrCount, 2) : null,
             'profit_factor' => $grossLoss > 0 ? round($grossProfit / $grossLoss, 2) : null,
         ];
     }
