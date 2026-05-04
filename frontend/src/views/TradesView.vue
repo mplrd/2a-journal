@@ -410,7 +410,7 @@ function pnlClass(pnl) {
     <!-- Filters + create button on a single line (label-on-top per filter,
          wraps gracefully on small screens; the button is pushed right via
          ml-auto). -->
-    <div class="flex items-end gap-4 flex-wrap mb-4">
+    <div class="flex items-end gap-6 flex-wrap mb-4">
       <div class="flex flex-col gap-1">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.account') }}</span>
         <BadgeFilter

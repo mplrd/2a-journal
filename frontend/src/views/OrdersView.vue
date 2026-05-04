@@ -211,13 +211,12 @@ function statusSeverity(status) {
 
 <template>
   <div>
-    <div class="flex items-center justify-end mb-4">
-      <Button :label="t('orders.create')" icon="pi pi-plus" @click="showForm = true" />
-    </div>
-
-    <div class="flex flex-col gap-3 mb-4">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('orders.account') }}</span>
+    <!-- Filters + create button on a single line (cf. TradesView for the
+         shared layout pattern: label-on-top per filter, wraps responsively,
+         button pushed right via ml-auto). -->
+    <div class="flex items-end gap-6 flex-wrap mb-4">
+      <div class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.account') }}</span>
         <BadgeFilter
           v-model="filterAccountIds"
           :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
@@ -225,14 +224,17 @@ function statusSeverity(status) {
           @change="applyFilters"
         />
       </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('orders.status') }}</span>
+      <div class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.status') }}</span>
         <BadgeFilter
           v-model="filterStatuses"
           :options="statusOptions"
           multi
           @change="applyFilters"
         />
+      </div>
+      <div class="ml-auto">
+        <Button :label="t('orders.create')" icon="pi pi-plus" @click="showForm = true" />
       </div>
     </div>
 
