@@ -14,11 +14,13 @@ Source du besoin : retour utilisateur direct (en cours de livraison E-07, l'util
 
 ## Convention de breakpoint
 
-- **Breakpoint pivot** : Tailwind `md:` (768 px).
-- En dessous (≤ 767 px) → **mobile vertical** : layout adapté.
-- Au-dessus (≥ 768 px) → **tablette landscape / desktop** : layout web inchangé.
+- **Breakpoint pivot** : Tailwind `lg:` (1024 px).
+- En dessous (≤ 1023 px) → **layout mobile / compact** : tuiles, FAB, filtres pliables.
+- Au-dessus (≥ 1024 px) → **desktop** : DataTable, bouton inline, filtres permanents.
 
-Le composable `useIsMobile()` (`frontend/src/composables/useIsMobile.js`) expose un `ref` réactif `isMobile` basé sur `window.matchMedia('(max-width: 767px)')`. Pas de listener resize-throttling : `matchMedia` ne déclenche `change` que quand le prédicat bascule, c'est gratuit.
+Le composable `useIsMobile()` (`frontend/src/composables/useIsMobile.js`) expose un `ref` réactif `isMobile` basé sur `window.matchMedia('(max-width: 1023px)')`. Pas de listener resize-throttling : `matchMedia` ne déclenche `change` que quand le prédicat bascule, c'est gratuit.
+
+**Choix du breakpoint** : initialement à `md:` (768 px). Bump à `lg:` (1024 px) après retour utilisateur — sur iPhone 14 Pro Max + iPad portrait, le layout web restait cramé (filtres serrés, période picker en 2 mois, DataTable à beaucoup de colonnes). À 1024 px on a le confort minimal pour la grille avec ses 8–10 colonnes typiques.
 
 ```js
 const { isMobile } = useIsMobile()

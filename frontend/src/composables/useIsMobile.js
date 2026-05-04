@@ -1,10 +1,16 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 /**
- * Reactive mobile-vs-desktop flag, gated on the Tailwind `md:` breakpoint
- * (768px). `isMobile.value === true` means "smartphone vertical or any
- * narrow viewport"; tablets in landscape and desktops fall back to the
- * standard web layout.
+ * Reactive mobile-vs-desktop flag, gated on the Tailwind `lg:` breakpoint
+ * (1024px). `isMobile.value === true` means "any narrow viewport that
+ * struggles with multi-column DataTables" — phones in portrait/landscape,
+ * tablets in portrait, narrow split-screen laptop windows. The full
+ * web layout kicks in only on real desktop widths (≥ 1024px).
+ *
+ * The breakpoint was bumped from md: (768) to lg: (1024) after
+ * iPhone 14 Pro Max + iPad portrait feedback — at 768–1023px the
+ * standard web layout was still too cramped (filters, period picker,
+ * many-column tables).
  *
  * Convention used across responsive views (Accounts, Orders, Trades):
  *   - Filters: collapsed by default, expandable on demand.
@@ -18,7 +24,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
  * the predicate flips. Falls back to a static `false` when matchMedia
  * is unavailable (SSR, tests).
  */
-export function useIsMobile(query = '(max-width: 767px)') {
+export function useIsMobile(query = '(max-width: 1023px)') {
   const isMobile = ref(false)
 
   let mediaQueryList = null

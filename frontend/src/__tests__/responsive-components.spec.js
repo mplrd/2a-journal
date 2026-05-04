@@ -68,7 +68,7 @@ describe('FloatingActionButton', () => {
 
     const btn = wrapper.find('[data-testid="fab"]')
     expect(btn.attributes('aria-label')).toBe('Create')
-    expect(btn.classes()).toContain('md:hidden')
+    expect(btn.classes()).toContain('lg:hidden')
     expect(btn.classes()).toContain('fixed')
 
     await btn.trigger('click')
