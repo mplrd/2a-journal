@@ -400,8 +400,6 @@
     "all_accounts": "All accounts",
     "all_statuses": "All statuses",
     "date_range": "Date range",
-    "date_from": "From",
-    "date_to": "To",
     "bulk": {
       "selected_count": "{count} trade(s) selected",
       "delete_selection": "Delete selection",

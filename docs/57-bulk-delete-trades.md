@@ -15,10 +15,34 @@ Source du besoin : `docs/retours-beta-tests.md` ticket E-07 (évoqué oralement 
 
 ### Filtres
 
-- 2 `<DatePicker>` PrimeVue côte à côte (Du / Au) à côté des filtres compte + statut existants.
-- Format YYYY-MM-DD côté API (validé par regex `^\d{4}-\d{2}-\d{2}$`).
+- Composant **`DateRangePicker.vue`** (commun, déjà utilisé sur `DashboardFilters`) : un seul bouton avec popover qui contient des presets (7 derniers jours, 30 derniers jours, mois en cours, trimestre, year-to-date) + un calendrier inline range. Bien plus compact que 2 inputs séparés.
+- Format YYYY-MM-DD côté API (validé par regex `^\d{4}-\d{2}-\d{2}$`). La conversion Date → string YYYY-MM-DD est faite côté Vue dans `applyFilters` via un helper `ymd()`.
 - Filtres optionnels et combinables : si seul `date_from` est rempli, on filtre depuis cette date sans borne haute (et inversement).
-- À chaque changement de date, le filtre s'applique automatiquement (`@update:modelValue="applyFilters"`), la sélection courante est vidée pour éviter d'opérer sur des items hors filtre.
+- À chaque changement, un `watch([filterDateFrom, filterDateTo])` debounce 200ms appelle `applyFilters()` ; la sélection courante est vidée pour éviter d'opérer sur des items hors filtre.
+
+### Layout filtres + bouton "Nouveau"
+
+Les 3 filtres (compte, statut, période) et le bouton **Nouveau trade** tiennent sur **une seule ligne** (avec wrap responsive). Chaque filtre est en pile (`flex-col`) avec son label au-dessus, ce qui permet aux composants larges (BadgeFilter avec plusieurs comptes) de respirer sans pousser les autres à la ligne suivante. Le bouton est poussé à droite via `ml-auto`.
+
+```html
+<div class="flex items-end gap-4 flex-wrap mb-4">
+  <div class="flex flex-col gap-1">
+    <span>{{ t('trades.account') }}</span>
+    <BadgeFilter ... />
+  </div>
+  <div class="flex flex-col gap-1">
+    <span>{{ t('trades.status') }}</span>
+    <BadgeFilter ... />
+  </div>
+  <div class="flex flex-col gap-1 min-w-[220px]">
+    <span>{{ t('trades.date_range') }}</span>
+    <DateRangePicker v-model:from="..." v-model:to="..." />
+  </div>
+  <div class="ml-auto">
+    <Button :label="t('trades.create')" icon="pi pi-plus" />
+  </div>
+</div>
+```
 
 ### Sélection multiple
 
@@ -120,7 +144,7 @@ Route protégée par `authMiddleware + requireSubscription` (cohérent avec le D
 - `trades.error.bulk_delete_empty`
 - `trades.error.bulk_delete_too_many`
 - `trades.success.bulk_deleted` (avec interpolation `{count}`)
-- `trades.date_range`, `trades.date_from`, `trades.date_to`
+- `trades.date_range` (les sous-clés `from` / `to` du DateRangePicker viennent de `common.from` / `common.to`, déjà présentes)
 - `trades.bulk.*` : `selected_count`, `delete_selection`, `confirm_title`, `confirm_intro`, `recap_count`, `count_value`, `recap_dates`, `recap_accounts`, `recap_total_pnl`, `confirm_warning`, `confirm_button`
 
 Toutes alignées entre `fr.json` et `en.json`.

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
@@ -15,8 +15,8 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
-import DatePicker from 'primevue/datepicker'
 import Dialog from 'primevue/dialog'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
@@ -80,11 +80,22 @@ const showBulkDeleteDialog = ref(false)
 const bulkDeleting = ref(false)
 
 function ymd(date) {
-  if (!(date instanceof Date) || isNaN(date.getTime())) return null
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  if (!date) return null
+  const d = date instanceof Date ? date : new Date(date)
+  if (isNaN(d.getTime())) return null
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// DateRangePicker emits update:from / update:to via v-model:from/to. We
+// watch the refs to auto-apply the filter, matching the BadgeFilter
+// @change pattern (no explicit Apply button on this view).
+let dateFilterDebounce = null
+function scheduleDateFilterApply() {
+  if (dateFilterDebounce) clearTimeout(dateFilterDebounce)
+  dateFilterDebounce = setTimeout(() => applyFilters(), 200)
 }
 
 const statusOptions = Object.values(TradeStatus).map((value) => ({
@@ -143,6 +154,8 @@ async function applyFilters() {
   selectedTrades.value = []
   await store.fetchTrades()
 }
+
+watch([filterDateFrom, filterDateTo], scheduleDateFilterApply)
 
 // Recap pour la modale de confirmation : nb, dates, comptes, P&L cumulé.
 const bulkDeleteRecap = computed(() => {
@@ -394,13 +407,12 @@ function pnlClass(pnl) {
 
 <template>
   <div>
-    <div class="flex items-center justify-end mb-4">
-      <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
-    </div>
-
-    <div class="flex flex-col gap-3 mb-4">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.account') }}</span>
+    <!-- Filters + create button on a single line (label-on-top per filter,
+         wraps gracefully on small screens; the button is pushed right via
+         ml-auto). -->
+    <div class="flex items-end gap-4 flex-wrap mb-4">
+      <div class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.account') }}</span>
         <BadgeFilter
           v-model="filterAccountIds"
           :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
@@ -408,8 +420,8 @@ function pnlClass(pnl) {
           @change="applyFilters"
         />
       </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.status') }}</span>
+      <div class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.status') }}</span>
         <BadgeFilter
           v-model="filterStatuses"
           :options="statusOptions"
@@ -417,28 +429,15 @@ function pnlClass(pnl) {
           @change="applyFilters"
         />
       </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.date_range') }}</span>
-        <DatePicker
-          v-model="filterDateFrom"
-          :placeholder="t('trades.date_from')"
-          dateFormat="yy-mm-dd"
-          showIcon
-          showButtonBar
-          data-testid="filter-date-from"
-          class="w-40"
-          @update:modelValue="applyFilters"
+      <div class="flex flex-col gap-1 min-w-[220px]">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.date_range') }}</span>
+        <DateRangePicker
+          v-model:from="filterDateFrom"
+          v-model:to="filterDateTo"
         />
-        <DatePicker
-          v-model="filterDateTo"
-          :placeholder="t('trades.date_to')"
-          dateFormat="yy-mm-dd"
-          showIcon
-          showButtonBar
-          data-testid="filter-date-to"
-          class="w-40"
-          @update:modelValue="applyFilters"
-        />
+      </div>
+      <div class="ml-auto">
+        <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
       </div>
     </div>
 
