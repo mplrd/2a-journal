@@ -17,6 +17,10 @@ import { formatSize } from '@/utils/format'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
+import CollapsibleFilters from '@/components/common/CollapsibleFilters.vue'
+import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
+import TileList from '@/components/common/TileList.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
@@ -24,6 +28,7 @@ import { usePositionsStore } from '@/stores/positions'
 import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const toast = useToast()
 const confirm = useConfirm()
 const store = useOrdersStore()
@@ -211,10 +216,8 @@ function statusSeverity(status) {
 
 <template>
   <div>
-    <!-- Filters + create button on a single line (cf. TradesView for the
-         shared layout pattern: label-on-top per filter, wraps responsively,
-         button pushed right via ml-auto). -->
-    <div class="flex items-end gap-6 flex-wrap mb-4">
+    <!-- Desktop filter bar: filters + create button on a single line. -->
+    <div v-if="!isMobile" class="flex items-end gap-6 flex-wrap mb-4">
       <div class="flex flex-col gap-1">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.account') }}</span>
         <BadgeFilter
@@ -238,6 +241,36 @@ function statusSeverity(status) {
       </div>
     </div>
 
+    <!-- Mobile filter bar: collapsible vertical stack. -->
+    <CollapsibleFilters v-else storage-key="orders-filters-expanded" class="mb-4">
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.account') }}</span>
+          <BadgeFilter
+            v-model="filterAccountIds"
+            :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+            multi
+            @change="applyFilters"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.status') }}</span>
+          <BadgeFilter
+            v-model="filterStatuses"
+            :options="statusOptions"
+            multi
+            @change="applyFilters"
+          />
+        </div>
+      </div>
+    </CollapsibleFilters>
+
+    <FloatingActionButton
+      icon="plus"
+      :aria-label="t('orders.create')"
+      @click="showForm = true"
+    />
+
     <EmptyState
       v-if="!store.loading && store.totalRecords === 0"
       icon="pi pi-list"
@@ -248,7 +281,7 @@ function statusSeverity(status) {
     </EmptyState>
 
     <DataTable
-      v-else
+      v-else-if="!isMobile"
       :value="store.orders"
       :loading="store.loading"
       lazy
@@ -345,6 +378,59 @@ function statusSeverity(status) {
         </template>
       </Column>
     </DataTable>
+
+    <!-- Mobile: tile list mirroring the DataTable columns + corner actions. -->
+    <TileList
+      v-else-if="isMobile && store.totalRecords > 0"
+      :items="store.orders"
+      :loading="store.loading"
+      :total-records="store.totalRecords"
+      :page="store.page"
+      :per-page="store.perPage"
+      class="mt-2"
+      @page="onPage"
+    >
+      <template #default="{ item }">
+        <div class="relative p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`order-tile-${item.id}`">
+          <div class="absolute top-2 right-2 flex gap-1 flex-wrap justify-end max-w-[60%]">
+            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
+            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
+            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-check" severity="success" size="small" text rounded :aria-label="t('orders.execute')" @click="handleExecute(item)" />
+            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-times" severity="warn" size="small" text rounded :aria-label="t('orders.cancel_action')" @click="handleCancel(item)" />
+            <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
+            <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
+          </div>
+          <div class="flex items-center gap-2 mb-2 pr-2">
+            <Tag :value="t(`positions.directions.${item.direction}`)" :severity="directionSeverity(item.direction)" />
+            <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
+            <Tag :value="t(`orders.statuses.${item.status}`)" :severity="statusSeverity(item.status)" />
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">{{ accountName(item.account_id) }}</div>
+          <div class="grid grid-cols-3 gap-x-3 text-sm">
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
+              <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.sl_price).toLocaleString() }}</div>
+            </div>
+          </div>
+          <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">
+            <span
+              v-for="s in parseSetup(item.setup)"
+              :key="s"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+              :class="setupTagClass(s)"
+            >{{ s }}</span>
+          </div>
+        </div>
+      </template>
+    </TileList>
 
     <OrderForm
       v-model:visible="showForm"
