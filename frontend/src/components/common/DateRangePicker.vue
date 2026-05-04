@@ -160,8 +160,9 @@ const hasValue = computed(() => Boolean(range.value?.[0] || range.value?.[1]))
 
     <Popover ref="popoverRef">
       <div class="flex flex-col sm:flex-row gap-3">
-        <!-- Presets column -->
-        <div class="flex flex-col gap-1 sm:border-r sm:border-gray-200 sm:dark:border-gray-700 sm:pr-3 min-w-[160px]">
+        <!-- Presets column — hidden on full mobile (< 768) where vertical
+             room is scarce; the trigger button's "X" still allows clearing. -->
+        <div class="hidden md:flex flex-col gap-1 sm:border-r sm:border-gray-200 sm:dark:border-gray-700 sm:pr-3 min-w-[160px]">
           <button
             v-for="preset in presets"
             :key="preset.key"
