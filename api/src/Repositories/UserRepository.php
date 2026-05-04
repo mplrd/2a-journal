@@ -33,7 +33,7 @@ class UserRepository
     public function findByEmail(string $email): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, role, suspended_at, password, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, default_page_size, bypass_subscription, grace_period_end, stripe_customer_id, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
+            'SELECT id, email, role, suspended_at, password, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, dd_alert_threshold_percent, default_page_size, bypass_subscription, grace_period_end, stripe_customer_id, email_verified_at, failed_login_attempts, locked_until, created_at, updated_at FROM users WHERE email = :email AND deleted_at IS NULL'
         );
         $stmt->execute(['email' => $email]);
         $user = $stmt->fetch();
@@ -44,7 +44,7 @@ class UserRepository
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, role, suspended_at, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, default_page_size, bypass_subscription, grace_period_end, stripe_customer_id, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
+            'SELECT id, email, role, suspended_at, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, dd_alert_threshold_percent, default_page_size, bypass_subscription, grace_period_end, stripe_customer_id, profile_picture, onboarding_completed_at, email_verified_at, created_at, updated_at FROM users WHERE id = :id AND deleted_at IS NULL'
         );
         $stmt->execute(['id' => $id]);
         $user = $stmt->fetch();
@@ -188,14 +188,14 @@ class UserRepository
     public function findByStripeCustomerId(string $customerId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, bypass_subscription, grace_period_end, stripe_customer_id FROM users WHERE stripe_customer_id = :cid AND deleted_at IS NULL'
+            'SELECT id, email, first_name, last_name, timezone, default_currency, locale, theme, be_threshold_percent, dd_alert_threshold_percent, bypass_subscription, grace_period_end, stripe_customer_id FROM users WHERE stripe_customer_id = :cid AND deleted_at IS NULL'
         );
         $stmt->execute(['cid' => $customerId]);
         $user = $stmt->fetch();
         return $user ?: null;
     }
 
-    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'default_page_size', 'profile_picture'];
+    private const PROFILE_FIELDS = ['first_name', 'last_name', 'timezone', 'default_currency', 'theme', 'locale', 'be_threshold_percent', 'dd_alert_threshold_percent', 'default_page_size', 'profile_picture'];
 
     public function updateProfile(int $id, array $data): ?array
     {

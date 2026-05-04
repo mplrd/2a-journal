@@ -44,7 +44,8 @@ class AccountRepository
         $stmt = $this->pdo->prepare(
             'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
                     (a.initial_capital + COALESCE(pnl.total, 0)) AS current_capital,
-                    a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split, a.is_active, a.created_at, a.updated_at
+                    a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split,
+                    a.is_active, a.created_at, a.updated_at
              FROM accounts a
              LEFT JOIN (
                  SELECT p.account_id, SUM(t.pnl) AS total
@@ -75,7 +76,8 @@ class AccountRepository
         $stmt = $this->pdo->prepare(
             'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
                     (a.initial_capital + COALESCE(pnl.total, 0)) AS current_capital,
-                    a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split, a.is_active, a.created_at, a.updated_at
+                    a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split,
+                    a.is_active, a.created_at, a.updated_at
              FROM accounts a
              LEFT JOIN (
                  SELECT p.account_id, SUM(t.pnl) AS total
@@ -131,5 +133,47 @@ class AccountRepository
         $stmt->execute(['id' => $id]);
 
         return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Internal lookup for the DD alert engine. Returns the same row as
+     * findById() PLUS the dedup timestamps (`last_max_dd_alert_at`,
+     * `last_daily_dd_alert_at`) — these are NEVER exposed by the public
+     * `findById` SELECT because no API endpoint should leak the alert
+     * dispatch history.
+     */
+    public function findByIdForDdCheck(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, user_id, name, account_type, currency,
+                    max_drawdown, daily_drawdown,
+                    last_max_dd_alert_at, last_daily_dd_alert_at
+             FROM accounts
+             WHERE id = :id AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
+    /**
+     * Stamp the dedup column for a DD alert. $type is 'max' or 'daily';
+     * any other value is silently ignored (defensive — caller validates).
+     */
+    public function markDdAlertSent(int $id, string $type): void
+    {
+        $column = match ($type) {
+            'max' => 'last_max_dd_alert_at',
+            'daily' => 'last_daily_dd_alert_at',
+            default => null,
+        };
+        if ($column === null) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            "UPDATE accounts SET {$column} = NOW() WHERE id = :id AND deleted_at IS NULL"
+        );
+        $stmt->execute(['id' => $id]);
     }
 }
