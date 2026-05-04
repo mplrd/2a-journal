@@ -352,7 +352,7 @@ class StatsRepository
                     COUNT(*) AS count
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
-                {$where}
+                {$where} AND t.risk_reward IS NOT NULL
                 GROUP BY bucket
                 ORDER BY MIN(t.risk_reward) ASC";
 
