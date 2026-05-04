@@ -102,12 +102,12 @@ class EmailService
 
         if ($locale === 'fr') {
             $ddLabel = $isMax ? 'drawdown maximum' : 'drawdown journalier';
-            $subject = "Alerte drawdown — compte {$status['account_name']}";
-            $title = 'Approche du drawdown';
+            $subject = "Alerte {$ddLabel} — compte {$status['account_name']}";
+            $title = $isMax ? 'Approche du drawdown maximum' : 'Approche du drawdown journalier';
         } else {
             $ddLabel = $isMax ? 'max drawdown' : 'daily drawdown';
-            $subject = "Drawdown alert — account {$status['account_name']}";
-            $title = 'Drawdown approaching';
+            $subject = "{$ddLabel} alert — account {$status['account_name']}";
+            $title = $isMax ? 'Max drawdown approaching' : 'Daily drawdown approaching';
         }
 
         $content = $this->loadTemplate('dd-alert', $locale, [
