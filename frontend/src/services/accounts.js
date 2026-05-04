@@ -20,4 +20,8 @@ export const accountsService = {
   async remove(id) {
     return api.delete(`/accounts/${id}`)
   },
+
+  async ddStatus() {
+    return api.get('/accounts/dd-status')
+  },
 }
