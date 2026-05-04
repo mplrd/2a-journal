@@ -18,10 +18,10 @@ import { AccountType, AccountStage } from '@/constants/enums'
 import { useOnboarding } from '@/composables/useOnboarding'
 import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
 import TileList from '@/components/common/TileList.vue'
-import { useIsMobile } from '@/composables/useIsMobile'
+import { useLayout } from '@/composables/useIsMobile'
 
 const { t } = useI18n()
-const { isMobile } = useIsMobile()
+const { isMobile, isCompact } = useLayout()
 const router = useRouter()
 const { isOnboarding, currentStep, completeOnboarding } = useOnboarding()
 const toast = useToast()
@@ -174,6 +174,7 @@ function balanceVariation(account) {
       v-if="!isMobile && store.accounts.length > 0"
       :value="store.accounts"
       :loading="store.loading"
+      :size="isCompact ? 'small' : undefined"
       stripedRows
       class="mt-2"
     >
@@ -186,7 +187,7 @@ function balanceVariation(account) {
           </div>
         </template>
       </Column>
-      <Column field="currency" :header="t('accounts.currency')" />
+      <Column v-if="!isCompact" field="currency" :header="t('accounts.currency')" />
       <Column field="initial_capital" :header="t('accounts.initial_capital')">
         <template #body="{ data }">
           <span class="font-mono tabular-nums">{{ Number(data.initial_capital).toLocaleString() }}</span>
@@ -202,7 +203,7 @@ function balanceVariation(account) {
           </span>
         </template>
       </Column>
-      <Column field="broker" :header="t('accounts.broker')" />
+      <Column v-if="!isCompact" field="broker" :header="t('accounts.broker')" />
       <Column :header="''">
         <template #body="{ data }">
           <div class="flex gap-2">

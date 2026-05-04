@@ -12,7 +12,7 @@ defineEmits(['click'])
 <template>
   <button
     type="button"
-    class="lg:hidden fixed bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-brand-green-700 hover:bg-brand-green-800 active:bg-brand-green-900 text-white shadow-lg flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green-500"
+    class="md:hidden fixed bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-brand-green-700 hover:bg-brand-green-800 active:bg-brand-green-900 text-white shadow-lg flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green-500"
     :aria-label="ariaLabel"
     data-testid="fab"
     @click="$emit('click')"
