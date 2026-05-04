@@ -223,6 +223,7 @@
     "broker": "Courtier",
     "max_drawdown": "Drawdown max",
     "daily_drawdown": "Drawdown journalier",
+    "risk_params_toggle": "Paramètres de gestion du risque",
     "profit_target": "Objectif de profit",
     "profit_split": "Partage des profits (%)",
     "types": {
@@ -573,10 +574,13 @@
       "cancel_success": "Résiliation programmée. Tu gardes accès jusqu'à la fin de la période.",
       "reactivate_success": "Ton abonnement est de nouveau actif."
     },
+    "security": {
+      "title": "Sécurité",
+      "change_password": "Changer de mot de passe",
+      "change_password_description": "Modifier le mot de passe de votre compte. Vos autres sessions restent connectées."
+    },
     "danger_zone": {
       "title": "Zone dangereuse",
-      "change_password": "Changer de mot de passe",
-      "change_password_description": "Modifier le mot de passe de votre compte. Vos autres sessions restent connectées.",
       "delete_account": "Supprimer mon compte",
       "delete_account_description": "Supprime définitivement votre accès au compte. Action irréversible."
     },

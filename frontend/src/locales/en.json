@@ -223,6 +223,7 @@
     "broker": "Broker",
     "max_drawdown": "Max drawdown",
     "daily_drawdown": "Daily drawdown",
+    "risk_params_toggle": "Risk management settings",
     "profit_target": "Profit target",
     "profit_split": "Profit split (%)",
     "types": {
@@ -573,10 +574,13 @@
       "cancel_success": "Cancellation scheduled. You keep access until the end of the period.",
       "reactivate_success": "Your subscription is active again."
     },
+    "security": {
+      "title": "Security",
+      "change_password": "Change password",
+      "change_password_description": "Update your account password. Your other sessions remain signed in."
+    },
     "danger_zone": {
       "title": "Danger zone",
-      "change_password": "Change password",
-      "change_password_description": "Update your account password. Your other sessions remain signed in.",
       "delete_account": "Delete my account",
       "delete_account_description": "Permanently revoke access to this account. This cannot be undone."
     },

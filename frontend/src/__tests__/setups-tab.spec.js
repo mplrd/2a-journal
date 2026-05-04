@@ -154,6 +154,140 @@ describe('SetupsTab', () => {
     expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(true)
   })
 
+  // ── Inline label edit ───────────────────────────────────────
+
+  it('exposes startEdit / cancelEdit / saveEdit for inline label editing', () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+
+    expect(typeof wrapper.vm.startEdit).toBe('function')
+    expect(typeof wrapper.vm.cancelEdit).toBe('function')
+    expect(typeof wrapper.vm.saveEdit).toBe('function')
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('startEdit sets editingId, editLabel and editCategory from the setup', () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1, category: 'pattern' }])
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout', category: 'pattern' })
+
+    expect(wrapper.vm.editingId).toBe(1)
+    expect(wrapper.vm.editLabel).toBe('Breakout')
+    expect(wrapper.vm.editCategory).toBe('pattern')
+  })
+
+  it('startEdit normalises missing category to null', () => {
+    const wrapper = createWrapper([{ id: 1, label: 'X', user_id: 1 }])
+
+    wrapper.vm.startEdit({ id: 1, label: 'X' })
+
+    expect(wrapper.vm.editCategory).toBeNull()
+  })
+
+  it('cancelEdit clears editing state without calling updateSetup', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn()
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = 'Modified'
+    wrapper.vm.cancelEdit()
+
+    expect(wrapper.vm.editingId).toBeNull()
+    expect(wrapper.vm.editLabel).toBe('')
+    expect(store.updateSetup).not.toHaveBeenCalled()
+  })
+
+  it('saveEdit calls store.updateSetup with trimmed label and clears state on success', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1, category: 'pattern' }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockResolvedValue({ id: 1, label: 'Renamed', category: 'pattern' })
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout', category: 'pattern' })
+    wrapper.vm.editLabel = '  Renamed  '
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).toHaveBeenCalledWith(1, { label: 'Renamed' })
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('saveEdit sends category-only patch when only category changes', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1, category: 'pattern' }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockResolvedValue({ id: 1, label: 'Breakout', category: 'context' })
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout', category: 'pattern' })
+    wrapper.vm.editCategory = 'context'
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).toHaveBeenCalledWith(1, { category: 'context' })
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('saveEdit sends both fields when label and category both change', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1, category: 'pattern' }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockResolvedValue({ id: 1, label: 'Renamed', category: 'context' })
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout', category: 'pattern' })
+    wrapper.vm.editLabel = 'Renamed'
+    wrapper.vm.editCategory = 'context'
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).toHaveBeenCalledWith(1, { label: 'Renamed', category: 'context' })
+  })
+
+  it('saveEdit allows resetting category to null (uncategorized)', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'X', user_id: 1, category: 'pattern' }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockResolvedValue({ id: 1, label: 'X', category: null })
+
+    wrapper.vm.startEdit({ id: 1, label: 'X', category: 'pattern' })
+    wrapper.vm.editCategory = null
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).toHaveBeenCalledWith(1, { category: null })
+  })
+
+  it('saveEdit does nothing when label is empty', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn()
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = '   '
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).not.toHaveBeenCalled()
+    // Stays in edit mode so the user can fix
+    expect(wrapper.vm.editingId).toBe(1)
+  })
+
+  it('saveEdit skips API call when neither label nor category changed (no-op)', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1, category: 'pattern' }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn()
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout', category: 'pattern' })
+    // editLabel and editCategory left as initial values
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).not.toHaveBeenCalled()
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('saveEdit keeps edit state on API error so user can retry', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockRejectedValue({ messageKey: 'setups.error.duplicate_label' })
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = 'Existing'
+    await wrapper.vm.saveEdit()
+
+    expect(wrapper.vm.editingId).toBe(1)
+    expect(wrapper.vm.editLabel).toBe('Existing')
+  })
+
   it('fetches setups on mount', () => {
     const pinia = createPinia()
     setActivePinia(pinia)

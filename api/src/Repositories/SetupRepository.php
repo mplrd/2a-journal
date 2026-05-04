@@ -71,6 +71,11 @@ class SetupRepository
         $fields = [];
         $params = ['id' => $id];
 
+        if (array_key_exists('label', $data)) {
+            $fields[] = 'label = :label';
+            $params['label'] = $data['label'];
+        }
+
         if (array_key_exists('category', $data)) {
             $fields[] = 'category = :category';
             $params['category'] = $data['category'];

@@ -202,6 +202,60 @@ class SetupFlowTest extends TestCase
         }
     }
 
+    // ── Update label (inline edit) ───────────────────────────────
+
+    public function testUpdateSetupLabelSuccess(): void
+    {
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/setups'));
+        $setupId = $listResponse->getBody()['data'][0]['id'];
+
+        $request = $this->authRequest('PUT', "/setups/{$setupId}", ['label' => 'Renamed Setup']);
+        $response = $this->router->dispatch($request);
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame('Renamed Setup', $body['data']['label']);
+
+        // Verify persisted
+        $listResponse2 = $this->router->dispatch($this->authRequest('GET', '/setups'));
+        $labels = array_column($listResponse2->getBody()['data'], 'label');
+        $this->assertContains('Renamed Setup', $labels);
+    }
+
+    public function testUpdateSetupLabelRejectsDuplicate(): void
+    {
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/setups'));
+        $setupId = $listResponse->getBody()['data'][0]['id'];
+
+        // Try to rename to "FVG" which is another seeded setup
+        $request = $this->authRequest('PUT', "/setups/{$setupId}", ['label' => 'FVG']);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('setups.error.duplicate_label', $e->getMessageKey());
+        }
+    }
+
+    public function testUpdateSetupLabelRejectsEmpty(): void
+    {
+        $listResponse = $this->router->dispatch($this->authRequest('GET', '/setups'));
+        $setupId = $listResponse->getBody()['data'][0]['id'];
+
+        $request = $this->authRequest('PUT', "/setups/{$setupId}", ['label' => '   ']);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('setups.error.field_required', $e->getMessageKey());
+        }
+    }
+
     // ── Ownership ────────────────────────────────────────────────
 
     public function testCannotDeleteOtherUsersSetup(): void

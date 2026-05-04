@@ -6,6 +6,7 @@ import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
 import { useAuthStore } from '@/stores/auth'
 import DangerZone from '@/components/account/DangerZone.vue'
+import SecuritySection from '@/components/account/SecuritySection.vue'
 import ChangePasswordDialog from '@/components/account/ChangePasswordDialog.vue'
 import DeleteAccountDialog from '@/components/account/DeleteAccountDialog.vue'
 import fr from '@/locales/fr.json'
@@ -81,16 +82,72 @@ describe('DangerZone', () => {
     vi.clearAllMocks()
   })
 
-  it('renders both danger buttons', () => {
+  it('renders only the delete-account button (password is in SecuritySection now)', () => {
     setupStore()
     const wrapper = mount(DangerZone, {
       global: {
         plugins: [createI18nInstance(), PrimeVue, ToastService],
-        stubs: { ...baseStubs, ChangePasswordDialog: true, DeleteAccountDialog: true },
+        stubs: { ...baseStubs, DeleteAccountDialog: true },
+      },
+    })
+    expect(wrapper.find('[data-testid="open-delete-account"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-change-password"]').exists()).toBe(false)
+  })
+
+  it('uses red-themed styling on its outer wrapper', () => {
+    setupStore()
+    const wrapper = mount(DangerZone, {
+      global: {
+        plugins: [createI18nInstance(), PrimeVue, ToastService],
+        stubs: { ...baseStubs, DeleteAccountDialog: true },
+      },
+    })
+    const wrapperDiv = wrapper.find('[data-testid="danger-zone-wrapper"]')
+    expect(wrapperDiv.exists()).toBe(true)
+    expect(wrapperDiv.classes().some((c) => c.includes('red'))).toBe(true)
+  })
+})
+
+describe('SecuritySection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('renders the change-password button', () => {
+    setupStore()
+    const wrapper = mount(SecuritySection, {
+      global: {
+        plugins: [createI18nInstance(), PrimeVue, ToastService],
+        stubs: { ...baseStubs, ChangePasswordDialog: true },
       },
     })
     expect(wrapper.find('[data-testid="open-change-password"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="open-delete-account"]').exists()).toBe(true)
+  })
+
+  it('does NOT use red-themed styling (neutral section)', () => {
+    setupStore()
+    const wrapper = mount(SecuritySection, {
+      global: {
+        plugins: [createI18nInstance(), PrimeVue, ToastService],
+        stubs: { ...baseStubs, ChangePasswordDialog: true },
+      },
+    })
+    const wrapperDiv = wrapper.find('[data-testid="security-section-wrapper"]')
+    expect(wrapperDiv.exists()).toBe(true)
+    expect(wrapperDiv.classes().some((c) => c.includes('red'))).toBe(false)
+  })
+
+  it('opens the change-password dialog when the button is clicked', async () => {
+    setupStore()
+    const wrapper = mount(SecuritySection, {
+      global: {
+        plugins: [createI18nInstance(), PrimeVue, ToastService],
+        stubs: { ...baseStubs, ChangePasswordDialog: true },
+      },
+    })
+    expect(wrapper.vm.changePasswordVisible).toBe(false)
+    await wrapper.find('[data-testid="open-change-password"]').trigger('click')
+    expect(wrapper.vm.changePasswordVisible).toBe(true)
   })
 })
 
