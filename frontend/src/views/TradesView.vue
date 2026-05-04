@@ -17,6 +17,10 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import CollapsibleFilters from '@/components/common/CollapsibleFilters.vue'
+import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
+import TileList from '@/components/common/TileList.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
@@ -30,6 +34,7 @@ import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/e
 
 const route = useRoute()
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const toast = useToast()
 const confirm = useConfirm()
 const store = useTradesStore()
@@ -407,10 +412,8 @@ function pnlClass(pnl) {
 
 <template>
   <div>
-    <!-- Filters + create button on a single line (label-on-top per filter,
-         wraps gracefully on small screens; the button is pushed right via
-         ml-auto). -->
-    <div class="flex items-end gap-6 flex-wrap mb-4">
+    <!-- Desktop filter bar: filters + create button on a single line. -->
+    <div v-if="!isMobile" class="flex items-end gap-6 flex-wrap mb-4">
       <div class="flex flex-col gap-1">
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.account') }}</span>
         <BadgeFilter
@@ -441,6 +444,44 @@ function pnlClass(pnl) {
       </div>
     </div>
 
+    <!-- Mobile filter bar: collapsed by default, vertical stack when open. -->
+    <CollapsibleFilters v-else storage-key="trades-filters-expanded" class="mb-4">
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.account') }}</span>
+          <BadgeFilter
+            v-model="filterAccountIds"
+            :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
+            multi
+            @change="applyFilters"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.status') }}</span>
+          <BadgeFilter
+            v-model="filterStatuses"
+            :options="statusOptions"
+            multi
+            @change="applyFilters"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.date_range') }}</span>
+          <DateRangePicker
+            v-model:from="filterDateFrom"
+            v-model:to="filterDateTo"
+          />
+        </div>
+      </div>
+    </CollapsibleFilters>
+
+    <!-- Mobile FAB for "New trade" — replaces the inline button hidden on mobile. -->
+    <FloatingActionButton
+      icon="plus"
+      :aria-label="t('trades.create')"
+      @click="showForm = true"
+    />
+
     <!-- Bulk action bar (visible when at least one trade is selected) -->
     <div
       v-if="selectedTrades.length > 0"
@@ -470,7 +511,7 @@ function pnlClass(pnl) {
     </EmptyState>
 
     <DataTable
-      v-else
+      v-else-if="!isMobile"
       v-model:selection="selectedTrades"
       :value="store.trades"
       :loading="store.loading"
@@ -601,6 +642,63 @@ function pnlClass(pnl) {
         </template>
       </Column>
     </DataTable>
+
+    <!-- Mobile: tile list mirroring the DataTable columns + corner actions.
+         Bulk-select is intentionally not surfaced on mobile (cf. doc 58). -->
+    <TileList
+      v-else-if="isMobile && store.totalRecords > 0"
+      :items="store.trades"
+      :loading="store.loading"
+      :total-records="store.totalRecords"
+      :page="store.page"
+      :per-page="store.perPage"
+      class="mt-2"
+      @page="onPage"
+    >
+      <template #default="{ item }">
+        <div class="relative p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`trade-tile-${item.id}`">
+          <div class="absolute top-2 right-2 flex gap-1 flex-wrap justify-end max-w-[60%]">
+            <Button v-if="item.status !== TradeStatus.CLOSED && getNextObjective(item)" icon="pi pi-angle-double-up" severity="success" size="small" text rounded :aria-label="getNextObjective(item)?.label" @click="openNextObjective(item)" />
+            <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-sign-out" severity="warn" size="small" text rounded :aria-label="t('trades.close_trade')" @click="openCloseDialog(item)" />
+            <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
+            <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
+            <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
+          </div>
+          <div class="flex items-center gap-2 mb-2 pr-2">
+            <Tag :value="t(`positions.directions.${item.direction}`)" :severity="directionSeverity(item.direction)" />
+            <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
+            <Tag :value="t(`trades.statuses.${item.status}`)" :severity="statusSeverity(item.status)" />
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            {{ accountName(item.account_id) }} · {{ new Date(item.opened_at).toLocaleString() }}
+          </div>
+          <div class="grid grid-cols-3 gap-x-3 text-sm">
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
+              <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('trades.pnl') }}</div>
+              <div :class="pnlClass(realizedPnl(item))" class="font-mono tabular-nums">
+                {{ realizedPnl(item) != null ? (realizedPnl(item) >= 0 ? '+' : '') + realizedPnl(item).toFixed(2) : '-' }}
+              </div>
+            </div>
+          </div>
+          <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">
+            <span
+              v-for="s in parseSetup(item.setup)"
+              :key="s"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+              :class="setupTagClass(s)"
+            >{{ s }}</span>
+          </div>
+        </div>
+      </template>
+    </TileList>
 
     <TradeForm
       v-model:visible="showForm"
