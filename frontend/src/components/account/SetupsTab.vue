@@ -28,6 +28,7 @@ const setupToDelete = ref(null)
 const showDeleteDialog = ref(false)
 const editingId = ref(null)
 const editLabel = ref('')
+const editCategory = ref(null)
 const savingEdit = ref(false)
 
 onMounted(() => {
@@ -69,11 +70,13 @@ function handleKeyup(event) {
 function startEdit(setup) {
   editingId.value = setup.id
   editLabel.value = setup.label
+  editCategory.value = setup.category ?? null
 }
 
 function cancelEdit() {
   editingId.value = null
   editLabel.value = ''
+  editCategory.value = null
 }
 
 async function saveEdit() {
@@ -82,17 +85,22 @@ async function saveEdit() {
   if (!trimmed) return
 
   const original = store.setups.find((s) => s.id === editingId.value)
-  if (original && original.label === trimmed) {
+  const patch = {}
+  if (!original || original.label !== trimmed) patch.label = trimmed
+  if (!original || (original.category ?? null) !== (editCategory.value ?? null)) {
+    patch.category = editCategory.value ?? null
+  }
+
+  if (Object.keys(patch).length === 0) {
     cancelEdit()
     return
   }
 
   savingEdit.value = true
   try {
-    await store.updateSetup(editingId.value, { label: trimmed })
+    await store.updateSetup(editingId.value, patch)
     toast.add({ severity: 'success', summary: t('common.success'), detail: t('setups.success.updated'), life: 2000 })
-    editingId.value = null
-    editLabel.value = ''
+    cancelEdit()
   } catch (err) {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   } finally {
@@ -103,16 +111,6 @@ async function saveEdit() {
 function handleEditKeyup(event) {
   if (event.key === 'Enter') saveEdit()
   if (event.key === 'Escape') cancelEdit()
-}
-
-async function handleCategoryChange(setup, category) {
-  if (category === setup.category) return
-  try {
-    await store.updateSetup(setup.id, { category })
-    toast.add({ severity: 'success', summary: t('common.success'), detail: t('setups.success.updated'), life: 2000 })
-  } catch (err) {
-    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
-  }
 }
 
 function confirmDelete(setup) {
@@ -139,6 +137,7 @@ defineExpose({
   confirmDelete,
   editingId,
   editLabel,
+  editCategory,
   startEdit,
   cancelEdit,
   saveEdit,
@@ -235,14 +234,17 @@ defineExpose({
       <Column field="category" :header="t('setups.category_header')">
         <template #body="{ data }">
           <Select
-            :modelValue="data.category"
+            v-if="editingId === data.id"
+            v-model="editCategory"
             :options="categoryOptions"
             optionLabel="label"
             optionValue="value"
             class="w-40"
-            data-testid="category-select"
-            @update:modelValue="(v) => handleCategoryChange(data, v)"
+            :data-testid="`edit-category-select-${data.id}`"
           />
+          <span v-else class="text-sm text-gray-700 dark:text-gray-300">
+            {{ t(`setups.category.${data.category || 'uncategorized'}`) }}
+          </span>
         </template>
       </Column>
       <Column :header="''">

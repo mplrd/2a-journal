@@ -90,7 +90,7 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 
 - **Effort** : faible (CRUD existant à compléter).
 - **Priorité** : haute (quick win).
-- **Livré** : édition inline du label dans la grid (icône crayon → `<InputText>` + ✓/✗). Cf. `docs/53-setup-inline-edit.md`.
+- **Livré** : édition inline du label **et** de la catégorie dans la grid (icône crayon → `<InputText>` + `<Select>` + ✓/✗, patch minimal). Cf. `docs/53-setup-inline-edit.md`.
 
 <a id="e-02"></a>
 #### E-02. Source d'import : Ouinex — 🟡

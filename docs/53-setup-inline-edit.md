@@ -1,27 +1,30 @@
-# Étape 53 — Édition inline du label des setups
+# Étape 53 — Édition inline d'un setup (label + catégorie)
 
 ## Résumé
 
-L'utilisateur peut désormais renommer un setup directement dans la grid « Mes Setups » (compte utilisateur → onglet Setups), sans passer par une suppression / recréation. Le clic sur l'icône crayon transforme la cellule label en `<InputText>` avec deux boutons (✓ valider / ✗ annuler). Le bouton supprimer est désactivé pendant l'édition pour éviter une action contradictoire.
+L'utilisateur peut désormais modifier un setup directement dans la grid « Mes Setups » (compte utilisateur → onglet Setups), sans passer par une suppression / recréation. Le clic sur l'icône crayon bascule la ligne en mode édition : la cellule label devient un `<InputText>` et la cellule catégorie devient un `<Select>`. Un seul bouton ✓ enregistre les modifications (label et/ou catégorie), un bouton ✗ annule. Le bouton supprimer est désactivé pendant l'édition pour éviter une action contradictoire.
+
+En lecture seule, la catégorie est désormais affichée comme un libellé traduit (« Pattern », « Contexte », « Non catégorisé »…) — l'ancien `<Select>` toujours actif a été retiré pour unifier l'expérience de modification derrière le bouton crayon.
 
 Source du besoin : retour bêta-testeur (`docs/retours-beta-tests.md` — ticket E-01).
 
 ## Comportement
 
 ### Démarrer l'édition
-- Clic sur l'icône **crayon** dans la colonne d'actions de la ligne → la cellule label devient un input pré-rempli avec le label courant.
-- L'input est `autofocus`. Une seule ligne peut être en cours d'édition à la fois (`editingId` = id du setup en cours).
+- Clic sur l'icône **crayon** dans la colonne d'actions de la ligne → la cellule label devient un input pré-rempli avec le label courant, et la cellule catégorie devient un `<Select>` pré-rempli avec la catégorie courante (`pattern`, `timeframe`, `context` ou `null` = Non catégorisé).
+- L'input label est `autofocus`. Une seule ligne peut être en cours d'édition à la fois (`editingId` = id du setup en cours).
 
 ### Valider (`saveEdit`)
-- Bouton **✓** ou touche **Enter** dans l'input.
+- Bouton **✓** ou touche **Enter** dans l'input label.
+- Construit un patch contenant uniquement les champs **réellement** modifiés (`label`, `category`, ou les deux).
 - Si label vide après trim → no-op, on reste en mode édition (pas d'appel API).
-- Si label inchangé après trim → no-op, on sort simplement du mode édition (pas d'appel API).
-- Si label valide et différent → `PUT /setups/{id}` avec `{ label }`. Toast succès. Sortie du mode édition.
-- En cas d'erreur API (ex. doublon) → toast d'erreur traduit, on **reste** en mode édition pour permettre la correction.
+- Si rien n'a changé (ni label ni catégorie) → no-op, on sort simplement du mode édition (pas d'appel API).
+- Sinon → `PUT /setups/{id}` avec le patch minimal. Toast succès. Sortie du mode édition.
+- En cas d'erreur API (ex. doublon de label) → toast d'erreur traduit, on **reste** en mode édition pour permettre la correction.
 
 ### Annuler (`cancelEdit`)
-- Bouton **✗** ou touche **Escape** dans l'input.
-- Réinitialise `editingId = null` et `editLabel = ''`. Aucun appel API.
+- Bouton **✗** ou touche **Escape** dans l'input label.
+- Réinitialise `editingId = null`, `editLabel = ''`, `editCategory = null`. Aucun appel API.
 
 ## Backend
 
@@ -64,7 +67,7 @@ Validations :
 
 ### Frontend
 
-`frontend/src/__tests__/setups-tab.spec.js` — section *Inline label edit* (7 tests) couvrant : exposition des helpers, démarrage édition, annulation, sauvegarde happy-path, sauvegarde vide, sauvegarde no-op (label inchangé), conservation du mode édition sur erreur API.
+`frontend/src/__tests__/setups-tab.spec.js` — section *Inline label edit* (11 tests) couvrant : exposition des helpers, démarrage édition (label + catégorie, normalisation `null`), annulation, sauvegarde happy-path label, patch catégorie seule, patch label + catégorie, reset catégorie à `null` (uncategorized), sauvegarde vide, sauvegarde no-op (rien n'a changé), conservation du mode édition sur erreur API.
 
 ## Fichiers touchés
 
