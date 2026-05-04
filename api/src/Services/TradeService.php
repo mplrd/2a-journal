@@ -328,27 +328,31 @@ class TradeService
         // Calculate avg exit price (weighted average)
         $avgExitPrice = $this->calculateAvgExitPrice($allExits);
 
+        // Realized metrics are computed on EVERY exit (partial or full) so the
+        // running P&L is visible immediately for swing trades.
+        $metrics = $this->calculateRealizedMetrics($trade, $allExits, $exitedAt);
+
         $previousStatus = $trade['status'];
         $updateData = [
             'remaining_size' => $newRemainingSize,
             'avg_exit_price' => $avgExitPrice,
+            'pnl' => $metrics['pnl'],
+            'pnl_percent' => $metrics['pnl_percent'],
+            'risk_reward' => $metrics['risk_reward'],
         ];
 
-        // Check if fully closed
         if (abs($newRemainingSize) < 0.0001) {
-            $metrics = $this->calculateFinalMetrics($trade, $allExits, $exitedAt);
+            // Full close — set terminal fields. duration is meaningful only here.
             $updateData['status'] = TradeStatus::CLOSED->value;
             $updateData['exit_type'] = $exitTypeValue;
             $updateData['closed_at'] = $exitedAt;
-            $updateData['pnl'] = $metrics['pnl'];
-            $updateData['pnl_percent'] = $metrics['pnl_percent'];
-            $updateData['risk_reward'] = $metrics['risk_reward'];
             $updateData['duration_minutes'] = $metrics['duration_minutes'];
-        } else {
-            // Mark as SECURED if first exit or BE reached
-            if ($previousStatus === TradeStatus::OPEN->value) {
-                $updateData['status'] = TradeStatus::SECURED->value;
-            }
+        } elseif ($previousStatus === TradeStatus::OPEN->value && $exitTypeValue === ExitType::BE->value) {
+            // Only a BE exit secures the trade — the SL has been moved to BE,
+            // so the remainder is risk-free. A TP partial does not promote OPEN
+            // to SECURED on its own (the SL is still on the original level on
+            // the remaining position, the trade is not actually secured).
+            $updateData['status'] = TradeStatus::SECURED->value;
         }
 
         $updated = $this->tradeRepo->update($tradeId, $updateData);
@@ -408,6 +412,9 @@ class TradeService
                 'trigger_type' => TriggerType::MANUAL->value,
             ]);
         }
+
+        // Defensive recalc — no-op if no partials, idempotent otherwise.
+        $this->recalcRealizedMetrics($tradeId);
 
         $updated['partial_exits'] = $this->partialExitRepo->findByTradeId($tradeId);
 
@@ -514,6 +521,10 @@ class TradeService
         if (array_key_exists('custom_fields', $data) && $this->customFieldService) {
             $this->customFieldService->validateAndSaveValues($userId, $tradeId, $data['custom_fields'] ?? []);
         }
+
+        // Defensive recalc — important when entry_price / size / sl_points
+        // changed via this update (pnl_percent and risk_reward depend on them).
+        $this->recalcRealizedMetrics($tradeId);
 
         return $this->get($userId, $tradeId);
     }
@@ -714,7 +725,68 @@ class TradeService
         return $totalSize > 0 ? round($totalWeighted / $totalSize, 5) : 0;
     }
 
-    private function calculateFinalMetrics(array $trade, array $exits, string $closedAt): array
+    /**
+     * Re-derives realized metrics for a trade from the ground up:
+     * 1. Recomputes each partial_exit.pnl from the trade's current entry_price
+     *    and direction (so an entry_price edit propagates to historical exits).
+     * 2. Aggregates into trade.pnl / pnl_percent / risk_reward.
+     *
+     * No-op for trades with zero partial exits.
+     *
+     * Called from any flow that touches a trade (close, markBeReached, update),
+     * so the realized P&L stays consistent across all entry-affecting edits.
+     */
+    private function recalcRealizedMetrics(int $tradeId): void
+    {
+        $trade = $this->tradeRepo->findById($tradeId);
+        if (!$trade) {
+            return;
+        }
+        $partials = $this->partialExitRepo->findByTradeId($tradeId);
+        if (empty($partials)) {
+            return;
+        }
+
+        $entryPrice = (float) $trade['entry_price'];
+        $direction = $trade['direction'];
+        $directionMultiplier = $direction === Direction::BUY->value ? 1 : -1;
+
+        // 1. Recompute each partial's pnl using the current entry_price + direction.
+        $totalPnl = 0;
+        foreach ($partials as $partial) {
+            $newPnl = ((float) $partial['exit_price'] - $entryPrice)
+                * (float) $partial['size']
+                * $directionMultiplier;
+            $newPnl = round($newPnl, 2);
+            if (abs($newPnl - (float) $partial['pnl']) > 0.001) {
+                $this->partialExitRepo->updatePnl((int) $partial['id'], $newPnl);
+            }
+            $totalPnl += $newPnl;
+        }
+
+        // 2. Aggregate at the trade level.
+        $entrySize = (float) $trade['size'];
+        $slPoints = (float) $trade['sl_points'];
+        $entryValue = $entryPrice * $entrySize;
+        $riskAmount = $entrySize * $slPoints;
+
+        $this->tradeRepo->update($tradeId, [
+            'pnl' => round($totalPnl, 2),
+            'pnl_percent' => $entryValue > 0 ? round($totalPnl / $entryValue * 100, 4) : 0,
+            'risk_reward' => $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : 0,
+        ]);
+    }
+
+    /**
+     * Aggregate realized metrics across all partial exits to date. Called on every
+     * close() invocation: returns running P&L for partial exits, final P&L when
+     * remaining_size is 0. The signature is identical regardless — only the caller
+     * decides whether to also persist terminal fields (status, closed_at, …).
+     *
+     * `closedAt` is the current exit's timestamp; used solely for `duration_minutes`,
+     * which the caller persists only when the trade is fully closed.
+     */
+    private function calculateRealizedMetrics(array $trade, array $exits, string $closedAt): array
     {
         $totalPnl = 0;
         foreach ($exits as $exit) {

@@ -49,4 +49,10 @@ class PartialExitRepository
 
         return $stmt->fetchAll();
     }
+
+    public function updatePnl(int $id, float $pnl): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE partial_exits SET pnl = :pnl WHERE id = :id');
+        $stmt->execute(['id' => $id, 'pnl' => round($pnl, 2)]);
+    }
 }
