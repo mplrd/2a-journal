@@ -199,35 +199,15 @@ defineExpose({
     >
       <Column field="label" :header="t('setups.label')">
         <template #body="{ data }">
-          <div v-if="editingId === data.id" class="flex items-center gap-2">
-            <InputText
-              v-model="editLabel"
-              :placeholder="t('setups.placeholder')"
-              :data-testid="`edit-setup-input-${data.id}`"
-              class="flex-1"
-              autofocus
-              @keyup="handleEditKeyup"
-            />
-            <Button
-              icon="pi pi-check"
-              severity="success"
-              size="small"
-              :loading="savingEdit"
-              :disabled="!editLabel.trim()"
-              v-tooltip.top="t('common.save')"
-              :data-testid="`confirm-edit-btn-${data.id}`"
-              @click="saveEdit"
-            />
-            <Button
-              icon="pi pi-times"
-              severity="secondary"
-              size="small"
-              text
-              v-tooltip.top="t('common.cancel')"
-              :data-testid="`cancel-edit-btn-${data.id}`"
-              @click="cancelEdit"
-            />
-          </div>
+          <InputText
+            v-if="editingId === data.id"
+            v-model="editLabel"
+            :placeholder="t('setups.placeholder')"
+            :data-testid="`edit-setup-input-${data.id}`"
+            class="w-full"
+            autofocus
+            @keyup="handleEditKeyup"
+          />
           <span v-else>{{ data.label }}</span>
         </template>
       </Column>
@@ -249,25 +229,48 @@ defineExpose({
       </Column>
       <Column :header="''">
         <template #body="{ data }">
-          <Button
-            v-if="editingId !== data.id"
-            icon="pi pi-pencil"
-            severity="secondary"
-            size="small"
-            text
-            v-tooltip.top="t('common.edit')"
-            :data-testid="`edit-setup-btn-${data.id}`"
-            @click="startEdit(data)"
-          />
-          <Button
-            icon="pi pi-trash"
-            severity="danger"
-            size="small"
-            text
-            :disabled="editingId === data.id"
-            v-tooltip.top="t('common.delete')"
-            @click="confirmDelete(data)"
-          />
+          <div class="flex items-center gap-1 justify-end">
+            <template v-if="editingId === data.id">
+              <Button
+                icon="pi pi-check"
+                severity="success"
+                size="small"
+                :loading="savingEdit"
+                :disabled="!editLabel.trim()"
+                v-tooltip.top="t('common.save')"
+                :data-testid="`confirm-edit-btn-${data.id}`"
+                @click="saveEdit"
+              />
+              <Button
+                icon="pi pi-times"
+                severity="secondary"
+                size="small"
+                text
+                v-tooltip.top="t('common.cancel')"
+                :data-testid="`cancel-edit-btn-${data.id}`"
+                @click="cancelEdit"
+              />
+            </template>
+            <template v-else>
+              <Button
+                icon="pi pi-pencil"
+                severity="secondary"
+                size="small"
+                text
+                v-tooltip.top="t('common.edit')"
+                :data-testid="`edit-setup-btn-${data.id}`"
+                @click="startEdit(data)"
+              />
+              <Button
+                icon="pi pi-trash"
+                severity="danger"
+                size="small"
+                text
+                v-tooltip.top="t('common.delete')"
+                @click="confirmDelete(data)"
+              />
+            </template>
+          </div>
         </template>
       </Column>
     </DataTable>

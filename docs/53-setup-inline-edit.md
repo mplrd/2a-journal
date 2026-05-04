@@ -2,7 +2,7 @@
 
 ## Résumé
 
-L'utilisateur peut désormais modifier un setup directement dans la grid « Mes Setups » (compte utilisateur → onglet Setups), sans passer par une suppression / recréation. Le clic sur l'icône crayon bascule la ligne en mode édition : la cellule label devient un `<InputText>` et la cellule catégorie devient un `<Select>`. Un seul bouton ✓ enregistre les modifications (label et/ou catégorie), un bouton ✗ annule. Le bouton supprimer est désactivé pendant l'édition pour éviter une action contradictoire.
+L'utilisateur peut désormais modifier un setup directement dans la grid « Mes Setups » (compte utilisateur → onglet Setups), sans passer par une suppression / recréation. Le clic sur l'icône crayon bascule la ligne en mode édition : la cellule label devient un `<InputText>` et la cellule catégorie devient un `<Select>`. Les boutons ✓ (valider) et ✗ (annuler) **prennent la place** des boutons crayon/poubelle dans la colonne d'actions en bout de ligne — l'utilisateur valide une seule fois pour les deux champs (label et/ou catégorie).
 
 En lecture seule, la catégorie est désormais affichée comme un libellé traduit (« Pattern », « Contexte », « Non catégorisé »…) — l'ancien `<Select>` toujours actif a été retiré pour unifier l'expérience de modification derrière le bouton crayon.
 
@@ -13,6 +13,7 @@ Source du besoin : retour bêta-testeur (`docs/retours-beta-tests.md` — ticket
 ### Démarrer l'édition
 - Clic sur l'icône **crayon** dans la colonne d'actions de la ligne → la cellule label devient un input pré-rempli avec le label courant, et la cellule catégorie devient un `<Select>` pré-rempli avec la catégorie courante (`pattern`, `timeframe`, `context` ou `null` = Non catégorisé).
 - L'input label est `autofocus`. Une seule ligne peut être en cours d'édition à la fois (`editingId` = id du setup en cours).
+- Les boutons d'action de la ligne (crayon/poubelle) sont **remplacés** par ✓/✗ pendant l'édition — pas d'icônes contradictoires en parallèle.
 
 ### Valider (`saveEdit`)
 - Bouton **✓** ou touche **Enter** dans l'input label.
