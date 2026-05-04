@@ -3,8 +3,10 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DatePicker from 'primevue/datepicker'
 import Popover from 'primevue/popover'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const { t, locale } = useI18n()
+const { isMobile } = useIsMobile()
 
 const props = defineProps({
   from: { type: [Date, String, null], default: null },
@@ -181,12 +183,13 @@ const hasValue = computed(() => Boolean(range.value?.[0] || range.value?.[1]))
           </button>
         </div>
 
-        <!-- Inline calendar -->
+        <!-- Inline calendar — single month on narrow viewports so the
+             popover fits comfortably on phones / tablets in portrait. -->
         <DatePicker
           v-model="range"
           selectionMode="range"
           :inline="true"
-          :numberOfMonths="2"
+          :numberOfMonths="isMobile ? 1 : 2"
         />
       </div>
     </Popover>

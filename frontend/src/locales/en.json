@@ -4,6 +4,10 @@
   },
   "common": {
     "loading": "Loading...",
+    "previous": "Previous",
+    "filters": "Filters",
+    "load_more": "Load more",
+    "page_x_of_y": "Page {current} / {total}",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
