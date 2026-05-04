@@ -20,16 +20,28 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 
 ## Index
 
+### ✅ DONE
+
+Tickets livrés (code mergé sur `develop`, doc rédigée).
+
+| ID | Titre | Type | Livraison |
+|----|-------|------|-----------|
+| [E-01](#e-01) | Édition des setups (au lieu de supprimer/recréer) | Évol | `docs/53-setup-inline-edit.md` |
+| [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | `docs/54-account-risk-params-toggle.md` |
+| [D-07](#d-07) | Liste des comptes : badge "étape" fusionné dans la colonne "type" | Doc/UX | inline (cf. `AccountsView.vue`) |
+
+### 🟡 TODO
+
+Tickets restants à traiter / arbitrer / clarifier.
+
 | ID | Titre | Type | Priorité | Effort | Statut |
 |----|-------|------|----------|--------|--------|
 | [B-01](#b-01) | Trade BE ouvert en parallèle compté dans les stats | Bug | Moyenne | ? | 🟡 |
 | [B-02](#b-02) | "Taux de réussite" — BE compté comme non-réussite ? | Bug | Moyenne | ? | 🟡 |
 | [B-03](#b-03) | Champ "prix d'entrée" obligatoire en import custom mais non utilisé | Bug | Haute | Faible | 🟢 |
-| [E-01](#e-01) | Édition des setups (au lieu de supprimer/recréer) | Évol | Haute | Faible | ✅ |
 | [E-02](#e-02) | Source d'import : Ouinex | Évol | Moyenne | Moyen | 🟡 |
 | [E-03](#e-03) | Espace "questions / remarques" pour utilisateurs | Évol | Moyenne | Moyen | 🟡 |
 | [E-04](#e-04) | Imports scindés / sélection des données à analyser | Évol | À arbitrer | Élevé | 🟡 |
-| [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | Moyenne | Faible | ✅ |
 | [E-06](#e-06) | Winrate par combinaison de setups (groupes) | Évol | À arbitrer | Élevé | 🟡 |
 | [E-07](#e-07) | Suppression en lot via l'historique (multi-select + filtres dates) | Évol | Haute | Moyen | 🟢 |
 | [E-08](#e-08) | Alerte si DD dépassé (notification utilisateur) | Évol | Moyenne | Moyen | 🟡 |
@@ -40,7 +52,6 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 | [D-04](#d-04) | Rappel "seuil BE" sur le graphe gains/pertes/BE | Doc/UX | Haute | Faible | 🟢 |
 | [D-05](#d-05) | Onboarding 2 use cases : actif vs passif | Doc/UX | Moyenne | Moyen | 🟡 |
 | [D-06](#d-06) | "Custom import" — mode d'emploi & valorisation produit | Doc/UX | Moyenne | Moyen | 🟡 |
-| [D-07](#d-07) | Liste des comptes : badge "étape" fusionné dans la colonne "type" | Doc/UX | Basse | Faible | ✅ |
 | [Q-01](#q-01) | Comment est calculé le R:R ? | Assistance | — | — | 🟡 |
 | [Q-02](#q-02) | Une alerte est-elle déclenchée si le DD est dépassé ? | Assistance | — | — | 🟡 |
 | [S-01](#s-01) | Présenter à "rod" / proposition à IVT | Stratégie | — | — | 💡 |
