@@ -399,6 +399,22 @@
     "filter_status": "Filtrer par statut",
     "all_accounts": "Tous les comptes",
     "all_statuses": "Tous les statuts",
+    "date_range": "Période",
+    "date_from": "Du",
+    "date_to": "Au",
+    "bulk": {
+      "selected_count": "{count} trade(s) sélectionné(s)",
+      "delete_selection": "Supprimer la sélection",
+      "confirm_title": "Confirmer la suppression en lot",
+      "confirm_intro": "Tu es sur le point de supprimer définitivement les trades suivants. Cette action est irréversible.",
+      "recap_count": "Nombre de trades",
+      "count_value": "{count} trade(s)",
+      "recap_dates": "Plage de dates",
+      "recap_accounts": "Comptes concernés",
+      "recap_total_pnl": "P&L cumulé impacté",
+      "confirm_warning": "Cette suppression est irréversible et entraîne la disparition des sorties partielles associées.",
+      "confirm_button": "Supprimer définitivement"
+    },
     "next_objective": "Prochain objectif",
     "be_reached": "BE atteint",
     "confirm_close": "Êtes-vous sûr de vouloir fermer ce trade ?",
@@ -437,13 +453,16 @@
       "invalid_target_size": "La taille de l'objectif doit être positive",
       "invalid_opened_at": "Date d'ouverture invalide",
       "invalid_closed_at": "Date de clôture invalide",
-      "closed_at_not_closed": "La date de clôture ne peut être modifiée que sur un trade clôturé"
+      "closed_at_not_closed": "La date de clôture ne peut être modifiée que sur un trade clôturé",
+      "bulk_delete_empty": "Aucun trade sélectionné pour la suppression en lot",
+      "bulk_delete_too_many": "Trop de trades sélectionnés (500 max par opération)"
     },
     "success": {
       "created": "Trade créé avec succès",
       "closed": "Trade fermé avec succès",
       "deleted": "Trade supprimé avec succès",
-      "updated": "Trade mis à jour"
+      "updated": "Trade mis à jour",
+      "bulk_deleted": "{count} trade(s) supprimé(s) avec succès"
     }
   },
   "symbols": {
