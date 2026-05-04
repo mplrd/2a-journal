@@ -44,4 +44,8 @@ export const tradesService = {
   async remove(id) {
     return api.delete(`/trades/${id}`)
   },
+
+  async bulkDelete(ids) {
+    return api.post('/trades/bulk-delete', { ids })
+  },
 }

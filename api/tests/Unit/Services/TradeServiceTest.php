@@ -899,4 +899,115 @@ class TradeServiceTest extends TestCase
 
         $this->service->delete(1, 1);
     }
+
+    // ── Bulk delete ──────────────────────────────────────────────
+
+    private function makeServiceWithPdo(\PDO $pdo): TradeService
+    {
+        return new TradeService(
+            $this->tradeRepo,
+            $this->partialExitRepo,
+            $this->positionRepo,
+            $this->accountRepo,
+            $this->historyRepo,
+            null,
+            null,
+            null,
+            $pdo
+        );
+    }
+
+    public function testDeleteBulkSuccessDeletesPositionsInTransaction(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $service = $this->makeServiceWithPdo($pdo);
+
+        $this->tradeRepo->method('findByIdsForUser')
+            ->with(1, [101, 102, 103])
+            ->willReturn([
+                ['id' => 101, 'position_id' => 201],
+                ['id' => 102, 'position_id' => 202],
+                ['id' => 103, 'position_id' => 203],
+            ]);
+
+        $pdo->expects($this->once())->method('beginTransaction');
+        $pdo->expects($this->once())->method('commit');
+        $pdo->expects($this->never())->method('rollBack');
+
+        $this->positionRepo->expects($this->exactly(3))->method('delete');
+
+        $count = $service->deleteBulk(1, [101, 102, 103]);
+
+        $this->assertSame(3, $count);
+    }
+
+    public function testDeleteBulkEmptyIdsThrowsValidation(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $service = $this->makeServiceWithPdo($pdo);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('trades.error.bulk_delete_empty');
+
+        $service->deleteBulk(1, []);
+    }
+
+    public function testDeleteBulkTooManyIdsThrowsValidation(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $service = $this->makeServiceWithPdo($pdo);
+
+        $tooMany = range(1, 501);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('trades.error.bulk_delete_too_many');
+
+        $service->deleteBulk(1, $tooMany);
+    }
+
+    public function testDeleteBulkOwnershipMismatchThrowsForbidden(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $service = $this->makeServiceWithPdo($pdo);
+
+        // Caller asks for 3 ids but only 2 belong to the user → forbidden.
+        $this->tradeRepo->method('findByIdsForUser')
+            ->willReturn([
+                ['id' => 101, 'position_id' => 201],
+                ['id' => 102, 'position_id' => 202],
+            ]);
+
+        $pdo->expects($this->never())->method('beginTransaction');
+
+        $this->expectException(ForbiddenException::class);
+
+        $service->deleteBulk(1, [101, 102, 103]);
+    }
+
+    public function testDeleteBulkRollsBackOnException(): void
+    {
+        $pdo = $this->createMock(\PDO::class);
+        $service = $this->makeServiceWithPdo($pdo);
+
+        $this->tradeRepo->method('findByIdsForUser')->willReturn([
+            ['id' => 101, 'position_id' => 201],
+            ['id' => 102, 'position_id' => 202],
+        ]);
+
+        $pdo->expects($this->once())->method('beginTransaction');
+        $pdo->expects($this->never())->method('commit');
+        $pdo->expects($this->once())->method('rollBack');
+
+        // First delete OK, second throws → caller catches and rolls back.
+        $this->positionRepo->expects($this->exactly(2))
+            ->method('delete')
+            ->willReturnOnConsecutiveCalls(
+                true,
+                $this->throwException(new \RuntimeException('DB connection lost'))
+            );
+
+        $this->expectException(\RuntimeException::class);
+
+        $service->deleteBulk(1, [101, 102]);
+    }
 }

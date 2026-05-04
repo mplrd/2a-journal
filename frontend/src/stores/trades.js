@@ -94,6 +94,22 @@ export const useTradesStore = defineStore('trades', () => {
     }
   }
 
+  async function bulkDeleteTrades(ids) {
+    loading.value = true
+    error.value = null
+    try {
+      const res = await tradesService.bulkDelete(ids)
+      const idSet = new Set(ids.map(Number))
+      trades.value = trades.value.filter((t) => !idSet.has(Number(t.id)))
+      return res?.data?.deleted_count ?? ids.length
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   function setFilters(newFilters) {
     filters.value = { ...newFilters }
   }
@@ -121,6 +137,7 @@ export const useTradesStore = defineStore('trades', () => {
     closeTrade,
     markBeHit,
     deleteTrade,
+    bulkDeleteTrades,
     setFilters,
     $reset,
   }
