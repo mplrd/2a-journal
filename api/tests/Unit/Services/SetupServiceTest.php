@@ -223,4 +223,101 @@ class SetupServiceTest extends TestCase
 
         $this->service->update(1, 0, ['category' => 'pattern']);
     }
+
+    // ── Update label (inline edit) ───────────────────────────────
+
+    public function testUpdateAcceptsLabelChange(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Old', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        $this->repo->method('findByUserAndLabel')->willReturn(null);
+        $this->repo->expects($this->once())
+            ->method('update')
+            ->with(1, ['label' => 'New'])
+            ->willReturn(array_merge($setup, ['label' => 'New']));
+
+        $result = $this->service->update(1, 1, ['label' => 'New']);
+
+        $this->assertSame('New', $result['label']);
+    }
+
+    public function testUpdateTrimsLabel(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Old', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        $this->repo->method('findByUserAndLabel')->willReturn(null);
+        $this->repo->expects($this->once())
+            ->method('update')
+            ->with(1, ['label' => 'New'])
+            ->willReturn(array_merge($setup, ['label' => 'New']));
+
+        $this->service->update(1, 1, ['label' => '  New  ']);
+    }
+
+    public function testUpdateRejectsEmptyLabel(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Old', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('setups.error.field_required');
+
+        $this->service->update(1, 1, ['label' => '   ']);
+    }
+
+    public function testUpdateRejectsLabelTooLong(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Old', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('setups.error.label_too_long');
+
+        $this->service->update(1, 1, ['label' => str_repeat('x', 101)]);
+    }
+
+    public function testUpdateRejectsDuplicateLabelFromAnotherSetup(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Old', 'category' => 'pattern'];
+        $other = ['id' => 2, 'user_id' => 1, 'label' => 'Existing', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        $this->repo->method('findByUserAndLabel')->with(1, 'Existing')->willReturn($other);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('setups.error.duplicate_label');
+
+        $this->service->update(1, 1, ['label' => 'Existing']);
+    }
+
+    public function testUpdateAllowsRenameToSameLabel(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Same', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        // Duplicate check returns the same setup → must be allowed (no-op)
+        $this->repo->method('findByUserAndLabel')->with(1, 'Same')->willReturn($setup);
+        $this->repo->expects($this->once())
+            ->method('update')
+            ->with(1, ['label' => 'Same'])
+            ->willReturn($setup);
+
+        $result = $this->service->update(1, 1, ['label' => 'Same']);
+
+        $this->assertSame('Same', $result['label']);
+    }
+
+    public function testUpdateAcceptsLabelAndCategoryTogether(): void
+    {
+        $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Old', 'category' => 'pattern'];
+        $this->repo->method('findById')->willReturn($setup);
+        $this->repo->method('findByUserAndLabel')->willReturn(null);
+        $this->repo->expects($this->once())
+            ->method('update')
+            ->with(1, ['label' => 'New', 'category' => 'context'])
+            ->willReturn(['id' => 1, 'user_id' => 1, 'label' => 'New', 'category' => 'context']);
+
+        $result = $this->service->update(1, 1, ['label' => 'New', 'category' => 'context']);
+
+        $this->assertSame('New', $result['label']);
+        $this->assertSame('context', $result['category']);
+    }
 }

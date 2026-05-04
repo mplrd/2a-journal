@@ -60,6 +60,26 @@ class SetupService
         }
 
         $patch = [];
+
+        if (array_key_exists('label', $data)) {
+            $label = trim((string)$data['label']);
+
+            if ($label === '') {
+                throw new ValidationException('setups.error.field_required', 'label');
+            }
+
+            if (mb_strlen($label) > 100) {
+                throw new ValidationException('setups.error.label_too_long', 'label');
+            }
+
+            $existing = $this->repo->findByUserAndLabel($userId, $label);
+            if ($existing && (int)$existing['id'] !== $id) {
+                throw new ValidationException('setups.error.duplicate_label', 'label');
+            }
+
+            $patch['label'] = $label;
+        }
+
         if (array_key_exists('category', $data)) {
             $category = $data['category'];
             if ($category === '' || $category === null) {

@@ -154,6 +154,93 @@ describe('SetupsTab', () => {
     expect(wrapper.find('[data-testid="confirm-dialog"]').exists()).toBe(true)
   })
 
+  // ── Inline label edit ───────────────────────────────────────
+
+  it('exposes startEdit / cancelEdit / saveEdit for inline label editing', () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+
+    expect(typeof wrapper.vm.startEdit).toBe('function')
+    expect(typeof wrapper.vm.cancelEdit).toBe('function')
+    expect(typeof wrapper.vm.saveEdit).toBe('function')
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('startEdit sets editingId and editLabel from the setup', () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+
+    expect(wrapper.vm.editingId).toBe(1)
+    expect(wrapper.vm.editLabel).toBe('Breakout')
+  })
+
+  it('cancelEdit clears editing state without calling updateSetup', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn()
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = 'Modified'
+    wrapper.vm.cancelEdit()
+
+    expect(wrapper.vm.editingId).toBeNull()
+    expect(wrapper.vm.editLabel).toBe('')
+    expect(store.updateSetup).not.toHaveBeenCalled()
+  })
+
+  it('saveEdit calls store.updateSetup with trimmed label and clears state on success', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockResolvedValue({ id: 1, label: 'Renamed' })
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = '  Renamed  '
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).toHaveBeenCalledWith(1, { label: 'Renamed' })
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('saveEdit does nothing when label is empty', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn()
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = '   '
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).not.toHaveBeenCalled()
+    // Stays in edit mode so the user can fix
+    expect(wrapper.vm.editingId).toBe(1)
+  })
+
+  it('saveEdit skips API call when label unchanged (no-op)', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn()
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    // editLabel left as initial value
+    await wrapper.vm.saveEdit()
+
+    expect(store.updateSetup).not.toHaveBeenCalled()
+    expect(wrapper.vm.editingId).toBeNull()
+  })
+
+  it('saveEdit keeps edit state on API error so user can retry', async () => {
+    const wrapper = createWrapper([{ id: 1, label: 'Breakout', user_id: 1 }])
+    const store = useSetupsStore()
+    store.updateSetup = vi.fn().mockRejectedValue({ messageKey: 'setups.error.duplicate_label' })
+
+    wrapper.vm.startEdit({ id: 1, label: 'Breakout' })
+    wrapper.vm.editLabel = 'Existing'
+    await wrapper.vm.saveEdit()
+
+    expect(wrapper.vm.editingId).toBe(1)
+    expect(wrapper.vm.editLabel).toBe('Existing')
+  })
+
   it('fetches setups on mount', () => {
     const pinia = createPinia()
     setActivePinia(pinia)

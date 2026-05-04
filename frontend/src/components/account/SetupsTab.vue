@@ -26,6 +26,9 @@ const newLabel = ref('')
 const adding = ref(false)
 const setupToDelete = ref(null)
 const showDeleteDialog = ref(false)
+const editingId = ref(null)
+const editLabel = ref('')
+const savingEdit = ref(false)
 
 onMounted(() => {
   store.fetchSetups(true)
@@ -63,6 +66,45 @@ function handleKeyup(event) {
   if (event.key === 'Escape') cancelAdd()
 }
 
+function startEdit(setup) {
+  editingId.value = setup.id
+  editLabel.value = setup.label
+}
+
+function cancelEdit() {
+  editingId.value = null
+  editLabel.value = ''
+}
+
+async function saveEdit() {
+  if (editingId.value === null) return
+  const trimmed = editLabel.value.trim()
+  if (!trimmed) return
+
+  const original = store.setups.find((s) => s.id === editingId.value)
+  if (original && original.label === trimmed) {
+    cancelEdit()
+    return
+  }
+
+  savingEdit.value = true
+  try {
+    await store.updateSetup(editingId.value, { label: trimmed })
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('setups.success.updated'), life: 2000 })
+    editingId.value = null
+    editLabel.value = ''
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+function handleEditKeyup(event) {
+  if (event.key === 'Enter') saveEdit()
+  if (event.key === 'Escape') cancelEdit()
+}
+
 async function handleCategoryChange(setup, category) {
   if (category === setup.category) return
   try {
@@ -92,7 +134,15 @@ async function handleDelete() {
   }
 }
 
-defineExpose({ newLabel, confirmDelete })
+defineExpose({
+  newLabel,
+  confirmDelete,
+  editingId,
+  editLabel,
+  startEdit,
+  cancelEdit,
+  saveEdit,
+})
 </script>
 
 <template>
@@ -148,7 +198,40 @@ defineExpose({ newLabel, confirmDelete })
       class="mt-2"
       data-testid="setups-table"
     >
-      <Column field="label" :header="t('setups.label')" />
+      <Column field="label" :header="t('setups.label')">
+        <template #body="{ data }">
+          <div v-if="editingId === data.id" class="flex items-center gap-2">
+            <InputText
+              v-model="editLabel"
+              :placeholder="t('setups.placeholder')"
+              :data-testid="`edit-setup-input-${data.id}`"
+              class="flex-1"
+              autofocus
+              @keyup="handleEditKeyup"
+            />
+            <Button
+              icon="pi pi-check"
+              severity="success"
+              size="small"
+              :loading="savingEdit"
+              :disabled="!editLabel.trim()"
+              v-tooltip.top="t('common.save')"
+              :data-testid="`confirm-edit-btn-${data.id}`"
+              @click="saveEdit"
+            />
+            <Button
+              icon="pi pi-times"
+              severity="secondary"
+              size="small"
+              text
+              v-tooltip.top="t('common.cancel')"
+              :data-testid="`cancel-edit-btn-${data.id}`"
+              @click="cancelEdit"
+            />
+          </div>
+          <span v-else>{{ data.label }}</span>
+        </template>
+      </Column>
       <Column field="category" :header="t('setups.category_header')">
         <template #body="{ data }">
           <Select
@@ -165,10 +248,21 @@ defineExpose({ newLabel, confirmDelete })
       <Column :header="''">
         <template #body="{ data }">
           <Button
+            v-if="editingId !== data.id"
+            icon="pi pi-pencil"
+            severity="secondary"
+            size="small"
+            text
+            v-tooltip.top="t('common.edit')"
+            :data-testid="`edit-setup-btn-${data.id}`"
+            @click="startEdit(data)"
+          />
+          <Button
             icon="pi pi-trash"
             severity="danger"
             size="small"
             text
+            :disabled="editingId === data.id"
             v-tooltip.top="t('common.delete')"
             @click="confirmDelete(data)"
           />
