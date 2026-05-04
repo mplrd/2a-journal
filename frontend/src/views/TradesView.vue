@@ -20,7 +20,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import CollapsibleFilters from '@/components/common/CollapsibleFilters.vue'
 import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
 import TileList from '@/components/common/TileList.vue'
-import { useIsMobile } from '@/composables/useIsMobile'
+import { useLayout } from '@/composables/useIsMobile'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
@@ -34,7 +34,7 @@ import { Direction, ExitType, TradeStatus, CustomFieldType } from '@/constants/e
 
 const route = useRoute()
 const { t } = useI18n()
-const { isMobile } = useIsMobile()
+const { isMobile, isCompact } = useLayout()
 const toast = useToast()
 const confirm = useConfirm()
 const store = useTradesStore()
@@ -93,6 +93,13 @@ function ymd(date) {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+
+// On compact viewports the custom-field columns are stripped from the
+// DataTable so it fits without horizontal scroll (the values stay
+// available on the trade detail / edit dialog).
+const customColumnsToShow = computed(() =>
+  isCompact.value ? [] : customFieldsStore.activeDefinitions
+)
 
 // DateRangePicker emits update:from / update:to via v-model:from/to. We
 // watch the refs to auto-apply the filter, matching the BadgeFilter
@@ -515,6 +522,7 @@ function pnlClass(pnl) {
       v-model:selection="selectedTrades"
       :value="store.trades"
       :loading="store.loading"
+      :size="isCompact ? 'small' : undefined"
       lazy
       paginator
       :rows="store.perPage"
@@ -548,7 +556,7 @@ function pnlClass(pnl) {
           <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
         </template>
       </Column>
-      <Column field="setup" :header="t('positions.setup')">
+      <Column v-if="!isCompact" field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
             <span
@@ -562,7 +570,7 @@ function pnlClass(pnl) {
           </div>
         </template>
       </Column>
-      <Column field="remaining_size" :header="t('trades.remaining_size')">
+      <Column v-if="!isCompact" field="remaining_size" :header="t('trades.remaining_size')">
         <template #body="{ data }">
           <span class="font-mono tabular-nums">{{ formatSize(data.remaining_size) }}</span>
         </template>
@@ -584,9 +592,10 @@ function pnlClass(pnl) {
           </span>
         </template>
       </Column>
-      <!-- Dynamic custom field columns -->
+      <!-- Dynamic custom field columns — hidden in compact mode to keep
+           the grid focused on core trade fields (see customColumnsToShow). -->
       <Column
-        v-for="def in customFieldsStore.activeDefinitions"
+        v-for="def in customColumnsToShow"
         :key="`cf-${def.id}`"
         :header="def.name"
       >

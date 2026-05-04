@@ -12,15 +12,26 @@ Cette livraison introduit **3 patterns réutilisables** appliqués aux 3 vues pr
 
 Source du besoin : retour utilisateur direct (en cours de livraison E-07, l'utilisateur a constaté que l'UI mobile était sous-investie).
 
-## Convention de breakpoint
+## Convention de breakpoint — 3 layouts
 
-- **Breakpoint pivot** : Tailwind `lg:` (1024 px).
-- En dessous (≤ 1023 px) → **layout mobile / compact** : tuiles, FAB, filtres pliables.
-- Au-dessus (≥ 1024 px) → **desktop** : DataTable, bouton inline, filtres permanents.
+| Layout | Plage | Liste | Bouton "Nouveau" | Filtres |
+|--------|-------|-------|------------------|---------|
+| **mobile** | < 768 px | TileList vertical | FAB (`md:hidden` fixé bas-droite) | CollapsibleFilters |
+| **compact** | 768–1023 px | DataTable compacte (`size="small"`) + colonnes secondaires masquées | Inline "Nouveau" | Inline single-row |
+| **desktop** | ≥ 1024 px | DataTable pleine densité | Inline "Nouveau" | Inline single-row |
 
-Le composable `useIsMobile()` (`frontend/src/composables/useIsMobile.js`) expose un `ref` réactif `isMobile` basé sur `window.matchMedia('(max-width: 1023px)')`. Pas de listener resize-throttling : `matchMedia` ne déclenche `change` que quand le prédicat bascule, c'est gratuit.
+Le composable `useLayout()` (`frontend/src/composables/useIsMobile.js`) expose `{ layout, isMobile, isCompact, isDesktop }` basé sur 2 matchMedia (mobile + compact ranges). Pas de listener resize-throttling : `matchMedia` ne déclenche `change` que quand le prédicat bascule, c'est gratuit. SSR/test-safe (défaut 'desktop' si matchMedia indisponible).
 
-**Choix du breakpoint** : initialement à `md:` (768 px). Bump à `lg:` (1024 px) après retour utilisateur — sur iPhone 14 Pro Max + iPad portrait, le layout web restait cramé (filtres serrés, période picker en 2 mois, DataTable à beaucoup de colonnes). À 1024 px on a le confort minimal pour la grille avec ses 8–10 colonnes typiques.
+```js
+const { layout, isMobile, isCompact, isDesktop } = useLayout()
+```
+
+`useIsMobile()` reste exporté comme alias backward-compat (retourne `{ isMobile }` seul) pour les call-sites qui n'ont besoin que du booléen.
+
+**Historique du choix** : 2 itérations de retour utilisateur :
+1. Initial à `md:` (768) → trop cramé sur iPhone Pro Max + iPad portrait.
+2. Bump à `lg:` (1024) en 2 layouts → mobile gagné, mais iPad portrait basculait en TileList alors qu'il avait la place pour une DataTable compactée.
+3. Refactor à 3 layouts (état actuel) — TileList strictement < 768, DataTable compactée 768–1023, DataTable pleine ≥ 1024.
 
 ```js
 const { isMobile } = useIsMobile()
@@ -108,11 +119,13 @@ Wrapper générique : prend une liste d'`items`, expose chaque item via un slot 
 
 ## Vues impactées
 
-| Vue | Filtres pliables | FAB | TileList | Bulk-select mobile |
-|-----|:---:|:---:|:---:|:---:|
-| **Accounts** | — (pas de filtre) | ✅ | ✅ | — (pas de bulk-delete) |
-| **Orders** | ✅ | ✅ | ✅ | — (pas de bulk-delete) |
-| **Trades** | ✅ | ✅ | ✅ | ❌ (cf. limitations) |
+| Vue | TileList (mobile) | Compact (768–1023) — colonnes masquées | Filtres pliables | FAB | Bulk-select mobile |
+|-----|:---:|:---|:---:|:---:|:---:|
+| **Accounts** | ✅ | `currency`, `broker` | — (pas de filtre) | ✅ | — (pas de bulk) |
+| **Orders** | ✅ | `setup`, `expires_at`, `order_created_at` | ✅ | ✅ | — (pas de bulk) |
+| **Trades** | ✅ | `setup`, `remaining_size`, custom fields | ✅ | ✅ | ❌ (cf. limitations) |
+
+Les autres colonnes restent visibles dans tous les modes (desktop, compact). Les valeurs masquées en compact restent accessibles via le détail / l'édition de l'item.
 
 Les autres vues (Performance, Dashboard, Symbols, Trades-import, etc.) ne sont **pas** responsive dans cette livraison. Convention à appliquer à mesure que les retours mobile remontent.
 
@@ -139,5 +152,5 @@ Les autres vues (Performance, Dashboard, Symbols, Trades-import, etc.) ne sont *
   - Soit un bouton "Sélectionner" qui transforme chaque tuile en mode-checkbox temporaire.
   - Pour l'instant, le bulk-delete reste desktop-only.
 - **Autres vues non couvertes** : Performance (graphes), Symbols, Imports, Dashboard. À traiter au fur et à mesure des besoins.
-- **Tablette portrait** : actuellement < 768 px = mobile. Si on identifie un besoin spécifique tablette portrait (un format intermédiaire), on pourra introduire un breakpoint `sm:` (640 px) entre mobile et desktop.
-- **DataTable scroll horizontal sur 768–1023 px** : les vues web ont parfois beaucoup de colonnes ; sous 1024 px on tombe sur un scroll horizontal. Hors scope de cette doc — possible évolution : tuiles aussi sur tablette portrait.
+- **Tablette portrait dense** : la plage 768–1023 utilise désormais le mode `compact` (DataTable resserrée + colonnes secondaires masquées). Si certains comptes-utilisateurs trouvent encore le compact trop chargé, on pourra élargir la liste de colonnes masquées par vue ou abaisser la borne haute du compact (ex. `< 1280 px` au lieu de `< 1024 px`).
+- **Densité par utilisateur** : pas de toggle UI pour choisir entre compact/desktop manuellement. Si le besoin remonte, on pourra ajouter une préférence user (cf. `users.default_page_size` qui est dans le même esprit).

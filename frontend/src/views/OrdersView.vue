@@ -20,7 +20,7 @@ import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import CollapsibleFilters from '@/components/common/CollapsibleFilters.vue'
 import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
 import TileList from '@/components/common/TileList.vue'
-import { useIsMobile } from '@/composables/useIsMobile'
+import { useLayout } from '@/composables/useIsMobile'
 import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
@@ -28,7 +28,7 @@ import { usePositionsStore } from '@/stores/positions'
 import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
-const { isMobile } = useIsMobile()
+const { isMobile, isCompact } = useLayout()
 const toast = useToast()
 const confirm = useConfirm()
 const store = useOrdersStore()
@@ -284,6 +284,7 @@ function statusSeverity(status) {
       v-else-if="!isMobile"
       :value="store.orders"
       :loading="store.loading"
+      :size="isCompact ? 'small' : undefined"
       lazy
       paginator
       :rows="store.perPage"
@@ -315,7 +316,7 @@ function statusSeverity(status) {
           <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
         </template>
       </Column>
-      <Column field="setup" :header="t('positions.setup')">
+      <Column v-if="!isCompact" field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
             <span
@@ -339,12 +340,12 @@ function statusSeverity(status) {
           <Tag :value="t(`orders.statuses.${data.status}`)" :severity="statusSeverity(data.status)" />
         </template>
       </Column>
-      <Column field="expires_at" :header="t('orders.expires_at')">
+      <Column v-if="!isCompact" field="expires_at" :header="t('orders.expires_at')">
         <template #body="{ data }">
           {{ data.expires_at ? new Date(data.expires_at).toLocaleString() : '-' }}
         </template>
       </Column>
-      <Column field="order_created_at" :header="t('positions.created_at')">
+      <Column v-if="!isCompact" field="order_created_at" :header="t('positions.created_at')">
         <template #body="{ data }">
           {{ new Date(data.order_created_at || data.created_at).toLocaleDateString() }}
         </template>
