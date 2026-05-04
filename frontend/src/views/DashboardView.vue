@@ -5,6 +5,7 @@ import { useStatsStore } from '@/stores/stats'
 import { useAccountsStore } from '@/stores/accounts'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
 import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner.vue'
+import DdAlertBanner from '@/components/dashboard/DdAlertBanner.vue'
 import KpiCards from '@/components/dashboard/KpiCards.vue'
 import CumulativePnlChart from '@/components/dashboard/CumulativePnlChart.vue'
 import WinLossChart from '@/components/dashboard/WinLossChart.vue'
@@ -45,6 +46,7 @@ async function applyFilters() {
 <template>
   <div>
     <EmailVerificationBanner />
+    <DdAlertBanner />
     <div class="flex items-center justify-end flex-wrap gap-3 mb-4">
       <BadgeFilter
         v-model="filterAccountIds"

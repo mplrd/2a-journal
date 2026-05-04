@@ -19,6 +19,7 @@ const form = ref({
   timezone: 'Europe/Paris',
   default_currency: 'EUR',
   be_threshold_percent: 0,
+  dd_alert_threshold_percent: 5,
   default_page_size: 10,
 })
 
@@ -47,6 +48,7 @@ onMounted(() => {
       timezone: authStore.user.timezone || 'Europe/Paris',
       default_currency: authStore.user.default_currency || 'EUR',
       be_threshold_percent: Number(authStore.user.be_threshold_percent) || 0,
+      dd_alert_threshold_percent: Number(authStore.user.dd_alert_threshold_percent) || 5,
       default_page_size: Number(authStore.user.default_page_size) || 10,
     }
   }
@@ -77,89 +79,114 @@ async function handleSave() {
 </script>
 
 <template>
-  <form class="max-w-lg space-y-4" @submit.prevent="handleSave" data-testid="preferences-form">
-    <!-- Locale -->
-    <div>
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.locale') }}</label>
-      <Select
-        v-model="form.locale"
-        :options="localeOptions"
-        optionLabel="label"
-        optionValue="value"
-        data-testid="select-locale"
-        class="w-full"
-      />
-    </div>
+  <form @submit.prevent="handleSave" data-testid="preferences-form">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+      <!-- ═══ Global preferences (left column) ═══ -->
+      <div class="space-y-4">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{{ t('account.global_preferences') }}</h3>
 
-    <!-- Theme -->
-    <div>
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.theme') }}</label>
-      <Select
-        v-model="form.theme"
-        :options="themeOptions"
-        optionLabel="label"
-        optionValue="value"
-        data-testid="select-theme"
-        class="w-full"
-      />
-    </div>
+        <!-- Locale -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.locale') }}</label>
+          <Select
+            v-model="form.locale"
+            :options="localeOptions"
+            optionLabel="label"
+            optionValue="value"
+            data-testid="select-locale"
+            class="w-full"
+          />
+        </div>
 
-    <!-- Timezone -->
-    <div>
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.timezone') }}</label>
-      <Select
-        v-model="form.timezone"
-        :options="timezones"
-        filter
-        data-testid="select-timezone"
-        class="w-full"
-      />
-    </div>
+        <!-- Theme -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.theme') }}</label>
+          <Select
+            v-model="form.theme"
+            :options="themeOptions"
+            optionLabel="label"
+            optionValue="value"
+            data-testid="select-theme"
+            class="w-full"
+          />
+        </div>
 
-    <!-- Default currency -->
-    <div>
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.default_currency') }}</label>
-      <Select
-        v-model="form.default_currency"
-        :options="currencies"
-        data-testid="select-currency"
-        class="w-full"
-      />
-    </div>
+        <!-- Timezone -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.timezone') }}</label>
+          <Select
+            v-model="form.timezone"
+            :options="timezones"
+            filter
+            data-testid="select-timezone"
+            class="w-full"
+          />
+        </div>
 
-    <!-- Default page size -->
-    <div>
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.default_page_size') }}</label>
-      <Select
-        v-model="form.default_page_size"
-        :options="pageSizeOptions"
-        optionLabel="label"
-        optionValue="value"
-        data-testid="select-page-size"
-        class="w-full"
-      />
-      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.default_page_size_hint') }}</p>
-    </div>
+        <!-- Default currency -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.default_currency') }}</label>
+          <Select
+            v-model="form.default_currency"
+            :options="currencies"
+            data-testid="select-currency"
+            class="w-full"
+          />
+        </div>
 
-    <!-- BE threshold -->
-    <div class="pt-4 mt-2 border-t border-gray-200 dark:border-gray-700">
-      <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ t('account.stats_preferences') }}</h3>
-      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.be_threshold') }}</label>
-      <InputNumber
-        v-model="form.be_threshold_percent"
-        :min="0"
-        :max="5"
-        :maxFractionDigits="4"
-        mode="decimal"
-        locale="en-US"
-        data-testid="input-be-threshold"
-        class="w-full"
-      />
-      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.be_threshold_hint') }}</p>
+        <!-- Default page size -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.default_page_size') }}</label>
+          <Select
+            v-model="form.default_page_size"
+            :options="pageSizeOptions"
+            optionLabel="label"
+            optionValue="value"
+            data-testid="select-page-size"
+            class="w-full"
+          />
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.default_page_size_hint') }}</p>
+        </div>
+      </div>
+
+      <!-- ═══ Stats preferences (right column) ═══ -->
+      <div class="space-y-4">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{{ t('account.stats_preferences') }}</h3>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.be_threshold') }}</label>
+          <InputNumber
+            v-model="form.be_threshold_percent"
+            :min="0"
+            :max="5"
+            :maxFractionDigits="4"
+            mode="decimal"
+            locale="en-US"
+            data-testid="input-be-threshold"
+            class="w-full"
+          />
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.be_threshold_hint') }}</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('account.dd_alert_threshold') }}</label>
+          <InputNumber
+            v-model="form.dd_alert_threshold_percent"
+            :min="1"
+            :max="50"
+            :maxFractionDigits="2"
+            mode="decimal"
+            locale="en-US"
+            data-testid="input-dd-alert-threshold"
+            class="w-full"
+          />
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t('account.dd_alert_threshold_hint') }}</p>
+        </div>
+      </div>
     </div>
 
     <!-- Save button -->
-    <div class="pt-2">
+    <div class="pt-6 mt-2 border-t border-gray-200 dark:border-gray-700">
       <Button
         type="submit"
         :label="t('account.save')"

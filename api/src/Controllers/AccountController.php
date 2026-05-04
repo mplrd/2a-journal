@@ -6,14 +6,17 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Services\AccountService;
+use App\Services\DrawdownService;
 
 class AccountController extends Controller
 {
     private AccountService $accountService;
+    private ?DrawdownService $drawdownService;
 
-    public function __construct(AccountService $accountService)
+    public function __construct(AccountService $accountService, ?DrawdownService $drawdownService = null)
     {
         $this->accountService = $accountService;
+        $this->drawdownService = $drawdownService;
     }
 
     public function index(Request $request): Response
@@ -65,5 +68,19 @@ class AccountController extends Controller
         $this->accountService->delete($userId, $accountId);
 
         return $this->jsonSuccess(['message_key' => 'accounts.success.deleted']);
+    }
+
+    /**
+     * GET /accounts/dd-status — DD usage + alert flags for every PF (or
+     * non-PF with DD configured) account. Used by the dashboard banner.
+     */
+    public function ddStatus(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $statuses = $this->drawdownService !== null
+            ? $this->drawdownService->getStatusForUser($userId)
+            : [];
+
+        return $this->jsonSuccess($statuses);
     }
 }
