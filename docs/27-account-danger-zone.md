@@ -1,4 +1,8 @@
-# 27 — Zone dangereuse (changement mot de passe + suppression compte)
+# 27 — Sécurité du profil (changement mot de passe + suppression compte)
+
+> **MAJ 2026-05-04** : la "Zone dangereuse" initiale regroupait deux actions de nature très différente — changement de mot de passe (banal) et suppression de compte (irréversible). Le terme « zone dangereuse » était trop anxiogène pour le mot de passe (cf. ticket D-02 dans `docs/retours-beta-tests.md`). Le bloc a été **scindé en deux sections distinctes** :
+> - **Sécurité** (`SecuritySection.vue`) — neutre (bordure grise), contient le changement de mot de passe.
+> - **Zone dangereuse** (`DangerZone.vue`) — rouge, contient uniquement la suppression de compte.
 
 ## Contexte
 
@@ -7,7 +11,7 @@ Le profil utilisateur permettait seulement de modifier des champs d'affichage (n
 - **Changer son mot de passe** quand on est connecté (aujourd'hui seul le flux "mot de passe oublié" par email existe).
 - **Supprimer son compte** (aucun endpoint, la colonne `users.deleted_at` existe mais n'est jamais écrite).
 
-On les regroupe dans une **"Zone dangereuse"** en bas de l'onglet Profil : section visuellement démarquée (bordure rouge, titre explicite), actions irréversibles protégées par double confirmation.
+On les expose en bas de l'onglet Profil dans deux sections distinctes (cf. encart en haut de doc) : actions irréversibles protégées par double confirmation.
 
 ## Scope
 
@@ -74,10 +78,9 @@ Les requêtes `findByEmail` et `findById` filtrent déjà par `deleted_at IS NUL
 
 ### UI
 
-**Où** : en bas de `ProfileTab.vue`, dans une section `<div>` avec :
-- Bordure rouge (`border-red-300`),
-- Titre "Zone dangereuse" (`t('account.danger_zone.title')`),
-- Deux blocs, chacun avec un bouton rouge (`severity="danger"`).
+**Où** : en bas de `ProfileTab.vue`, **deux sections superposées** depuis le split D-02 :
+- `SecuritySection.vue` — bordure neutre (`border-gray-200`), titre "Sécurité", bouton outlined non-rouge pour le changement de mot de passe.
+- `DangerZone.vue` — bordure rouge (`border-red-300`), titre "Zone dangereuse", bouton rouge (`severity="danger"`) pour la suppression du compte.
 
 **Dialog changement mot de passe** (`ChangePasswordDialog.vue`) :
 - 3 champs : mot de passe actuel, nouveau, confirmation.
@@ -96,8 +99,11 @@ Les requêtes `findByEmail` et `findById` filtrent déjà par `deleted_at IS NUL
 
 ### i18n (clés ajoutées)
 
-Namespace `account.danger_zone.*` pour la section :
-- `title`, `change_password`, `change_password_description`, `delete_account`, `delete_account_description`, `delete_account_warning`
+Namespace `account.security.*` (post-split D-02) pour la section neutre :
+- `title`, `change_password`, `change_password_description`
+
+Namespace `account.danger_zone.*` pour la section rouge :
+- `title`, `delete_account`, `delete_account_description`
 
 Namespace `account.change_password.*` pour le dialog :
 - `current_password`, `new_password`, `confirm_password`, `submit`, `success`
@@ -152,7 +158,8 @@ Namespace `auth.success.*` :
 - `api/src/Controllers/AuthController.php` : 2 actions.
 - `api/config/routes.php` : `POST /auth/change-password`, `DELETE /auth/me` (tous deux protégés par `authMiddleware`).
 - `frontend/src/services/auth.js` + `frontend/src/stores/auth.js` : 2 méthodes.
-- `frontend/src/components/account/DangerZone.vue` (nouveau).
+- `frontend/src/components/account/DangerZone.vue` (nouveau ; allégé en 2026-05-04 pour ne contenir que la suppression compte, cf. split D-02).
+- `frontend/src/components/account/SecuritySection.vue` (ajouté en 2026-05-04, hébergeant le changement de mot de passe).
 - `frontend/src/components/account/ChangePasswordDialog.vue` (nouveau).
 - `frontend/src/components/account/DeleteAccountDialog.vue` (nouveau).
 - `frontend/src/components/account/ProfileTab.vue` : intègre `<DangerZone />` en bas.

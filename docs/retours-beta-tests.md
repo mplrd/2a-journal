@@ -28,6 +28,7 @@ Tickets livrés (code mergé sur `develop`, doc rédigée).
 |----|-------|------|-----------|
 | [E-01](#e-01) | Édition des setups (au lieu de supprimer/recréer) | Évol | `docs/53-setup-inline-edit.md` |
 | [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | `docs/54-account-risk-params-toggle.md` |
+| [D-02](#d-02) | Renommer "Zone dangereuse" sur Profil | Doc/UX | MAJ `docs/27-account-danger-zone.md` |
 | [D-07](#d-07) | Liste des comptes : badge "étape" fusionné dans la colonne "type" | Doc/UX | inline (cf. `AccountsView.vue`) |
 
 ### 🟡 TODO
@@ -47,7 +48,6 @@ Tickets restants à traiter / arbitrer / clarifier.
 | [E-08](#e-08) | Alerte si DD dépassé (notification utilisateur) | Évol | Moyenne | Moyen | 🟡 |
 | [E-09](#e-09) | Source d'import : IG | Évol | Moyenne | Moyen | 🟡 |
 | [D-01](#d-01) | Tooltip "valeur du point" sur Mes Actifs (cryptos) | Doc/UX | Haute | Faible | 🟢 |
-| [D-02](#d-02) | Renommer "Zone dangereuse" sur Profil | Doc/UX | Haute | Faible | 🟢 |
 | [D-03](#d-03) | Rappel "renseigne tes setups" dans l'import FTMO | Doc/UX | Moyenne | Faible | 🟢 |
 | [D-04](#d-04) | Rappel "seuil BE" sur le graphe gains/pertes/BE | Doc/UX | Haute | Faible | 🟢 |
 | [D-05](#d-05) | Onboarding 2 use cases : actif vs passif | Doc/UX | Moyenne | Moyen | 🟡 |
@@ -207,13 +207,11 @@ Tickets restants à traiter / arbitrer / clarifier.
 - **Priorité** : haute (gros gain UX).
 
 <a id="d-02"></a>
-#### D-02. Renommer "Zone dangereuse" sur Profil — 🟢
+#### D-02. Renommer "Zone dangereuse" sur Profil — ✅
 
 > "Onglet Profil : pour changer ses mdp c'est marqué 'zone dangereuse'… à terme ce sera différent ? Plutôt mettre 'Mes données' ou un truc dans le genre ?"
 
-- **Note** : cf. `27-account-danger-zone.md`. Sur le profil utilisateur (changement mdp), le terme est trop anxiogène pour une action banale. Garder "Zone dangereuse" sur les comptes/propfirm (suppression, reset).
-- **Effort** : faible.
-- **Priorité** : haute.
+- **Livré** : split en deux composants distincts. `SecuritySection.vue` (bordure neutre) accueille le changement de mot de passe ; `DangerZone.vue` (bordure rouge) ne contient plus que la suppression de compte. Doc 27 mise à jour avec un encart en tête expliquant l'évolution.
 
 <a id="d-03"></a>
 #### D-03. Rappel "renseigne tes setups" dans l'import FTMO — 🟢
