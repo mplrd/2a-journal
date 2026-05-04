@@ -130,7 +130,7 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 > "Quand tu renseignes un compte qui n'est pas propfirm on te propose quand même de renseigner le DD alors que t'es pas censé être concerné. Mais ça peut être pas mal de le proposer pour éviter de tout cramer."
 
 - **Type** : clarification UX du formulaire de création/édition de compte.
-- **Livré** : sur compte non-PF, champs DD masqués par défaut derrière une checkbox « Paramètres de gestion du risque » (les champs restent optionnels, et un compte qui a déjà des DD saisis affiche le toggle déjà coché). Sur compte PF, comportement inchangé : champs toujours visibles. Cf. `docs/54-account-risk-params-toggle.md`.
+- **Livré** : sur compte non-PF, les 4 champs DD/objectif/partage de profits sont masqués par défaut derrière une checkbox « Paramètres de gestion du risque » (champs optionnels ; auto-affichés si le compte a déjà au moins une valeur saisie). Sur compte PF, comportement inchangé : champs toujours visibles. Cf. `docs/54-account-risk-params-toggle.md`.
 - **Lien** : voir [E-08](#e-08) pour la partie alerte/notification (séparée).
 
 <a id="e-06"></a>

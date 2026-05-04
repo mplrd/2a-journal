@@ -24,7 +24,12 @@ const showRiskParams = ref(false)
 
 function hasRiskValues(account) {
   if (!account) return false
-  return account.max_drawdown != null || account.daily_drawdown != null
+  return (
+    account.max_drawdown != null
+    || account.daily_drawdown != null
+    || account.profit_target != null
+    || account.profit_split != null
+  )
 }
 
 const accountTypeOptions = computed(() =>
@@ -147,27 +152,29 @@ function handleClose() {
         </label>
       </div>
 
-      <div v-if="isPropFirm || showRiskParams" class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.max_drawdown') }}</label>
-          <InputNumber v-model="form.max_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-max-drawdown" />
+      <template v-if="isPropFirm || showRiskParams">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.max_drawdown') }}</label>
+            <InputNumber v-model="form.max_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-max-drawdown" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.daily_drawdown') }}</label>
+            <InputNumber v-model="form.daily_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-daily-drawdown" />
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.daily_drawdown') }}</label>
-          <InputNumber v-model="form.daily_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-daily-drawdown" />
-        </div>
-      </div>
 
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.profit_target') }}</label>
-          <InputNumber v-model="form.profit_target" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.profit_target') }}</label>
+            <InputNumber v-model="form.profit_target" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-profit-target" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.profit_split') }}</label>
+            <InputNumber v-model="form.profit_split" class="w-full" :min="0" :max="100" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-profit-split" />
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.profit_split') }}</label>
-          <InputNumber v-model="form.profit_split" class="w-full" :min="0" :max="100" mode="decimal" locale="en-US" :maxFractionDigits="2" />
-        </div>
-      </div>
+      </template>
     </div>
 
     <template #footer>

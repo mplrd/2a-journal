@@ -62,26 +62,35 @@ describe('AccountForm — risk management fields visibility', () => {
     setActivePinia(createPinia())
   })
 
-  it('hides DD fields by default for a new non-PF account (BROKER_DEMO)', () => {
+  const RISK_FIELDS = [
+    'account-max-drawdown',
+    'account-daily-drawdown',
+    'account-profit-target',
+    'account-profit-split',
+  ]
+
+  it('hides all risk-management fields by default for a new non-PF account (BROKER_DEMO)', () => {
     const wrapper = createWrapper()
 
-    // Default form is BROKER_DEMO (non-PF) → DD hidden behind toggle
+    // Default form is BROKER_DEMO (non-PF) → all risk fields hidden behind toggle
     expect(wrapper.find('[data-testid="risk-params-toggle"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="account-max-drawdown"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="account-daily-drawdown"]').exists()).toBe(false)
+    for (const field of RISK_FIELDS) {
+      expect(wrapper.find(`[data-testid="${field}"]`).exists()).toBe(false)
+    }
   })
 
-  it('shows DD fields when toggle is checked on non-PF account', async () => {
+  it('shows all risk-management fields when toggle is checked on non-PF account', async () => {
     const wrapper = createWrapper()
 
     const toggle = wrapper.find('[data-testid="risk-params-toggle"]')
     await toggle.setValue(true)
 
-    expect(wrapper.find('[data-testid="account-max-drawdown"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="account-daily-drawdown"]').exists()).toBe(true)
+    for (const field of RISK_FIELDS) {
+      expect(wrapper.find(`[data-testid="${field}"]`).exists()).toBe(true)
+    }
   })
 
-  it('shows DD fields directly (no toggle) on PF account', async () => {
+  it('shows all risk-management fields directly (no toggle) on PF account', async () => {
     const wrapper = createWrapper({
       account: {
         id: 1,
@@ -98,12 +107,13 @@ describe('AccountForm — risk management fields visibility', () => {
       },
     })
 
-    expect(wrapper.find('[data-testid="account-max-drawdown"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="account-daily-drawdown"]').exists()).toBe(true)
+    for (const field of RISK_FIELDS) {
+      expect(wrapper.find(`[data-testid="${field}"]`).exists()).toBe(true)
+    }
     expect(wrapper.find('[data-testid="risk-params-toggle"]').exists()).toBe(false)
   })
 
-  it('auto-reveals DD fields when loading a non-PF account that already has DD set', () => {
+  it('auto-reveals risk fields when loading a non-PF account that already has DD set', () => {
     const wrapper = createWrapper({
       account: {
         id: 2,
@@ -120,26 +130,51 @@ describe('AccountForm — risk management fields visibility', () => {
       },
     })
 
-    // Pre-existing DD values must remain visible/editable, not hidden
-    expect(wrapper.find('[data-testid="account-max-drawdown"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="account-daily-drawdown"]').exists()).toBe(true)
-    // Toggle is still present and reflects the on-state
+    // Pre-existing values must remain visible/editable, not hidden
+    for (const field of RISK_FIELDS) {
+      expect(wrapper.find(`[data-testid="${field}"]`).exists()).toBe(true)
+    }
     const toggle = wrapper.find('[data-testid="risk-params-toggle"]')
     expect(toggle.exists()).toBe(true)
     expect(toggle.element.checked).toBe(true)
   })
 
-  it('switching from non-PF to PF reveals DD fields automatically', async () => {
+  it('auto-reveals risk fields when only profit_target is set on a non-PF account', () => {
+    const wrapper = createWrapper({
+      account: {
+        id: 3,
+        name: 'Live',
+        account_type: AccountType.BROKER_LIVE,
+        stage: null,
+        currency: 'EUR',
+        initial_capital: 5000,
+        broker: '',
+        max_drawdown: null,
+        daily_drawdown: null,
+        profit_target: 1000,
+        profit_split: null,
+      },
+    })
+
+    const toggle = wrapper.find('[data-testid="risk-params-toggle"]')
+    expect(toggle.element.checked).toBe(true)
+    expect(wrapper.find('[data-testid="account-profit-target"]').exists()).toBe(true)
+  })
+
+  it('switching from non-PF to PF reveals all risk fields automatically', async () => {
     const wrapper = createWrapper()
 
     // Initially BROKER_DEMO → hidden
     expect(wrapper.find('[data-testid="account-max-drawdown"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-profit-target"]').exists()).toBe(false)
 
     // Switch to PROP_FIRM (via the form ref since stubs don't propagate easily)
     wrapper.vm.form.account_type = AccountType.PROP_FIRM
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('[data-testid="account-max-drawdown"]').exists()).toBe(true)
+    for (const field of RISK_FIELDS) {
+      expect(wrapper.find(`[data-testid="${field}"]`).exists()).toBe(true)
+    }
     expect(wrapper.find('[data-testid="risk-params-toggle"]').exists()).toBe(false)
   })
 })
