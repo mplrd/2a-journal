@@ -32,6 +32,24 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ---
 
+## UI / responsive
+
+### Layout intermédiaire "grids compactes" (768–1023 px)
+
+**Contexte** : la livraison `docs/58-mobile-responsive.md` a posé la convention en 2 layouts seulement — mobile/tile (< 1024 px) ou desktop/grid (≥ 1024 px). Sur la plage **768–1023 px** (iPad portrait, fenêtres laptop étroites en split-screen), on bascule en mode tile alors qu'on aurait largement la place pour une **DataTable compactée** (colonnes resserrées, fonts réduites, peut-être 1–2 colonnes secondaires masquées) qui resterait plus dense en information que des tuiles verticales.
+
+**Repéré le** : 2026-05-04 (livraison 58, retour utilisateur).
+**À faire** :
+- Introduire un breakpoint intermédiaire `useIsMobile()` → `useLayout()` retournant `'mobile' | 'compact' | 'desktop'`.
+- Pour la plage `compact` : DataTable rendue avec densité réduite (padding cellules, font-size, hauteur de ligne) ; possibilité de masquer certaines colonnes "secondaires" (ex. setup tags, créé le, broker).
+- Garder TileList pour `mobile` strict (< 768 px). FAB visible uniquement en `mobile` (rester `lg:hidden` ne suffira plus, faudra une classe `md:hidden lg:hidden` ou un v-if explicite).
+- MAJ doc 58 (table de couverture) + tests.
+
+**Effort** : moyen (refactor du composable + densité DataTable + audit des colonnes "masquables" par vue).
+**Priorité** : moyenne — utile pour iPad portrait + split-screen laptop.
+
+---
+
 ## Docs
 
 ### Tracker beta : splitter "DONE" en "OK prod" / "En attente de livraison"
