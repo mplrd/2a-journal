@@ -21,7 +21,7 @@ class TradeController extends Controller
         $userId = $request->getAttribute('user_id');
         $filters = [];
 
-        foreach (['account_id', 'status', 'symbol', 'direction', 'page', 'per_page'] as $key) {
+        foreach (['account_id', 'status', 'symbol', 'direction', 'page', 'per_page', 'date_from', 'date_to'] as $key) {
             $value = $request->getQuery($key);
             if ($value !== null && $value !== '') {
                 $filters[$key] = $value;
@@ -98,5 +98,19 @@ class TradeController extends Controller
         $this->tradeService->delete($userId, $tradeId);
 
         return $this->jsonSuccess(['message_key' => 'trades.success.deleted']);
+    }
+
+    public function bulkDestroy(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $body = $request->getBody();
+        $ids = $body['ids'] ?? [];
+
+        $count = $this->tradeService->deleteBulk($userId, $ids);
+
+        return $this->jsonSuccess([
+            'deleted_count' => $count,
+            'message_key' => 'trades.success.bulk_deleted',
+        ]);
     }
 }

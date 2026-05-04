@@ -120,6 +120,17 @@ class TradeRepository
             $params['cf_value'] = $filters['custom_filter']['value'];
         }
 
+        // Date range on opened_at (inclusive). Caller is expected to have
+        // already validated the YYYY-MM-DD format upstream.
+        if (!empty($filters['date_from'])) {
+            $where .= ' AND t.opened_at >= :date_from';
+            $params['date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            $where .= ' AND t.opened_at <= :date_to';
+            $params['date_to'] = $filters['date_to'] . ' 23:59:59';
+        }
+
         $countSql = "SELECT COUNT(*) FROM trades t INNER JOIN positions p ON p.id = t.position_id $joins $where";
         $countStmt = $this->pdo->prepare($countSql);
         $countStmt->execute($params);
@@ -183,6 +194,31 @@ class TradeRepository
         $stmt->execute(['id' => $id]);
 
         return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Returns rows {id, position_id} for trades that BOTH exist AND belong
+     * to the given user. Used by bulk operations to check ownership and
+     * collect position_ids in a single round-trip.
+     *
+     * Trades belonging to other users (or non-existent IDs) are silently
+     * absent from the result; the caller compares result count to input
+     * count to detect ownership mismatches.
+     */
+    public function findByIdsForUser(int $userId, array $tradeIds): array
+    {
+        if (empty($tradeIds)) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($tradeIds), '?'));
+        $sql = "SELECT t.id, t.position_id
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                WHERE p.user_id = ? AND t.id IN ({$placeholders})";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(array_merge([$userId], array_values($tradeIds)));
+
+        return $stmt->fetchAll();
     }
 
     /**

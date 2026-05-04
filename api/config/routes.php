@@ -276,7 +276,7 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware, $requireSubscription]);
 
 // ── Trades ─────────────────────────────────────────────────────
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -285,6 +285,7 @@ $router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware, $requ
 $router->put('/trades/{id}', [$tradeController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware, $requireSubscription]);
+$router->post('/trades/bulk-delete', [$tradeController, 'bulkDestroy'], [$authMiddleware, $requireSubscription]);
 $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Import ────────────────────────────────────────────────────

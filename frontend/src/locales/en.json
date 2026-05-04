@@ -399,6 +399,20 @@
     "filter_status": "Filter by status",
     "all_accounts": "All accounts",
     "all_statuses": "All statuses",
+    "date_range": "Date range",
+    "bulk": {
+      "selected_count": "{count} trade(s) selected",
+      "delete_selection": "Delete selection",
+      "confirm_title": "Confirm bulk deletion",
+      "confirm_intro": "You are about to permanently delete the following trades. This action cannot be undone.",
+      "recap_count": "Number of trades",
+      "count_value": "{count} trade(s)",
+      "recap_dates": "Date range",
+      "recap_accounts": "Accounts involved",
+      "recap_total_pnl": "Cumulative P&L impacted",
+      "confirm_warning": "This deletion is irreversible and removes all associated partial exits.",
+      "confirm_button": "Delete permanently"
+    },
     "next_objective": "Next objective",
     "be_reached": "BE reached",
     "confirm_close": "Are you sure you want to close this trade?",
@@ -437,13 +451,16 @@
       "invalid_target_size": "Target size must be positive",
       "invalid_opened_at": "Invalid opened-at date",
       "invalid_closed_at": "Invalid closed-at date",
-      "closed_at_not_closed": "Closed-at can only be edited on a closed trade"
+      "closed_at_not_closed": "Closed-at can only be edited on a closed trade",
+      "bulk_delete_empty": "No trades selected for bulk deletion",
+      "bulk_delete_too_many": "Too many trades selected (500 max per operation)"
     },
     "success": {
       "created": "Trade created successfully",
       "closed": "Trade closed successfully",
       "deleted": "Trade deleted successfully",
-      "updated": "Trade updated"
+      "updated": "Trade updated",
+      "bulk_deleted": "{count} trade(s) deleted successfully"
     }
   },
   "symbols": {

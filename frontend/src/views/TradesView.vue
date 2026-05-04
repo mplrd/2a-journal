@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
@@ -15,6 +15,8 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import Dialog from 'primevue/dialog'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import TradeForm from '@/components/trade/TradeForm.vue'
 import CloseTradeDialog from '@/components/trade/CloseTradeDialog.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
@@ -69,6 +71,32 @@ const sharePositionId = ref(null)
 
 const filterAccountIds = ref([])
 const filterStatuses = ref([])
+const filterDateFrom = ref(null)
+const filterDateTo = ref(null)
+
+// Multi-select state for bulk delete
+const selectedTrades = ref([])
+const showBulkDeleteDialog = ref(false)
+const bulkDeleting = ref(false)
+
+function ymd(date) {
+  if (!date) return null
+  const d = date instanceof Date ? date : new Date(date)
+  if (isNaN(d.getTime())) return null
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// DateRangePicker emits update:from / update:to via v-model:from/to. We
+// watch the refs to auto-apply the filter, matching the BadgeFilter
+// @change pattern (no explicit Apply button on this view).
+let dateFilterDebounce = null
+function scheduleDateFilterApply() {
+  if (dateFilterDebounce) clearTimeout(dateFilterDebounce)
+  dateFilterDebounce = setTimeout(() => applyFilters(), 200)
+}
 
 const statusOptions = Object.values(TradeStatus).map((value) => ({
   label: t(`trades.statuses.${value}`),
@@ -117,9 +145,72 @@ async function applyFilters() {
   if (filterStatuses.value && filterStatuses.value.length > 0) {
     filters.statuses = filterStatuses.value
   }
+  const dfStr = ymd(filterDateFrom.value)
+  const dtStr = ymd(filterDateTo.value)
+  if (dfStr) filters.date_from = dfStr
+  if (dtStr) filters.date_to = dtStr
   store.setFilters(filters)
   store.page = 1
+  selectedTrades.value = []
   await store.fetchTrades()
+}
+
+watch([filterDateFrom, filterDateTo], scheduleDateFilterApply)
+
+// Recap pour la modale de confirmation : nb, dates, comptes, P&L cumulé.
+const bulkDeleteRecap = computed(() => {
+  const list = selectedTrades.value || []
+  if (list.length === 0) return null
+
+  const dates = list
+    .map((t) => t.opened_at)
+    .filter(Boolean)
+    .sort()
+  const dateFrom = dates[0]
+  const dateTo = dates[dates.length - 1]
+
+  const accountNames = [...new Set(list.map((t) => accountName(t.account_id)))].filter(Boolean)
+
+  const totalPnl = list.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0)
+
+  return {
+    count: list.length,
+    dateFrom,
+    dateTo,
+    accounts: accountNames,
+    totalPnl,
+  }
+})
+
+function openBulkDeleteDialog() {
+  if (!selectedTrades.value || selectedTrades.value.length === 0) return
+  showBulkDeleteDialog.value = true
+}
+
+async function confirmBulkDelete() {
+  const ids = selectedTrades.value.map((t) => t.id)
+  bulkDeleting.value = true
+  try {
+    const count = await store.bulkDeleteTrades(ids)
+    toast.add({
+      severity: 'success',
+      summary: t('common.success'),
+      detail: t('trades.success.bulk_deleted', { count }),
+      life: 3000,
+    })
+    selectedTrades.value = []
+    showBulkDeleteDialog.value = false
+    await store.fetchTrades()
+  } catch (err) {
+    toast.add({
+      severity: 'error',
+      summary: t('common.error'),
+      detail: t(err.messageKey || 'error.internal'),
+      life: 5000,
+    })
+  } finally {
+    bulkDeleting.value = false
+  }
 }
 
 function onPage(event) {
@@ -316,13 +407,12 @@ function pnlClass(pnl) {
 
 <template>
   <div>
-    <div class="flex items-center justify-end mb-4">
-      <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
-    </div>
-
-    <div class="flex flex-col gap-3 mb-4">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.account') }}</span>
+    <!-- Filters + create button on a single line (label-on-top per filter,
+         wraps gracefully on small screens; the button is pushed right via
+         ml-auto). -->
+    <div class="flex items-end gap-6 flex-wrap mb-4">
+      <div class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.account') }}</span>
         <BadgeFilter
           v-model="filterAccountIds"
           :options="accountsStore.accounts.map((a) => ({ label: a.name, value: a.id }))"
@@ -330,8 +420,8 @@ function pnlClass(pnl) {
           @change="applyFilters"
         />
       </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">{{ t('trades.status') }}</span>
+      <div class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.status') }}</span>
         <BadgeFilter
           v-model="filterStatuses"
           :options="statusOptions"
@@ -339,6 +429,35 @@ function pnlClass(pnl) {
           @change="applyFilters"
         />
       </div>
+      <div class="flex flex-col gap-1 min-w-[220px]">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.date_range') }}</span>
+        <DateRangePicker
+          v-model:from="filterDateFrom"
+          v-model:to="filterDateTo"
+        />
+      </div>
+      <div class="ml-auto">
+        <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
+      </div>
+    </div>
+
+    <!-- Bulk action bar (visible when at least one trade is selected) -->
+    <div
+      v-if="selectedTrades.length > 0"
+      class="mb-4 p-3 border border-red-300 dark:border-red-700 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-between gap-3"
+      data-testid="bulk-action-bar"
+    >
+      <span class="text-sm text-red-700 dark:text-red-300">
+        {{ t('trades.bulk.selected_count', { count: selectedTrades.length }) }}
+      </span>
+      <Button
+        :label="t('trades.bulk.delete_selection')"
+        icon="pi pi-trash"
+        severity="danger"
+        outlined
+        data-testid="open-bulk-delete"
+        @click="openBulkDeleteDialog"
+      />
     </div>
 
     <EmptyState
@@ -352,6 +471,7 @@ function pnlClass(pnl) {
 
     <DataTable
       v-else
+      v-model:selection="selectedTrades"
       :value="store.trades"
       :loading="store.loading"
       lazy
@@ -362,8 +482,10 @@ function pnlClass(pnl) {
       :rowsPerPageOptions="[10, 25, 50]"
       @page="onPage"
       stripedRows
+      dataKey="id"
       class="mt-2"
     >
+      <Column selectionMode="multiple" headerStyle="width: 3rem" />
       <Column field="account_id" :header="t('trades.account')">
         <template #body="{ data }">{{ accountName(data.account_id) }}</template>
       </Column>
@@ -518,5 +640,57 @@ function pnlClass(pnl) {
     />
 
     <ShareDialog v-model:visible="showShare" :positionId="sharePositionId" />
+
+    <!-- Bulk delete confirmation -->
+    <Dialog
+      v-model:visible="showBulkDeleteDialog"
+      :header="t('trades.bulk.confirm_title')"
+      modal
+      :closable="!bulkDeleting"
+      :style="{ width: '500px' }"
+      data-testid="bulk-delete-dialog"
+    >
+      <div v-if="bulkDeleteRecap" class="space-y-3 text-sm">
+        <p class="text-gray-700 dark:text-gray-300">{{ t('trades.bulk.confirm_intro') }}</p>
+        <ul class="space-y-1 list-disc pl-5 text-gray-700 dark:text-gray-300">
+          <li>
+            <strong>{{ t('trades.bulk.recap_count') }}</strong> :
+            {{ t('trades.bulk.count_value', { count: bulkDeleteRecap.count }) }}
+          </li>
+          <li v-if="bulkDeleteRecap.dateFrom">
+            <strong>{{ t('trades.bulk.recap_dates') }}</strong> :
+            {{ bulkDeleteRecap.dateFrom?.slice(0, 10) }} → {{ bulkDeleteRecap.dateTo?.slice(0, 10) }}
+          </li>
+          <li v-if="bulkDeleteRecap.accounts.length > 0">
+            <strong>{{ t('trades.bulk.recap_accounts') }}</strong> :
+            {{ bulkDeleteRecap.accounts.join(', ') }}
+          </li>
+          <li>
+            <strong>{{ t('trades.bulk.recap_total_pnl') }}</strong> :
+            <span :class="bulkDeleteRecap.totalPnl >= 0 ? 'text-success' : 'text-danger'">
+              {{ bulkDeleteRecap.totalPnl >= 0 ? '+' : '' }}{{ bulkDeleteRecap.totalPnl.toFixed(2) }}
+            </span>
+          </li>
+        </ul>
+        <p class="text-xs text-red-700 dark:text-red-300 mt-2">{{ t('trades.bulk.confirm_warning') }}</p>
+      </div>
+      <template #footer>
+        <Button
+          :label="t('common.cancel')"
+          severity="secondary"
+          text
+          :disabled="bulkDeleting"
+          @click="showBulkDeleteDialog = false"
+        />
+        <Button
+          :label="t('trades.bulk.confirm_button')"
+          icon="pi pi-trash"
+          severity="danger"
+          :loading="bulkDeleting"
+          data-testid="confirm-bulk-delete"
+          @click="confirmBulkDelete"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
