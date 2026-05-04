@@ -29,7 +29,7 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 | [E-02](#e-02) | Source d'import : Ouinex | Évol | Moyenne | Moyen | 🟡 |
 | [E-03](#e-03) | Espace "questions / remarques" pour utilisateurs | Évol | Moyenne | Moyen | 🟡 |
 | [E-04](#e-04) | Imports scindés / sélection des données à analyser | Évol | À arbitrer | Élevé | 🟡 |
-| [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | Moyenne | Faible | 🟡 |
+| [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | Moyenne | Faible | ✅ |
 | [E-06](#e-06) | Winrate par combinaison de setups (groupes) | Évol | À arbitrer | Élevé | 🟡 |
 | [E-07](#e-07) | Suppression en lot via l'historique (multi-select + filtres dates) | Évol | Haute | Moyen | 🟢 |
 | [E-08](#e-08) | Alerte si DD dépassé (notification utilisateur) | Évol | Moyenne | Moyen | 🟡 |
@@ -125,15 +125,13 @@ Liste structurée des remarques remontées par les utilisateurs ayant accès aux
 - **Lien** : se recoupe partiellement avec [E-07](#e-07) (suppression en lot ≠ suppression par lot d'import, mais même esprit).
 
 <a id="e-05"></a>
-#### E-05. DD proposé sur compte non-propfirm (UX) — 🟡
+#### E-05. DD proposé sur compte non-propfirm (UX) — ✅
 
 > "Quand tu renseignes un compte qui n'est pas propfirm on te propose quand même de renseigner le DD alors que t'es pas censé être concerné. Mais ça peut être pas mal de le proposer pour éviter de tout cramer."
 
 - **Type** : clarification UX du formulaire de création/édition de compte.
-- **À faire** : statuer — DD optionnel pour tous comptes (et conserver le champ visible), ou DD réservé aux propfirms (et le masquer sinon). Le retour suggère de le **garder optionnel pour tous** (utile même hors propfirm pour limiter la casse).
-- **Effort** : faible (form + libellé + helper text).
-- **Priorité** : moyenne.
-- **Lien** : voir [E-08](#e-08) pour la partie alerte/notification.
+- **Livré** : sur compte non-PF, champs DD masqués par défaut derrière une checkbox « Paramètres de gestion du risque » (les champs restent optionnels, et un compte qui a déjà des DD saisis affiche le toggle déjà coché). Sur compte PF, comportement inchangé : champs toujours visibles. Cf. `docs/54-account-risk-params-toggle.md`.
+- **Lien** : voir [E-08](#e-08) pour la partie alerte/notification (séparée).
 
 <a id="e-06"></a>
 #### E-06. Winrate par combinaison de setups (groupes) — 🟡

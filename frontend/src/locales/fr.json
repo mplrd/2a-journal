@@ -223,6 +223,7 @@
     "broker": "Courtier",
     "max_drawdown": "Drawdown max",
     "daily_drawdown": "Drawdown journalier",
+    "risk_params_toggle": "Paramètres de gestion du risque",
     "profit_target": "Objectif de profit",
     "profit_split": "Partage des profits (%)",
     "types": {

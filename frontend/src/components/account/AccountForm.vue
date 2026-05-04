@@ -6,6 +6,7 @@ import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import { AccountType, AccountStage } from '@/constants/enums'
 
 const { t } = useI18n()
@@ -19,6 +20,12 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'save'])
 
 const form = ref(getDefaultForm())
+const showRiskParams = ref(false)
+
+function hasRiskValues(account) {
+  if (!account) return false
+  return account.max_drawdown != null || account.daily_drawdown != null
+}
 
 const accountTypeOptions = computed(() =>
   Object.values(AccountType).map((value) => ({
@@ -58,8 +65,10 @@ watch(
       form.value = props.account
         ? { ...props.account, broker: props.account.broker || '' }
         : getDefaultForm()
+      showRiskParams.value = hasRiskValues(props.account)
     }
   },
+  { immediate: true },
 )
 
 watch(
@@ -126,14 +135,26 @@ function handleClose() {
         <InputText v-model="form.broker" class="w-full" :maxlength="100" />
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
+      <div v-if="!isPropFirm" class="flex items-center gap-2">
+        <Checkbox
+          v-model="showRiskParams"
+          :binary="true"
+          inputId="risk-params-toggle"
+          data-testid="risk-params-toggle"
+        />
+        <label for="risk-params-toggle" class="text-sm font-medium text-gray-700 cursor-pointer">
+          {{ t('accounts.risk_params_toggle') }}
+        </label>
+      </div>
+
+      <div v-if="isPropFirm || showRiskParams" class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.max_drawdown') }}</label>
-          <InputNumber v-model="form.max_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
+          <InputNumber v-model="form.max_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-max-drawdown" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.daily_drawdown') }}</label>
-          <InputNumber v-model="form.daily_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
+          <InputNumber v-model="form.daily_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-daily-drawdown" />
         </div>
       </div>
 

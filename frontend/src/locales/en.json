@@ -223,6 +223,7 @@
     "broker": "Broker",
     "max_drawdown": "Max drawdown",
     "daily_drawdown": "Daily drawdown",
+    "risk_params_toggle": "Risk management settings",
     "profit_target": "Profit target",
     "profit_split": "Profit split (%)",
     "types": {
