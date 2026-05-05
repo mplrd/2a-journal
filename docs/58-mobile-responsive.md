@@ -127,14 +127,24 @@ Wrapper générique : prend une liste d'`items`, expose chaque item via un slot 
 
 ### Patterns spécifiques compact + mobile
 
-**Direction + statut → pictos préfixant le symbole** (Orders + Trades) : les Tags PrimeVue prenaient ~140 px par ligne. En compact + tuile mobile, on les remplace par 2 icônes `pi pi-arrow-up/down` (couleur direction) et `pi pi-circle/lock/check-circle` (couleur statut), encadrant le nom du symbole. Tooltip sur chaque icône pour conserver la lisibilité. Le `setup` est ainsi ramené dans la grille compact sans perdre de place.
+**Direction + statut → pictos préfixant le symbole** (Orders + Trades) : les Tags PrimeVue prenaient ~140 px par ligne. En compact + tuile mobile, on les remplace par 2 icônes encadrant le nom du symbole. Tooltip sur chaque icône pour conserver la lisibilité. Le `setup` est ainsi ramené dans la grille compact sans perdre de place.
+
+- Direction : `pi pi-arrow-up` (BUY, vert) / `pi pi-arrow-down` (SELL, rouge).
+- Statut Trade : `pi pi-bolt` (OPEN, bleu = position active) / `pi pi-shield` (SECURED, orange = BE atteint, partie restante protégée) / `pi pi-check-circle` (CLOSED win/BE, vert) / `pi pi-times-circle` (CLOSED loss, rouge). Le picto CLOSED bascule selon le P&L réalisé.
+- Statut Order : `pi pi-clock` (PENDING, bleu) / `pi pi-bolt` (EXECUTED, vert = ordre déclenché, trade créé) / `pi pi-times-circle` (CANCELLED, orange) / `pi pi-ban` (EXPIRED, rouge).
+
+**Compte → badge sous le symbole** (compact uniquement) : la colonne dédiée `account_id` est masquée en compact. À la place, le nom du compte apparaît dans un petit badge gris sous la rangée `direction · symbol · status` de la colonne Symbol. Libère une colonne supplémentaire dans la grille compact, le compte reste lisible d'un coup d'œil.
 
 **Taille = `remaining_size (size)`** (Trades) : en compact, la colonne `remaining_size` est masquée mais l'info reste accessible — la colonne `size` affiche `{remaining}` en valeur principale et `({size})` en plus petit/muté. Si remaining = size (aucune partielle), seule la valeur principale est rendue. Même format dans la tuile mobile.
 
-**Tuile mobile — actions en L inversé** (`⌐`) : les boutons d'action étaient en `absolute top-right` avec `flex-wrap max-w-[60%]`, ce qui chevauchait le contenu (notamment les setups en bas de tuile) dès qu'il y avait plus de 3 boutons. Restructuration en grille `[content (1fr) | actions (auto)]` avec à droite :
-- ligne horizontale en haut : groupe de gestion (lifecycle / mgmt actions selon la vue)
-- colonne verticale en dessous, alignée à droite : actions secondaires (edit, share, delete)
-La rangée des setups reste en pleine largeur sous la grille, libérée de toute contrainte de l'overlay.
+**Tuile mobile — actions sur une seule ligne en haut à droite + dropdown "⋮"** : le L inversé (mgmt en ligne + secondaires empilés verticalement) prenait trop de hauteur. Désormais toutes les actions tiennent sur une seule ligne en haut à droite, alignée avec le titre du symbole, grâce à un PrimeVue `Menu` popup partagé qui héberge **modifier + supprimer**. Le bouton `pi pi-ellipsis-v` à l'extrémité droite ouvre ce menu, ce qui ramène la rangée visible à 2-5 boutons selon le statut :
+- Trades open : next-obj, close, transfer (si activé), share, ⋮ (max 5)
+- Trades closed : share, ⋮ (2)
+- Orders pending : execute, cancel, transfer, share, ⋮ (5)
+- Orders autres : share, ⋮ (2)
+- Accounts : sync (si activé), import, ⋮ (3)
+
+Le `Menu` est instancié une seule fois par vue (singleton) ; le clic sur ⋮ d'une tuile met à jour l'item courant puis appelle `menu.toggle($event)`. Le contenu de la grille (entry, size, P&L, setups…) suit en pleine largeur sous l'en-tête, sans contrainte de colonne actions.
 
 Les autres colonnes restent visibles dans tous les modes (desktop, compact). Les valeurs masquées en compact restent accessibles via le détail / l'édition de l'item.
 

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
@@ -11,6 +11,7 @@ import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
+import Menu from 'primevue/menu'
 import AccountForm from '@/components/account/AccountForm.vue'
 import ImportDialog from '@/components/import/ImportDialog.vue'
 import BrokerConnectionPanel from '@/components/broker/BrokerConnectionPanel.vue'
@@ -18,6 +19,7 @@ import { AccountType, AccountStage } from '@/constants/enums'
 import { useOnboarding } from '@/composables/useOnboarding'
 import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
 import TileList from '@/components/common/TileList.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { useLayout } from '@/composables/useIsMobile'
 
 const { t } = useI18n()
@@ -144,6 +146,31 @@ function balanceVariation(account) {
   const sign = pct > 0 ? '+' : ''
   return `${sign}${pct.toFixed(2)}%`
 }
+
+// Single shared popup menu hosting "edit / delete" — keeps the visible
+// per-tile action row short.
+const actionMenu = ref(null)
+const menuAccount = ref(null)
+const actionMenuItems = computed(() => {
+  if (!menuAccount.value) return []
+  return [
+    {
+      label: t('common.edit'),
+      icon: 'pi pi-pencil',
+      command: () => openEdit(menuAccount.value),
+    },
+    {
+      label: t('common.delete'),
+      icon: 'pi pi-trash',
+      class: 'text-danger',
+      command: () => handleDelete(menuAccount.value),
+    },
+  ]
+})
+function openActionMenu(event, account) {
+  menuAccount.value = account
+  actionMenu.value.toggle(event)
+}
 </script>
 
 <template>
@@ -166,12 +193,17 @@ function balanceVariation(account) {
       @click="openCreate"
     />
 
-    <p v-if="!store.loading && store.accounts.length === 0" class="text-gray-500">
-      {{ t('accounts.empty') }}
-    </p>
+    <EmptyState
+      v-if="!store.loading && store.accounts.length === 0"
+      icon="pi pi-wallet"
+      :title="t('accounts.empty_title')"
+      :description="t('accounts.empty')"
+    >
+      <Button :label="t('accounts.create')" icon="pi pi-plus" @click="openCreate" />
+    </EmptyState>
 
     <DataTable
-      v-if="!isMobile && store.accounts.length > 0"
+      v-else-if="!isMobile && store.accounts.length > 0"
       :value="store.accounts"
       :loading="store.loading"
       :size="isCompact ? 'small' : undefined"
@@ -225,38 +257,32 @@ function balanceVariation(account) {
     >
       <template #default="{ item }">
         <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`account-tile-${item.id}`">
-          <div class="grid grid-cols-[1fr_auto] gap-2">
-            <div>
-              <div class="font-semibold text-gray-900 dark:text-gray-100 truncate">{{ item.name }}</div>
-              <div class="mt-2 flex items-center gap-1 flex-wrap">
-                <Tag :value="t(`accounts.types.${item.account_type}`)" :severity="typeSeverity(item.account_type)" />
-                <Tag v-if="item.stage" :value="t(`accounts.stages.${item.stage}`)" :severity="stageSeverity(item.stage)" />
-                <span v-if="item.broker" class="text-xs text-gray-500 dark:text-gray-400 ml-1">{{ item.broker }}</span>
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-x-3 text-sm">
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.initial_capital') }}</div>
-                  <div class="font-mono tabular-nums">{{ Number(item.initial_capital).toLocaleString() }} {{ item.currency }}</div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.balance') }}</div>
-                  <div :class="balanceClass(item)" class="font-mono tabular-nums">
-                    {{ Number(item.current_capital).toLocaleString() }}
-                    <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
-                  </div>
-                </div>
-              </div>
+          <!-- Tile header: name (truncated) on the left, actions on a single
+               row top-right. Edit/delete tucked behind a popup menu so the
+               visible row stays at 3 buttons max (sync, import, more). -->
+          <div class="flex items-start justify-between gap-2">
+            <div class="font-semibold text-gray-900 dark:text-gray-100 truncate min-w-0">{{ item.name }}</div>
+            <div class="flex items-center gap-1 shrink-0">
+              <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text rounded :aria-label="t('broker.sync_now')" @click="openBrokerSync(item)" />
+              <Button icon="pi pi-upload" severity="info" size="small" text rounded :aria-label="t('import.title')" @click="openImport(item)" />
+              <Button icon="pi pi-ellipsis-v" severity="secondary" size="small" text rounded :aria-label="t('common.more')" @click="openActionMenu($event, item)" />
             </div>
-            <div class="flex flex-col items-end gap-1">
-              <!-- Mgmt row: data-ingestion actions (sync, import). -->
-              <div class="flex gap-1">
-                <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text rounded :aria-label="t('broker.sync_now')" @click="openBrokerSync(item)" />
-                <Button icon="pi pi-upload" severity="info" size="small" text rounded :aria-label="t('import.title')" @click="openImport(item)" />
-              </div>
-              <!-- Secondary stack: account-management actions. -->
-              <div class="flex flex-col gap-1">
-                <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
-                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
+          </div>
+          <div class="mt-2 flex items-center gap-1 flex-wrap">
+            <Tag :value="t(`accounts.types.${item.account_type}`)" :severity="typeSeverity(item.account_type)" />
+            <Tag v-if="item.stage" :value="t(`accounts.stages.${item.stage}`)" :severity="stageSeverity(item.stage)" />
+            <span v-if="item.broker" class="text-xs text-gray-500 dark:text-gray-400 ml-1">{{ item.broker }}</span>
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-x-3 text-sm">
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.initial_capital') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.initial_capital).toLocaleString() }} {{ item.currency }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.balance') }}</div>
+              <div :class="balanceClass(item)" class="font-mono tabular-nums">
+                {{ Number(item.current_capital).toLocaleString() }}
+                <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
               </div>
             </div>
           </div>
@@ -310,5 +336,8 @@ function balanceVariation(account) {
         />
       </div>
     </Dialog>
+
+    <!-- Shared popup menu for the per-tile "more" button (edit/delete). -->
+    <Menu ref="actionMenu" :model="actionMenuItems" :popup="true" />
   </div>
 </template>
