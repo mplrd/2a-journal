@@ -8,9 +8,11 @@ import { useSetupsStore } from '@/stores/setups'
 import { useChartOptions } from '@/composables/useChartOptions'
 import { CHART_PALETTE, primaryFor, withAlpha } from '@/constants/chartPalette'
 import Select from 'primevue/select'
+import Button from 'primevue/button'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
 import StatsDetailDialog from '@/components/performance/StatsDetailDialog.vue'
+import SetupCombinationDialog from '@/components/performance/SetupCombinationDialog.vue'
 import RrDistributionChart from '@/components/performance/RrDistributionChart.vue'
 import EquityCurveChart from '@/components/performance/EquityCurveChart.vue'
 import HeatmapChart from '@/components/performance/HeatmapChart.vue'
@@ -33,6 +35,7 @@ const periodGroupOptions = [
 // Dialog state
 const dialogVisible = ref(false)
 const dialogDimension = ref(null)
+const setupComboDialogVisible = ref(false)
 
 function openDetail(dimension) {
   dialogDimension.value = dimension
@@ -267,7 +270,18 @@ const winLossChartData = computed(() => {
           :options="dualAxisChartOptions"
           detailable
           @detail="openDetail('setup')"
-        />
+        >
+          <template #header-actions>
+            <Button
+              :label="t('performance.go_further')"
+              icon="pi pi-sliders-h"
+              severity="secondary"
+              text
+              size="small"
+              @click="setupComboDialogVisible = true"
+            />
+          </template>
+        </ChartCard>
         <ChartCard
           :title="t('performance.pnl_by_period')"
           type="bar"
@@ -320,5 +334,6 @@ const winLossChartData = computed(() => {
       :dimension="dialogDimension"
       :data="dialogData"
     />
+    <SetupCombinationDialog v-model:visible="setupComboDialogVisible" />
   </div>
 </template>

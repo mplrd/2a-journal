@@ -3,7 +3,9 @@
 namespace Tests\Unit\Services;
 
 use App\Exceptions\ForbiddenException;
+use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\StatsRepository;
 use App\Repositories\UserRepository;
 use App\Services\StatsService;
@@ -15,14 +17,16 @@ class StatsServiceTest extends TestCase
     private StatsRepository $statsRepo;
     private AccountRepository $accountRepo;
     private UserRepository $userRepo;
+    private SetupRepository $setupRepo;
 
     protected function setUp(): void
     {
         $this->statsRepo = $this->createMock(StatsRepository::class);
         $this->accountRepo = $this->createMock(AccountRepository::class);
         $this->userRepo = $this->createMock(UserRepository::class);
+        $this->setupRepo = $this->createMock(SetupRepository::class);
         $this->userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris', 'be_threshold_percent' => 0]);
-        $this->service = new StatsService($this->statsRepo, $this->accountRepo, $this->userRepo);
+        $this->service = new StatsService($this->statsRepo, $this->accountRepo, $this->userRepo, $this->setupRepo);
     }
 
     private function fakeOverview(array $overrides = []): array
@@ -354,7 +358,7 @@ class StatsServiceTest extends TestCase
         $statsRepo = $this->createMock(StatsRepository::class);
         $userRepo = $this->createMock(UserRepository::class);
         $userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris', 'be_threshold_percent' => 0.05]);
-        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo, $this->setupRepo);
 
         $statsRepo->expects($this->once())
             ->method('getOverview')
@@ -370,7 +374,7 @@ class StatsServiceTest extends TestCase
         $statsRepo = $this->createMock(StatsRepository::class);
         $userRepo = $this->createMock(UserRepository::class);
         $userRepo->method('findById')->willReturn(['id' => 1, 'be_threshold_percent' => 0.02]);
-        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo, $this->setupRepo);
 
         $statsRepo->expects($this->once())
             ->method('getStatsBySymbol')
@@ -386,7 +390,7 @@ class StatsServiceTest extends TestCase
         $statsRepo = $this->createMock(StatsRepository::class);
         $userRepo = $this->createMock(UserRepository::class);
         $userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'UTC']);
-        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo, $this->setupRepo);
 
         $statsRepo->expects($this->once())
             ->method('getStatsBySymbol')
@@ -401,7 +405,7 @@ class StatsServiceTest extends TestCase
         $statsRepo = $this->createMock(StatsRepository::class);
         $userRepo = $this->createMock(UserRepository::class);
         $userRepo->method('findById')->willReturn(['id' => 1, 'be_threshold_percent' => 0.03]);
-        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo);
+        $service = new StatsService($statsRepo, $this->accountRepo, $userRepo, $this->setupRepo);
 
         $statsRepo->expects($this->once())
             ->method('getWinLossDistribution')
@@ -411,5 +415,188 @@ class StatsServiceTest extends TestCase
         $statsRepo->method('getPnlBySymbol')->willReturn([]);
 
         $service->getCharts(1);
+    }
+
+    // ── getSetupCombinationsAnalysis ───────────────────────────
+
+    private function fakeComboStats(array $overrides = []): array
+    {
+        return array_merge([
+            'total_trades' => 8,
+            'wins' => 6,
+            'losses' => 2,
+            'win_rate' => 75.0,
+            'total_pnl' => 800.0,
+            'avg_rr' => 2.3,
+            'profit_factor' => 4.0,
+        ], $overrides);
+    }
+
+    public function testGetSetupCombinationsAnalysisAcceptsEmptyCombinationsAndReturnsBaselineOnly(): void
+    {
+        // Empty combinations is the "modal just opened, nothing configured yet"
+        // case: the UX always shows the baseline first, so we must support
+        // computing it on its own without forcing the user to add a combo.
+        $baseline = $this->fakeComboStats(['win_rate' => 60.0, 'total_trades' => 48]);
+        $this->statsRepo->expects($this->once())
+            ->method('getStatsForSetupCombination')
+            ->with(1, [], $this->anything())
+            ->willReturn($baseline);
+
+        $result = $this->service->getSetupCombinationsAnalysis(1, [], 'all');
+
+        $this->assertSame($baseline, $result['baseline']);
+        $this->assertSame([], $result['combinations']);
+        $this->assertSame('all', $result['match']);
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsCombinationWithEmptyIds(): void
+    {
+        // A combination row with no setups → ValidationException (the user must
+        // either fill it or remove it ; we don't silently drop it).
+        $this->expectException(ValidationException::class);
+        $this->service->getSetupCombinationsAnalysis(1, [['setup_ids' => []]], 'all');
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsCombinationWithNonPositiveIds(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->getSetupCombinationsAnalysis(1, [['setup_ids' => [0, -3]]], 'all');
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsTooManyIdsInOneCombination(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->getSetupCombinationsAnalysis(1, [['setup_ids' => range(1, 21)]], 'all');
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsTooManyCombinations(): void
+    {
+        // Plafond MAX_COMBINATIONS_PER_REQUEST = 10
+        $tooMany = array_fill(0, 11, ['setup_ids' => [1]]);
+        $this->expectException(ValidationException::class);
+        $this->service->getSetupCombinationsAnalysis(1, $tooMany, 'all');
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsInvalidMatchMode(): void
+    {
+        $this->setupRepo->method('findById')->willReturn(['id' => 1, 'user_id' => 1, 'label' => 'A']);
+        $this->expectException(ValidationException::class);
+        $this->service->getSetupCombinationsAnalysis(1, [['setup_ids' => [1]]], 'wat');
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsForeignSetup(): void
+    {
+        $this->setupRepo->method('findById')->willReturn(['id' => 5, 'user_id' => 99, 'label' => 'A']);
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->getSetupCombinationsAnalysis(1, [['setup_ids' => [5]]], 'all');
+    }
+
+    public function testGetSetupCombinationsAnalysisRejectsMissingSetup(): void
+    {
+        $this->setupRepo->method('findById')->willReturn(null);
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->getSetupCombinationsAnalysis(1, [['setup_ids' => [42]]], 'all');
+    }
+
+    public function testGetSetupCombinationsAnalysisReturnsBaselinePlusOneEntryPerCombination(): void
+    {
+        $this->setupRepo->method('findById')->willReturnMap([
+            [10, ['id' => 10, 'user_id' => 1, 'label' => 'Breakout']],
+            [11, ['id' => 11, 'user_id' => 1, 'label' => 'Pullback']],
+            [12, ['id' => 12, 'user_id' => 1, 'label' => 'Range']],
+        ]);
+
+        $combo1Stats = $this->fakeComboStats(['win_rate' => 89.0]);
+        $combo2Stats = $this->fakeComboStats(['win_rate' => 50.0, 'total_trades' => 4]);
+        $baseline = $this->fakeComboStats(['win_rate' => 60.0, 'total_trades' => 48]);
+
+        // 3 calls expected: combo1, combo2, baseline.
+        $this->statsRepo->expects($this->exactly(3))
+            ->method('getStatsForSetupCombination')
+            ->willReturnCallback(function ($userId, $names) use ($combo1Stats, $combo2Stats, $baseline) {
+                if ($names === ['Breakout', 'Pullback']) return $combo1Stats;
+                if ($names === ['Range', 'Pullback']) return $combo2Stats;
+                if ($names === []) return $baseline;
+                $this->fail('Unexpected names: ' . json_encode($names));
+            });
+
+        $result = $this->service->getSetupCombinationsAnalysis(
+            1,
+            [
+                ['setup_ids' => [10, 11]],
+                ['setup_ids' => [12, 11]],
+            ],
+            'all'
+        );
+
+        $this->assertSame($baseline, $result['baseline']);
+        $this->assertCount(2, $result['combinations']);
+        $this->assertSame(['Breakout', 'Pullback'], $result['combinations'][0]['setups']);
+        $this->assertSame($combo1Stats, $result['combinations'][0]['stats']);
+        $this->assertSame([10, 11], $result['combinations'][0]['setup_ids']);
+        $this->assertSame(['Range', 'Pullback'], $result['combinations'][1]['setups']);
+        $this->assertSame($combo2Stats, $result['combinations'][1]['stats']);
+        $this->assertSame('all', $result['match']);
+    }
+
+    public function testGetSetupCombinationsAnalysisDeduplicatesIdsWithinACombination(): void
+    {
+        $this->setupRepo->method('findById')->willReturnMap([
+            [10, ['id' => 10, 'user_id' => 1, 'label' => 'Breakout']],
+        ]);
+
+        $this->statsRepo->expects($this->exactly(2))
+            ->method('getStatsForSetupCombination')
+            ->willReturnCallback(function ($userId, $names) {
+                if ($names !== [] && $names !== ['Breakout']) {
+                    $this->fail('Expected deduplicated names, got: ' . json_encode($names));
+                }
+                return $this->fakeComboStats();
+            });
+
+        $result = $this->service->getSetupCombinationsAnalysis(
+            1,
+            [['setup_ids' => [10, 10, 10]]],
+            'all'
+        );
+        $this->assertSame(['Breakout'], $result['combinations'][0]['setups']);
+    }
+
+    public function testGetSetupCombinationsAnalysisAppliesGlobalFiltersToBothComboAndBaseline(): void
+    {
+        $this->setupRepo->method('findById')->willReturn(['id' => 10, 'user_id' => 1, 'label' => 'Breakout']);
+        $this->accountRepo->method('findById')->willReturn(['id' => 7, 'user_id' => 1]);
+
+        $this->statsRepo->expects($this->exactly(2))
+            ->method('getStatsForSetupCombination')
+            ->willReturnCallback(function ($userId, $names, $filters) {
+                $this->assertSame(7, $filters['account_id']);
+                $this->assertSame('2026-01-01', $filters['date_from']);
+                return $this->fakeComboStats();
+            });
+
+        $this->service->getSetupCombinationsAnalysis(
+            1,
+            [['setup_ids' => [10]]],
+            'all',
+            ['account_id' => 7, 'date_from' => '2026-01-01']
+        );
+    }
+
+    public function testGetSetupCombinationsAnalysisValidatesAccountOwnership(): void
+    {
+        $this->setupRepo->method('findById')->willReturn(['id' => 10, 'user_id' => 1, 'label' => 'Breakout']);
+        $this->accountRepo->method('findById')->willReturn(['id' => 7, 'user_id' => 99]);
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->getSetupCombinationsAnalysis(
+            1,
+            [['setup_ids' => [10]]],
+            'all',
+            ['account_id' => 7]
+        );
     }
 }

@@ -157,6 +157,19 @@ export const useStatsStore = defineStore('stats', () => {
     }
   }
 
+  async function analyzeSetupCombinations(combinations, match = 'all') {
+    // Inherit the page-level filters (account, date range, etc.) so every
+    // combination's stats AND the shared baseline are computed on the same
+    // trade population the user is currently looking at.
+    const payload = {
+      ...filters.value,
+      combinations,
+      match,
+    }
+    const response = await statsService.analyzeSetupCombinations(payload)
+    return response.data
+  }
+
   async function fetchDailyPnl() {
     try {
       const response = await statsService.getDailyPnl(filters.value)
@@ -226,6 +239,7 @@ export const useStatsStore = defineStore('stats', () => {
     fetchByAccountType,
     fetchRrDistribution,
     fetchHeatmap,
+    analyzeSetupCombinations,
     setFilters,
     $reset,
   }

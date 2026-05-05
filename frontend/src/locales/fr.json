@@ -212,13 +212,30 @@
       "EUROPE_US": "Overlap EU/US",
       "US": "US",
       "OFF": "Hors session"
+    },
+    "go_further": "Aller plus loin",
+    "setup_combination": {
+      "title": "Analyse par combinaisons de setups",
+      "intro": "Configure plusieurs combinaisons de setups, on les compare côte à côte sur les mêmes filtres globaux, plus une référence \"tous mes trades\".",
+      "placeholder": "Choisir des setups…",
+      "add_combination": "Ajouter une combinaison",
+      "remove_combination": "Retirer cette combinaison",
+      "combination_label": "Combinaison {n}",
+      "global": "Tous mes trades",
+      "chart_win_rate": "Taux de réussite (%)",
+      "chart_avg_rr": "R:R moyen",
+      "chart_total_pnl": "P&L cumulé"
     }
   },
   "stats": {
     "error": {
       "invalid_period_group": "Regroupement de période invalide",
       "invalid_date": "Date invalide",
-      "invalid_direction": "Direction invalide"
+      "invalid_direction": "Direction invalide",
+      "setup_combination_required": "Sélectionnez au moins un setup",
+      "setup_combination_too_large": "Trop de setups sélectionnés (maximum 20)",
+      "too_many_combinations": "Trop de combinaisons (maximum 10)",
+      "invalid_match_mode": "Mode de correspondance invalide"
     }
   },
   "accounts": {
