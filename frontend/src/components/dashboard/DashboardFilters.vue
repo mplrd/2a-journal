@@ -24,8 +24,12 @@ const direction = ref(null)
 const selectedSymbols = ref([])
 const selectedSetups = ref([])
 
-// Collapsible state, persisted across navigations within the session
-const expanded = ref(localStorage.getItem('dashboardFiltersExpanded') !== 'false')
+// Collapsible state, persisted across navigations within the session.
+// Default = collapsed (user has to opt in to expand) — applies to all
+// viewports, mobile to desktop. The previous default was expanded; flipped
+// after Performance-page feedback that the filter bar took too much
+// vertical room above the fold.
+const expanded = ref(localStorage.getItem('dashboardFiltersExpanded') === 'true')
 function toggleExpanded() {
   expanded.value = !expanded.value
   localStorage.setItem('dashboardFiltersExpanded', String(expanded.value))

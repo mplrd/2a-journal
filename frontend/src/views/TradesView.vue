@@ -575,7 +575,7 @@ function pnlClass(pnl) {
           <span class="font-mono tabular-nums">{{ formatSize(data.remaining_size) }}</span>
         </template>
       </Column>
-      <Column field="opened_at" :header="t('trades.opened_at')">
+      <Column v-if="!isCompact" field="opened_at" :header="t('trades.opened_at')">
         <template #body="{ data }">
           {{ new Date(data.opened_at).toLocaleString() }}
         </template>

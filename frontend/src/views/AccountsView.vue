@@ -188,7 +188,7 @@ function balanceVariation(account) {
         </template>
       </Column>
       <Column v-if="!isCompact" field="currency" :header="t('accounts.currency')" />
-      <Column field="initial_capital" :header="t('accounts.initial_capital')">
+      <Column v-if="!isCompact" field="initial_capital" :header="t('accounts.initial_capital')">
         <template #body="{ data }">
           <span class="font-mono tabular-nums">{{ Number(data.initial_capital).toLocaleString() }}</span>
         </template>

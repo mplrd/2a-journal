@@ -301,7 +301,7 @@ function statusSeverity(status) {
       <Column field="symbol" :header="t('positions.symbol')">
         <template #body="{ data }">{{ symbolName(data.symbol) }}</template>
       </Column>
-      <Column field="direction" :header="t('positions.direction')">
+      <Column v-if="!isCompact" field="direction" :header="t('positions.direction')">
         <template #body="{ data }">
           <Tag :value="t(`positions.directions.${data.direction}`)" :severity="directionSeverity(data.direction)" />
         </template>
