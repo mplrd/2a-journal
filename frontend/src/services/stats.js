@@ -79,4 +79,8 @@ export const statsService = {
     const query = buildQueryString(filters)
     return api.get(`/stats/daily-pnl${query ? `?${query}` : ''}`)
   },
+
+  async analyzeSetupCombinations(payload) {
+    return api.post('/stats/setup-combinations', payload)
+  },
 }

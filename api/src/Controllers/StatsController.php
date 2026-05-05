@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
+use App\Enums\SetupCombinationMatchMode;
 use App\Services\StatsService;
 
 class StatsController extends Controller
@@ -55,6 +56,55 @@ class StatsController extends Controller
         $userId = $request->getAttribute('user_id');
         $filters = $this->extractFilters($request);
         return $this->jsonSuccess($this->statsService->getStatsBySetup($userId, $filters));
+    }
+
+    public function setupCombinations(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $body = $request->getBody();
+        $body = is_array($body) ? $body : [];
+
+        $combinations = $body['combinations'] ?? [];
+        if (!is_array($combinations)) {
+            $combinations = [];
+        }
+
+        $match = $body['match'] ?? SetupCombinationMatchMode::ALL->value;
+
+        $filters = $this->extractCombinationsFilters($body);
+
+        $result = $this->statsService->getSetupCombinationsAnalysis($userId, $combinations, (string) $match, $filters);
+        return $this->jsonSuccess($result);
+    }
+
+    /**
+     * Mirrors extractFilters() for POST requests: same filter shape, read from
+     * body instead of query string.
+     */
+    private function extractCombinationsFilters(array $body): array
+    {
+        $filters = [];
+
+        if (isset($body['account_id']) && $body['account_id'] !== '') {
+            $filters['account_id'] = $body['account_id'];
+        }
+        if (isset($body['account_ids']) && is_array($body['account_ids']) && !empty($body['account_ids'])) {
+            $filters['account_ids'] = $body['account_ids'];
+        }
+        if (!empty($body['date_from'])) {
+            $filters['date_from'] = $body['date_from'];
+        }
+        if (!empty($body['date_to'])) {
+            $filters['date_to'] = $body['date_to'];
+        }
+        if (!empty($body['direction'])) {
+            $filters['direction'] = $body['direction'];
+        }
+        if (!empty($body['symbols']) && is_array($body['symbols'])) {
+            $filters['symbols'] = $body['symbols'];
+        }
+
+        return $filters;
     }
 
     public function byPeriod(Request $request): Response

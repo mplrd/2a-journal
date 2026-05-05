@@ -7,6 +7,7 @@ vi.mock('@/services/stats', () => ({
   statsService: {
     getDashboard: vi.fn(),
     getCharts: vi.fn(),
+    analyzeSetupCombinations: vi.fn(),
   },
 }))
 
@@ -80,6 +81,36 @@ describe('stats store', () => {
     store.setFilters({ account_id: 5 })
 
     expect(store.filters).toEqual({ account_id: 5 })
+  })
+
+  it('analyzeSetupCombinations passes combinations and merges global filters', async () => {
+    const mockResponse = {
+      success: true,
+      data: {
+        baseline: { total_trades: 20, win_rate: 60 },
+        combinations: [
+          { setup_ids: [10, 11], setups: ['A', 'B'], stats: { total_trades: 5, win_rate: 80 } },
+          { setup_ids: [12], setups: ['C'], stats: { total_trades: 3, win_rate: 33 } },
+        ],
+        match: 'all',
+      },
+    }
+    statsService.analyzeSetupCombinations.mockResolvedValue(mockResponse)
+
+    store.setFilters({ account_id: 7, date_from: '2026-01-01' })
+    const result = await store.analyzeSetupCombinations([
+      { setup_ids: [10, 11] },
+      { setup_ids: [12] },
+    ])
+
+    expect(statsService.analyzeSetupCombinations).toHaveBeenCalledWith({
+      combinations: [{ setup_ids: [10, 11] }, { setup_ids: [12] }],
+      match: 'all',
+      account_id: 7,
+      date_from: '2026-01-01',
+    })
+    expect(result.combinations).toHaveLength(2)
+    expect(result.baseline.win_rate).toBe(60)
   })
 
   it('$reset clears all state', async () => {

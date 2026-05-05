@@ -3,24 +3,35 @@
 namespace App\Services;
 
 use App\Enums\Direction;
+use App\Enums\SetupCombinationMatchMode;
 use App\Enums\TradingSession;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
+use App\Repositories\SetupRepository;
 use App\Repositories\StatsRepository;
 use App\Repositories\UserRepository;
 
 class StatsService
 {
+    private const MAX_COMBINATION_SETUPS = 20;
+    private const MAX_COMBINATIONS_PER_REQUEST = 10;
+
     private StatsRepository $statsRepo;
     private AccountRepository $accountRepo;
     private UserRepository $userRepo;
+    private SetupRepository $setupRepo;
 
-    public function __construct(StatsRepository $statsRepo, AccountRepository $accountRepo, UserRepository $userRepo)
-    {
+    public function __construct(
+        StatsRepository $statsRepo,
+        AccountRepository $accountRepo,
+        UserRepository $userRepo,
+        SetupRepository $setupRepo
+    ) {
         $this->statsRepo = $statsRepo;
         $this->accountRepo = $accountRepo;
         $this->userRepo = $userRepo;
+        $this->setupRepo = $setupRepo;
     }
 
     private function getUserTimezoneOffset(int $userId): string
@@ -75,6 +86,90 @@ class StatsService
     {
         $filters = $this->validateFilters($userId, $filters);
         return $this->statsRepo->getStatsBySetup($userId, $filters);
+    }
+
+    /**
+     * Ad-hoc analysis of N user-defined setup combinations side by side:
+     * for each combination, aggregate metrics on trades carrying every
+     * requested setup. A single shared baseline (same global filters, no
+     * combination constraint) is also returned so the UI can render N+1 bars
+     * per metric and let the user spot which combination dominates.
+     *
+     * Each entry in $combinations is `['setup_ids' => int[]]`. The structure
+     * is kept as an associative array (rather than a bare array of int[]) to
+     * leave room for per-combination options later (e.g. an explicit `name`
+     * field when we ship saved combinations) without breaking the contract.
+     */
+    public function getSetupCombinationsAnalysis(
+        int $userId,
+        array $combinations,
+        string $matchMode,
+        array $filters = []
+    ): array {
+        // An empty list is legal: the modal always shows the baseline first
+        // and only adds combination bars as the user composes them. We just
+        // skip the per-combination resolution and go straight to the baseline.
+        if (count($combinations) > self::MAX_COMBINATIONS_PER_REQUEST) {
+            throw new ValidationException('stats.error.too_many_combinations', 'combinations');
+        }
+
+        $mode = SetupCombinationMatchMode::tryFrom($matchMode);
+        if ($mode === null) {
+            throw new ValidationException('stats.error.invalid_match_mode', 'match');
+        }
+
+        // Resolve each combination → cleaned int IDs + setup labels (with
+        // ownership check). Done up-front so we don't run any SQL if a single
+        // combination is invalid.
+        $resolved = [];
+        foreach ($combinations as $combo) {
+            $rawIds = is_array($combo) && isset($combo['setup_ids']) && is_array($combo['setup_ids'])
+                ? $combo['setup_ids']
+                : [];
+            $cleanIds = array_values(array_unique(
+                array_filter(array_map('intval', $rawIds), fn($id) => $id > 0)
+            ));
+            if (empty($cleanIds)) {
+                throw new ValidationException('stats.error.setup_combination_required', 'setup_ids');
+            }
+            if (count($cleanIds) > self::MAX_COMBINATION_SETUPS) {
+                throw new ValidationException('stats.error.setup_combination_too_large', 'setup_ids');
+            }
+
+            $setupNames = [];
+            foreach ($cleanIds as $id) {
+                $setup = $this->setupRepo->findById($id);
+                if (!$setup || (int) $setup['user_id'] !== $userId) {
+                    throw new ForbiddenException('setups.error.forbidden');
+                }
+                $setupNames[] = $setup['label'];
+            }
+
+            $resolved[] = ['setup_ids' => $cleanIds, 'setups' => $setupNames];
+        }
+
+        $validatedFilters = $this->validateFilters($userId, $filters);
+
+        // One repo call per combination + one for the shared baseline.
+        $combinationsResult = [];
+        foreach ($resolved as $entry) {
+            $combinationsResult[] = [
+                'setup_ids' => $entry['setup_ids'],
+                'setups' => $entry['setups'],
+                'stats' => $this->statsRepo->getStatsForSetupCombination(
+                    $userId,
+                    $entry['setups'],
+                    $validatedFilters
+                ),
+            ];
+        }
+        $baseline = $this->statsRepo->getStatsForSetupCombination($userId, [], $validatedFilters);
+
+        return [
+            'baseline' => $baseline,
+            'combinations' => $combinationsResult,
+            'match' => $mode->value,
+        ];
     }
 
     public function getStatsByPeriod(int $userId, string $group = 'month', array $filters = []): array

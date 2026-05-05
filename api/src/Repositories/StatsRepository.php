@@ -310,6 +310,48 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
+    /**
+     * Aggregated stats for trades that contain ALL of the given setup names.
+     * Empty $setupNames means no JSON_CONTAINS filter — useful as the baseline
+     * counterpart against which a combination's stats are compared. Always
+     * returns a single normalized row (zeroed when no trades match).
+     */
+    public function getStatsForSetupCombination(int $userId, array $setupNames, array $filters = []): array
+    {
+        [$where, $params] = $this->buildWhereClause($userId, $filters);
+
+        // AND-chained JSON_CONTAINS — the trade must carry every requested
+        // setup. Naming the placeholders distinctly from `setup_*` (used by
+        // the existing OR-style `setups` filter) avoids accidental clashes.
+        $i = 0;
+        foreach (array_values($setupNames) as $name) {
+            $key = "combo_setup_{$i}";
+            $where .= " AND JSON_CONTAINS(p.setup, :{$key})";
+            $params[$key] = json_encode($name);
+            $i++;
+        }
+
+        $select = $this->dimensionStatsSelect();
+        $sql = "SELECT {$select}
+                FROM trades t
+                INNER JOIN positions p ON p.id = t.position_id
+                {$where}";
+
+        $stmt = $this->pdo->prepare($this->injectBeThreshold($sql, $filters));
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return [
+            'total_trades' => (int) ($row['total_trades'] ?? 0),
+            'wins' => (int) ($row['wins'] ?? 0),
+            'losses' => (int) ($row['losses'] ?? 0),
+            'win_rate' => (float) ($row['win_rate'] ?? 0),
+            'total_pnl' => (float) ($row['total_pnl'] ?? 0),
+            'avg_rr' => isset($row['avg_rr']) && $row['avg_rr'] !== null ? (float) $row['avg_rr'] : null,
+            'profit_factor' => isset($row['profit_factor']) && $row['profit_factor'] !== null ? (float) $row['profit_factor'] : null,
+        ];
+    }
+
     public function getStatsByPeriod(int $userId, string $group = 'month', array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
