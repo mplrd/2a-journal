@@ -224,29 +224,39 @@ function balanceVariation(account) {
       class="mt-2"
     >
       <template #default="{ item }">
-        <div class="relative p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`account-tile-${item.id}`">
-          <div class="absolute top-2 right-2 flex gap-1">
-            <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text rounded :aria-label="t('broker.sync_now')" @click="openBrokerSync(item)" />
-            <Button icon="pi pi-upload" severity="info" size="small" text rounded :aria-label="t('import.title')" @click="openImport(item)" />
-            <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
-          </div>
-          <div class="font-semibold text-gray-900 dark:text-gray-100 pr-32 truncate">{{ item.name }}</div>
-          <div class="mt-2 flex items-center gap-1 flex-wrap">
-            <Tag :value="t(`accounts.types.${item.account_type}`)" :severity="typeSeverity(item.account_type)" />
-            <Tag v-if="item.stage" :value="t(`accounts.stages.${item.stage}`)" :severity="stageSeverity(item.stage)" />
-            <span v-if="item.broker" class="text-xs text-gray-500 dark:text-gray-400 ml-1">{{ item.broker }}</span>
-          </div>
-          <div class="mt-3 grid grid-cols-2 gap-x-3 text-sm">
+        <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`account-tile-${item.id}`">
+          <div class="grid grid-cols-[1fr_auto] gap-2">
             <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.initial_capital') }}</div>
-              <div class="font-mono tabular-nums">{{ Number(item.initial_capital).toLocaleString() }} {{ item.currency }}</div>
+              <div class="font-semibold text-gray-900 dark:text-gray-100 truncate">{{ item.name }}</div>
+              <div class="mt-2 flex items-center gap-1 flex-wrap">
+                <Tag :value="t(`accounts.types.${item.account_type}`)" :severity="typeSeverity(item.account_type)" />
+                <Tag v-if="item.stage" :value="t(`accounts.stages.${item.stage}`)" :severity="stageSeverity(item.stage)" />
+                <span v-if="item.broker" class="text-xs text-gray-500 dark:text-gray-400 ml-1">{{ item.broker }}</span>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-x-3 text-sm">
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.initial_capital') }}</div>
+                  <div class="font-mono tabular-nums">{{ Number(item.initial_capital).toLocaleString() }} {{ item.currency }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.balance') }}</div>
+                  <div :class="balanceClass(item)" class="font-mono tabular-nums">
+                    {{ Number(item.current_capital).toLocaleString() }}
+                    <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.balance') }}</div>
-              <div :class="balanceClass(item)" class="font-mono tabular-nums">
-                {{ Number(item.current_capital).toLocaleString() }}
-                <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
+            <div class="flex flex-col items-end gap-1">
+              <!-- Mgmt row: data-ingestion actions (sync, import). -->
+              <div class="flex gap-1">
+                <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text rounded :aria-label="t('broker.sync_now')" @click="openBrokerSync(item)" />
+                <Button icon="pi pi-upload" severity="info" size="small" text rounded :aria-label="t('import.title')" @click="openImport(item)" />
+              </div>
+              <!-- Secondary stack: account-management actions. -->
+              <div class="flex flex-col gap-1">
+                <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
+                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
               </div>
             </div>
           </div>
