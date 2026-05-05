@@ -16,6 +16,7 @@ import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
+import Menu from 'primevue/menu'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import CollapsibleFilters from '@/components/common/CollapsibleFilters.vue'
 import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
@@ -75,7 +76,10 @@ const showShare = ref(false)
 const sharePositionId = ref(null)
 
 const filterAccountIds = ref([])
-const filterStatuses = ref([])
+// Default focus: active positions (open + secured) — closed trades are
+// browsed via the Performance / history views. URL query (?statuses=...)
+// still overrides this default when present.
+const filterStatuses = ref([TradeStatus.OPEN, TradeStatus.SECURED])
 const filterDateFrom = ref(null)
 const filterDateTo = ref(null)
 
@@ -414,26 +418,33 @@ function statusSeverity(status) {
   }
 }
 
-function statusIcon(status) {
-  switch (status) {
+// CLOSED status uses check-circle when the realized P&L is >= 0 (win or
+// break-even) and times-circle when negative — same idea as the "closed
+// good vs closed bad" cue we want to convey at a glance.
+function statusIcon(trade) {
+  switch (trade.status) {
     case TradeStatus.OPEN:
-      return 'pi pi-circle'
+      return 'pi pi-bolt'
     case TradeStatus.SECURED:
-      return 'pi pi-lock'
-    case TradeStatus.CLOSED:
-      return 'pi pi-check-circle'
+      return 'pi pi-shield'
+    case TradeStatus.CLOSED: {
+      const pnl = realizedPnl(trade)
+      return pnl !== null && pnl < 0 ? 'pi pi-times-circle' : 'pi pi-check-circle'
+    }
     default:
       return 'pi pi-circle'
   }
 }
-function statusIconClass(status) {
-  switch (status) {
+function statusIconClass(trade) {
+  switch (trade.status) {
     case TradeStatus.OPEN:
       return 'text-blue-600 dark:text-blue-400'
     case TradeStatus.SECURED:
       return 'text-orange-600 dark:text-orange-400'
-    case TradeStatus.CLOSED:
-      return 'text-success'
+    case TradeStatus.CLOSED: {
+      const pnl = realizedPnl(trade)
+      return pnl !== null && pnl < 0 ? 'text-danger' : 'text-success'
+    }
     default:
       return 'text-gray-500'
   }
@@ -449,6 +460,32 @@ function realizedPnl(trade) {
 function pnlClass(pnl) {
   if (pnl === null || pnl === undefined) return ''
   return Number(pnl) >= 0 ? 'text-success font-medium font-mono tabular-nums' : 'text-danger font-medium font-mono tabular-nums'
+}
+
+// Single shared popup menu hosting the "edit / delete" entries — kept off
+// the tile to free up horizontal space, since 5 visible buttons per tile
+// already crowd the row on narrow viewports.
+const actionMenu = ref(null)
+const menuTrade = ref(null)
+const actionMenuItems = computed(() => {
+  if (!menuTrade.value) return []
+  return [
+    {
+      label: t('common.edit'),
+      icon: 'pi pi-pencil',
+      command: () => openEdit(menuTrade.value),
+    },
+    {
+      label: t('common.delete'),
+      icon: 'pi pi-trash',
+      class: 'text-danger',
+      command: () => handleDelete(menuTrade.value),
+    },
+  ]
+})
+function openActionMenu(event, trade) {
+  menuTrade.value = trade
+  actionMenu.value.toggle(event)
 }
 </script>
 
@@ -570,16 +607,25 @@ function pnlClass(pnl) {
       class="mt-2"
     >
       <Column selectionMode="multiple" headerStyle="width: 3rem" />
-      <Column field="account_id" :header="t('trades.account')">
+      <Column v-if="!isCompact" field="account_id" :header="t('trades.account')">
         <template #body="{ data }">{{ accountName(data.account_id) }}</template>
       </Column>
-      <Column field="symbol" :header="t('positions.symbol')">
+      <Column field="symbol" :header="isCompact ? '' : t('positions.symbol')">
         <template #body="{ data }">
-          <span v-if="isCompact" class="inline-flex items-center gap-1.5">
+          <!-- Compact layout: pictos flank a vertical [symbol / account] stack
+               so they stay vertically centered against both rows, and the
+               account badge sits directly under the symbol name (not under
+               the full picto-bracketed line). -->
+          <div v-if="isCompact" class="inline-flex items-center gap-1.5">
             <i :class="[directionIcon(data.direction), directionIconClass(data.direction), 'text-xs']" v-tooltip.top="t(`positions.directions.${data.direction}`)"></i>
-            <span>{{ symbolName(data.symbol) }}</span>
-            <i :class="[statusIcon(data.status), statusIconClass(data.status), 'text-xs']" v-tooltip.top="t(`trades.statuses.${data.status}`)"></i>
-          </span>
+            <div class="flex flex-col gap-0.5">
+              <span>{{ symbolName(data.symbol) }}</span>
+              <span class="inline-flex items-center self-start px-1.5 py-0.5 rounded text-[10px] leading-none bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                {{ accountName(data.account_id) }}
+              </span>
+            </div>
+            <i :class="[statusIcon(data), statusIconClass(data), 'text-xs']" v-tooltip.top="t(`trades.statuses.${data.status}`)"></i>
+          </div>
           <span v-else>{{ symbolName(data.symbol) }}</span>
         </template>
       </Column>
@@ -684,14 +730,13 @@ function pnlClass(pnl) {
                 @click="openTransfer(data)"
               />
             </div>
-            <!-- Group: edit & delete -->
-            <div class="flex gap-1 px-2">
-              <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
-              <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
-            </div>
             <!-- Group: share -->
-            <div class="flex gap-1 pl-2">
+            <div class="flex gap-1 px-2">
               <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
+            </div>
+            <!-- Group: secondary menu (edit / delete) -->
+            <div class="flex gap-1 pl-2">
+              <Button icon="pi pi-ellipsis-v" severity="secondary" size="small" text v-tooltip.top="t('common.more')" @click="openActionMenu($event, data)" />
             </div>
           </div>
         </template>
@@ -712,52 +757,45 @@ function pnlClass(pnl) {
     >
       <template #default="{ item }">
         <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`trade-tile-${item.id}`">
-          <!-- Top row: content (1fr) + actions in inverted-L (auto width).
-               Management group horizontally on row 1, secondary buttons stacked
-               vertically below them, all right-aligned via items-end. -->
-          <div class="grid grid-cols-[1fr_auto] gap-2">
+          <!-- Tile header: content (1fr) on the left, actions on a single
+               row top-right. With edit/delete tucked behind a popup menu we
+               only have 2-4 visible buttons, which fit horizontally without
+               overlapping content even on narrow viewports. -->
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i :class="[directionIcon(item.direction), directionIconClass(item.direction)]" v-tooltip.top="t(`positions.directions.${item.direction}`)"></i>
+              <span class="font-semibold truncate">{{ symbolName(item.symbol) }}</span>
+              <i :class="[statusIcon(item), statusIconClass(item)]" v-tooltip.top="t(`trades.statuses.${item.status}`)"></i>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <Button v-if="item.status !== TradeStatus.CLOSED && getNextObjective(item)" icon="pi pi-angle-double-up" severity="success" size="small" text rounded :aria-label="getNextObjective(item)?.label" @click="openNextObjective(item)" />
+              <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-sign-out" severity="warn" size="small" text rounded :aria-label="t('trades.close_trade')" @click="openCloseDialog(item)" />
+              <Button v-if="item.status !== TradeStatus.CLOSED && authStore.user?.public_settings?.trade_transfer_enabled" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
+              <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
+              <Button icon="pi pi-ellipsis-v" severity="secondary" size="small" text rounded :aria-label="t('common.more')" @click="openActionMenu($event, item)" />
+            </div>
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-2">
+            {{ accountName(item.account_id) }} · {{ new Date(item.opened_at).toLocaleString() }}
+          </div>
+          <div class="grid grid-cols-3 gap-x-3 text-sm">
             <div>
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <i :class="[directionIcon(item.direction), directionIconClass(item.direction)]" v-tooltip.top="t(`positions.directions.${item.direction}`)"></i>
-                <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
-                <i :class="[statusIcon(item.status), statusIconClass(item.status)]" v-tooltip.top="t(`trades.statuses.${item.status}`)"></i>
-              </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                {{ accountName(item.account_id) }} · {{ new Date(item.opened_at).toLocaleString() }}
-              </div>
-              <div class="grid grid-cols-3 gap-x-3 text-sm">
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
-                  <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
-                  <div class="font-mono tabular-nums">
-                    {{ formatSize(item.remaining_size) }}<span
-                      v-if="Number(item.remaining_size) !== Number(item.size)"
-                      class="text-xs text-gray-500 dark:text-gray-400 ml-1"
-                    >({{ formatSize(item.size) }})</span>
-                  </div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('trades.pnl') }}</div>
-                  <div :class="pnlClass(realizedPnl(item))" class="font-mono tabular-nums">
-                    {{ realizedPnl(item) != null ? (realizedPnl(item) >= 0 ? '+' : '') + realizedPnl(item).toFixed(2) : '-' }}
-                  </div>
-                </div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
+              <div class="font-mono tabular-nums">
+                {{ formatSize(item.remaining_size) }}<span
+                  v-if="Number(item.remaining_size) !== Number(item.size)"
+                  class="text-xs text-gray-500 dark:text-gray-400 ml-1"
+                >({{ formatSize(item.size) }})</span>
               </div>
             </div>
-            <div class="flex flex-col items-end gap-1">
-              <!-- Mgmt row: shown when the trade is still actionable -->
-              <div v-if="item.status !== TradeStatus.CLOSED" class="flex gap-1">
-                <Button v-if="getNextObjective(item)" icon="pi pi-angle-double-up" severity="success" size="small" text rounded :aria-label="getNextObjective(item)?.label" @click="openNextObjective(item)" />
-                <Button icon="pi pi-sign-out" severity="warn" size="small" text rounded :aria-label="t('trades.close_trade')" @click="openCloseDialog(item)" />
-              </div>
-              <!-- Secondary stack -->
-              <div class="flex flex-col gap-1">
-                <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
-                <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
-                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('trades.pnl') }}</div>
+              <div :class="pnlClass(realizedPnl(item))" class="font-mono tabular-nums">
+                {{ realizedPnl(item) != null ? (realizedPnl(item) >= 0 ? '+' : '') + realizedPnl(item).toFixed(2) : '-' }}
               </div>
             </div>
           </div>
@@ -864,5 +902,8 @@ function pnlClass(pnl) {
         />
       </template>
     </Dialog>
+
+    <!-- Shared popup menu for the per-tile "more" button (edit/delete). -->
+    <Menu ref="actionMenu" :model="actionMenuItems" :popup="true" />
   </div>
 </template>

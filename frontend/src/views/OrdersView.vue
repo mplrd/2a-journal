@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
@@ -12,6 +12,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import Menu from 'primevue/menu'
 import OrderForm from '@/components/order/OrderForm.vue'
 import { formatSize } from '@/utils/format'
 import { useSetupCategory } from '@/utils/setupCategory'
@@ -65,7 +66,10 @@ function accountName(accountId) {
 }
 
 const filterAccountIds = ref([])
-const filterStatuses = ref([])
+// Default focus: pending orders only — executed / cancelled / expired
+// orders are kept around for traceability but the working list is the
+// pending queue.
+const filterStatuses = ref([OrderStatus.PENDING])
 
 const statusOptions = Object.values(OrderStatus).map((value) => ({
   label: t(`orders.statuses.${value}`),
@@ -75,6 +79,9 @@ const statusOptions = Object.values(OrderStatus).map((value) => ({
 onMounted(async () => {
   store.perPage = Number(authStore.user?.default_page_size) || 10
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
+  if (filterStatuses.value.length > 0) {
+    store.setFilters({ statuses: filterStatuses.value })
+  }
   await store.fetchOrders()
 })
 
@@ -210,8 +217,8 @@ function directionIconClass(direction) {
 function statusIcon(status) {
   switch (status) {
     case OrderStatus.PENDING: return 'pi pi-clock'
-    case OrderStatus.EXECUTED: return 'pi pi-check-circle'
-    case OrderStatus.CANCELED: return 'pi pi-times-circle'
+    case OrderStatus.EXECUTED: return 'pi pi-bolt'
+    case OrderStatus.CANCELLED: return 'pi pi-times-circle'
     case OrderStatus.EXPIRED: return 'pi pi-ban'
     default: return 'pi pi-circle'
   }
@@ -220,10 +227,37 @@ function statusIconClass(status) {
   switch (status) {
     case OrderStatus.PENDING: return 'text-blue-600 dark:text-blue-400'
     case OrderStatus.EXECUTED: return 'text-success'
-    case OrderStatus.CANCELED: return 'text-orange-600 dark:text-orange-400'
+    case OrderStatus.CANCELLED: return 'text-orange-600 dark:text-orange-400'
     case OrderStatus.EXPIRED: return 'text-danger'
     default: return 'text-gray-500'
   }
+}
+
+// Single shared popup menu hosting "edit / delete" — keeps the visible
+// per-tile action row short.
+const actionMenu = ref(null)
+const menuOrder = ref(null)
+const actionMenuItems = computed(() => {
+  if (!menuOrder.value) return []
+  const items = []
+  if (menuOrder.value.status === OrderStatus.PENDING) {
+    items.push({
+      label: t('common.edit'),
+      icon: 'pi pi-pencil',
+      command: () => openEdit(menuOrder.value),
+    })
+  }
+  items.push({
+    label: t('common.delete'),
+    icon: 'pi pi-trash',
+    class: 'text-danger',
+    command: () => handleDelete(menuOrder.value),
+  })
+  return items
+})
+function openActionMenu(event, order) {
+  menuOrder.value = order
+  actionMenu.value.toggle(event)
 }
 
 function statusSeverity(status) {
@@ -323,16 +357,25 @@ function statusSeverity(status) {
       stripedRows
       class="mt-2"
     >
-      <Column field="account_id" :header="t('orders.account')">
+      <Column v-if="!isCompact" field="account_id" :header="t('orders.account')">
         <template #body="{ data }">{{ accountName(data.account_id) }}</template>
       </Column>
-      <Column field="symbol" :header="t('positions.symbol')">
+      <Column field="symbol" :header="isCompact ? '' : t('positions.symbol')">
         <template #body="{ data }">
-          <span v-if="isCompact" class="inline-flex items-center gap-1.5">
+          <!-- Compact layout: pictos flank a vertical [symbol / account] stack
+               so they stay vertically centered against both rows, and the
+               account badge sits directly under the symbol name (not under
+               the full picto-bracketed line). -->
+          <div v-if="isCompact" class="inline-flex items-center gap-1.5">
             <i :class="[directionIcon(data.direction), directionIconClass(data.direction), 'text-xs']" v-tooltip.top="t(`positions.directions.${data.direction}`)"></i>
-            <span>{{ symbolName(data.symbol) }}</span>
+            <div class="flex flex-col gap-0.5">
+              <span>{{ symbolName(data.symbol) }}</span>
+              <span class="inline-flex items-center self-start px-1.5 py-0.5 rounded text-[10px] leading-none bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                {{ accountName(data.account_id) }}
+              </span>
+            </div>
             <i :class="[statusIcon(data.status), statusIconClass(data.status), 'text-xs']" v-tooltip.top="t(`orders.statuses.${data.status}`)"></i>
-          </span>
+          </div>
           <span v-else>{{ symbolName(data.symbol) }}</span>
         </template>
       </Column>
@@ -387,29 +430,21 @@ function statusSeverity(status) {
       </Column>
       <Column :header="''">
         <template #body="{ data }">
-          <div class="flex gap-2">
-            <Button v-if="data.status === OrderStatus.PENDING" icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
-            <Button v-if="data.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
-            <Button
-              v-if="data.status === OrderStatus.PENDING"
-              icon="pi pi-check"
-              severity="success"
-              size="small"
-              text
-              v-tooltip.top="t('orders.execute')"
-              @click="handleExecute(data)"
-            />
-            <Button
-              v-if="data.status === OrderStatus.PENDING"
-              icon="pi pi-times"
-              severity="warn"
-              size="small"
-              text
-              v-tooltip.top="t('orders.cancel_action')"
-              @click="handleCancel(data)"
-            />
-            <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
+          <div class="flex items-center justify-end divide-x divide-gray-200 dark:divide-gray-700">
+            <!-- Group: order management (PENDING-only lifecycle actions) -->
+            <div v-if="data.status === OrderStatus.PENDING" class="flex gap-1 pr-2">
+              <Button icon="pi pi-check" severity="success" size="small" text v-tooltip.top="t('orders.execute')" @click="handleExecute(data)" />
+              <Button icon="pi pi-times" severity="warn" size="small" text v-tooltip.top="t('orders.cancel_action')" @click="handleCancel(data)" />
+              <Button icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text v-tooltip.top="t('positions.transfer')" @click="openTransfer(data)" />
+            </div>
+            <!-- Group: share -->
+            <div class="flex gap-1 px-2">
+              <Button icon="pi pi-share-alt" severity="info" size="small" text v-tooltip.top="t('share.share')" @click="openShare(data)" />
+            </div>
+            <!-- Group: secondary menu (edit / delete) -->
+            <div class="flex gap-1 pl-2">
+              <Button icon="pi pi-ellipsis-v" severity="secondary" size="small" text v-tooltip.top="t('common.more')" @click="openActionMenu($event, data)" />
+            </div>
           </div>
         </template>
       </Column>
@@ -428,42 +463,36 @@ function statusSeverity(status) {
     >
       <template #default="{ item }">
         <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`order-tile-${item.id}`">
-          <div class="grid grid-cols-[1fr_auto] gap-2">
-            <div>
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <i :class="[directionIcon(item.direction), directionIconClass(item.direction)]" v-tooltip.top="t(`positions.directions.${item.direction}`)"></i>
-                <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
-                <i :class="[statusIcon(item.status), statusIconClass(item.status)]" v-tooltip.top="t(`orders.statuses.${item.status}`)"></i>
-              </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">{{ accountName(item.account_id) }}</div>
-              <div class="grid grid-cols-3 gap-x-3 text-sm">
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
-                  <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
-                  <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
-                  <div class="font-mono tabular-nums">{{ Number(item.sl_price).toLocaleString() }}</div>
-                </div>
-              </div>
+          <!-- Tile header: content (truncated) on the left, actions on a
+               single row top-right. Edit/delete tucked behind a popup menu
+               keeps the visible row short enough to fit on narrow viewports. -->
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i :class="[directionIcon(item.direction), directionIconClass(item.direction)]" v-tooltip.top="t(`positions.directions.${item.direction}`)"></i>
+              <span class="font-semibold truncate">{{ symbolName(item.symbol) }}</span>
+              <i :class="[statusIcon(item.status), statusIconClass(item.status)]" v-tooltip.top="t(`orders.statuses.${item.status}`)"></i>
             </div>
-            <div class="flex flex-col items-end gap-1">
-              <!-- Mgmt row: PENDING-only lifecycle actions. -->
-              <div v-if="item.status === OrderStatus.PENDING" class="flex gap-1">
-                <Button icon="pi pi-check" severity="success" size="small" text rounded :aria-label="t('orders.execute')" @click="handleExecute(item)" />
-                <Button icon="pi pi-times" severity="warn" size="small" text rounded :aria-label="t('orders.cancel_action')" @click="handleCancel(item)" />
-              </div>
-              <!-- Secondary stack -->
-              <div class="flex flex-col gap-1">
-                <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
-                <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
-                <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
-                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
-              </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-check" severity="success" size="small" text rounded :aria-label="t('orders.execute')" @click="handleExecute(item)" />
+              <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-times" severity="warn" size="small" text rounded :aria-label="t('orders.cancel_action')" @click="handleCancel(item)" />
+              <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
+              <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
+              <Button icon="pi pi-ellipsis-v" severity="secondary" size="small" text rounded :aria-label="t('common.more')" @click="openActionMenu($event, item)" />
+            </div>
+          </div>
+          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-2">{{ accountName(item.account_id) }}</div>
+          <div class="grid grid-cols-3 gap-x-3 text-sm">
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
+              <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
+              <div class="font-mono tabular-nums">{{ Number(item.sl_price).toLocaleString() }}</div>
             </div>
           </div>
           <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">
@@ -505,5 +534,8 @@ function statusSeverity(status) {
     />
 
     <ShareDialog v-model:visible="showShare" :positionId="sharePositionId" />
+
+    <!-- Shared popup menu for the per-tile "more" button (edit/delete). -->
+    <Menu ref="actionMenu" :model="actionMenuItems" :popup="true" />
   </div>
 </template>
