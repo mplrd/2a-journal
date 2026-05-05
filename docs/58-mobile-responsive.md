@@ -121,9 +121,9 @@ Wrapper générique : prend une liste d'`items`, expose chaque item via un slot 
 
 | Vue | TileList (mobile) | Compact (768–1023) — colonnes masquées | Filtres pliables | FAB | Bulk-select mobile |
 |-----|:---:|:---|:---:|:---:|:---:|
-| **Accounts** | ✅ | `currency`, `broker` | — (pas de filtre) | ✅ | — (pas de bulk) |
-| **Orders** | ✅ | `setup`, `expires_at`, `order_created_at` | ✅ | ✅ | — (pas de bulk) |
-| **Trades** | ✅ | `setup`, `remaining_size`, custom fields | ✅ | ✅ | ❌ (cf. limitations) |
+| **Accounts** | ✅ | `currency`, `initial_capital`, `broker` | — (pas de filtre) | ✅ | — (pas de bulk) |
+| **Orders** | ✅ | `direction`, `setup`, `expires_at`, `order_created_at` | ✅ | ✅ | — (pas de bulk) |
+| **Trades** | ✅ | `setup`, `remaining_size`, `opened_at`, custom fields | ✅ | ✅ | ❌ (cf. limitations) |
 
 Les autres colonnes restent visibles dans tous les modes (desktop, compact). Les valeurs masquées en compact restent accessibles via le détail / l'édition de l'item.
 
