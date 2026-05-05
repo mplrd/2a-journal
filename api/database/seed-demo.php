@@ -293,6 +293,130 @@ foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $opened
     $openCount++;
 }
 
+// ── 6b. Create SECURED trades (BE reached, partial taken) ──
+// Each entry has a BE price (typically = entry) with a partial size already
+// exited at BE — leaving remaining_size = size - be_size and status=SECURED.
+$securedTrades = [
+    // [symbol, direction, entry, sl_points, be_size, setup, opened_at, be_at, size, account]
+    ['NASDAQ', 'BUY',  19750, 50, 0.5, 'Breakout',     '2026-03-17 09:30:00', '2026-03-17 10:30:00', 1, 1],
+    ['GBPUSD', 'SELL', 1.2700, 0.0025, 1.0, 'Range',     '2026-03-17 10:00:00', '2026-03-17 12:00:00', 2, 2],
+];
+
+$securedCount = 0;
+foreach ($securedTrades as [$symbol, $direction, $entry, $slPoints, $beSize, $setup, $openedAt, $beAt, $size, $acctNum]) {
+    $secAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
+    $slPrice = $direction === 'BUY' ? $entry - $slPoints : $entry + $slPoints;
+    $bePrice = $entry; // BE = entry by convention
+
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, be_price, be_size, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, :be_price, :be_size, 'TRADE')")
+        ->execute([
+            'uid' => $userId,
+            'aid' => $secAccountId,
+            'dir' => $direction,
+            'sym' => $symbol,
+            'entry' => $entry,
+            'size' => $size,
+            'setup' => json_encode([$setup]),
+            'sl_pts' => $slPoints,
+            'sl_price' => $slPrice,
+            'be_price' => $bePrice,
+            'be_size' => $beSize,
+        ]);
+    $positionId = (int) $pdo->lastInsertId();
+
+    $remaining = $size - $beSize;
+    $pdo->prepare("INSERT INTO trades (position_id, opened_at, remaining_size, status, be_reached)
+        VALUES (:pid, :opened, :remaining, 'SECURED', 1)")
+        ->execute([
+            'pid' => $positionId,
+            'opened' => $openedAt,
+            'remaining' => $remaining,
+        ]);
+    $tradeId = (int) $pdo->lastInsertId();
+
+    // Partial exit at BE: pnl=0 by definition
+    $pdo->prepare("INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
+        VALUES (:tid, :exited, :price, :size, 'BE', 0)")
+        ->execute([
+            'tid' => $tradeId,
+            'exited' => $beAt,
+            'price' => $bePrice,
+            'size' => $beSize,
+        ]);
+
+    $securedCount++;
+}
+
+// ── 6c. Create orders (one per status) ─────────────────────
+// Orders extend positions just like trades, but live on the orders table.
+// EXECUTED orders also get a child trade so the "trade created" flow is
+// realistic. PENDING / CANCELLED / EXPIRED stay order-only.
+$now = new DateTime('2026-03-18 10:00:00');
+$ordersToSeed = [
+    // [symbol, direction, entry, sl_points, setup, status, size, account, expires_at_offset_days]
+    ['NASDAQ', 'BUY',  19850, 50, 'Breakout',     'PENDING',   1, 1, 7],
+    ['EURUSD', 'SELL', 1.0950, 0.0025, 'Range',     'PENDING',   2, 2, 3],
+    ['DAX',    'BUY',  18950, 30, 'Pullback',     'EXECUTED',  1, 1, null],
+    ['GBPUSD', 'SELL', 1.2780, 0.0030, 'Trend Follow', 'CANCELLED', 2, 2, null],
+    ['BTCUSD', 'BUY',  44500, 600, 'Reversal',     'EXPIRED',   0.5, 2, null],
+];
+
+$orderCount = 0;
+foreach ($ordersToSeed as [$symbol, $direction, $entry, $slPoints, $setup, $status, $size, $acctNum, $expiresOffset]) {
+    $orderAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
+    $slPrice = $direction === 'BUY' ? $entry - $slPoints : $entry + $slPoints;
+
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'ORDER')")
+        ->execute([
+            'uid' => $userId,
+            'aid' => $orderAccountId,
+            'dir' => $direction,
+            'sym' => $symbol,
+            'entry' => $entry,
+            'size' => $size,
+            'setup' => json_encode([$setup]),
+            'sl_pts' => $slPoints,
+            'sl_price' => $slPrice,
+        ]);
+    $positionId = (int) $pdo->lastInsertId();
+
+    $createdAt = $now->format('Y-m-d H:i:s');
+    $expiresAt = null;
+    if ($expiresOffset !== null) {
+        $exp = clone $now;
+        $exp->modify("+{$expiresOffset} day");
+        $expiresAt = $exp->format('Y-m-d H:i:s');
+    }
+
+    $pdo->prepare("INSERT INTO orders (position_id, created_at, expires_at, status)
+        VALUES (:pid, :created, :expires, :status)")
+        ->execute([
+            'pid' => $positionId,
+            'created' => $createdAt,
+            'expires' => $expiresAt,
+            'status' => $status,
+        ]);
+    $orderId = (int) $pdo->lastInsertId();
+
+    if ($status === 'EXECUTED') {
+        // EXECUTED order → child trade (opened, still active)
+        $pdo->prepare("UPDATE positions SET position_type = 'TRADE' WHERE id = :id")
+            ->execute(['id' => $positionId]);
+        $pdo->prepare("INSERT INTO trades (position_id, source_order_id, opened_at, remaining_size, status)
+            VALUES (:pid, :oid, :opened, :size, 'OPEN')")
+            ->execute([
+                'pid' => $positionId,
+                'oid' => $orderId,
+                'opened' => $createdAt,
+                'size' => $size,
+            ]);
+    }
+
+    $orderCount++;
+}
+
 // ── 7. Create custom field "Tendance" ──────────────────────
 $pdo->prepare("INSERT INTO custom_field_definitions (user_id, name, field_type, options, sort_order, is_active)
     VALUES (:uid, 'Tendance', 'SELECT', :options, 0, 1)")
@@ -326,6 +450,6 @@ foreach ([$accountId, $accountId2, $accountId3] as $aid) {
         ->execute(['pnl' => $pnl, 'id' => $aid]);
 }
 
-echo "Created {$tradeCount} closed trades + {$openCount} open trades\n";
+echo "Created {$tradeCount} closed + {$openCount} open + {$securedCount} secured trades, {$orderCount} orders\n";
 echo "\nDemo account ready!\n";
 echo "Login: {$email} / {$password}\n";
