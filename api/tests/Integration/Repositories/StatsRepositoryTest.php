@@ -1152,4 +1152,93 @@ class StatsRepositoryTest extends TestCase
         $this->assertSame(1, (int) $indexed['BROKER_DEMO']['wins']);
         $this->assertSame(0, (int) $indexed['BROKER_DEMO']['losses']);
     }
+
+    // ── getStatsForSetupCombination ─────────────────────────────
+
+    public function testGetStatsForSetupCombinationMatchesAllSetupsPresent(): void
+    {
+        // Trade A has both Breakout and Pullback → matches the combination
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["Breakout","Pullback"]']);
+        // Trade B has only Breakout → does NOT match
+        $this->createClosedTrade(200.0, 'TP', ['setup' => '["Breakout"]']);
+        // Trade C has only Pullback → does NOT match
+        $this->createClosedTrade(-50.0, 'SL', ['setup' => '["Pullback"]']);
+
+        $result = $this->repo->getStatsForSetupCombination($this->userId, ['Breakout', 'Pullback']);
+
+        $this->assertSame(1, $result['total_trades']);
+        $this->assertEquals(100.0, $result['total_pnl']);
+        $this->assertSame(1, $result['wins']);
+    }
+
+    public function testGetStatsForSetupCombinationMatchesSupersetTrades(): void
+    {
+        // Trades carrying [A, B, C] still match a [A, B] combination —
+        // "all of the requested setups must be present" (AND), nothing
+        // says the trade may not carry additional setups too.
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["A","B","C"]']);
+        $this->createClosedTrade(200.0, 'TP', ['setup' => '["A","B"]']);
+        $this->createClosedTrade(-50.0, 'SL', ['setup' => '["A"]']);
+
+        $result = $this->repo->getStatsForSetupCombination($this->userId, ['A', 'B']);
+
+        $this->assertSame(2, $result['total_trades']);
+        $this->assertEquals(300.0, $result['total_pnl']);
+    }
+
+    public function testGetStatsForSetupCombinationReturnsZerosWhenNoMatch(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["Breakout"]']);
+
+        $result = $this->repo->getStatsForSetupCombination($this->userId, ['Pullback', 'Range']);
+
+        $this->assertSame(0, $result['total_trades']);
+        $this->assertEquals(0.0, $result['total_pnl']);
+        $this->assertSame(0, $result['wins']);
+        $this->assertSame(0, $result['losses']);
+        $this->assertNull($result['avg_rr']);
+    }
+
+    public function testGetStatsForSetupCombinationEmptyNamesReturnsBaseline(): void
+    {
+        // Empty setup name list = baseline (no JSON_CONTAINS filter, just the
+        // global filters). Used by the service to compute the comparison set.
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["A"]']);
+        $this->createClosedTrade(-50.0, 'SL', ['setup' => '["B"]']);
+
+        $result = $this->repo->getStatsForSetupCombination($this->userId, []);
+
+        $this->assertSame(2, $result['total_trades']);
+        $this->assertEquals(50.0, $result['total_pnl']);
+    }
+
+    public function testGetStatsForSetupCombinationRespectsAccountFilter(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["A","B"]', 'account_id' => $this->accountId]);
+        $this->createClosedTrade(200.0, 'TP', ['setup' => '["A","B"]', 'account_id' => $this->accountId2]);
+
+        $result = $this->repo->getStatsForSetupCombination(
+            $this->userId,
+            ['A', 'B'],
+            ['account_id' => $this->accountId]
+        );
+
+        $this->assertSame(1, $result['total_trades']);
+        $this->assertEquals(100.0, $result['total_pnl']);
+    }
+
+    public function testGetStatsForSetupCombinationRespectsDateRangeFilter(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["A","B"]', 'closed_at' => '2026-01-10 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['setup' => '["A","B"]', 'closed_at' => '2026-02-10 10:00:00']);
+
+        $result = $this->repo->getStatsForSetupCombination(
+            $this->userId,
+            ['A', 'B'],
+            ['date_from' => '2026-01-01', 'date_to' => '2026-01-31']
+        );
+
+        $this->assertSame(1, $result['total_trades']);
+        $this->assertEquals(100.0, $result['total_pnl']);
+    }
 }

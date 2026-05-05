@@ -352,7 +352,7 @@ $router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);
-$statsService = new StatsService($statsRepo, $accountRepo, $userRepo);
+$statsService = new StatsService($statsRepo, $accountRepo, $userRepo, $setupRepo);
 $statsController = new StatsController($statsService);
 
 $router->get('/stats/overview', [$statsController, 'dashboard'], [$authMiddleware, $requireSubscription]);
@@ -360,6 +360,7 @@ $router->get('/stats/charts', [$statsController, 'charts'], [$authMiddleware, $r
 $router->get('/stats/by-symbol', [$statsController, 'bySymbol'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/by-direction', [$statsController, 'byDirection'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/by-setup', [$statsController, 'bySetup'], [$authMiddleware, $requireSubscription]);
+$router->post('/stats/setup-combinations', [$statsController, 'setupCombinations'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/by-period', [$statsController, 'byPeriod'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/rr-distribution', [$statsController, 'rrDistribution'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/heatmap', [$statsController, 'heatmap'], [$authMiddleware, $requireSubscription]);

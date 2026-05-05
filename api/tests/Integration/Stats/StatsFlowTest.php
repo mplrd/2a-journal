@@ -457,4 +457,154 @@ class StatsFlowTest extends TestCase
         $this->assertSame(0, $body['data']['overview']['total_trades']);
         $this->assertCount(0, $body['data']['recent_trades']);
     }
+
+    // ── Setup combination analysis ──────────────────────────────
+
+    private function createTradeWithSetups(int $accountId, float $exitPrice, string $exitType, array $setups): int
+    {
+        $response = $this->router->dispatch($this->authRequest('POST', '/trades', [
+            'account_id' => $accountId,
+            'direction' => 'BUY',
+            'symbol' => 'NASDAQ',
+            'entry_price' => 18500,
+            'size' => 1,
+            'setup' => $setups,
+            'sl_points' => 50,
+            'opened_at' => '2026-01-15 10:00:00',
+        ]));
+        $tradeId = $response->getBody()['data']['id'];
+
+        $this->router->dispatch($this->authRequest('POST', "/trades/{$tradeId}/close", [
+            'exit_price' => $exitPrice,
+            'exit_size' => 1,
+            'exit_type' => $exitType,
+        ]));
+
+        return (int) $tradeId;
+    }
+
+    private function createSetupForUser(string $label): int
+    {
+        $response = $this->router->dispatch($this->authRequest('POST', '/setups', ['label' => $label]));
+        return (int) $response->getBody()['data']['id'];
+    }
+
+    public function testSetupCombinationsRequiresAuth(): void
+    {
+        $request = Request::create('POST', '/stats/setup-combinations', [
+            'combinations' => [['setup_ids' => [1]]],
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+        }
+    }
+
+    public function testSetupCombinationsAcceptsMissingCombinationsKeyAndReturnsBaselineOnly(): void
+    {
+        $this->createTradeWithSetups($this->accountId, 18600, 'TP', ['Breakout']);
+        $this->createTradeWithSetups($this->accountId, 18400, 'SL', ['Breakout']);
+
+        $response = $this->router->dispatch($this->authRequest('POST', '/stats/setup-combinations', []));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertSame(2, (int) $body['data']['baseline']['total_trades']);
+        $this->assertSame([], $body['data']['combinations']);
+    }
+
+    public function testSetupCombinationsAcceptsEmptyArrayAndReturnsBaselineOnly(): void
+    {
+        $this->createTradeWithSetups($this->accountId, 18600, 'TP', ['Breakout']);
+
+        $response = $this->router->dispatch($this->authRequest('POST', '/stats/setup-combinations', [
+            'combinations' => [],
+        ]));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, (int) $body['data']['baseline']['total_trades']);
+        $this->assertSame([], $body['data']['combinations']);
+    }
+
+    public function testSetupCombinationsRejectsForeignSetup(): void
+    {
+        $register = $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'other-user@test.com',
+            'password' => 'Test1234',
+        ]));
+        $otherToken = $register->getBody()['data']['access_token'];
+        $otherSetupResponse = $this->router->dispatch(Request::create('POST', '/setups', [
+            'label' => 'OtherSetup',
+        ], [], ['Authorization' => "Bearer {$otherToken}"]));
+        $foreignId = (int) $otherSetupResponse->getBody()['data']['id'];
+
+        try {
+            $this->router->dispatch($this->authRequest('POST', '/stats/setup-combinations', [
+                'combinations' => [['setup_ids' => [$foreignId]]],
+            ]));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+    }
+
+    public function testSetupCombinationsReturnsBaselineAndOneEntryPerCombination(): void
+    {
+        $setupA = $this->createSetupForUser('SetupA');
+        $setupB = $this->createSetupForUser('SetupB');
+        $setupC = $this->createSetupForUser('SetupC');
+
+        // Combo [A,B] matches 2 trades, combo [A,C] matches 1 trade,
+        // baseline = 4 trades total.
+        $this->createTradeWithSetups($this->accountId, 18600, 'TP', ['SetupA', 'SetupB']);
+        $this->createTradeWithSetups($this->accountId, 18550, 'TP', ['SetupA', 'SetupB']);
+        $this->createTradeWithSetups($this->accountId, 18650, 'TP', ['SetupA', 'SetupC']);
+        $this->createTradeWithSetups($this->accountId, 18400, 'SL', ['SetupA']);
+
+        $response = $this->router->dispatch($this->authRequest('POST', '/stats/setup-combinations', [
+            'combinations' => [
+                ['setup_ids' => [$setupA, $setupB]],
+                ['setup_ids' => [$setupA, $setupC]],
+            ],
+        ]));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertTrue($body['success']);
+        $this->assertArrayHasKey('baseline', $body['data']);
+        $this->assertArrayHasKey('combinations', $body['data']);
+        $this->assertCount(2, $body['data']['combinations']);
+
+        $this->assertSame(['SetupA', 'SetupB'], $body['data']['combinations'][0]['setups']);
+        $this->assertSame(2, (int) $body['data']['combinations'][0]['stats']['total_trades']);
+
+        $this->assertSame(['SetupA', 'SetupC'], $body['data']['combinations'][1]['setups']);
+        $this->assertSame(1, (int) $body['data']['combinations'][1]['stats']['total_trades']);
+
+        $this->assertSame(4, (int) $body['data']['baseline']['total_trades']);
+    }
+
+    public function testSetupCombinationsAppliesAccountFilter(): void
+    {
+        $setupA = $this->createSetupForUser('SetupA');
+        $setupB = $this->createSetupForUser('SetupB');
+
+        $this->createTradeWithSetups($this->accountId, 18600, 'TP', ['SetupA', 'SetupB']);
+        $this->createTradeWithSetups($this->accountId2, 18600, 'TP', ['SetupA', 'SetupB']);
+
+        $response = $this->router->dispatch($this->authRequest('POST', '/stats/setup-combinations', [
+            'combinations' => [['setup_ids' => [$setupA, $setupB]]],
+            'account_id' => $this->accountId,
+        ]));
+        $body = $response->getBody();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, (int) $body['data']['combinations'][0]['stats']['total_trades']);
+        $this->assertSame(1, (int) $body['data']['baseline']['total_trades']);
+    }
 }
