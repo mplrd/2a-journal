@@ -198,6 +198,34 @@ function directionSeverity(direction) {
   return direction === Direction.BUY ? 'success' : 'danger'
 }
 
+// Picto-form direction + status for compact / mobile views (saves the
+// ~140 px of two PrimeVue Tags). Color follows the Tag severity so the
+// glance-instant cue is preserved.
+function directionIcon(direction) {
+  return direction === Direction.BUY ? 'pi pi-arrow-up' : 'pi pi-arrow-down'
+}
+function directionIconClass(direction) {
+  return direction === Direction.BUY ? 'text-success' : 'text-danger'
+}
+function statusIcon(status) {
+  switch (status) {
+    case OrderStatus.PENDING: return 'pi pi-clock'
+    case OrderStatus.EXECUTED: return 'pi pi-check-circle'
+    case OrderStatus.CANCELED: return 'pi pi-times-circle'
+    case OrderStatus.EXPIRED: return 'pi pi-ban'
+    default: return 'pi pi-circle'
+  }
+}
+function statusIconClass(status) {
+  switch (status) {
+    case OrderStatus.PENDING: return 'text-blue-600 dark:text-blue-400'
+    case OrderStatus.EXECUTED: return 'text-success'
+    case OrderStatus.CANCELED: return 'text-orange-600 dark:text-orange-400'
+    case OrderStatus.EXPIRED: return 'text-danger'
+    default: return 'text-gray-500'
+  }
+}
+
 function statusSeverity(status) {
   switch (status) {
     case OrderStatus.PENDING:
@@ -299,7 +327,14 @@ function statusSeverity(status) {
         <template #body="{ data }">{{ accountName(data.account_id) }}</template>
       </Column>
       <Column field="symbol" :header="t('positions.symbol')">
-        <template #body="{ data }">{{ symbolName(data.symbol) }}</template>
+        <template #body="{ data }">
+          <span v-if="isCompact" class="inline-flex items-center gap-1.5">
+            <i :class="[directionIcon(data.direction), directionIconClass(data.direction), 'text-xs']" v-tooltip.top="t(`positions.directions.${data.direction}`)"></i>
+            <span>{{ symbolName(data.symbol) }}</span>
+            <i :class="[statusIcon(data.status), statusIconClass(data.status), 'text-xs']" v-tooltip.top="t(`orders.statuses.${data.status}`)"></i>
+          </span>
+          <span v-else>{{ symbolName(data.symbol) }}</span>
+        </template>
       </Column>
       <Column v-if="!isCompact" field="direction" :header="t('positions.direction')">
         <template #body="{ data }">
@@ -316,7 +351,7 @@ function statusSeverity(status) {
           <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
         </template>
       </Column>
-      <Column v-if="!isCompact" field="setup" :header="t('positions.setup')">
+      <Column field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
             <span
@@ -335,7 +370,7 @@ function statusSeverity(status) {
           {{ Number(data.sl_price).toLocaleString() }}
         </template>
       </Column>
-      <Column field="status" :header="t('orders.status')">
+      <Column v-if="!isCompact" field="status" :header="t('orders.status')">
         <template #body="{ data }">
           <Tag :value="t(`orders.statuses.${data.status}`)" :severity="statusSeverity(data.status)" />
         </template>
@@ -392,33 +427,43 @@ function statusSeverity(status) {
       @page="onPage"
     >
       <template #default="{ item }">
-        <div class="relative p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`order-tile-${item.id}`">
-          <div class="absolute top-2 right-2 flex gap-1 flex-wrap justify-end max-w-[60%]">
-            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
-            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
-            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-check" severity="success" size="small" text rounded :aria-label="t('orders.execute')" @click="handleExecute(item)" />
-            <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-times" severity="warn" size="small" text rounded :aria-label="t('orders.cancel_action')" @click="handleCancel(item)" />
-            <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
-          </div>
-          <div class="flex items-center gap-2 mb-2 pr-2">
-            <Tag :value="t(`positions.directions.${item.direction}`)" :severity="directionSeverity(item.direction)" />
-            <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
-            <Tag :value="t(`orders.statuses.${item.status}`)" :severity="statusSeverity(item.status)" />
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">{{ accountName(item.account_id) }}</div>
-          <div class="grid grid-cols-3 gap-x-3 text-sm">
+        <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`order-tile-${item.id}`">
+          <div class="grid grid-cols-[1fr_auto] gap-2">
             <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
-              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+              <div class="flex items-center gap-1.5 mb-1.5">
+                <i :class="[directionIcon(item.direction), directionIconClass(item.direction)]" v-tooltip.top="t(`positions.directions.${item.direction}`)"></i>
+                <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
+                <i :class="[statusIcon(item.status), statusIconClass(item.status)]" v-tooltip.top="t(`orders.statuses.${item.status}`)"></i>
+              </div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">{{ accountName(item.account_id) }}</div>
+              <div class="grid grid-cols-3 gap-x-3 text-sm">
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
+                  <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
+                  <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
+                  <div class="font-mono tabular-nums">{{ Number(item.sl_price).toLocaleString() }}</div>
+                </div>
+              </div>
             </div>
-            <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
-              <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
-            </div>
-            <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
-              <div class="font-mono tabular-nums">{{ Number(item.sl_price).toLocaleString() }}</div>
+            <div class="flex flex-col items-end gap-1">
+              <!-- Mgmt row: PENDING-only lifecycle actions. -->
+              <div v-if="item.status === OrderStatus.PENDING" class="flex gap-1">
+                <Button icon="pi pi-check" severity="success" size="small" text rounded :aria-label="t('orders.execute')" @click="handleExecute(item)" />
+                <Button icon="pi pi-times" severity="warn" size="small" text rounded :aria-label="t('orders.cancel_action')" @click="handleCancel(item)" />
+              </div>
+              <!-- Secondary stack -->
+              <div class="flex flex-col gap-1">
+                <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
+                <Button v-if="item.status === OrderStatus.PENDING" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
+                <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
+                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
+              </div>
             </div>
           </div>
           <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">

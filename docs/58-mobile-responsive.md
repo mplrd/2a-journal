@@ -122,8 +122,19 @@ Wrapper générique : prend une liste d'`items`, expose chaque item via un slot 
 | Vue | TileList (mobile) | Compact (768–1023) — colonnes masquées | Filtres pliables | FAB | Bulk-select mobile |
 |-----|:---:|:---|:---:|:---:|:---:|
 | **Accounts** | ✅ | `currency`, `initial_capital`, `broker` | — (pas de filtre) | ✅ | — (pas de bulk) |
-| **Orders** | ✅ | `direction`, `setup`, `expires_at`, `order_created_at` | ✅ | ✅ | — (pas de bulk) |
-| **Trades** | ✅ | `setup`, `remaining_size`, `opened_at`, custom fields | ✅ | ✅ | ❌ (cf. limitations) |
+| **Orders** | ✅ | `direction`, `status`, `expires_at`, `order_created_at` | ✅ | ✅ | — (pas de bulk) |
+| **Trades** | ✅ | `direction`, `status`, `remaining_size`, `opened_at`, custom fields | ✅ | ✅ | ❌ (cf. limitations) |
+
+### Patterns spécifiques compact + mobile
+
+**Direction + statut → pictos préfixant le symbole** (Orders + Trades) : les Tags PrimeVue prenaient ~140 px par ligne. En compact + tuile mobile, on les remplace par 2 icônes `pi pi-arrow-up/down` (couleur direction) et `pi pi-circle/lock/check-circle` (couleur statut), encadrant le nom du symbole. Tooltip sur chaque icône pour conserver la lisibilité. Le `setup` est ainsi ramené dans la grille compact sans perdre de place.
+
+**Taille = `remaining_size (size)`** (Trades) : en compact, la colonne `remaining_size` est masquée mais l'info reste accessible — la colonne `size` affiche `{remaining}` en valeur principale et `({size})` en plus petit/muté. Si remaining = size (aucune partielle), seule la valeur principale est rendue. Même format dans la tuile mobile.
+
+**Tuile mobile — actions en L inversé** (`⌐`) : les boutons d'action étaient en `absolute top-right` avec `flex-wrap max-w-[60%]`, ce qui chevauchait le contenu (notamment les setups en bas de tuile) dès qu'il y avait plus de 3 boutons. Restructuration en grille `[content (1fr) | actions (auto)]` avec à droite :
+- ligne horizontale en haut : groupe de gestion (lifecycle / mgmt actions selon la vue)
+- colonne verticale en dessous, alignée à droite : actions secondaires (edit, share, delete)
+La rangée des setups reste en pleine largeur sous la grille, libérée de toute contrainte de l'overlay.
 
 Les autres colonnes restent visibles dans tous les modes (desktop, compact). Les valeurs masquées en compact restent accessibles via le détail / l'édition de l'item.
 

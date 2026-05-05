@@ -391,6 +391,16 @@ function directionSeverity(direction) {
   return direction === Direction.BUY ? 'success' : 'danger'
 }
 
+// Picto-form direction + status for compact / mobile views (saves the
+// ~140 px of two PrimeVue Tags). Color follows the Tag severity so the
+// glance-instant cue is preserved.
+function directionIcon(direction) {
+  return direction === Direction.BUY ? 'pi pi-arrow-up' : 'pi pi-arrow-down'
+}
+function directionIconClass(direction) {
+  return direction === Direction.BUY ? 'text-success' : 'text-danger'
+}
+
 function statusSeverity(status) {
   switch (status) {
     case TradeStatus.OPEN:
@@ -401,6 +411,31 @@ function statusSeverity(status) {
       return 'success'
     default:
       return 'info'
+  }
+}
+
+function statusIcon(status) {
+  switch (status) {
+    case TradeStatus.OPEN:
+      return 'pi pi-circle'
+    case TradeStatus.SECURED:
+      return 'pi pi-lock'
+    case TradeStatus.CLOSED:
+      return 'pi pi-check-circle'
+    default:
+      return 'pi pi-circle'
+  }
+}
+function statusIconClass(status) {
+  switch (status) {
+    case TradeStatus.OPEN:
+      return 'text-blue-600 dark:text-blue-400'
+    case TradeStatus.SECURED:
+      return 'text-orange-600 dark:text-orange-400'
+    case TradeStatus.CLOSED:
+      return 'text-success'
+    default:
+      return 'text-gray-500'
   }
 }
 
@@ -539,9 +574,16 @@ function pnlClass(pnl) {
         <template #body="{ data }">{{ accountName(data.account_id) }}</template>
       </Column>
       <Column field="symbol" :header="t('positions.symbol')">
-        <template #body="{ data }">{{ symbolName(data.symbol) }}</template>
+        <template #body="{ data }">
+          <span v-if="isCompact" class="inline-flex items-center gap-1.5">
+            <i :class="[directionIcon(data.direction), directionIconClass(data.direction), 'text-xs']" v-tooltip.top="t(`positions.directions.${data.direction}`)"></i>
+            <span>{{ symbolName(data.symbol) }}</span>
+            <i :class="[statusIcon(data.status), statusIconClass(data.status), 'text-xs']" v-tooltip.top="t(`trades.statuses.${data.status}`)"></i>
+          </span>
+          <span v-else>{{ symbolName(data.symbol) }}</span>
+        </template>
       </Column>
-      <Column field="direction" :header="t('positions.direction')">
+      <Column v-if="!isCompact" field="direction" :header="t('positions.direction')">
         <template #body="{ data }">
           <Tag :value="t(`positions.directions.${data.direction}`)" :severity="directionSeverity(data.direction)" />
         </template>
@@ -553,10 +595,14 @@ function pnlClass(pnl) {
       </Column>
       <Column field="size" :header="t('positions.size')">
         <template #body="{ data }">
-          <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
+          <span class="font-mono tabular-nums">{{ formatSize(isCompact ? data.remaining_size : data.size) }}</span>
+          <span
+            v-if="isCompact && Number(data.remaining_size) !== Number(data.size)"
+            class="text-xs text-gray-500 dark:text-gray-400 ml-1 font-mono tabular-nums"
+          >({{ formatSize(data.size) }})</span>
         </template>
       </Column>
-      <Column v-if="!isCompact" field="setup" :header="t('positions.setup')">
+      <Column field="setup" :header="t('positions.setup')">
         <template #body="{ data }">
           <div class="flex flex-wrap gap-1">
             <span
@@ -580,7 +626,7 @@ function pnlClass(pnl) {
           {{ new Date(data.opened_at).toLocaleString() }}
         </template>
       </Column>
-      <Column field="status" :header="t('trades.status')">
+      <Column v-if="!isCompact" field="status" :header="t('trades.status')">
         <template #body="{ data }">
           <Tag :value="t(`trades.statuses.${data.status}`)" :severity="statusSeverity(data.status)" />
         </template>
@@ -665,38 +711,57 @@ function pnlClass(pnl) {
       @page="onPage"
     >
       <template #default="{ item }">
-        <div class="relative p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`trade-tile-${item.id}`">
-          <div class="absolute top-2 right-2 flex gap-1 flex-wrap justify-end max-w-[60%]">
-            <Button v-if="item.status !== TradeStatus.CLOSED && getNextObjective(item)" icon="pi pi-angle-double-up" severity="success" size="small" text rounded :aria-label="getNextObjective(item)?.label" @click="openNextObjective(item)" />
-            <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-sign-out" severity="warn" size="small" text rounded :aria-label="t('trades.close_trade')" @click="openCloseDialog(item)" />
-            <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
-            <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
-            <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
-          </div>
-          <div class="flex items-center gap-2 mb-2 pr-2">
-            <Tag :value="t(`positions.directions.${item.direction}`)" :severity="directionSeverity(item.direction)" />
-            <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
-            <Tag :value="t(`trades.statuses.${item.status}`)" :severity="statusSeverity(item.status)" />
-          </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            {{ accountName(item.account_id) }} · {{ new Date(item.opened_at).toLocaleString() }}
-          </div>
-          <div class="grid grid-cols-3 gap-x-3 text-sm">
+        <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" :data-testid="`trade-tile-${item.id}`">
+          <!-- Top row: content (1fr) + actions in inverted-L (auto width).
+               Management group horizontally on row 1, secondary buttons stacked
+               vertically below them, all right-aligned via items-end. -->
+          <div class="grid grid-cols-[1fr_auto] gap-2">
             <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
-              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+              <div class="flex items-center gap-1.5 mb-1.5">
+                <i :class="[directionIcon(item.direction), directionIconClass(item.direction)]" v-tooltip.top="t(`positions.directions.${item.direction}`)"></i>
+                <span class="font-semibold">{{ symbolName(item.symbol) }}</span>
+                <i :class="[statusIcon(item.status), statusIconClass(item.status)]" v-tooltip.top="t(`trades.statuses.${item.status}`)"></i>
+              </div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                {{ accountName(item.account_id) }} · {{ new Date(item.opened_at).toLocaleString() }}
+              </div>
+              <div class="grid grid-cols-3 gap-x-3 text-sm">
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
+                  <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
+                  <div class="font-mono tabular-nums">
+                    {{ formatSize(item.remaining_size) }}<span
+                      v-if="Number(item.remaining_size) !== Number(item.size)"
+                      class="text-xs text-gray-500 dark:text-gray-400 ml-1"
+                    >({{ formatSize(item.size) }})</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('trades.pnl') }}</div>
+                  <div :class="pnlClass(realizedPnl(item))" class="font-mono tabular-nums">
+                    {{ realizedPnl(item) != null ? (realizedPnl(item) >= 0 ? '+' : '') + realizedPnl(item).toFixed(2) : '-' }}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
-              <div class="font-mono tabular-nums">{{ formatSize(item.size) }}</div>
-            </div>
-            <div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('trades.pnl') }}</div>
-              <div :class="pnlClass(realizedPnl(item))" class="font-mono tabular-nums">
-                {{ realizedPnl(item) != null ? (realizedPnl(item) >= 0 ? '+' : '') + realizedPnl(item).toFixed(2) : '-' }}
+            <div class="flex flex-col items-end gap-1">
+              <!-- Mgmt row: shown when the trade is still actionable -->
+              <div v-if="item.status !== TradeStatus.CLOSED" class="flex gap-1">
+                <Button v-if="getNextObjective(item)" icon="pi pi-angle-double-up" severity="success" size="small" text rounded :aria-label="getNextObjective(item)?.label" @click="openNextObjective(item)" />
+                <Button icon="pi pi-sign-out" severity="warn" size="small" text rounded :aria-label="t('trades.close_trade')" @click="openCloseDialog(item)" />
+              </div>
+              <!-- Secondary stack -->
+              <div class="flex flex-col gap-1">
+                <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded :aria-label="t('common.edit')" @click="openEdit(item)" />
+                <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
+                <Button icon="pi pi-trash" severity="danger" size="small" text rounded :aria-label="t('common.delete')" @click="handleDelete(item)" />
               </div>
             </div>
           </div>
+          <!-- Setups: full-width row below the grid, free of the actions column. -->
           <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">
             <span
               v-for="s in parseSetup(item.setup)"
