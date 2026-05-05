@@ -123,6 +123,7 @@ Wrapper générique : prend une liste d'`items`, expose chaque item via un slot 
 |-----|:---:|:---|:---:|:---:|:---:|
 | **Accounts** | ✅ | `currency`, `initial_capital`, `broker` | — (pas de filtre) | ✅ | — (pas de bulk) |
 | **Orders** | ✅ | `direction`, `status`, `expires_at`, `order_created_at` | ✅ | ✅ | — (pas de bulk) |
+| **Positions** | ✅ | `account_id`, `direction`, `first_opened_at` | ✅ | — (lecture seule) | — (pas de bulk) |
 | **Trades** | ✅ | `direction`, `status`, `remaining_size`, `opened_at`, custom fields | ✅ | ✅ | ❌ (cf. limitations) |
 
 ### Patterns spécifiques compact + mobile
