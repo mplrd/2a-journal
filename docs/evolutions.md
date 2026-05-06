@@ -26,6 +26,22 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ---
 
+## Performance / dashboards
+
+### Refonte Performance — layout, agrégats cycliques, splits par catégorie
+
+**Contexte** : le dashboard Performance actuel mélange des widgets utiles avec un widget peu actionnable, et certains agrégats temporels ne sont pas exposés sous l'angle qui aide vraiment à décider.
+
+**À faire** :
+- **P&L par période à côté du P&L par symbole** dans le layout, pour que la lecture "par symbole / par moment" se fasse en un seul coup d'œil. Et surtout : passer le P&L par période à des agrégats **cycliques** plutôt que linéaires — "le lundi", "en semaine 52", "en juin" — beaucoup plus actionnables que "le 17 mars" pour spotter une saisonnalité ou un biais de jour. Côté SQL c'est juste un `DAYOFWEEK / WEEK / MONTH` au lieu de `DATE` dans `getStatsByPeriod` (l'effective date est déjà calculée par `effectiveDate()`), et un toggle UI "linéaire / cyclique" sur le widget.
+- **Splits WR/RR par catégorie de setup** : maintenant que les setups portent une `category` (timeframe / pattern / context, cf. doc 48), on peut splitter le graphe WR/RR par setup en sous-graphes par catégorie — ou a minima sortir un **graphe dédié WR/RR par timeframe**, qui est probablement le découpage le plus parlant. Donnée déjà dispo via `StatsRepository::getStatsBySetup` + jointure `setups.category`.
+- **Virer le widget WR/RR par type de compte** du dashboard pour gagner la place. Le code (`StatsRepository::getStatsByAccountType` + le composant frontend) reste en repo — il pourra resservir dans des widgets configurables plus tard.
+
+**Repéré le** : 2026-05-06.
+**Priorité** : moyenne. Pas bloquant, mais améliore franchement la lisibilité du dashboard.
+
+---
+
 ## Code / conventions
 
 ### Schema fix — unique constraint setups vs soft-delete
