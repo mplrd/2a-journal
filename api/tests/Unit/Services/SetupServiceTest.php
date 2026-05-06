@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Services\SetupService;
 use PHPUnit\Framework\TestCase;
@@ -13,11 +14,13 @@ class SetupServiceTest extends TestCase
 {
     private SetupService $service;
     private SetupRepository $repo;
+    private PositionRepository $positionRepo;
 
     protected function setUp(): void
     {
         $this->repo = $this->createMock(SetupRepository::class);
-        $this->service = new SetupService($this->repo);
+        $this->positionRepo = $this->createMock(PositionRepository::class);
+        $this->service = new SetupService($this->repo, $this->positionRepo);
     }
 
     // ── List ─────────────────────────────────────────────────────
@@ -143,6 +146,7 @@ class SetupServiceTest extends TestCase
     {
         foreach (['timeframe', 'pattern', 'context'] as $category) {
             $repo = $this->createMock(SetupRepository::class);
+            $positionRepo = $this->createMock(PositionRepository::class);
             $setup = ['id' => 1, 'user_id' => 1, 'label' => 'Breakout', 'category' => 'pattern'];
             $repo->method('findById')->willReturn($setup);
             $repo->expects($this->once())
@@ -150,7 +154,7 @@ class SetupServiceTest extends TestCase
                 ->with(1, ['category' => $category])
                 ->willReturn(array_merge($setup, ['category' => $category]));
 
-            $service = new SetupService($repo);
+            $service = new SetupService($repo, $positionRepo);
             $result = $service->update(1, 1, ['category' => $category]);
 
             $this->assertSame($category, $result['category']);

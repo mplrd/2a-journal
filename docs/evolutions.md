@@ -28,7 +28,23 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ## Code / conventions
 
-*(rien à traiter actuellement)*
+### Schema fix — unique constraint setups vs soft-delete
+
+Aujourd'hui : `UNIQUE KEY uk_setups_user_label (user_id, label)` ne tient pas compte de `deleted_at`. Conséquence : un setup soft-deleted bloque la création/le rename d'un autre setup vers le même label, même longtemps après. Workaround actuel (étape 61) : on hard-delete le ghost soft-deleted au moment du rename.
+
+Vrai fix : remplacer la contrainte par une contrainte qui n'applique l'unicité qu'aux lignes actives, via colonne générée :
+
+```sql
+ALTER TABLE setups
+    ADD COLUMN active_label VARCHAR(100)
+        AS (IF(deleted_at IS NULL, label, NULL)) VIRTUAL,
+    DROP INDEX uk_setups_user_label,
+    ADD UNIQUE KEY uk_setups_user_active_label (user_id, active_label);
+```
+
+MariaDB autorise plusieurs NULL dans une UNIQUE → les soft-deleted ne se gênent plus. Migration à planifier hors urgence (pas de bug bloquant après le workaround). Une fois en place, on pourra retirer le hard-delete du ghost dans `SetupService::update` et conserver l'historique soft-deleted complet.
+
+Le même problème existe pour `symbols` (`uk_symbols_user_code`) et probablement d'autres tables avec soft-delete + unique : à auditer en même temps.
 
 ---
 

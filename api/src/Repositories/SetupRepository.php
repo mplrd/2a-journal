@@ -66,6 +66,40 @@ class SetupRepository
         return $row ?: null;
     }
 
+    /**
+     * Look up a setup by (user_id, label) including soft-deleted rows. Used by
+     * the rename flow to detect a soft-deleted ghost that would otherwise
+     * collide with the unique constraint `uk_setups_user_label (user_id, label)`.
+     * Active row is preferred when both exist (impossible per the constraint,
+     * but ordering makes the contract explicit).
+     */
+    public function findAnyByUserAndLabel(int $userId, string $label): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, user_id, label, category, created_at, deleted_at
+             FROM setups WHERE user_id = :user_id AND label = :label
+             ORDER BY deleted_at IS NULL DESC LIMIT 1'
+        );
+        $stmt->execute(['user_id' => $userId, 'label' => $label]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
+    /**
+     * Physically removes a setup row. Used to clear a soft-deleted ghost
+     * that blocks the unique constraint when renaming another setup to the
+     * same label. There is no UI to restore soft-deleted setups, so this is
+     * a safe operation.
+     */
+    public function hardDelete(int $id): bool
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM setups WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+
+        return $stmt->rowCount() > 0;
+    }
+
     public function update(int $id, array $data): ?array
     {
         $fields = [];
