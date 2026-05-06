@@ -187,4 +187,28 @@ class TradeRepositoryTest extends TestCase
         $this->assertSame('SECURED', $updated['status']);
         $this->assertEquals(18600.0, (float) $updated['avg_exit_price']);
     }
+
+    public function testFindAllByUserIdExcludesTradesFromSoftDeletedAccount(): void
+    {
+        $accountRepo = new AccountRepository($this->pdo);
+        $account2 = $accountRepo->create([
+            'user_id' => $this->userId,
+            'name' => 'Account 2',
+            'account_type' => 'BROKER_LIVE',
+        ]);
+        $account2Id = (int) $account2['id'];
+
+        $pos1 = $this->createPosition(['account_id' => $this->accountId, 'symbol' => 'NASDAQ']);
+        $pos2 = $this->createPosition(['account_id' => $account2Id, 'symbol' => 'DAX']);
+        $this->repo->create(['position_id' => (int) $pos1['id'], 'opened_at' => '2026-01-15 10:00:00', 'remaining_size' => 1.0]);
+        $this->repo->create(['position_id' => (int) $pos2['id'], 'opened_at' => '2026-01-15 11:00:00', 'remaining_size' => 1.0]);
+
+        $accountRepo->softDelete($account2Id);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(1, $result['total']);
+        $this->assertSame('NASDAQ', $result['items'][0]['symbol']);
+    }
 }

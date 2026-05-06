@@ -1241,4 +1241,61 @@ class StatsRepositoryTest extends TestCase
         $this->assertSame(1, $result['total_trades']);
         $this->assertEquals(100.0, $result['total_pnl']);
     }
+
+    // ── soft-deleted accounts excluded ─────────────────────────────
+
+    public function testGetOverviewExcludesTradesFromSoftDeletedAccount(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(200.0, 'TP', ['account_id' => $this->accountId2]);
+
+        (new AccountRepository($this->pdo))->softDelete($this->accountId2);
+
+        $overview = $this->repo->getOverview($this->userId);
+
+        $this->assertSame(1, $overview['total_trades']);
+        $this->assertEquals(100.0, (float) $overview['total_pnl']);
+    }
+
+    public function testGetStatsByAccountExcludesSoftDeletedAccount(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['account_id' => $this->accountId]);
+        $this->createClosedTrade(200.0, 'TP', ['account_id' => $this->accountId2]);
+
+        (new AccountRepository($this->pdo))->softDelete($this->accountId2);
+
+        $rows = $this->repo->getStatsByAccount($this->userId);
+
+        $this->assertCount(1, $rows);
+        $this->assertSame($this->accountId, (int) $rows[0]['account_id']);
+    }
+
+    public function testGetOpenTradesExcludesSoftDeletedAccount(): void
+    {
+        // OPEN trade on the account about to be soft-deleted.
+        $position = $this->positionRepo->create([
+            'user_id' => $this->userId,
+            'account_id' => $this->accountId2,
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => '15000.00000',
+            'size' => '1.00000',
+            'setup' => '["Breakout"]',
+            'sl_points' => '50.00',
+            'sl_price' => '14950.00000',
+            'position_type' => 'TRADE',
+        ]);
+        $this->tradeRepo->create([
+            'position_id' => (int) $position['id'],
+            'opened_at' => '2026-01-15 10:00:00',
+            'remaining_size' => 1.0,
+            'status' => 'OPEN',
+        ]);
+
+        (new AccountRepository($this->pdo))->softDelete($this->accountId2);
+
+        $open = $this->repo->getOpenTrades($this->userId);
+
+        $this->assertCount(0, $open);
+    }
 }

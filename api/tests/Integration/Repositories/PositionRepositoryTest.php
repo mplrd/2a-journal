@@ -362,4 +362,55 @@ class PositionRepositoryTest extends TestCase
         $this->assertCount(1, $result);
         $this->assertEquals(1.0, (float) $result[0]['total_size']);
     }
+
+    // ── soft-deleted accounts excluded ─────────────────────────────
+
+    public function testFindAllByUserIdExcludesPositionsFromSoftDeletedAccount(): void
+    {
+        $accountRepo = new AccountRepository($this->pdo);
+        $account2 = $accountRepo->create([
+            'user_id' => $this->userId,
+            'name' => 'Account 2',
+            'account_type' => 'BROKER_LIVE',
+        ]);
+        $account2Id = (int) $account2['id'];
+
+        $this->insertPosition(['account_id' => $this->accountId, 'symbol' => 'NASDAQ']);
+        $this->insertPosition(['account_id' => $account2Id, 'symbol' => 'DAX']);
+
+        $accountRepo->softDelete($account2Id);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        $this->assertCount(1, $result['items']);
+        $this->assertSame(1, $result['total']);
+        $this->assertSame('NASDAQ', $result['items'][0]['symbol']);
+    }
+
+    public function testAggregatedExcludesSoftDeletedAccount(): void
+    {
+        $accountRepo = new AccountRepository($this->pdo);
+        $account2 = $accountRepo->create([
+            'user_id' => $this->userId,
+            'name' => 'Account 2',
+            'account_type' => 'BROKER_LIVE',
+        ]);
+        $account2Id = (int) $account2['id'];
+
+        $this->insertPositionWithTrade(
+            ['symbol' => 'NASDAQ', 'account_id' => $this->accountId],
+            ['remaining_size' => '1.0000', 'status' => 'OPEN']
+        );
+        $this->insertPositionWithTrade(
+            ['symbol' => 'DAX', 'account_id' => $account2Id],
+            ['remaining_size' => '2.0000', 'status' => 'OPEN']
+        );
+
+        $accountRepo->softDelete($account2Id);
+
+        $result = $this->repo->findAggregatedByUserId($this->userId);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('NASDAQ', $result[0]['symbol']);
+    }
 }
