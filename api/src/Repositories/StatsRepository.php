@@ -41,7 +41,11 @@ class StatsRepository
      */
     private function buildWhereClause(int $userId, array $filters = []): array
     {
-        $where = "WHERE p.user_id = :user_id AND t.pnl IS NOT NULL";
+        // Soft-deleted accounts must be excluded from every aggregation. The EXISTS
+        // is rewritten as a semi-join by MariaDB since accounts.id is the PK, so
+        // perf is equivalent to an explicit INNER JOIN.
+        $where = "WHERE p.user_id = :user_id AND t.pnl IS NOT NULL"
+               . " AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = p.account_id AND a.deleted_at IS NULL)";
         $params = ['user_id' => $userId];
 
         if (!empty($filters['account_ids']) && is_array($filters['account_ids'])) {
@@ -522,7 +526,8 @@ class StatsRepository
      */
     public function getOpenTrades(int $userId, int $limit = 5, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured)';
+        $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured)'
+               . ' AND a.deleted_at IS NULL';
         $params = [
             'user_id' => $userId,
             'status_open' => TradeStatus::OPEN->value,

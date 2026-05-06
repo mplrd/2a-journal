@@ -45,7 +45,7 @@ Tickets restants à traiter / arbitrer / clarifier.
 | ID | Titre | Type | Priorité | Effort | Statut |
 |----|-------|------|----------|--------|--------|
 | [B-03](#b-03) | Champ "prix d'entrée" obligatoire en import custom mais non utilisé | Bug | — | — | 🚫 |
-| [E-02](#e-02) | Source d'import : Ouinex | Évol | Moyenne | Moyen | 🟡 |
+| [E-02](#e-02) | Source d'import : Ouinex | Évol | Moyenne | Moyen | ⏳ |
 | [E-03](#e-03) | Espace "questions / remarques" pour utilisateurs | Évol | Moyenne | Moyen | 🟡 |
 | [E-04](#e-04) | Imports scindés / sélection des données à analyser | Évol | À arbitrer | Élevé | 🟡 |
 | [E-09](#e-09) | Source d'import : IG | Évol | Moyenne | Moyen | 🟡 |
@@ -89,14 +89,15 @@ Tickets restants à traiter / arbitrer / clarifier.
 - **Livré** : édition inline du label **et** de la catégorie dans la grid (icône crayon → `<InputText>` + `<Select>` + ✓/✗, patch minimal). Cf. `docs/53-setup-inline-edit.md`.
 
 <a id="e-02"></a>
-#### E-02. Source d'import : Ouinex — 🟡
+#### E-02. Source d'import : Ouinex — ⏳ _(en cours, branche `feat/import-ouinex`)_
 
 > "Faudrait peut-être proposer en sources d'import 'ouinex' (…) non ?"
 
 - **Type** : nouvelle intégration broker.
-- **Effort** : moyen (pattern : cf. `46-import-multi-format.md`).
-- **Priorité** : à arbitrer selon demande utilisateurs.
-- **Lien** : voir aussi [E-09](#e-09) (IG, autre intégration mentionnée dans le même retour).
+- **Pivot architectural** (2026-05-05) : Ouinex est une **API GraphQL**, pas un broker qui exporte un format CSV exploitable (export order-by-order, incompatible avec le pipeline d'import round-trip). On raccroche au pattern `ConnectorInterface` du broker-sync existant (cTrader / MetaApi), pas au pipeline d'import fichier.
+- **Plan détaillé** : `docs/evolutions.md#e-02--connexion-ouinex-broker-sync-pas-import-fichier` — découpé en Phase 1 (derivatives, mapping direct depuis `closed_margin_positions`) + Phase 2 (spot, nécessite un `LegPairingService` FIFO).
+- **Branche** : `feat/import-ouinex` (créée 2026-05-05, en attente de la passe de fixs sur develop avant de démarrer le code).
+- **Lien** : voir aussi [E-09](#e-09) (IG, autre intégration mentionnée dans le même retour — même approche probablement).
 
 <a id="e-03"></a>
 #### E-03. Espace "questions / remarques" pour utilisateurs — 🟡

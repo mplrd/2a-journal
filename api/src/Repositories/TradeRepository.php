@@ -68,7 +68,10 @@ class TradeRepository
     public function findAllByUserId(int $userId, array $filters = [], int $limit = 50, int $offset = 0): array
     {
         $joins = '';
-        $where = 'WHERE p.user_id = :user_id';
+        // Trades belonging to soft-deleted accounts must not appear in the listing.
+        // EXISTS on accounts.id (PK) is rewritten as a semi-join by MariaDB.
+        $where = 'WHERE p.user_id = :user_id'
+               . ' AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = p.account_id AND a.deleted_at IS NULL)';
         $params = ['user_id' => $userId];
 
         // `account_ids` (list) takes precedence over the legacy `account_id`
