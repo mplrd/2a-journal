@@ -212,4 +212,56 @@ class SetupRepositoryTest extends TestCase
         $result = $this->repo->findAllByUserId($this->userId);
         $this->assertCount(0, $result);
     }
+
+    // ── findAnyByUserAndLabel + hardDelete (rename conflict resolution) ──
+
+    public function testFindAnyByUserAndLabelIncludesSoftDeleted(): void
+    {
+        $created = $this->repo->create($this->validData(['label' => 'Foo']));
+        $this->repo->softDelete((int)$created['id']);
+
+        $found = $this->repo->findAnyByUserAndLabel($this->userId, 'Foo');
+
+        $this->assertNotNull($found);
+        $this->assertSame((int)$created['id'], (int)$found['id']);
+        $this->assertNotNull($found['deleted_at']);
+    }
+
+    public function testFindAnyByUserAndLabelReturnsActiveRowWhenBothExistImpossible(): void
+    {
+        // Unique constraint prevents two active rows with the same (user_id, label),
+        // but findAnyByUserAndLabel should still return the active one consistently.
+        $created = $this->repo->create($this->validData(['label' => 'Foo']));
+
+        $found = $this->repo->findAnyByUserAndLabel($this->userId, 'Foo');
+
+        $this->assertNotNull($found);
+        $this->assertSame((int)$created['id'], (int)$found['id']);
+        $this->assertNull($found['deleted_at']);
+    }
+
+    public function testFindAnyByUserAndLabelReturnsNullWhenAbsent(): void
+    {
+        $this->assertNull($this->repo->findAnyByUserAndLabel($this->userId, 'Nope'));
+    }
+
+    public function testHardDeleteRemovesRowPhysically(): void
+    {
+        $created = $this->repo->create($this->validData(['label' => 'Foo']));
+        $this->repo->softDelete((int)$created['id']);
+
+        $deleted = $this->repo->hardDelete((int)$created['id']);
+
+        $this->assertTrue($deleted);
+
+        // Row is gone — the soft-deleted version is no longer findable by any path
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM setups WHERE id = :id');
+        $stmt->execute(['id' => (int)$created['id']]);
+        $this->assertSame(0, (int)$stmt->fetchColumn());
+    }
+
+    public function testHardDeleteReturnsFalseWhenIdAbsent(): void
+    {
+        $this->assertFalse($this->repo->hardDelete(99999));
+    }
 }

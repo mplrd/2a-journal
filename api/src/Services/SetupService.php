@@ -5,15 +5,18 @@ namespace App\Services;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 
 class SetupService
 {
     private SetupRepository $repo;
+    private PositionRepository $positionRepo;
 
-    public function __construct(SetupRepository $repo)
+    public function __construct(SetupRepository $repo, PositionRepository $positionRepo)
     {
         $this->repo = $repo;
+        $this->positionRepo = $positionRepo;
     }
 
     public function list(int $userId): array
@@ -60,6 +63,8 @@ class SetupService
         }
 
         $patch = [];
+        $oldLabel = (string)$setup['label'];
+        $newLabel = null;
 
         if (array_key_exists('label', $data)) {
             $label = trim((string)$data['label']);
@@ -77,7 +82,18 @@ class SetupService
                 throw new ValidationException('setups.error.duplicate_label', 'label');
             }
 
+            // The unique key (user_id, label) ignores deleted_at, so a soft-deleted
+            // ghost with the same label would block the UPDATE with 1062. Clear it.
+            // No UI exposes soft-deleted setups for restore, so hard-delete is safe.
+            if ($label !== $oldLabel) {
+                $ghost = $this->repo->findAnyByUserAndLabel($userId, $label);
+                if ($ghost && (int)$ghost['id'] !== $id && $ghost['deleted_at'] !== null) {
+                    $this->repo->hardDelete((int)$ghost['id']);
+                }
+            }
+
             $patch['label'] = $label;
+            $newLabel = $label;
         }
 
         if (array_key_exists('category', $data)) {
@@ -91,7 +107,16 @@ class SetupService
             }
         }
 
-        return $this->repo->update($id, $patch);
+        $updated = $this->repo->update($id, $patch);
+
+        // Propagate the rename into the dénormalized JSON arrays in positions.setup.
+        // Skipped when the label is unchanged so we don't churn updated_at on every
+        // category-only edit or no-op rename.
+        if ($newLabel !== null && $newLabel !== $oldLabel) {
+            $this->positionRepo->renameSetupLabel($userId, $oldLabel, $newLabel);
+        }
+
+        return $updated;
     }
 
     public function delete(int $userId, int $id): void

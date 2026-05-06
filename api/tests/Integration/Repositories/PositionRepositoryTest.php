@@ -387,6 +387,71 @@ class PositionRepositoryTest extends TestCase
         $this->assertSame('NASDAQ', $result['items'][0]['symbol']);
     }
 
+    // ── renameSetupLabel ────────────────────────────────────────
+
+    public function testRenameSetupLabelUpdatesAllMatchingPositions(): void
+    {
+        // 3 positions: 2 contain "Old", 1 doesn't
+        $this->insertPosition(['symbol' => 'NASDAQ', 'setup' => json_encode(['Old'])]);
+        $this->insertPosition(['symbol' => 'DAX', 'setup' => json_encode(['Other', 'Old'])]);
+        $this->insertPosition(['symbol' => 'CAC', 'setup' => json_encode(['Other'])]);
+
+        $affected = $this->repo->renameSetupLabel($this->userId, 'Old', 'New');
+
+        $this->assertSame(2, $affected);
+
+        $rows = $this->pdo->query("SELECT symbol, setup FROM positions ORDER BY symbol")->fetchAll();
+        $bySymbol = [];
+        foreach ($rows as $r) {
+            $bySymbol[$r['symbol']] = json_decode($r['setup'], true);
+        }
+        $this->assertSame(['Other'], $bySymbol['CAC']);
+        $this->assertSame(['Other', 'New'], $bySymbol['DAX']);
+        $this->assertSame(['New'], $bySymbol['NASDAQ']);
+    }
+
+    public function testRenameSetupLabelReturnsZeroWhenNothingMatches(): void
+    {
+        $this->insertPosition(['setup' => json_encode(['SomethingElse'])]);
+
+        $affected = $this->repo->renameSetupLabel($this->userId, 'Old', 'New');
+
+        $this->assertSame(0, $affected);
+    }
+
+    public function testRenameSetupLabelOnlyAffectsTheGivenUser(): void
+    {
+        // Insert a position for THIS user, and one for another user
+        $this->insertPosition(['setup' => json_encode(['Old'])]);
+
+        $accountRepo = new AccountRepository($this->pdo);
+        $this->pdo->exec("INSERT INTO users (email, password) VALUES ('other-position-user@test.com', 'hashed')");
+        $otherUserId = (int)$this->pdo->lastInsertId();
+        $otherAccount = $accountRepo->create([
+            'user_id' => $otherUserId,
+            'name' => 'Other Account',
+            'account_type' => 'BROKER_DEMO',
+        ]);
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+             VALUES (:uid, :acc, 'BUY', 'DAX', '15000.00000', '1.00000', :setup, '50.00', '14950.00000', 'TRADE')"
+        );
+        $stmt->execute([
+            'uid' => $otherUserId,
+            'acc' => (int)$otherAccount['id'],
+            'setup' => json_encode(['Old']),
+        ]);
+
+        $affected = $this->repo->renameSetupLabel($this->userId, 'Old', 'New');
+
+        $this->assertSame(1, $affected);
+
+        // Other user's position is untouched
+        $stmt = $this->pdo->prepare("SELECT setup FROM positions WHERE user_id = :uid");
+        $stmt->execute(['uid' => $otherUserId]);
+        $this->assertSame(['Old'], json_decode((string)$stmt->fetchColumn(), true));
+    }
+
     public function testAggregatedExcludesSoftDeletedAccount(): void
     {
         $accountRepo = new AccountRepository($this->pdo);

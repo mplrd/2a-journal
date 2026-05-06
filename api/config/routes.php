@@ -208,7 +208,10 @@ $router->put('/symbols/{id}/settings/{accountId}', [$symbolController, 'setSetti
 $router->delete('/symbols/{id}/settings/{accountId}', [$symbolController, 'clearSetting'], [$authMiddleware, $requireSubscription]);
 
 // ── Setups ──────────────────────────────────────────────────────
-$setupService = new SetupService($setupRepo);
+// PositionRepository is needed here so SetupService can propagate label
+// renames into positions.setup JSON arrays.
+$positionRepo = new PositionRepository($pdo);
+$setupService = new SetupService($setupRepo, $positionRepo);
 $setupController = new SetupController($setupService);
 
 $router->get('/setups', [$setupController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -247,7 +250,7 @@ $router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware,
 $router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Positions ──────────────────────────────────────────────────
-$positionRepo = new PositionRepository($pdo);
+// $positionRepo already instantiated above (Setups section).
 $historyRepo = new StatusHistoryRepository($pdo);
 $positionService = new PositionService($positionRepo, $accountRepo, $historyRepo, $setupRepo, $platformSettingsService);
 $shareService = new ShareService($positionRepo, $tradeRepo);

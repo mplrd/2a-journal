@@ -41,6 +41,9 @@ class SetupFlowTest extends TestCase
         $this->pdo = Database::getConnection();
 
         // Clean tables
+        $this->pdo->exec('DELETE FROM trades');
+        $this->pdo->exec('DELETE FROM positions');
+        $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM setups');
         $this->pdo->exec('DELETE FROM symbols');
         $this->pdo->exec('DELETE FROM rate_limits');
@@ -69,11 +72,51 @@ class SetupFlowTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->pdo->exec('DELETE FROM trades');
+        $this->pdo->exec('DELETE FROM positions');
+        $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM setups');
         $this->pdo->exec('DELETE FROM symbols');
         $this->pdo->exec('DELETE FROM rate_limits');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
+    }
+
+    private function findSetupIdByLabel(string $label): int
+    {
+        $stmt = $this->pdo->prepare('SELECT id FROM setups WHERE user_id = :uid AND label = :label AND deleted_at IS NULL');
+        $stmt->execute(['uid' => $this->userId, 'label' => $label]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    private function insertAccount(): int
+    {
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO accounts (user_id, name, account_type) VALUES (:uid, 'Test Account', 'BROKER_DEMO')"
+        );
+        $stmt->execute(['uid' => $this->userId]);
+        return (int)$this->pdo->lastInsertId();
+    }
+
+    private function insertPositionWithSetup(int $accountId, array $setupLabels): int
+    {
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+             VALUES (:uid, :acc, 'BUY', 'NASDAQ', '18500.00000', '1.00000', :setup, '50.00', '18450.00000', 'TRADE')"
+        );
+        $stmt->execute([
+            'uid' => $this->userId,
+            'acc' => $accountId,
+            'setup' => json_encode($setupLabels),
+        ]);
+        return (int)$this->pdo->lastInsertId();
+    }
+
+    private function fetchPositionSetup(int $positionId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT setup FROM positions WHERE id = :id');
+        $stmt->execute(['id' => $positionId]);
+        return json_decode((string)$stmt->fetchColumn(), true);
     }
 
     private function authRequest(string $method, string $uri, array $body = [], array $query = []): Request
@@ -282,5 +325,78 @@ class SetupFlowTest extends TestCase
             $this->assertSame(403, $e->getStatusCode());
             $this->assertSame('FORBIDDEN', $e->getErrorCode());
         }
+    }
+
+    // ── Rename: propagation to positions.setup + soft-deleted conflict ───
+
+    public function testUpdateSetupRenamePropagatesToPositions(): void
+    {
+        $accountId = $this->insertAccount();
+        $setupId = $this->findSetupIdByLabel('Liquidity Sweep');
+
+        // Two positions reference the old label, one doesn't
+        $pos1 = $this->insertPositionWithSetup($accountId, ['Liquidity Sweep']);
+        $pos2 = $this->insertPositionWithSetup($accountId, ['Breakout', 'Liquidity Sweep']);
+        $pos3 = $this->insertPositionWithSetup($accountId, ['Breakout']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('PUT', "/setups/{$setupId}", ['label' => 'Prise de liquidité'])
+        );
+        $this->assertSame(200, $response->getStatusCode());
+
+        $this->assertSame(['Prise de liquidité'], $this->fetchPositionSetup($pos1));
+        $this->assertSame(['Breakout', 'Prise de liquidité'], $this->fetchPositionSetup($pos2));
+        $this->assertSame(['Breakout'], $this->fetchPositionSetup($pos3));
+    }
+
+    public function testUpdateSetupRenameSucceedsWhenSoftDeletedConflictExists(): void
+    {
+        // Pre-existing soft-deleted setup matching the target label.
+        // Without the fix this triggers a 1062 Duplicate entry → 500.
+        $this->pdo->exec(
+            "INSERT INTO setups (user_id, label, category, deleted_at)
+             VALUES ({$this->userId}, 'Prise de liquidité', 'pattern', NOW())"
+        );
+        $setupId = $this->findSetupIdByLabel('Liquidity Sweep');
+
+        $response = $this->router->dispatch(
+            $this->authRequest('PUT', "/setups/{$setupId}", ['label' => 'Prise de liquidité'])
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('Prise de liquidité', $response->getBody()['data']['label']);
+
+        // Soft-deleted row was hard-deleted to free the unique constraint
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM setups WHERE user_id = :uid AND label = :label AND deleted_at IS NOT NULL'
+        );
+        $stmt->execute(['uid' => $this->userId, 'label' => 'Prise de liquidité']);
+        $this->assertSame(0, (int)$stmt->fetchColumn());
+    }
+
+    public function testUpdateSetupRenameDoesNotTouchPositionsWhenLabelUnchanged(): void
+    {
+        $accountId = $this->insertAccount();
+        $setupId = $this->findSetupIdByLabel('Liquidity Sweep');
+        $pos = $this->insertPositionWithSetup($accountId, ['Liquidity Sweep']);
+
+        // Capture updated_at, then rename to the same label, then re-check
+        $stmt = $this->pdo->prepare('SELECT updated_at FROM positions WHERE id = :id');
+        $stmt->execute(['id' => $pos]);
+        $before = (string)$stmt->fetchColumn();
+
+        // Sleep 1s to ensure any UPDATE would tick updated_at (TIMESTAMP precision = 1s)
+        sleep(1);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('PUT', "/setups/{$setupId}", ['label' => 'Liquidity Sweep'])
+        );
+        $this->assertSame(200, $response->getStatusCode());
+
+        $stmt->execute(['id' => $pos]);
+        $after = (string)$stmt->fetchColumn();
+
+        $this->assertSame($before, $after, 'Position must not be touched when label is unchanged');
+        $this->assertSame(['Liquidity Sweep'], $this->fetchPositionSetup($pos));
     }
 }
