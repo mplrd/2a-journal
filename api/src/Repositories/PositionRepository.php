@@ -187,4 +187,32 @@ class PositionRepository
 
         return $this->findById($id);
     }
+
+    /**
+     * Replaces a setup label inside the positions.setup JSON array for every
+     * position of the given user that contains the old label. Each position
+     * carries at most one occurrence of a given setup (UI-enforced), so a
+     * single JSON_REPLACE at the path returned by JSON_SEARCH suffices.
+     * Returns the number of rows updated.
+     */
+    public function renameSetupLabel(int $userId, string $oldLabel, string $newLabel): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE positions
+             SET setup = JSON_REPLACE(
+                 setup,
+                 REPLACE(JSON_SEARCH(setup, 'one', :old), '\"', ''),
+                 :new
+             )
+             WHERE user_id = :user_id AND JSON_CONTAINS(setup, JSON_QUOTE(:old_match))"
+        );
+        $stmt->execute([
+            'old' => $oldLabel,
+            'new' => $newLabel,
+            'user_id' => $userId,
+            'old_match' => $oldLabel,
+        ]);
+
+        return $stmt->rowCount();
+    }
 }
