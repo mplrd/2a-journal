@@ -53,7 +53,9 @@ class PositionRepository
 
     public function findAllByUserId(int $userId, array $filters = [], int $limit = 50, int $offset = 0): array
     {
-        $where = 'WHERE user_id = :user_id';
+        // Positions of soft-deleted accounts must not appear in the listing.
+        $where = 'WHERE user_id = :user_id'
+               . ' AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = positions.account_id AND a.deleted_at IS NULL)';
         $params = ['user_id' => $userId];
 
         if (!empty($filters['account_id'])) {
@@ -142,7 +144,8 @@ class PositionRepository
 
     public function findAggregatedByUserId(int $userId, array $filters = []): array
     {
-        $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured) AND t.remaining_size > 0';
+        $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured) AND t.remaining_size > 0'
+               . ' AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = p.account_id AND a.deleted_at IS NULL)';
         $params = [
             'user_id' => $userId,
             'status_open' => TradeStatus::OPEN->value,
