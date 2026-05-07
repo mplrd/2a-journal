@@ -77,3 +77,16 @@ Suite complète : 1132 tests backend OK (1126 → 1132, +6), 234 Vitest OK, zér
 ## Backlog associé
 
 L'entrée "Refonte Performance" de `docs/evolutions.md` est retirée du backlog (cette doc en marque la livraison).
+
+## Tweaks post-revue test env
+
+Après revue sur l'env de test, trois ajustements ciblés :
+
+1. **Toggle linéaire/cyclique masqué** dans l'UI. Le mode linéaire (dates absolues) s'est avéré peu utile à l'usage : l'angle cyclique (saisonnalité) couvre 95 % des besoins de lecture. Le `<Select>` axis est retiré du template, `periodAxisMode` est forcé à `'cyclic'` au montage. Le code des deux modes (computed `periodGroupOptions`, fonction `onPeriodAxisModeChange`, options linéaires en JSON) est conservé pour ré-exposer le toggle facilement si on revient en arrière.
+2. **Labels simplifiés** dans la dropdown cyclique. Plus besoin de désambiguïser "Jour de semaine / Semaine ISO / Mois de l'année" puisque le mode linéaire est invisible : on réutilise les labels existants `period_day` / `period_week` / `period_month` (jour / semaine / mois). Plus court, plus lisible.
+3. **Layout : 4 widgets WR/RR au-dessus des 2 widgets P&L**. Nouvel ordre des rows :
+   - Row 3 : WR/RR par symbole + WR/RR par setup
+   - Row 4 : WR/RR par timeframe + WR/RR par session
+   - Row 5 : P&L par symbole + P&L par période (cyclique)
+4. **Seeder démo cohérent** : les 4 timeframes réels (M5 / M15 / H1 / H4) remplacent l'ancien tag "timeframe" sur "Trend Follow" (recatégorisé en `context`). Une fonction helper `pickTimeframe($symbol, $durationMinutes)` choisit le timeframe en fonction de la durée du trade (< 1h → M5, < 3h → M15, < 6h → H1, sinon H4) ou du symbole pour les open trades / orders. Chaque trade reçoit donc une combinaison `[timeframe, setup(s) existants]`. Distribution obtenue après reseed : M5×13, M15×23, H1×19, H4×3, Breakout×14, Pullback×13, Range×16, Trend Follow×20, Reversal×9.
+
