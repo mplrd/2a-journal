@@ -7,7 +7,7 @@ import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
 import { useChartOptions } from '@/composables/useChartOptions'
 import { CHART_PALETTE, primaryFor, withAlpha } from '@/constants/chartPalette'
-import Select from 'primevue/select'
+import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
@@ -29,7 +29,7 @@ const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOp
 // kept (computed options + onPeriodAxisModeChange) so we can re-expose the
 // toggle later by re-adding the axis Select to the template.
 const periodAxisMode = ref('cyclic')
-const periodGroup = ref('month_of_year')
+const periodGroup = ref('day_of_week')
 
 const periodAxisOptions = computed(() => [
   { label: t('performance.period_axis_linear'), value: 'linear' },
@@ -379,12 +379,13 @@ const winLossChartData = computed(() => {
           @detail="openDetail('period')"
         >
           <template #header-actions>
-            <Select
+            <SelectButton
               v-model="periodGroup"
               :options="periodGroupOptions"
               optionLabel="label"
               optionValue="value"
-              class="w-32"
+              size="small"
+              :allowEmpty="false"
               @change="onPeriodGroupChange"
             />
           </template>

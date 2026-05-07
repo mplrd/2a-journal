@@ -83,7 +83,7 @@ L'entrée "Refonte Performance" de `docs/evolutions.md` est retirée du backlog 
 Après revue sur l'env de test, trois ajustements ciblés :
 
 1. **Toggle linéaire/cyclique masqué** dans l'UI. Le mode linéaire (dates absolues) s'est avéré peu utile à l'usage : l'angle cyclique (saisonnalité) couvre 95 % des besoins de lecture. Le `<Select>` axis est retiré du template, `periodAxisMode` est forcé à `'cyclic'` au montage. Le code des deux modes (computed `periodGroupOptions`, fonction `onPeriodAxisModeChange`, options linéaires en JSON) est conservé pour ré-exposer le toggle facilement si on revient en arrière.
-2. **Labels simplifiés** dans la dropdown cyclique. Plus besoin de désambiguïser "Jour de semaine / Semaine ISO / Mois de l'année" puisque le mode linéaire est invisible : on réutilise les labels existants `period_day` / `period_week` / `period_month` (jour / semaine / mois). Plus court, plus lisible.
+2. **Labels simplifiés** dans le sélecteur cyclique. Plus besoin de désambiguïser "Jour de semaine / Semaine ISO / Mois de l'année" puisque le mode linéaire est invisible : on réutilise les labels existants `period_day` / `period_week` / `period_month` (jour / semaine / mois). Le sélecteur lui-même est passé d'un `<Select>` (dropdown) à un `<SelectButton>` PrimeVue (groupe de boutons horizontaux), qui se voit d'un coup d'œil et coûte un seul clic. Valeur par défaut : `day_of_week` (Jour) — la lecture day-of-week est l'angle le plus actionnable au quotidien.
 3. **Layout : 4 widgets WR/RR au-dessus des 2 widgets P&L**. Nouvel ordre des rows :
    - Row 3 : WR/RR par symbole + WR/RR par setup
    - Row 4 : WR/RR par timeframe + WR/RR par session
