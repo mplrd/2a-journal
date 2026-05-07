@@ -628,6 +628,104 @@ class StatsRepositoryTest extends TestCase
         $this->assertSame('2026', $result[0]['period']);
     }
 
+    // ── Cyclic period grouping (day-of-week / iso-week / month-of-year) ──
+
+    public function testGetStatsByPeriodGroupsByDayOfWeek(): void
+    {
+        // 2026-01-12 = Monday, 2026-01-19 = Monday (different ISO week, same WEEKDAY=0)
+        // 2026-01-14 = Wednesday (WEEKDAY=2)
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-12 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2026-01-19 10:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-14 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'day_of_week');
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['period']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        // Monday (WEEKDAY=0) aggregates the 2 trades from different ISO weeks
+        $this->assertSame(2, (int) $indexed['0']['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed['0']['total_pnl']);
+        // Wednesday (WEEKDAY=2)
+        $this->assertSame(1, (int) $indexed['2']['total_trades']);
+    }
+
+    public function testGetStatsByPeriodGroupsByIsoWeekIgnoresYear(): void
+    {
+        // Three trades in the same ISO week number across different years.
+        // 2026-05-04 falls in ISO week 19, 2025-05-05 also in ISO week 19.
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-05-04 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2025-05-05 10:00:00']);
+        // Different week:
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-01-15 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'iso_week');
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['period']] = $row;
+        }
+
+        // ISO week 19 cumulates trades across both years (cyclic semantics)
+        $this->assertSame(2, (int) $indexed['19']['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed['19']['total_pnl']);
+        // The third trade is in a different ISO week (around week 3)
+        $this->assertNotEmpty(array_filter(array_keys($indexed), fn ($k) => $k !== '19'));
+    }
+
+    public function testGetStatsByPeriodGroupsByMonthOfYearIgnoresYear(): void
+    {
+        // Two trades in January across different years, one in June
+        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-15 10:00:00']);
+        $this->createClosedTrade(200.0, 'TP', ['closed_at' => '2025-01-20 10:00:00']);
+        $this->createClosedTrade(-50.0, 'SL', ['closed_at' => '2026-06-10 10:00:00']);
+
+        $result = $this->repo->getStatsByPeriod($this->userId, 'month_of_year');
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['period']] = $row;
+        }
+
+        $this->assertCount(2, $result);
+        // January (MONTH=1) aggregates trades from both 2025 and 2026
+        $this->assertSame(2, (int) $indexed['1']['total_trades']);
+        $this->assertEquals(300.0, (float) $indexed['1']['total_pnl']);
+        // June (MONTH=6)
+        $this->assertSame(1, (int) $indexed['6']['total_trades']);
+    }
+
+    // ── getStatsBySetup category enrichment ─────────────────────────────
+
+    public function testGetStatsBySetupReturnsCategoryWhenSetupExists(): void
+    {
+        // Create one categorized setup ("M5" timeframe) and one without
+        // category. Trades reference both via the JSON denormalized array.
+        $this->pdo->exec(
+            "INSERT INTO setups (user_id, label, category)
+             VALUES ({$this->userId}, 'M5', 'timeframe'),
+                    ({$this->userId}, 'Custom', NULL)"
+        );
+
+        $this->createClosedTrade(100.0, 'TP', ['setup' => '["M5"]']);
+        $this->createClosedTrade(-50.0, 'SL', ['setup' => '["Custom"]']);
+
+        $result = $this->repo->getStatsBySetup($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['setup']] = $row;
+        }
+
+        $this->assertArrayHasKey('category', $indexed['M5']);
+        $this->assertSame('timeframe', $indexed['M5']['category']);
+        $this->assertArrayHasKey('category', $indexed['Custom']);
+        $this->assertNull($indexed['Custom']['category']);
+    }
+
     // ── getRrDistribution ─────────────────────────────────────
 
     public function testGetRrDistributionReturnsBuckets(): void
