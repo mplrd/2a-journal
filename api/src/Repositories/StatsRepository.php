@@ -300,11 +300,24 @@ class StatsRepository
         [$where, $params] = $this->buildWhereClause($userId, $filters);
         $select = $this->dimensionStatsSelect();
 
-        // JSON_UNQUOTE + JSON_EXTRACT to flatten the setup array
-        $sql = "SELECT s.setup, {$select}
+        // JSON_TABLE flattens the setup array; LEFT JOIN with setups exposes
+        // the category alongside the label (NULL when the label no longer
+        // matches an active setup row, e.g. orphaned legacy strings).
+        // MAX() is structurally a no-op since (user_id, label) is unique on
+        // the active subset — it just satisfies GROUP BY.
+        // The JSON_TABLE-extracted column defaults to utf8mb4_general_ci while
+        // setups.label is utf8mb4_unicode_ci — explicit COLLATE on the column
+        // definition aligns both sides for the LEFT JOIN equality.
+        $sql = "SELECT s.setup, MAX(setups.category) AS category, {$select}
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
-                CROSS JOIN JSON_TABLE(p.setup, '$[*]' COLUMNS (setup VARCHAR(255) PATH '$')) AS s
+                CROSS JOIN JSON_TABLE(
+                    p.setup,
+                    '$[*]' COLUMNS (setup VARCHAR(255) COLLATE utf8mb4_unicode_ci PATH '$')
+                ) AS s
+                LEFT JOIN setups ON setups.user_id = p.user_id
+                                AND setups.label = s.setup
+                                AND setups.deleted_at IS NULL
                 {$where}
                 GROUP BY s.setup
                 ORDER BY total_pnl DESC";
@@ -362,10 +375,18 @@ class StatsRepository
         $select = $this->dimensionStatsSelect();
 
         $eff = $this->effectiveDate();
+        // Linear modes return a unique sortable string per period (one bucket
+        // per calendar day/week/month/year). Cyclic modes collapse the year
+        // dimension to expose seasonality: the same Monday across years lands
+        // in the same bucket. WEEKDAY returns 0=Monday..6=Sunday so numeric
+        // sort matches the natural reading order.
         $periodExpr = match ($group) {
             'day' => "DATE_FORMAT({$eff}, '%Y-%m-%d')",
             'week' => "DATE_FORMAT({$eff}, '%x-W%v')",
             'year' => "DATE_FORMAT({$eff}, '%Y')",
+            'day_of_week' => "WEEKDAY({$eff})",
+            'iso_week' => "WEEK({$eff}, 3)",
+            'month_of_year' => "MONTH({$eff})",
             default => "DATE_FORMAT({$eff}, '%Y-%m')",
         };
 

@@ -7,7 +7,7 @@ import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
 import { useChartOptions } from '@/composables/useChartOptions'
 import { CHART_PALETTE, primaryFor, withAlpha } from '@/constants/chartPalette'
-import Select from 'primevue/select'
+import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
@@ -24,13 +24,49 @@ const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
 const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions, isDark } = useChartOptions()
 
-const periodGroup = ref('month')
-const periodGroupOptions = [
-  { label: t('performance.period_day'), value: 'day' },
-  { label: t('performance.period_week'), value: 'week' },
-  { label: t('performance.period_month'), value: 'month' },
-  { label: t('performance.period_year'), value: 'year' },
-]
+// Period axis: cyclic only in the UI — linear mode stayed niche after early
+// usage and was hidden. The linear branches in this script are intentionally
+// kept (computed options + onPeriodAxisModeChange) so we can re-expose the
+// toggle later by re-adding the axis Select to the template.
+const periodAxisMode = ref('cyclic')
+const periodGroup = ref('day_of_week')
+
+const periodAxisOptions = computed(() => [
+  { label: t('performance.period_axis_linear'), value: 'linear' },
+  { label: t('performance.period_axis_cyclic'), value: 'cyclic' },
+])
+
+const periodGroupOptions = computed(() => {
+  if (periodAxisMode.value === 'cyclic') {
+    // Cyclic granularity options reuse the simple linear labels (jour/semaine/mois)
+    // since the linear toggle is hidden — there's no contrast to disambiguate
+    // from anymore, and the simpler labels read better in the dropdown.
+    return [
+      { label: t('performance.period_day'), value: 'day_of_week' },
+      { label: t('performance.period_week'), value: 'iso_week' },
+      { label: t('performance.period_month'), value: 'month_of_year' },
+    ]
+  }
+  return [
+    { label: t('performance.period_day'), value: 'day' },
+    { label: t('performance.period_week'), value: 'week' },
+    { label: t('performance.period_month'), value: 'month' },
+    { label: t('performance.period_year'), value: 'year' },
+  ]
+})
+
+function formatPeriodLabel(periodValue) {
+  if (periodGroup.value === 'day_of_week') {
+    return t(`performance.weekdays.${periodValue}`)
+  }
+  if (periodGroup.value === 'month_of_year') {
+    return t(`performance.months.${periodValue}`)
+  }
+  if (periodGroup.value === 'iso_week') {
+    return t('performance.iso_week_short', { n: periodValue })
+  }
+  return periodValue
+}
 
 // Dialog state
 const dialogVisible = ref(false)
@@ -43,10 +79,15 @@ function openDetail(dimension) {
 }
 
 const dialogData = computed(() => {
+  // The setup chart and the timeframe chart share the same underlying source
+  // (statsStore.bySetup) but split it by category for display. The detail
+  // dialog respects that split.
+  const setups = statsStore.bySetup || []
   const map = {
     symbol: statsStore.bySymbol,
     direction: statsStore.byDirection,
-    setup: statsStore.bySetup,
+    setup: setups.filter((d) => d.category !== 'timeframe'),
+    setup_timeframe: setups.filter((d) => d.category === 'timeframe'),
     period: statsStore.byPeriod,
     session: statsStore.bySession,
     account_type: statsStore.byAccountType,
@@ -74,6 +115,9 @@ const initialCapital = computed(() => {
 // ── Data fetching ────────────────────────────────────────
 
 async function fetchAll() {
+  // The "by account type" widget was removed from the layout; the store
+  // action and endpoint are kept for future configurable widgets, but
+  // we drop the fetch here to avoid loading data that's not displayed.
   statsStore.dimensionsLoading = true
   try {
     await Promise.all([
@@ -83,7 +127,6 @@ async function fetchAll() {
       statsStore.fetchBySetup(),
       statsStore.fetchByPeriod(periodGroup.value),
       statsStore.fetchBySession(),
-      statsStore.fetchByAccountType(),
       statsStore.fetchRrDistribution(),
       statsStore.fetchHeatmap(),
     ])
@@ -114,6 +157,13 @@ async function onResetFilters() {
 
 async function onPeriodGroupChange() {
   await statsStore.fetchByPeriod(periodGroup.value)
+}
+
+function onPeriodAxisModeChange() {
+  // Seed a sensible default for the new axis: "month" linear or "month_of_year"
+  // cyclic. Then refetch with the new group value.
+  periodGroup.value = periodAxisMode.value === 'cyclic' ? 'month_of_year' : 'month'
+  onPeriodGroupChange()
 }
 
 // ── Chart data helpers ───────────────────────────────────
@@ -160,15 +210,33 @@ function dualMetricData(items, labelField, labelTranslator = null) {
 // ── Chart data ───────────────────────────────────────────
 
 const pnlBySymbolChartData = computed(() => pnlBarData(statsStore.bySymbol, 'symbol'))
-const pnlByPeriodChartData = computed(() => pnlBarData(statsStore.byPeriod, 'period'))
+const pnlByPeriodChartData = computed(() => {
+  const items = statsStore.byPeriod
+  if (!items || items.length === 0) return null
+  return {
+    labels: items.map((d) => formatPeriodLabel(d.period)),
+    datasets: [{
+      label: t('performance.total_pnl'),
+      data: items.map((d) => Number(d.total_pnl)),
+      backgroundColor: items.map((d) => (Number(d.total_pnl) >= 0 ? CHART_PALETTE.positive : CHART_PALETTE.negative)),
+      borderRadius: 4,
+    }],
+  }
+})
 
 const perfBySymbolChartData = computed(() => dualMetricData(statsStore.bySymbol, 'symbol'))
-const perfBySetupChartData = computed(() => dualMetricData(statsStore.bySetup, 'setup'))
+// "WR/RR par setup" excludes timeframe-categorized setups, which now have
+// their own dedicated widget. NULL category and other categories stay here.
+const perfBySetupChartData = computed(() => {
+  const items = (statsStore.bySetup || []).filter((d) => d.category !== 'timeframe')
+  return dualMetricData(items, 'setup')
+})
+const perfByTimeframeChartData = computed(() => {
+  const items = (statsStore.bySetup || []).filter((d) => d.category === 'timeframe')
+  return dualMetricData(items, 'setup')
+})
 const perfBySessionChartData = computed(() =>
   dualMetricData(statsStore.bySession, 'session', (v) => t(`performance.sessions.${v}`)),
-)
-const perfByAccountTypeChartData = computed(() =>
-  dualMetricData(statsStore.byAccountType, 'account_type', (v) => t(`accounts.types.${v}`)),
 )
 
 const cumulativePnlChartData = computed(() => {
@@ -241,16 +309,8 @@ const winLossChartData = computed(() => {
         <RrDistributionChart :data="statsStore.rrDistribution" />
       </div>
 
-      <!-- Row 3: P&L by Symbol + Win Rate & R:R by Symbol -->
+      <!-- Row 3: WR/RR by Symbol + WR/RR by Setup (excludes timeframe) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <ChartCard
-          :title="t('dashboard.pnl_by_symbol')"
-          type="bar"
-          :data="pnlBySymbolChartData"
-          :options="barChartOptions"
-          detailable
-          @detail="openDetail('symbol')"
-        />
         <ChartCard
           :title="t('performance.perf_by_symbol')"
           type="bar"
@@ -259,10 +319,6 @@ const winLossChartData = computed(() => {
           detailable
           @detail="openDetail('symbol')"
         />
-      </div>
-
-      <!-- Row 4: Perf by Setup + P&L by Period -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('performance.perf_by_setup')"
           type="bar"
@@ -282,6 +338,38 @@ const winLossChartData = computed(() => {
             />
           </template>
         </ChartCard>
+      </div>
+
+      <!-- Row 4: WR/RR by Timeframe + WR/RR by Session -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
+          :title="t('performance.perf_by_timeframe')"
+          type="bar"
+          :data="perfByTimeframeChartData"
+          :options="dualAxisChartOptions"
+          detailable
+          @detail="openDetail('setup_timeframe')"
+        />
+        <ChartCard
+          :title="t('performance.perf_by_session')"
+          type="bar"
+          :data="perfBySessionChartData"
+          :options="dualAxisChartOptions"
+          detailable
+          @detail="openDetail('session')"
+        />
+      </div>
+
+      <!-- Row 5: P&L by Symbol + P&L by Period (cyclic only) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
+          :title="t('dashboard.pnl_by_symbol')"
+          type="bar"
+          :data="pnlBySymbolChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('symbol')"
+        />
         <ChartCard
           :title="t('performance.pnl_by_period')"
           type="bar"
@@ -291,36 +379,17 @@ const winLossChartData = computed(() => {
           @detail="openDetail('period')"
         >
           <template #header-actions>
-            <Select
+            <SelectButton
               v-model="periodGroup"
               :options="periodGroupOptions"
               optionLabel="label"
               optionValue="value"
-              class="w-32"
+              size="small"
+              :allowEmpty="false"
               @change="onPeriodGroupChange"
             />
           </template>
         </ChartCard>
-      </div>
-
-      <!-- Row 5: Perf by Session + Perf by Account Type -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <ChartCard
-          :title="t('performance.perf_by_session')"
-          type="bar"
-          :data="perfBySessionChartData"
-          :options="dualAxisChartOptions"
-          detailable
-          @detail="openDetail('session')"
-        />
-        <ChartCard
-          :title="t('performance.perf_by_account_type')"
-          type="bar"
-          :data="perfByAccountTypeChartData"
-          :options="dualAxisChartOptions"
-          detailable
-          @detail="openDetail('account_type')"
-        />
       </div>
 
       <!-- Row 6: Heatmap (full width) -->

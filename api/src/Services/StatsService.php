@@ -174,7 +174,11 @@ class StatsService
 
     public function getStatsByPeriod(int $userId, string $group = 'month', array $filters = []): array
     {
-        $validGroups = ['day', 'week', 'month', 'year'];
+        // Linear modes return one bucket per calendar period (date axis).
+        // Cyclic modes collapse the year and expose seasonality (axis = day
+        // of week / iso week / month, regardless of which year the trade
+        // belongs to).
+        $validGroups = ['day', 'week', 'month', 'year', 'day_of_week', 'iso_week', 'month_of_year'];
         if (!in_array($group, $validGroups, true)) {
             throw new ValidationException('stats.error.invalid_period_group', 'group');
         }

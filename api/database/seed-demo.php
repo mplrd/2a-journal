@@ -100,16 +100,41 @@ foreach ($symbols as [$code, $name, $type, $pointValue, $currency]) {
 echo "Created " . count($symbols) . " symbols\n";
 
 // ── 4. Create setups ────────────────────────────────────────
-// Each setup is tagged with a category so the demo showcases all four
-// visual buckets (timeframe / pattern / context / uncategorized) on the
-// Performance filter.
+// Real timeframes (M5/M15/H1/H4) populate the dedicated timeframe
+// widget; the strategy/context labels populate the regular setup
+// widget alongside an uncategorized outlier.
 $setups = [
+    ['M5',           'timeframe'],
+    ['M15',          'timeframe'],
+    ['H1',           'timeframe'],
+    ['H4',           'timeframe'],
     ['Breakout',     'pattern'],
     ['Pullback',     'pattern'],
     ['Range',        'context'],
-    ['Trend Follow', 'timeframe'],
+    ['Trend Follow', 'context'],
     ['Reversal',     null], // outlier — uncategorized bucket
 ];
+
+/**
+ * Pick a timeframe label based on the trade duration when available, or
+ * fall back on a sensible default per symbol. Keeps the demo realistic:
+ * scalps land in M5, intraday in M15, half-day in H1, swing in H4.
+ */
+function pickTimeframe(string $symbol, ?int $durationMinutes = null): string
+{
+    if ($durationMinutes !== null) {
+        if ($durationMinutes < 60) return 'M5';
+        if ($durationMinutes < 180) return 'M15';
+        if ($durationMinutes < 360) return 'H1';
+        return 'H4';
+    }
+    return match ($symbol) {
+        'NASDAQ', 'DAX' => 'M15',
+        'EURUSD', 'GBPUSD' => 'H1',
+        'BTCUSD' => 'H4',
+        default => 'M15',
+    };
+}
 foreach ($setups as [$label, $category]) {
     $pdo->prepare("INSERT INTO setups (user_id, label, category) VALUES (:uid, :label, :cat)")
         ->execute(['uid' => $userId, 'label' => $label, 'cat' => $category]);
@@ -188,7 +213,14 @@ foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitTy
     }
 
     // Setup field: accept either a string (single setup) or an array (combo).
-    $setupArray = is_array($setup) ? $setup : [$setup];
+    // Prepend a timeframe derived from the trade duration so the dedicated
+    // "WR/RR by timeframe" widget gets meaningful data alongside the
+    // strategy / context combinations already configured.
+    $durationForTf = (int) ((strtotime($closedAt) - strtotime($openedAt)) / 60);
+    $setupArray = array_merge(
+        [pickTimeframe($symbol, $durationForTf)],
+        is_array($setup) ? $setup : [$setup]
+    );
 
     // Create position
     $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
@@ -274,6 +306,10 @@ $openCount = 0;
 foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $openedAt, $size, $acctNum]) {
     $openAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
     $slPrice = $direction === 'BUY' ? $entry - $slPoints : $entry + $slPoints;
+    $setupArray = array_merge(
+        [pickTimeframe($symbol)],
+        is_array($setup) ? $setup : [$setup]
+    );
 
     $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
         VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'TRADE')")
@@ -284,7 +320,7 @@ foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $opened
             'sym' => $symbol,
             'entry' => $entry,
             'size' => $size,
-            'setup' => json_encode(is_array($setup) ? $setup : [$setup]),
+            'setup' => json_encode($setupArray),
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
         ]);
@@ -315,6 +351,11 @@ foreach ($securedTrades as [$symbol, $direction, $entry, $slPoints, $beSize, $se
     $secAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
     $slPrice = $direction === 'BUY' ? $entry - $slPoints : $entry + $slPoints;
     $bePrice = $entry; // BE = entry by convention
+    $durationForTf = (int) ((strtotime($beAt) - strtotime($openedAt)) / 60);
+    $setupArray = array_merge(
+        [pickTimeframe($symbol, $durationForTf)],
+        is_array($setup) ? $setup : [$setup]
+    );
 
     $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, be_price, be_size, position_type)
         VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, :be_price, :be_size, 'TRADE')")
@@ -325,7 +366,7 @@ foreach ($securedTrades as [$symbol, $direction, $entry, $slPoints, $beSize, $se
             'sym' => $symbol,
             'entry' => $entry,
             'size' => $size,
-            'setup' => json_encode(is_array($setup) ? $setup : [$setup]),
+            'setup' => json_encode($setupArray),
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
             'be_price' => $bePrice,
@@ -374,6 +415,10 @@ $orderCount = 0;
 foreach ($ordersToSeed as [$symbol, $direction, $entry, $slPoints, $setup, $status, $size, $acctNum, $expiresOffset]) {
     $orderAccountId = match ($acctNum) { 2 => $accountId2, 3 => $accountId3, default => $accountId };
     $slPrice = $direction === 'BUY' ? $entry - $slPoints : $entry + $slPoints;
+    $setupArray = array_merge(
+        [pickTimeframe($symbol)],
+        is_array($setup) ? $setup : [$setup]
+    );
 
     $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
         VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'ORDER')")
@@ -384,7 +429,7 @@ foreach ($ordersToSeed as [$symbol, $direction, $entry, $slPoints, $setup, $stat
             'sym' => $symbol,
             'entry' => $entry,
             'size' => $size,
-            'setup' => json_encode(is_array($setup) ? $setup : [$setup]),
+            'setup' => json_encode($setupArray),
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
         ]);

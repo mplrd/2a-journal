@@ -599,4 +599,32 @@ class StatsServiceTest extends TestCase
             ['account_id' => 7]
         );
     }
+
+    // ── getStatsByPeriod whitelist (cyclic modes) ───────────────────────
+
+    public function testGetStatsByPeriodAcceptsCyclicGroups(): void
+    {
+        foreach (['day_of_week', 'iso_week', 'month_of_year'] as $group) {
+            $statsRepo = $this->createMock(StatsRepository::class);
+            $statsRepo->expects($this->once())
+                ->method('getStatsByPeriod')
+                ->with(1, $group, $this->anything())
+                ->willReturn([]);
+            $accountRepo = $this->createMock(AccountRepository::class);
+            $userRepo = $this->createMock(UserRepository::class);
+            $userRepo->method('findById')->willReturn(['id' => 1, 'timezone' => 'Europe/Paris', 'be_threshold_percent' => 0]);
+            $setupRepo = $this->createMock(SetupRepository::class);
+            $service = new StatsService($statsRepo, $accountRepo, $userRepo, $setupRepo);
+
+            $service->getStatsByPeriod(1, $group);
+        }
+    }
+
+    public function testGetStatsByPeriodRejectsInvalidGroup(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('stats.error.invalid_period_group');
+
+        $this->service->getStatsByPeriod(1, 'fortnight');
+    }
 }
