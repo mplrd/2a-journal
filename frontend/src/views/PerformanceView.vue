@@ -24,13 +24,44 @@ const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
 const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions, isDark } = useChartOptions()
 
+// Period axis: linear = absolute date buckets ("2026-01"), cyclic = collapses
+// the year so seasonality stands out ("Monday", "January", etc.).
+const periodAxisMode = ref('linear')
 const periodGroup = ref('month')
-const periodGroupOptions = [
-  { label: t('performance.period_day'), value: 'day' },
-  { label: t('performance.period_week'), value: 'week' },
-  { label: t('performance.period_month'), value: 'month' },
-  { label: t('performance.period_year'), value: 'year' },
-]
+
+const periodAxisOptions = computed(() => [
+  { label: t('performance.period_axis_linear'), value: 'linear' },
+  { label: t('performance.period_axis_cyclic'), value: 'cyclic' },
+])
+
+const periodGroupOptions = computed(() => {
+  if (periodAxisMode.value === 'cyclic') {
+    return [
+      { label: t('performance.period_day_of_week'), value: 'day_of_week' },
+      { label: t('performance.period_iso_week'), value: 'iso_week' },
+      { label: t('performance.period_month_of_year'), value: 'month_of_year' },
+    ]
+  }
+  return [
+    { label: t('performance.period_day'), value: 'day' },
+    { label: t('performance.period_week'), value: 'week' },
+    { label: t('performance.period_month'), value: 'month' },
+    { label: t('performance.period_year'), value: 'year' },
+  ]
+})
+
+function formatPeriodLabel(periodValue) {
+  if (periodGroup.value === 'day_of_week') {
+    return t(`performance.weekdays.${periodValue}`)
+  }
+  if (periodGroup.value === 'month_of_year') {
+    return t(`performance.months.${periodValue}`)
+  }
+  if (periodGroup.value === 'iso_week') {
+    return t('performance.iso_week_short', { n: periodValue })
+  }
+  return periodValue
+}
 
 // Dialog state
 const dialogVisible = ref(false)
@@ -43,10 +74,15 @@ function openDetail(dimension) {
 }
 
 const dialogData = computed(() => {
+  // The setup chart and the timeframe chart share the same underlying source
+  // (statsStore.bySetup) but split it by category for display. The detail
+  // dialog respects that split.
+  const setups = statsStore.bySetup || []
   const map = {
     symbol: statsStore.bySymbol,
     direction: statsStore.byDirection,
-    setup: statsStore.bySetup,
+    setup: setups.filter((d) => d.category !== 'timeframe'),
+    setup_timeframe: setups.filter((d) => d.category === 'timeframe'),
     period: statsStore.byPeriod,
     session: statsStore.bySession,
     account_type: statsStore.byAccountType,
@@ -74,6 +110,9 @@ const initialCapital = computed(() => {
 // ── Data fetching ────────────────────────────────────────
 
 async function fetchAll() {
+  // The "by account type" widget was removed from the layout; the store
+  // action and endpoint are kept for future configurable widgets, but
+  // we drop the fetch here to avoid loading data that's not displayed.
   statsStore.dimensionsLoading = true
   try {
     await Promise.all([
@@ -83,7 +122,6 @@ async function fetchAll() {
       statsStore.fetchBySetup(),
       statsStore.fetchByPeriod(periodGroup.value),
       statsStore.fetchBySession(),
-      statsStore.fetchByAccountType(),
       statsStore.fetchRrDistribution(),
       statsStore.fetchHeatmap(),
     ])
@@ -114,6 +152,13 @@ async function onResetFilters() {
 
 async function onPeriodGroupChange() {
   await statsStore.fetchByPeriod(periodGroup.value)
+}
+
+function onPeriodAxisModeChange() {
+  // Seed a sensible default for the new axis: "month" linear or "month_of_year"
+  // cyclic. Then refetch with the new group value.
+  periodGroup.value = periodAxisMode.value === 'cyclic' ? 'month_of_year' : 'month'
+  onPeriodGroupChange()
 }
 
 // ── Chart data helpers ───────────────────────────────────
@@ -160,15 +205,33 @@ function dualMetricData(items, labelField, labelTranslator = null) {
 // ── Chart data ───────────────────────────────────────────
 
 const pnlBySymbolChartData = computed(() => pnlBarData(statsStore.bySymbol, 'symbol'))
-const pnlByPeriodChartData = computed(() => pnlBarData(statsStore.byPeriod, 'period'))
+const pnlByPeriodChartData = computed(() => {
+  const items = statsStore.byPeriod
+  if (!items || items.length === 0) return null
+  return {
+    labels: items.map((d) => formatPeriodLabel(d.period)),
+    datasets: [{
+      label: t('performance.total_pnl'),
+      data: items.map((d) => Number(d.total_pnl)),
+      backgroundColor: items.map((d) => (Number(d.total_pnl) >= 0 ? CHART_PALETTE.positive : CHART_PALETTE.negative)),
+      borderRadius: 4,
+    }],
+  }
+})
 
 const perfBySymbolChartData = computed(() => dualMetricData(statsStore.bySymbol, 'symbol'))
-const perfBySetupChartData = computed(() => dualMetricData(statsStore.bySetup, 'setup'))
+// "WR/RR par setup" excludes timeframe-categorized setups, which now have
+// their own dedicated widget. NULL category and other categories stay here.
+const perfBySetupChartData = computed(() => {
+  const items = (statsStore.bySetup || []).filter((d) => d.category !== 'timeframe')
+  return dualMetricData(items, 'setup')
+})
+const perfByTimeframeChartData = computed(() => {
+  const items = (statsStore.bySetup || []).filter((d) => d.category === 'timeframe')
+  return dualMetricData(items, 'setup')
+})
 const perfBySessionChartData = computed(() =>
   dualMetricData(statsStore.bySession, 'session', (v) => t(`performance.sessions.${v}`)),
-)
-const perfByAccountTypeChartData = computed(() =>
-  dualMetricData(statsStore.byAccountType, 'account_type', (v) => t(`accounts.types.${v}`)),
 )
 
 const cumulativePnlChartData = computed(() => {
@@ -241,7 +304,7 @@ const winLossChartData = computed(() => {
         <RrDistributionChart :data="statsStore.rrDistribution" />
       </div>
 
-      <!-- Row 3: P&L by Symbol + Win Rate & R:R by Symbol -->
+      <!-- Row 3: P&L by Symbol + P&L by Period (with linear/cyclic toggle) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('dashboard.pnl_by_symbol')"
@@ -252,6 +315,39 @@ const winLossChartData = computed(() => {
           @detail="openDetail('symbol')"
         />
         <ChartCard
+          :title="t('performance.pnl_by_period')"
+          type="bar"
+          :data="pnlByPeriodChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('period')"
+        >
+          <template #header-actions>
+            <div class="flex gap-2">
+              <Select
+                v-model="periodAxisMode"
+                :options="periodAxisOptions"
+                optionLabel="label"
+                optionValue="value"
+                class="w-32"
+                @change="onPeriodAxisModeChange"
+              />
+              <Select
+                v-model="periodGroup"
+                :options="periodGroupOptions"
+                optionLabel="label"
+                optionValue="value"
+                class="w-36"
+                @change="onPeriodGroupChange"
+              />
+            </div>
+          </template>
+        </ChartCard>
+      </div>
+
+      <!-- Row 4: WR/RR by Symbol + WR/RR by Setup (excludes timeframe) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
           :title="t('performance.perf_by_symbol')"
           type="bar"
           :data="perfBySymbolChartData"
@@ -259,10 +355,6 @@ const winLossChartData = computed(() => {
           detailable
           @detail="openDetail('symbol')"
         />
-      </div>
-
-      <!-- Row 4: Perf by Setup + P&L by Period -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('performance.perf_by_setup')"
           type="bar"
@@ -282,29 +374,18 @@ const winLossChartData = computed(() => {
             />
           </template>
         </ChartCard>
-        <ChartCard
-          :title="t('performance.pnl_by_period')"
-          type="bar"
-          :data="pnlByPeriodChartData"
-          :options="barChartOptions"
-          detailable
-          @detail="openDetail('period')"
-        >
-          <template #header-actions>
-            <Select
-              v-model="periodGroup"
-              :options="periodGroupOptions"
-              optionLabel="label"
-              optionValue="value"
-              class="w-32"
-              @change="onPeriodGroupChange"
-            />
-          </template>
-        </ChartCard>
       </div>
 
-      <!-- Row 5: Perf by Session + Perf by Account Type -->
+      <!-- Row 5: WR/RR by Timeframe + WR/RR by Session -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
+          :title="t('performance.perf_by_timeframe')"
+          type="bar"
+          :data="perfByTimeframeChartData"
+          :options="dualAxisChartOptions"
+          detailable
+          @detail="openDetail('setup_timeframe')"
+        />
         <ChartCard
           :title="t('performance.perf_by_session')"
           type="bar"
@@ -312,14 +393,6 @@ const winLossChartData = computed(() => {
           :options="dualAxisChartOptions"
           detailable
           @detail="openDetail('session')"
-        />
-        <ChartCard
-          :title="t('performance.perf_by_account_type')"
-          type="bar"
-          :data="perfByAccountTypeChartData"
-          :options="dualAxisChartOptions"
-          detailable
-          @detail="openDetail('account_type')"
         />
       </div>
 
