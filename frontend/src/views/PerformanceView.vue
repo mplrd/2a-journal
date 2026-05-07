@@ -7,7 +7,7 @@ import { useSymbolsStore } from '@/stores/symbols'
 import { useSetupsStore } from '@/stores/setups'
 import { useChartOptions } from '@/composables/useChartOptions'
 import { CHART_PALETTE, primaryFor, withAlpha } from '@/constants/chartPalette'
-import Select from 'primevue/select'
+import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
@@ -24,10 +24,12 @@ const symbolsStore = useSymbolsStore()
 const setupsStore = useSetupsStore()
 const { barChartOptions, lineChartOptions, doughnutChartOptions, dualAxisChartOptions, isDark } = useChartOptions()
 
-// Period axis: linear = absolute date buckets ("2026-01"), cyclic = collapses
-// the year so seasonality stands out ("Monday", "January", etc.).
-const periodAxisMode = ref('linear')
-const periodGroup = ref('month')
+// Period axis: cyclic only in the UI — linear mode stayed niche after early
+// usage and was hidden. The linear branches in this script are intentionally
+// kept (computed options + onPeriodAxisModeChange) so we can re-expose the
+// toggle later by re-adding the axis Select to the template.
+const periodAxisMode = ref('cyclic')
+const periodGroup = ref('day_of_week')
 
 const periodAxisOptions = computed(() => [
   { label: t('performance.period_axis_linear'), value: 'linear' },
@@ -36,10 +38,13 @@ const periodAxisOptions = computed(() => [
 
 const periodGroupOptions = computed(() => {
   if (periodAxisMode.value === 'cyclic') {
+    // Cyclic granularity options reuse the simple linear labels (jour/semaine/mois)
+    // since the linear toggle is hidden — there's no contrast to disambiguate
+    // from anymore, and the simpler labels read better in the dropdown.
     return [
-      { label: t('performance.period_day_of_week'), value: 'day_of_week' },
-      { label: t('performance.period_iso_week'), value: 'iso_week' },
-      { label: t('performance.period_month_of_year'), value: 'month_of_year' },
+      { label: t('performance.period_day'), value: 'day_of_week' },
+      { label: t('performance.period_week'), value: 'iso_week' },
+      { label: t('performance.period_month'), value: 'month_of_year' },
     ]
   }
   return [
@@ -304,48 +309,7 @@ const winLossChartData = computed(() => {
         <RrDistributionChart :data="statsStore.rrDistribution" />
       </div>
 
-      <!-- Row 3: P&L by Symbol + P&L by Period (with linear/cyclic toggle) -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <ChartCard
-          :title="t('dashboard.pnl_by_symbol')"
-          type="bar"
-          :data="pnlBySymbolChartData"
-          :options="barChartOptions"
-          detailable
-          @detail="openDetail('symbol')"
-        />
-        <ChartCard
-          :title="t('performance.pnl_by_period')"
-          type="bar"
-          :data="pnlByPeriodChartData"
-          :options="barChartOptions"
-          detailable
-          @detail="openDetail('period')"
-        >
-          <template #header-actions>
-            <div class="flex gap-2">
-              <Select
-                v-model="periodAxisMode"
-                :options="periodAxisOptions"
-                optionLabel="label"
-                optionValue="value"
-                class="w-32"
-                @change="onPeriodAxisModeChange"
-              />
-              <Select
-                v-model="periodGroup"
-                :options="periodGroupOptions"
-                optionLabel="label"
-                optionValue="value"
-                class="w-36"
-                @change="onPeriodGroupChange"
-              />
-            </div>
-          </template>
-        </ChartCard>
-      </div>
-
-      <!-- Row 4: WR/RR by Symbol + WR/RR by Setup (excludes timeframe) -->
+      <!-- Row 3: WR/RR by Symbol + WR/RR by Setup (excludes timeframe) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('performance.perf_by_symbol')"
@@ -376,7 +340,7 @@ const winLossChartData = computed(() => {
         </ChartCard>
       </div>
 
-      <!-- Row 5: WR/RR by Timeframe + WR/RR by Session -->
+      <!-- Row 4: WR/RR by Timeframe + WR/RR by Session -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <ChartCard
           :title="t('performance.perf_by_timeframe')"
@@ -394,6 +358,38 @@ const winLossChartData = computed(() => {
           detailable
           @detail="openDetail('session')"
         />
+      </div>
+
+      <!-- Row 5: P&L by Symbol + P&L by Period (cyclic only) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <ChartCard
+          :title="t('dashboard.pnl_by_symbol')"
+          type="bar"
+          :data="pnlBySymbolChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('symbol')"
+        />
+        <ChartCard
+          :title="t('performance.pnl_by_period')"
+          type="bar"
+          :data="pnlByPeriodChartData"
+          :options="barChartOptions"
+          detailable
+          @detail="openDetail('period')"
+        >
+          <template #header-actions>
+            <SelectButton
+              v-model="periodGroup"
+              :options="periodGroupOptions"
+              optionLabel="label"
+              optionValue="value"
+              size="small"
+              :allowEmpty="false"
+              @change="onPeriodGroupChange"
+            />
+          </template>
+        </ChartCard>
       </div>
 
       <!-- Row 6: Heatmap (full width) -->
