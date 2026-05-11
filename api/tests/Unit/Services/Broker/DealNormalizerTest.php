@@ -426,4 +426,75 @@ class DealNormalizerTest extends TestCase
         $this->assertNull($normalized['tp_price']);
         $this->assertNull($normalized['expires_at']);
     }
+
+    // ── Ouinex closed orders ───────────────────────────────────────
+
+    public function testNormalizeOuinexClosedOrderMapsExecutedStatus(): void
+    {
+        $order = [
+            'order_id' => 'ord-100',
+            'status' => 'EXECUTED',
+            'updated_at' => '2026-05-08T12:00:00Z',
+        ];
+
+        $normalized = $this->normalizer->normalizeOuinexClosedOrder($order);
+
+        $this->assertSame('ouinex_order_ord-100', $normalized['external_id']);
+        $this->assertSame('EXECUTED', $normalized['final_status']);
+    }
+
+    public function testNormalizeOuinexClosedOrderMapsCancelledStatus(): void
+    {
+        $order = [
+            'order_id' => 'ord-101',
+            'status' => 'CANCELLED',
+            'updated_at' => '2026-05-08T12:00:00Z',
+        ];
+
+        $normalized = $this->normalizer->normalizeOuinexClosedOrder($order);
+
+        $this->assertSame('CANCELLED', $normalized['final_status']);
+    }
+
+    public function testNormalizeOuinexClosedOrderMapsExpiredStatus(): void
+    {
+        $order = [
+            'order_id' => 'ord-102',
+            'status' => 'EXPIRED',
+            'updated_at' => '2026-05-08T12:00:00Z',
+        ];
+
+        $normalized = $this->normalizer->normalizeOuinexClosedOrder($order);
+
+        $this->assertSame('EXPIRED', $normalized['final_status']);
+    }
+
+    public function testNormalizeOuinexClosedOrderMapsFilledAsExecuted(): void
+    {
+        // Some broker APIs use FILLED instead of EXECUTED — normalize defensively
+        // so the journal sees only one terminology.
+        $order = [
+            'order_id' => 'ord-fill',
+            'status' => 'FILLED',
+            'updated_at' => '2026-05-08T12:00:00Z',
+        ];
+
+        $normalized = $this->normalizer->normalizeOuinexClosedOrder($order);
+
+        $this->assertSame('EXECUTED', $normalized['final_status']);
+    }
+
+    public function testNormalizeOuinexClosedOrderSkipsUnknownStatus(): void
+    {
+        // If Ouinex ever returns a status we don't model, skip the row
+        // rather than guess. The diff service falls back to its default
+        // policy for unseen orders.
+        $order = [
+            'order_id' => 'ord-weird',
+            'status' => 'IN_FLIGHT',
+            'updated_at' => '2026-05-08T12:00:00Z',
+        ];
+
+        $this->assertNull($this->normalizer->normalizeOuinexClosedOrder($order));
+    }
 }

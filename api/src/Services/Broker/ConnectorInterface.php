@@ -36,6 +36,20 @@ interface ConnectorInterface
     public function fetchOpenOrders(array $credentials): array;
 
     /**
+     * Fetch a snapshot of recently-closed orders with their final status
+     * (executed, cancelled, expired). Consumed by the order diff to
+     * disambiguate why an order disappeared from open_orders: it executed,
+     * it was cancelled by the user, or it expired. Connectors that don't
+     * expose closed orders may return an empty list — the diff service
+     * falls back to its conservative default (CANCELLED) for unmatched
+     * disappearances.
+     *
+     * @param array $credentials Decrypted credentials
+     * @return array{orders: array, raw_count: int}
+     */
+    public function fetchClosedOrders(array $credentials): array;
+
+    /**
      * Refresh credentials (e.g. OAuth token refresh).
      * Returns updated credentials array, or the same if no refresh needed.
      */

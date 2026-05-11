@@ -7,8 +7,9 @@ Ajout d'**Ouinex** comme troisième provider de synchronisation broker, à côt�
 1. Les **positions clôturées** depuis le dernier curseur (`closed_margin_positions`, incrémental).
 2. Le **snapshot complet des positions ouvertes** (`open_margin_positions`, plein à chaque run — pas de curseur, c'est le broker la source de vérité du "live").
 3. Le **snapshot complet des ordres en attente** (`open_orders`, limites/stops/conditionnels non encore déclenchés).
+4. Le **snapshot des ordres récemment finalisés** (`closed_orders`, utilisé pour disambiguer EXECUTED / CANCELLED / EXPIRED quand un order quitte le snapshot pending).
 
-Cette livraison couvre la **Phase 1** du plan E-02 (cf. `docs/evolutions.md`) — les **dérivés** uniquement. La Phase 2 (spot, `closed_orders` order-by-order avec pairing FIFO) fera l'objet d'une branche dédiée ultérieure. Une livraison **paquet C** sur cette même branche ajoutera le crossing avec `closed_orders` pour distinguer un ordre EXECUTED d'un ordre CANCELLED (la Phase 1 actuelle marque CANCELLED par défaut quand un order disparaît du snapshot — conservateur).
+Cette livraison couvre la **Phase 1** du plan E-02 (cf. `docs/evolutions.md`) — les **dérivés** uniquement. La Phase 2 (spot, order-by-order avec pairing FIFO) fera l'objet d'une branche dédiée ultérieure.
 
 Bonus pour l'utilisateur : pas d'export CSV à manipuler, pas de mapping de colonnes, un cursor incrémental qui n'importe que les positions nouvelles, et une réconciliation **différentielle** qui maintient l'état "live" des positions ouvertes à chaque sync **sans écraser les méta-données saisies par l'utilisateur** (setup, notes, custom fields).
 
@@ -43,7 +44,8 @@ Une fois connecté, le bouton **Synchroniser maintenant** rapatrie :
 - l'état **complet** des ordres pending côté Ouinex (limit/stop/conditional non déclenchés), réconciliés sur le modèle journal `position(position_type=ORDER) + order(PENDING)` :
   - nouvel ordre → insertion ;
   - ordre déjà connu (price changé par l'utilisateur côté Ouinex par ex.) → refresh des champs broker, setup/notes préservés ;
-  - ordre disparu du snapshot → marqué `OrderStatus::CANCELLED` (conservateur ; le paquet C améliorera avec `closed_orders` pour distinguer EXECUTED de CANCELLED). La position parente est **conservée** (le user garde l'historique avec ses annotations).
+  - ordre disparu du snapshot pending → le statut final est **désambigué via `closed_orders`** : EXECUTED si l'ordre a été déclenché, EXPIRED si la TTL a passé, CANCELLED si l'utilisateur l'a annulé manuellement. Faute d'info dans `closed_orders`, on retombe sur CANCELLED par défaut (conservateur).
+  - La position parente est **toujours conservée** (le user garde l'historique avec ses annotations).
 
 Un panneau **Historique** liste les runs précédents (date, statut, count).
 
@@ -151,17 +153,21 @@ Le scope de la diff est strictement limité par le préfixe `ouinex_` (via `find
 
 ### Snapshot orders PENDING — réconciliation différentielle (BrokerOrderSyncService)
 
-Symétrique de `BrokerOpenSyncService` mais opère sur le lifecycle `ORDER` (positions de type `ORDER` + orders.status `PENDING`) plutôt que sur les trades. `BrokerOrderSyncService::apply(userId, accountId, batchId, openOrdersSnapshot)` :
+Symétrique de `BrokerOpenSyncService` mais opère sur le lifecycle `ORDER` (positions de type `ORDER` + orders.status `PENDING`) plutôt que sur les trades. `BrokerOrderSyncService::apply(userId, accountId, batchId, openOrdersSnapshot, closedOrdersSnapshot)` :
 
 | Cas | Détection | Action |
 |---|---|---|
-| **INSERT** | snapshot ∖ DB | `positionRepo->create` (position_type=ORDER, entry_price=prix limit, sl_price si fourni, external_id=`ouinex_order_<order_id>`) + `orderRepo->create` (status=PENDING, expires_at). |
-| **UPDATE** | DB ∩ snapshot | `positionRepo->update` whitelisté broker fields (entry_price, size, sl_price, direction, symbol). Setup/notes/custom-fields jamais touchés. |
-| **CANCELLED** | DB ∖ snapshot | `orderRepo->updateStatus(CANCELLED)`. La position **n'est pas supprimée** — l'utilisateur garde la trace de l'ordre annulé avec ses annotations. |
+| **INSERT** | openSnapshot ∖ DB | `positionRepo->create` (position_type=ORDER, entry_price=prix limit, sl_price si fourni, external_id=`ouinex_order_<order_id>`) + `orderRepo->create` (status=PENDING, expires_at). |
+| **UPDATE** | DB ∩ openSnapshot | `positionRepo->update` whitelisté broker fields (entry_price, size, sl_price, direction, symbol). Setup/notes/custom-fields jamais touchés. |
+| **EXECUTED** | DB ∖ openSnapshot ∩ closedOrders[`final_status=EXECUTED`] | `orderRepo->updateStatus(EXECUTED)`. La nouvelle position TRADE résultante côté Ouinex est ingérée séparément par `BrokerOpenSyncService` sous son propre `external_id` (`ouinex_<margin_position_id>`). |
+| **EXPIRED** | DB ∖ openSnapshot ∩ closedOrders[`final_status=EXPIRED`] | `orderRepo->updateStatus(EXPIRED)`. |
+| **CANCELLED** | DB ∖ openSnapshot ∩ closedOrders[`final_status=CANCELLED`] OU DB ∖ openSnapshot sans signal dans closedOrders | `orderRepo->updateStatus(CANCELLED)`. La position **n'est pas supprimée** — l'utilisateur garde la trace. |
 
 Préfixe distinct (`ouinex_order_` vs `ouinex_` pour les margin positions) — les deux services scopent strictement leurs périmètres : pas de collision.
 
-Quand un order pending s'exécute côté Ouinex, il quitte `open_orders` et la position résultante apparaît dans `open_margin_positions` avec un `margin_position_id` (distinct du `order_id`). Conséquence Phase 1 actuelle : on a en base **deux entrées** — l'order CANCELLED par défaut + la nouvelle position OPEN. Le **paquet C** affinera en consommant `closed_orders` pour marquer correctement l'order EXECUTED (et idéalement le lier via `trades.source_order_id`).
+`closed_orders` n'est qu'un signal lifecycle (on retient `order_id` + `final_status`), pas une source de données économiques. La normalisation est défensive sur le vocabulaire des statuts (FILLED → EXECUTED, CANCELED → CANCELLED, status inconnu → skip pour ne pas mal classifier).
+
+Quand un order pending s'exécute côté Ouinex, on a en base **deux entrées** distinctes : l'order EXECUTED (avec setup/notes utilisateur) + la nouvelle position OPEN ingérée par le service sœur. Le matching `order_id → margin_position_id` via `trades.source_order_id` n'est pas implémenté en Phase 1 — Ouinex n'expose pas cette relation directement dans les payloads vus jusqu'ici. Si nécessaire plus tard, une passe supplémentaire pourra croiser sur la base d'heuristiques (symbol + prix + timing).
 
 ## Fichiers impactés
 
@@ -205,7 +211,7 @@ Pas de nouvelle variable secrète. La clé `BROKER_ENCRYPTION_KEY` (déjà en pl
 
 ## Couverture de tests
 
-Suite complète au vert (1178 tests, 3251 assertions). Sur le périmètre Ouinex/Diff/Sync :
+Suite complète au vert (1189 tests, 3285 assertions). Sur le périmètre Ouinex/Diff/Sync :
 
 | Test | Type | Fichier |
 |---|---|---|
@@ -252,17 +258,20 @@ Suite complète au vert (1178 tests, 3251 assertions). Sur le périmètre Ouinex
 | Normalizer order optionnels null si absent | Unit | `…OpenOrderLeavesOptionalsNullWhenAbsent` |
 | OrderDiff insère un order PENDING inconnu (position ORDER + order PENDING) | Unit | `BrokerOrderSyncServiceTest::testInsertsNewPendingOrderAsPositionOrderPlusOrder` |
 | OrderDiff met à jour broker fields **sans** toucher méta user | Unit | `…UpdatesBrokerFieldsOfExistingPendingOrderPreservingMeta` |
-| OrderDiff marque CANCELLED quand disparaît du snapshot | Unit | `…MarksOrderCancelledWhenItDisappearsFromSnapshot` |
+| OrderDiff disparition par défaut → CANCELLED | Unit | `…KeepsCancelledDefaultWhenNotInClosedSnapshot` |
+| OrderDiff disparition + closed EXECUTED → EXECUTED | Unit | `…MarksOrderExecutedWhenInClosedSnapshotAsExecuted` |
+| OrderDiff disparition + closed EXPIRED → EXPIRED | Unit | `…MarksOrderExpiredWhenInClosedSnapshotAsExpired` |
+| OrderDiff disparition + closed CANCELLED → CANCELLED confirmé | Unit | `…MarksCancelledWhenInClosedSnapshotAsCancelled` |
 | OrderDiff mixed (insert + update + cancel) | Unit | `…ProcessesMixedOrderSnapshotInOneCall` |
 | OrderDiff scope strict `ouinex_order_` | Unit | `…QueriesRepoWithOuinexOrderPrefix` |
-
-## Paquet C — à venir sur cette même branche
-
-Pour distinguer un order pending **exécuté** d'un order pending **annulé** quand il disparaît du snapshot `open_orders`, il faut consommer la query GraphQL `closed_orders` (historique des fills) et faire le rapprochement par `order_id`. La logique courante (Paquet B) marque CANCELLED par défaut — c'est conservateur mais imprécis pour les orders effectivement exécutés. À implémenter :
-
-1. `OuinexConnector::fetchClosedOrders($credentials)` — paginé, sans curseur (peu d'entries actives à la fois).
-2. Étendre `BrokerOrderSyncService::apply` avec un 5e paramètre `$closedOrdersSnapshot` : matcher par `order_id` les entries DB ∖ openSnapshot pour décider EXECUTED vs CANCELLED.
-3. Idéalement : lier `trades.source_order_id` du nouveau trade OPEN au order EXECUTED quand on peut faire le matching `order_id → margin_position_id` côté Ouinex.
+| Connector `fetchClosedOrders` happy path | Unit | `OuinexConnectorTest::testFetchClosedOrdersReturnsNormalizedSnapshot` |
+| Connector `fetchClosedOrders` paginate | Unit | `…PaginatesUntilEmptyPage` |
+| Connector `fetchClosedOrders` API vide | Unit | `…ReturnsEmptyWhenApiReturnsEmpty` |
+| Normalizer closed EXECUTED | Unit | `DealNormalizerTest::testNormalizeOuinexClosedOrderMapsExecutedStatus` |
+| Normalizer closed CANCELLED | Unit | `…OuinexClosedOrderMapsCancelledStatus` |
+| Normalizer closed EXPIRED | Unit | `…OuinexClosedOrderMapsExpiredStatus` |
+| Normalizer FILLED → EXECUTED (vocab drift) | Unit | `…OuinexClosedOrderMapsFilledAsExecuted` |
+| Normalizer status inconnu → skip | Unit | `…OuinexClosedOrderSkipsUnknownStatus` |
 
 ## Phase 2 — pour mémoire
 

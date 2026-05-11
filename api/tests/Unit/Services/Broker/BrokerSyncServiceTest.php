@@ -69,10 +69,12 @@ class BrokerSyncServiceTest extends TestCase
             ->willReturn(['positions' => [], 'raw_count' => 0]);
         $connector->method('fetchOpenOrders')
             ->willReturn(['orders' => [], 'raw_count' => 0]);
+        $connector->method('fetchClosedOrders')
+            ->willReturn(['orders' => [], 'raw_count' => 0]);
         $this->openSyncService->method('apply')
             ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
         $this->orderSyncService->method('apply')
-            ->willReturn(['inserted' => 0, 'updated' => 0, 'cancelled' => 0]);
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
     }
 
     private function makeConnection(string $provider = 'METAAPI', array $credentials = []): array
@@ -278,8 +280,10 @@ class BrokerSyncServiceTest extends TestCase
         // assertions that target openSyncService.
         $this->ouinexConnector->method('fetchOpenOrders')
             ->willReturn(['orders' => [], 'raw_count' => 0]);
+        $this->ouinexConnector->method('fetchClosedOrders')
+            ->willReturn(['orders' => [], 'raw_count' => 0]);
         $this->orderSyncService->method('apply')
-            ->willReturn(['inserted' => 0, 'updated' => 0, 'cancelled' => 0]);
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $this->importService->method('importNormalizedPositions')
             ->willReturn([
@@ -330,6 +334,9 @@ class BrokerSyncServiceTest extends TestCase
         $this->metaApiConnector->expects($this->once())
             ->method('fetchOpenOrders')
             ->willReturn(['orders' => [], 'raw_count' => 0]);
+        $this->metaApiConnector->expects($this->once())
+            ->method('fetchClosedOrders')
+            ->willReturn(['orders' => [], 'raw_count' => 0]);
 
         $this->importService->method('importNormalizedPositions')
             ->willReturn(['batch_id' => 7, 'imported_positions' => 0, 'imported_trades' => 0,
@@ -341,8 +348,8 @@ class BrokerSyncServiceTest extends TestCase
             ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
         $this->orderSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 7, [])
-            ->willReturn(['inserted' => 0, 'updated' => 0, 'cancelled' => 0]);
+            ->with(10, 5, 7, [], [])
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);
         $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
@@ -351,9 +358,9 @@ class BrokerSyncServiceTest extends TestCase
     public function testSyncCallsOrderSnapshotDiffAfterOpenPositionsDiff(): void
     {
         // The Ouinex sync flow runs: closed deals → open positions diff →
-        // open orders diff. The order diff receives the open_orders
-        // snapshot and the same import batch id so cancelled orders stay
-        // traceable to the run that surfaced them.
+        // open orders + closed orders diff. The order diff receives both
+        // the open and closed snapshots so it can disambiguate EXECUTED
+        // from CANCELLED on disappearance.
         $connection = $this->makeConnection('OUINEX', [
             'service_api_key' => 'k', 'service_api_secret' => 's',
             'jwt' => 'cached', 'jwt_expires_at' => time() + 3600,
@@ -370,6 +377,9 @@ class BrokerSyncServiceTest extends TestCase
                 'external_id' => 'ouinex_order_ord-42',
             ],
         ];
+        $closedOrders = [
+            ['external_id' => 'ouinex_order_ord-99', 'final_status' => 'EXECUTED'],
+        ];
 
         $this->ouinexConnector->method('refreshCredentials')->willReturnArgument(0);
         $this->ouinexConnector->method('fetchDeals')
@@ -379,6 +389,9 @@ class BrokerSyncServiceTest extends TestCase
         $this->ouinexConnector->expects($this->once())
             ->method('fetchOpenOrders')
             ->willReturn(['orders' => $openOrders, 'raw_count' => 1]);
+        $this->ouinexConnector->expects($this->once())
+            ->method('fetchClosedOrders')
+            ->willReturn(['orders' => $closedOrders, 'raw_count' => 1]);
 
         $this->importService->method('importNormalizedPositions')
             ->willReturn([
@@ -390,13 +403,15 @@ class BrokerSyncServiceTest extends TestCase
 
         $this->orderSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 42, $openOrders)
-            ->willReturn(['inserted' => 1, 'updated' => 0, 'cancelled' => 0]);
+            ->with(10, 5, 42, $openOrders, $closedOrders)
+            ->willReturn(['inserted' => 1, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);
 
         $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
         $this->assertSame(1, $result['pending_inserted']);
         $this->assertSame(0, $result['pending_cancelled']);
+        $this->assertSame(0, $result['pending_executed']);
+        $this->assertSame(0, $result['pending_expired']);
     }
 }

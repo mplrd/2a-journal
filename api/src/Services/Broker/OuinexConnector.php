@@ -159,6 +159,42 @@ class OuinexConnector implements ConnectorInterface
         ];
     }
 
+    public function fetchClosedOrders(array $credentials): array
+    {
+        $credentials = $this->refreshCredentials($credentials);
+        $jwt = $credentials['jwt'];
+
+        $orders = [];
+        $rawCount = 0;
+        $offset = 0;
+
+        // closed_orders is the history of finalized orders (executed,
+        // cancelled, expired). Snapshot mode — no cursor. The diff service
+        // matches by order_id with the journal's PENDING set.
+        do {
+            $response = $this->graphqlRequest($jwt, $this->closedOrdersQuery(), [
+                'pager' => ['offset' => $offset, 'limit' => self::PAGE_LIMIT],
+            ]);
+
+            $page = $response['data']['closed_orders'] ?? [];
+            $rawCount += count($page);
+
+            foreach ($page as $raw) {
+                $normalized = $this->normalizer->normalizeOuinexClosedOrder($raw);
+                if ($normalized !== null) {
+                    $orders[] = $normalized;
+                }
+            }
+
+            $offset += self::PAGE_LIMIT;
+        } while (count($page) === self::PAGE_LIMIT);
+
+        return [
+            'orders' => $orders,
+            'raw_count' => $rawCount,
+        ];
+    }
+
     public function refreshCredentials(array $credentials): array
     {
         $jwt = $credentials['jwt'] ?? null;
@@ -344,6 +380,23 @@ class OuinexConnector implements ConnectorInterface
             take_profit
             expires_at
             created_at
+          }
+        }
+        GQL;
+    }
+
+    private function closedOrdersQuery(): string
+    {
+        // Closed orders are queried only for their final status — used to
+        // disambiguate why an order disappeared from open_orders (executed,
+        // cancelled, expired). The journal doesn't store extra closed-order
+        // metadata at this stage, so the query stays minimal.
+        return <<<'GQL'
+        query ($pager: PagerInput) {
+          closed_orders(pager: $pager) {
+            order_id
+            status
+            updated_at
           }
         }
         GQL;

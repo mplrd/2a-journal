@@ -156,6 +156,42 @@ class DealNormalizer
         ];
     }
 
+    /**
+     * Normalize an Ouinex closed_order into a tiny row carrying the
+     * external_id (so it matches a PENDING order in the journal by
+     * order_id) and the final lifecycle status mapped to our OrderStatus
+     * enum vocabulary. Returns null for unknown statuses — the diff
+     * service falls back to its default policy rather than misclassify.
+     */
+    public function normalizeOuinexClosedOrder(array $order): ?array
+    {
+        $finalStatus = $this->mapClosedOrderStatus($order['status'] ?? '');
+        if ($finalStatus === null) {
+            return null;
+        }
+
+        return [
+            'external_id' => 'ouinex_order_' . ($order['order_id'] ?? ''),
+            'final_status' => $finalStatus,
+        ];
+    }
+
+    /**
+     * Map an Ouinex closed_order.status string to one of our OrderStatus
+     * values. Defensive against vocabulary drift: FILLED is treated as
+     * EXECUTED (some APIs alternate). Anything not on the allow-list
+     * returns null so the diff service can fall back to its default.
+     */
+    private function mapClosedOrderStatus(string $raw): ?string
+    {
+        return match (strtoupper($raw)) {
+            'EXECUTED', 'FILLED', 'COMPLETED' => 'EXECUTED',
+            'CANCELLED', 'CANCELED' => 'CANCELLED',
+            'EXPIRED' => 'EXPIRED',
+            default => null,
+        };
+    }
+
     private function msTimestampToDatetime(int $ms): string
     {
         return gmdate('Y-m-d H:i:s', (int) ($ms / 1000));

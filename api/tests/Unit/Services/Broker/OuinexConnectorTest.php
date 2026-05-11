@@ -514,4 +514,80 @@ class OuinexConnectorTest extends TestCase
         $this->assertSame(0, $result['raw_count']);
         $this->assertSame([], $result['orders']);
     }
+
+    // ── fetchClosedOrders ───────────────────────────────────────
+
+    private function makeClosedOrder(array $overrides = []): array
+    {
+        return array_merge([
+            'order_id' => 'ord-100',
+            'status' => 'EXECUTED',
+            'updated_at' => '2026-05-08T12:00:00Z',
+        ], $overrides);
+    }
+
+    public function testFetchClosedOrdersReturnsNormalizedSnapshot(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse(['closed_orders' => [
+                $this->makeClosedOrder(['order_id' => 'ord-100', 'status' => 'EXECUTED']),
+                $this->makeClosedOrder(['order_id' => 'ord-101', 'status' => 'CANCELLED']),
+            ]]),
+            $this->gqlResponse(['closed_orders' => []]),
+        ]);
+
+        $result = $connector->fetchClosedOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ]);
+
+        $this->assertSame(2, $result['raw_count']);
+        $this->assertCount(2, $result['orders']);
+        // Same external_id prefix as open_orders — matches the open-snapshot
+        // by order_id during the diff.
+        $this->assertSame('ouinex_order_ord-100', $result['orders'][0]['external_id']);
+        $this->assertSame('EXECUTED', $result['orders'][0]['final_status']);
+        $this->assertSame('CANCELLED', $result['orders'][1]['final_status']);
+    }
+
+    public function testFetchClosedOrdersPaginatesUntilEmptyPage(): void
+    {
+        $page1 = array_map(fn($i) => $this->makeClosedOrder(['order_id' => "ord-$i"]), range(1, 100));
+        $page2 = array_map(fn($i) => $this->makeClosedOrder(['order_id' => "ord-$i"]), range(101, 105));
+
+        $connector = $this->createConnector([
+            $this->gqlResponse(['closed_orders' => $page1]),
+            $this->gqlResponse(['closed_orders' => $page2]),
+            $this->gqlResponse(['closed_orders' => []]),
+        ]);
+
+        $result = $connector->fetchClosedOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ]);
+
+        $this->assertSame(105, $result['raw_count']);
+        $this->assertCount(105, $result['orders']);
+    }
+
+    public function testFetchClosedOrdersReturnsEmptyWhenApiReturnsEmpty(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse(['closed_orders' => []]),
+        ]);
+
+        $result = $connector->fetchClosedOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ]);
+
+        $this->assertSame(0, $result['raw_count']);
+        $this->assertSame([], $result['orders']);
+    }
 }

@@ -13,26 +13,29 @@ use App\Repositories\PositionRepository;
  * the ORDER lifecycle (positions of type ORDER + orders.status PENDING)
  * rather than the TRADE lifecycle.
  *
- *  - INSERT  : snapshot order not yet known → create position (ORDER) +
- *              order (PENDING)
- *  - UPDATE  : known pending order → refresh broker-driven fields on the
- *              position (entry_price, size, SL) while preserving user meta
- *              (setup, notes, custom_fields)
- *  - CANCELLED : known pending order absent from the snapshot → mark
- *              the order as CANCELLED. Conservative default in Paquet B;
- *              Paquet C will refine via closed_orders to distinguish
- *              EXECUTED from CANCELLED.
+ *  - INSERT   : snapshot order not yet known → create position (ORDER) +
+ *               order (PENDING)
+ *  - UPDATE   : known pending order → refresh broker-driven fields on the
+ *               position (entry_price, size, SL) while preserving user meta
+ *               (setup, notes, custom_fields)
+ *  - EXECUTED : known pending order absent from open_orders AND present in
+ *               closed_orders as EXECUTED/FILLED → order flipped to
+ *               EXECUTED (the resulting margin position is ingested by
+ *               BrokerOpenSyncService separately under its own external_id)
+ *  - EXPIRED  : closed_orders confirms EXPIRED → order flipped to EXPIRED
+ *  - CANCELLED: closed_orders confirms CANCELLED, OR no closed_orders signal
+ *               at all → conservative default flip to CANCELLED
  *
  * Scope is enforced by the prefix 'ouinex_order_'. Manual orders (no
  * external_id) and other-provider orders (different prefix) are invisible
  * to this service.
  *
- * Note on the position parent of an order: when a pending order eventually
- * executes ON Ouinex, it will appear in open_margin_positions (handled by
- * BrokerOpenSyncService) under a DIFFERENT external_id ('ouinex_<margin_
- * position_id>'). Therefore the order's position row and the eventual
- * trade's position row stay distinct — we don't try to glue them at this
- * layer.
+ * Note on the position parent of an order: when a pending order executes
+ * on Ouinex, it leaves open_orders and the resulting margin position
+ * appears in open_margin_positions under a DIFFERENT external_id
+ * ('ouinex_<margin_position_id>'). The order's position row and the
+ * eventual trade's position row therefore stay distinct — we don't try to
+ * glue them at this layer.
  */
 class BrokerOrderSyncService
 {
@@ -48,20 +51,30 @@ class BrokerOrderSyncService
      * @param int $accountId Account scope.
      * @param int $batchId Import batch used for new-order traceability.
      * @param array $openOrdersSnapshot Normalized pending orders from connector.
-     * @return array{inserted: int, updated: int, cancelled: int}
+     * @param array $closedOrdersSnapshot Normalized closed-order final states
+     *                                    (rows of {external_id, final_status}).
+     *                                    Optional but recommended — without
+     *                                    it, disappearances default to
+     *                                    CANCELLED. May be empty for
+     *                                    connectors that don't surface
+     *                                    closed-order history.
+     * @return array{inserted: int, updated: int, executed: int, expired: int, cancelled: int}
      */
     public function apply(
         int $userId,
         int $accountId,
         int $batchId,
         array $openOrdersSnapshot,
+        array $closedOrdersSnapshot,
     ): array {
         $existing = $this->orderRepo->findPendingByExternalIdPrefixInAccount(
             $accountId,
             self::OUINEX_ORDER_PREFIX,
         );
 
-        $stats = ['inserted' => 0, 'updated' => 0, 'cancelled' => 0];
+        $finalStatusByExternalId = $this->indexFinalStatus($closedOrdersSnapshot);
+
+        $stats = ['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0];
         $seen = [];
 
         // INSERT or UPDATE for each snapshot row.
@@ -78,19 +91,48 @@ class BrokerOrderSyncService
             }
         }
 
-        // Anything left in existing wasn't seen → mark CANCELLED.
+        // For anything in DB but not in open snapshot, decide the final
+        // status. closed_orders takes precedence; default CANCELLED if no
+        // info available (conservative).
         foreach ($existing as $externalId => $row) {
             if (isset($seen[$externalId])) {
                 continue;
             }
-            $this->orderRepo->updateStatus(
-                (int) $row['order_id'],
-                OrderStatus::CANCELLED->value,
-            );
-            $stats['cancelled']++;
+
+            $finalStatus = $finalStatusByExternalId[$externalId] ?? 'CANCELLED';
+            $orderStatus = $this->mapFinalStatusToEnum($finalStatus);
+            $this->orderRepo->updateStatus((int) $row['order_id'], $orderStatus->value);
+
+            $key = match ($orderStatus) {
+                OrderStatus::EXECUTED => 'executed',
+                OrderStatus::EXPIRED => 'expired',
+                default => 'cancelled',
+            };
+            $stats[$key]++;
         }
 
         return $stats;
+    }
+
+    private function indexFinalStatus(array $closedOrdersSnapshot): array
+    {
+        $indexed = [];
+        foreach ($closedOrdersSnapshot as $row) {
+            if (!isset($row['external_id'], $row['final_status'])) {
+                continue;
+            }
+            $indexed[$row['external_id']] = $row['final_status'];
+        }
+        return $indexed;
+    }
+
+    private function mapFinalStatusToEnum(string $finalStatus): OrderStatus
+    {
+        return match ($finalStatus) {
+            'EXECUTED' => OrderStatus::EXECUTED,
+            'EXPIRED' => OrderStatus::EXPIRED,
+            default => OrderStatus::CANCELLED,
+        };
     }
 
     private function insertNewPending(int $userId, int $accountId, int $batchId, array $row): void

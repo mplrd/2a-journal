@@ -105,16 +105,18 @@ class BrokerSyncService
             );
 
             // Reconcile pending orders. Same pattern as open positions but
-            // on the ORDER lifecycle. Orders that disappear from the broker
-            // snapshot are marked CANCELLED here (conservative default —
-            // Phase 1 doesn't cross-check closed_orders yet for EXECUTED vs
-            // CANCELLED disambiguation).
-            $ordersResult = $connector->fetchOpenOrders($credentials);
+            // on the ORDER lifecycle. closed_orders is consumed alongside
+            // open_orders so disappearances can be tagged EXECUTED,
+            // EXPIRED, or CANCELLED accurately rather than always defaulting
+            // to CANCELLED.
+            $openOrdersResult = $connector->fetchOpenOrders($credentials);
+            $closedOrdersResult = $connector->fetchClosedOrders($credentials);
             $orderStats = $this->orderSyncService->apply(
                 $userId,
                 (int) $connection['account_id'],
                 (int) $importResult['batch_id'],
-                $ordersResult['orders'],
+                $openOrdersResult['orders'],
+                $closedOrdersResult['orders'],
             );
 
             // Update connection state
@@ -150,6 +152,8 @@ class BrokerSyncService
                 'live_transitioned' => $liveStats['transitioned'],
                 'pending_inserted' => $orderStats['inserted'],
                 'pending_updated' => $orderStats['updated'],
+                'pending_executed' => $orderStats['executed'],
+                'pending_expired' => $orderStats['expired'],
                 'pending_cancelled' => $orderStats['cancelled'],
             ];
         } catch (\Throwable $e) {

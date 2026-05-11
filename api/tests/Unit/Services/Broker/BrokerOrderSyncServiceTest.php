@@ -43,6 +43,7 @@ class BrokerOrderSyncServiceTest extends TestCase
     {
         $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
             ->willReturn([]);
+        $closedOrdersSnapshot = [];
 
         // Insert flow: position with position_type=ORDER, then order PENDING
         // referencing it. The position holds the broker's intent (symbol/
@@ -74,6 +75,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             accountId: 5,
             batchId: 99,
             openOrdersSnapshot: [$this->makeOpenOrderSnapshot()],
+            closedOrdersSnapshot: $closedOrdersSnapshot,
         );
 
         $this->assertSame(1, $stats['inserted']);
@@ -120,6 +122,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             accountId: 5,
             batchId: 99,
             openOrdersSnapshot: [$this->makeOpenOrderSnapshot(['entry_price' => 57500.0])],
+            closedOrdersSnapshot: [],
         );
 
         $this->assertSame(0, $stats['inserted']);
@@ -127,21 +130,15 @@ class BrokerOrderSyncServiceTest extends TestCase
         $this->assertSame(0, $stats['cancelled']);
     }
 
-    // ── CANCELLED path: order disappears from snapshot ────────────
+    // ── Disappearance with no closed_orders signal → default CANCELLED ──
 
-    public function testMarksOrderCancelledWhenItDisappearsFromSnapshot(): void
+    public function testKeepsCancelledDefaultWhenNotInClosedSnapshot(): void
     {
-        // The pending order is no longer in the broker's open_orders snapshot.
-        // For Paquet B, default policy is to mark CANCELLED — that's the
-        // conservative interpretation. Paquet C will refine this by cross-
-        // checking closed_orders to distinguish EXECUTED from CANCELLED.
         $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
             ->willReturn([
                 'ouinex_order_gone' => [
-                    'order_id' => 7002,
-                    'position_id' => 2002,
-                    'external_id' => 'ouinex_order_gone',
-                    'expires_at' => null,
+                    'order_id' => 7002, 'position_id' => 2002,
+                    'external_id' => 'ouinex_order_gone', 'expires_at' => null,
                 ],
             ]);
 
@@ -149,20 +146,114 @@ class BrokerOrderSyncServiceTest extends TestCase
             ->method('updateStatus')
             ->with(7002, OrderStatus::CANCELLED->value);
 
-        // We don't delete the position — keep the trace of the cancelled
-        // order for the user (with their setup/notes intact).
         $this->positionRepo->expects($this->never())->method('delete');
-        $this->positionRepo->expects($this->never())->method('update');
 
         $stats = $this->service->apply(
             userId: 10,
             accountId: 5,
             batchId: 99,
             openOrdersSnapshot: [],
+            closedOrdersSnapshot: [], // no info → conservative CANCELLED
         );
 
-        $this->assertSame(0, $stats['inserted']);
-        $this->assertSame(0, $stats['updated']);
+        $this->assertSame(1, $stats['cancelled']);
+        $this->assertSame(0, $stats['executed']);
+        $this->assertSame(0, $stats['expired']);
+    }
+
+    // ── Disappearance with closed_orders EXECUTED → mark EXECUTED ──
+
+    public function testMarksOrderExecutedWhenInClosedSnapshotAsExecuted(): void
+    {
+        // The order disappeared from open_orders AND appears in
+        // closed_orders with final_status=EXECUTED → status flips to
+        // EXECUTED (the order triggered into a trade). The corresponding
+        // margin_position is ingested separately by BrokerOpenSyncService
+        // under its own external_id (ouinex_<margin_position_id>); we
+        // don't try to glue them at this layer for Phase 1.
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_order_filled' => [
+                    'order_id' => 7003, 'position_id' => 2003,
+                    'external_id' => 'ouinex_order_filled', 'expires_at' => null,
+                ],
+            ]);
+
+        $this->orderRepo->expects($this->once())
+            ->method('updateStatus')
+            ->with(7003, OrderStatus::EXECUTED->value);
+
+        $stats = $this->service->apply(
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openOrdersSnapshot: [],
+            closedOrdersSnapshot: [
+                ['external_id' => 'ouinex_order_filled', 'final_status' => 'EXECUTED'],
+            ],
+        );
+
+        $this->assertSame(1, $stats['executed']);
+        $this->assertSame(0, $stats['cancelled']);
+        $this->assertSame(0, $stats['expired']);
+    }
+
+    // ── Disappearance with closed_orders EXPIRED → mark EXPIRED ──
+
+    public function testMarksOrderExpiredWhenInClosedSnapshotAsExpired(): void
+    {
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_order_expired' => [
+                    'order_id' => 7004, 'position_id' => 2004,
+                    'external_id' => 'ouinex_order_expired', 'expires_at' => '2026-05-01 00:00:00',
+                ],
+            ]);
+
+        $this->orderRepo->expects($this->once())
+            ->method('updateStatus')
+            ->with(7004, OrderStatus::EXPIRED->value);
+
+        $stats = $this->service->apply(
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openOrdersSnapshot: [],
+            closedOrdersSnapshot: [
+                ['external_id' => 'ouinex_order_expired', 'final_status' => 'EXPIRED'],
+            ],
+        );
+
+        $this->assertSame(1, $stats['expired']);
+        $this->assertSame(0, $stats['cancelled']);
+    }
+
+    // ── closed_orders CANCELLED explicitly → CANCELLED with confirmation ──
+
+    public function testMarksCancelledWhenInClosedSnapshotAsCancelled(): void
+    {
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_order_user_killed' => [
+                    'order_id' => 7005, 'position_id' => 2005,
+                    'external_id' => 'ouinex_order_user_killed', 'expires_at' => null,
+                ],
+            ]);
+
+        $this->orderRepo->expects($this->once())
+            ->method('updateStatus')
+            ->with(7005, OrderStatus::CANCELLED->value);
+
+        $stats = $this->service->apply(
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openOrdersSnapshot: [],
+            closedOrdersSnapshot: [
+                ['external_id' => 'ouinex_order_user_killed', 'final_status' => 'CANCELLED'],
+            ],
+        );
+
         $this->assertSame(1, $stats['cancelled']);
     }
 
@@ -196,8 +287,9 @@ class BrokerOrderSyncServiceTest extends TestCase
             openOrdersSnapshot: [
                 $this->makeOpenOrderSnapshot(['external_id' => 'ouinex_order_new']),
                 $this->makeOpenOrderSnapshot(['external_id' => 'ouinex_order_existing']),
-                // gone is missing → CANCELLED
+                // gone is missing → CANCELLED by default
             ],
+            closedOrdersSnapshot: [],
         );
 
         $this->assertSame(1, $stats['inserted']);
@@ -221,6 +313,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             accountId: 5,
             batchId: 99,
             openOrdersSnapshot: [],
+            closedOrdersSnapshot: [],
         );
     }
 }
