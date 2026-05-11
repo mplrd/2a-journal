@@ -14,6 +14,17 @@ interface ConnectorInterface
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array;
 
     /**
+     * Fetch a full snapshot of currently-open positions. Unlike fetchDeals,
+     * this is NOT incremental — the broker is the source of truth and we
+     * reconcile our DB state against the returned set each run. Connectors
+     * that don't support a live snapshot may return an empty list.
+     *
+     * @param array $credentials Decrypted credentials
+     * @return array{positions: array, raw_count: int}
+     */
+    public function fetchOpenPositions(array $credentials): array;
+
+    /**
      * Refresh credentials (e.g. OAuth token refresh).
      * Returns updated credentials array, or the same if no refresh needed.
      */

@@ -34,11 +34,13 @@ use App\Repositories\SymbolRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\PlatformSettingsRepository;
+use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerSyncSchedulerService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\Broker\CtraderConnector;
 use App\Services\Broker\MetaApiConnector;
+use App\Services\Broker\OuinexConnector;
 use App\Services\CustomFieldService;
 use App\Services\PlatformSettingsService;
 use App\Services\Import\ColumnMapperService;
@@ -118,6 +120,11 @@ try {
         $brokerConfig['metaapi']['base_url']
     );
     $ctraderConnector = new CtraderConnector($brokerConfig['ctrader']);
+    $ouinexConnector = new OuinexConnector(
+        new \GuzzleHttp\Client(),
+        $brokerConfig['ouinex']['graphql_url']
+    );
+    $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
 
     $syncService = new BrokerSyncService(
         $brokerConnectionRepo,
@@ -127,6 +134,8 @@ try {
         $crypto,
         $ctraderConnector,
         $metaApiConnector,
+        $ouinexConnector,
+        $brokerOpenSyncService,
     );
 
     // Live settings: prefer DB-backed values (admin BO override), fall back to

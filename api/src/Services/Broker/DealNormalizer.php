@@ -63,6 +63,67 @@ class DealNormalizer
         ];
     }
 
+    /**
+     * Normalize an Ouinex closed_margin_position into the import row format.
+     * Returns null when the position lacks `end_ts` or `exit_price` — should
+     * never happen in practice for closed_margin_positions, but defensive
+     * against API anomalies. Unlike MetaApi, the `side` field already
+     * represents the position direction (not the closing-deal direction),
+     * so we map it 1:1.
+     */
+    public function normalizeOuinexMarginPosition(array $position): ?array
+    {
+        if (empty($position['end_ts']) || $position['exit_price'] === null) {
+            return null;
+        }
+
+        return [
+            'symbol' => $position['instrument_id'] ?? null,
+            'direction' => $position['side'] ?? null,
+            'entry_price' => (float) ($position['entry_price'] ?? 0),
+            'exit_price' => (float) $position['exit_price'],
+            'size' => (float) ($position['amount'] ?? 0),
+            'pnl' => round((float) ($position['pnl'] ?? 0), 2),
+            'opened_at' => $this->isoToDatetime($position['start_ts'] ?? ''),
+            'closed_at' => $this->isoToDatetime($position['end_ts']),
+            'external_id' => 'ouinex_' . ($position['margin_position_id'] ?? ''),
+            'pips' => null,
+            'comment' => null,
+        ];
+    }
+
+    /**
+     * Normalize an Ouinex open_margin_position (live position) into the
+     * journal-side OPEN row format. Returns null if the entry price is
+     * absent — without entry, the row is unusable for the position model.
+     *
+     * Critical invariant: external_id MUST match what normalizeOuinexMarginPosition
+     * produces for the same margin_position_id, so the OPEN→CLOSED transition
+     * downstream can re-target the same row instead of duplicating.
+     *
+     * No closed_at key is emitted: ImportService::isOpenPosition checks for
+     * its absence to drive the OPEN trade insert.
+     */
+    public function normalizeOuinexOpenMarginPosition(array $position): ?array
+    {
+        if (!isset($position['entry_price']) || $position['entry_price'] === null) {
+            return null;
+        }
+
+        return [
+            'symbol' => $position['instrument_id'] ?? null,
+            'direction' => $position['side'] ?? null,
+            'entry_price' => (float) $position['entry_price'],
+            'size' => (float) ($position['amount'] ?? 0),
+            'sl_price' => isset($position['stop_loss']) ? (float) $position['stop_loss'] : null,
+            'tp_price' => isset($position['take_profit']) ? (float) $position['take_profit'] : null,
+            'opened_at' => $this->isoToDatetime($position['start_ts'] ?? ''),
+            'external_id' => 'ouinex_' . ($position['margin_position_id'] ?? ''),
+            'pnl' => null,
+            'comment' => null,
+        ];
+    }
+
     private function msTimestampToDatetime(int $ms): string
     {
         return gmdate('Y-m-d H:i:s', (int) ($ms / 1000));

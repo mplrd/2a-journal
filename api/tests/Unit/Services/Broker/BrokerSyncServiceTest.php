@@ -7,6 +7,7 @@ use App\Enums\ConnectionStatus;
 use App\Enums\SyncStatus;
 use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\SyncLogRepository;
+use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\ConnectorInterface;
 use App\Services\Broker\CredentialEncryptionService;
@@ -23,6 +24,8 @@ class BrokerSyncServiceTest extends TestCase
     private CredentialEncryptionService $crypto;
     private ConnectorInterface $metaApiConnector;
     private ConnectorInterface $ctraderConnector;
+    private ConnectorInterface $ouinexConnector;
+    private BrokerOpenSyncService $openSyncService;
 
     protected function setUp(): void
     {
@@ -32,6 +35,8 @@ class BrokerSyncServiceTest extends TestCase
         $this->crypto = new CredentialEncryptionService(random_bytes(32));
         $this->metaApiConnector = $this->createMock(ConnectorInterface::class);
         $this->ctraderConnector = $this->createMock(ConnectorInterface::class);
+        $this->ouinexConnector = $this->createMock(ConnectorInterface::class);
+        $this->openSyncService = $this->createMock(BrokerOpenSyncService::class);
 
         $this->service = new BrokerSyncService(
             $this->connectionRepo,
@@ -41,7 +46,25 @@ class BrokerSyncServiceTest extends TestCase
             $this->crypto,
             $this->ctraderConnector,
             $this->metaApiConnector,
+            $this->ouinexConnector,
+            $this->openSyncService,
         );
+    }
+
+    /**
+     * Tests that don't care about the open snapshot path still need the
+     * connector and diff service to return something sensible so the sync
+     * doesn't blow up on null/array mismatch. Helper keeps that boilerplate
+     * out of the legacy test bodies. Tests that DO care declare their own
+     * ->expects(...) BEFORE calling this — first matcher wins in PHPUnit so
+     * we don't shadow them via setUp.
+     */
+    private function stubOpenSnapshotDefaults(ConnectorInterface $connector): void
+    {
+        $connector->method('fetchOpenPositions')
+            ->willReturn(['positions' => [], 'raw_count' => 0]);
+        $this->openSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
     }
 
     private function makeConnection(string $provider = 'METAAPI', array $credentials = []): array
@@ -65,6 +88,7 @@ class BrokerSyncServiceTest extends TestCase
     public function testSyncCallsConnectorAndImportsPositions(): void
     {
         $connection = $this->makeConnection();
+        $this->stubOpenSnapshotDefaults($this->metaApiConnector);
 
         $this->connectionRepo->method('findById')->willReturn($connection);
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
@@ -122,6 +146,7 @@ class BrokerSyncServiceTest extends TestCase
     {
         $connection = $this->makeConnection();
         $connection['sync_cursor'] = '2024-11-20T00:00:00Z';
+        $this->stubOpenSnapshotDefaults($this->metaApiConnector);
 
         $this->connectionRepo->method('findById')->willReturn($connection);
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
@@ -147,6 +172,7 @@ class BrokerSyncServiceTest extends TestCase
         $connection = $this->makeConnection('CTRADER', [
             'access_token' => 'tok', 'refresh_token' => 'ref', 'ctid_trader_account_id' => 123,
         ]);
+        $this->stubOpenSnapshotDefaults($this->ctraderConnector);
 
         $this->connectionRepo->method('findById')->willReturn($connection);
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
@@ -161,6 +187,140 @@ class BrokerSyncServiceTest extends TestCase
                 'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
                 'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
             ]);
+
+        $result = $this->service->sync(1, 10);
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
+    public function testSyncUsesOuinexConnectorForOuinexProvider(): void
+    {
+        $connection = $this->makeConnection('OUINEX', [
+            'service_api_key' => 'k', 'service_api_secret' => 's',
+        ]);
+        $this->stubOpenSnapshotDefaults($this->ouinexConnector);
+
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        // Connector returns refreshed creds (signin happened) — service must
+        // re-encrypt and persist them.
+        $this->ouinexConnector->method('refreshCredentials')->willReturn([
+            'service_api_key' => 'k', 'service_api_secret' => 's',
+            'jwt' => 'fresh', 'jwt_expires_at' => time() + 3600,
+        ]);
+        $this->ouinexConnector->expects($this->once())
+            ->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+
+        $this->importService->method('importNormalizedPositions')
+            ->willReturn([
+                'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+                'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+            ]);
+
+        $this->connectionRepo->expects($this->atLeastOnce())->method('update');
+
+        $result = $this->service->sync(1, 10);
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
+    public function testSyncCallsOpenSnapshotDiffAfterClosedImport(): void
+    {
+        // The Ouinex provider must call fetchOpenPositions() AND hand the
+        // result + the closed deals to BrokerOpenSyncService — that's how
+        // OPEN positions get into the journal, and how OPEN→CLOSED
+        // transitions are detected (the closed snapshot is the "decided"
+        // set, the open snapshot is "still live").
+        $connection = $this->makeConnection('OUINEX', [
+            'service_api_key' => 'k', 'service_api_secret' => 's',
+            'jwt' => 'cached', 'jwt_expires_at' => time() + 3600,
+        ]);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $closedDeals = [
+            [
+                'symbol' => 'BTCUSDT', 'direction' => 'BUY',
+                'entry_price' => 60000, 'exit_price' => 61500, 'size' => 0.5,
+                'pnl' => 750.0, 'opened_at' => '2026-05-07 08:00:00',
+                'closed_at' => '2026-05-07 14:30:00',
+                'external_id' => 'ouinex_mp-now-closed',
+                'pips' => null, 'comment' => null,
+            ],
+        ];
+        $openPositions = [
+            [
+                'symbol' => 'ETHUSDT', 'direction' => 'SELL',
+                'entry_price' => 4000, 'size' => 1.0, 'sl_price' => 4200,
+                'opened_at' => '2026-05-07 09:00:00',
+                'external_id' => 'ouinex_mp-live-2',
+                'pnl' => null, 'comment' => null,
+            ],
+        ];
+
+        $this->ouinexConnector->method('refreshCredentials')->willReturnArgument(0);
+        $this->ouinexConnector->expects($this->once())
+            ->method('fetchDeals')
+            ->willReturn(['deals' => $closedDeals, 'cursor' => '2026-05-07T14:30:00Z', 'raw_count' => 1]);
+        $this->ouinexConnector->expects($this->once())
+            ->method('fetchOpenPositions')
+            ->willReturn(['positions' => $openPositions, 'raw_count' => 1]);
+
+        $this->importService->method('importNormalizedPositions')
+            ->willReturn([
+                'batch_id' => 42, 'imported_positions' => 1, 'imported_trades' => 1,
+                'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+            ]);
+
+        // The diff service is called with: same user/account, the batch_id
+        // returned by importNormalizedPositions, the open positions snapshot,
+        // and the CLOSED snapshot too (so OPEN→CLOSED transitions can match
+        // by external_id).
+        $this->openSyncService->expects($this->once())
+            ->method('apply')
+            ->with(
+                10,        // userId
+                5,         // accountId
+                42,        // batchId from the closed import
+                $openPositions,
+                $closedDeals,
+            )
+            ->willReturn(['inserted' => 1, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+
+        $result = $this->service->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+        // Stats from diff service are surfaced in the sync result so the UI
+        // can show "X new live positions" without a separate API call.
+        $this->assertSame(1, $result['live_inserted']);
+        $this->assertSame(0, $result['live_transitioned']);
+    }
+
+    public function testSyncSkipsOpenSnapshotWhenConnectorReturnsEmpty(): void
+    {
+        // cTrader and MetaApi return ['positions' => [], ...] by default —
+        // the diff service should still be called (so a connector going
+        // silent doesn't bypass reconciliation), but with empty input the
+        // service is a no-op.
+        $connection = $this->makeConnection('METAAPI');
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->metaApiConnector->method('refreshCredentials')->willReturnArgument(0);
+        $this->metaApiConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->metaApiConnector->expects($this->once())
+            ->method('fetchOpenPositions')
+            ->willReturn(['positions' => [], 'raw_count' => 0]);
+
+        $this->importService->method('importNormalizedPositions')
+            ->willReturn(['batch_id' => 7, 'imported_positions' => 0, 'imported_trades' => 0,
+                'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => []]);
+
+        $this->openSyncService->expects($this->once())
+            ->method('apply')
+            ->with(10, 5, 7, [], [])
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
 
         $result = $this->service->sync(1, 10);
         $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);

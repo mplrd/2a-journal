@@ -92,6 +92,18 @@ class CtraderConnector implements ConnectorInterface
         ];
     }
 
+    public function fetchOpenPositions(array $credentials): array
+    {
+        // cTrader open positions are exposed over the OpenAPI ProtoOA stream
+        // (ProtoOAReconcileReq → positions[]). Not wired yet for the live
+        // sync — the broker-sync feature only consumes closed positions on
+        // this connector for now. Returning an empty snapshot is safe: the
+        // diff service treats it as "no broker open positions for this run"
+        // and never deletes journal-side rows just because a connector is
+        // silent.
+        return ['positions' => [], 'raw_count' => 0];
+    }
+
     public function refreshCredentials(array $credentials): array
     {
         if (empty($credentials['refresh_token'])) {

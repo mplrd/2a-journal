@@ -419,7 +419,7 @@ CREATE TABLE IF NOT EXISTS broker_connections (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
     account_id INT UNSIGNED NOT NULL,
-    provider ENUM('CTRADER','METAAPI') NOT NULL,
+    provider ENUM('CTRADER','METAAPI','OUINEX') NOT NULL,
     status ENUM('PENDING','ACTIVE','ERROR','REVOKED') NOT NULL DEFAULT 'PENDING',
     credentials_encrypted TEXT NOT NULL,
     credentials_iv VARCHAR(32) NOT NULL,
