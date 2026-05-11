@@ -25,6 +25,7 @@ class BrokerSyncService
         private ConnectorInterface $metaApiConnector,
         private ConnectorInterface $ouinexConnector,
         private BrokerOpenSyncService $openSyncService,
+        private BrokerOrderSyncService $orderSyncService,
     ) {}
 
     /**
@@ -103,6 +104,19 @@ class BrokerSyncService
                 $deals,
             );
 
+            // Reconcile pending orders. Same pattern as open positions but
+            // on the ORDER lifecycle. Orders that disappear from the broker
+            // snapshot are marked CANCELLED here (conservative default —
+            // Phase 1 doesn't cross-check closed_orders yet for EXECUTED vs
+            // CANCELLED disambiguation).
+            $ordersResult = $connector->fetchOpenOrders($credentials);
+            $orderStats = $this->orderSyncService->apply(
+                $userId,
+                (int) $connection['account_id'],
+                (int) $importResult['batch_id'],
+                $ordersResult['orders'],
+            );
+
             // Update connection state
             $updateData = [
                 'last_sync_at' => date('Y-m-d H:i:s'),
@@ -134,6 +148,9 @@ class BrokerSyncService
                 'live_inserted' => $liveStats['inserted'],
                 'live_updated' => $liveStats['updated'],
                 'live_transitioned' => $liveStats['transitioned'],
+                'pending_inserted' => $orderStats['inserted'],
+                'pending_updated' => $orderStats['updated'],
+                'pending_cancelled' => $orderStats['cancelled'],
             ];
         } catch (\Throwable $e) {
             // Update connection and log on failure

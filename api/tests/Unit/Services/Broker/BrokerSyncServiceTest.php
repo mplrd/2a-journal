@@ -8,6 +8,7 @@ use App\Enums\SyncStatus;
 use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\SyncLogRepository;
 use App\Services\Broker\BrokerOpenSyncService;
+use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\ConnectorInterface;
 use App\Services\Broker\CredentialEncryptionService;
@@ -26,6 +27,7 @@ class BrokerSyncServiceTest extends TestCase
     private ConnectorInterface $ctraderConnector;
     private ConnectorInterface $ouinexConnector;
     private BrokerOpenSyncService $openSyncService;
+    private BrokerOrderSyncService $orderSyncService;
 
     protected function setUp(): void
     {
@@ -37,6 +39,7 @@ class BrokerSyncServiceTest extends TestCase
         $this->ctraderConnector = $this->createMock(ConnectorInterface::class);
         $this->ouinexConnector = $this->createMock(ConnectorInterface::class);
         $this->openSyncService = $this->createMock(BrokerOpenSyncService::class);
+        $this->orderSyncService = $this->createMock(BrokerOrderSyncService::class);
 
         $this->service = new BrokerSyncService(
             $this->connectionRepo,
@@ -48,12 +51,13 @@ class BrokerSyncServiceTest extends TestCase
             $this->metaApiConnector,
             $this->ouinexConnector,
             $this->openSyncService,
+            $this->orderSyncService,
         );
     }
 
     /**
-     * Tests that don't care about the open snapshot path still need the
-     * connector and diff service to return something sensible so the sync
+     * Tests that don't care about the live snapshot paths still need the
+     * connector and diff services to return something sensible so the sync
      * doesn't blow up on null/array mismatch. Helper keeps that boilerplate
      * out of the legacy test bodies. Tests that DO care declare their own
      * ->expects(...) BEFORE calling this — first matcher wins in PHPUnit so
@@ -63,8 +67,12 @@ class BrokerSyncServiceTest extends TestCase
     {
         $connector->method('fetchOpenPositions')
             ->willReturn(['positions' => [], 'raw_count' => 0]);
+        $connector->method('fetchOpenOrders')
+            ->willReturn(['orders' => [], 'raw_count' => 0]);
         $this->openSyncService->method('apply')
             ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+        $this->orderSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'cancelled' => 0]);
     }
 
     private function makeConnection(string $provider = 'METAAPI', array $credentials = []): array
@@ -265,6 +273,13 @@ class BrokerSyncServiceTest extends TestCase
         $this->ouinexConnector->expects($this->once())
             ->method('fetchOpenPositions')
             ->willReturn(['positions' => $openPositions, 'raw_count' => 1]);
+        // Orders path is out of scope for this test but still called by the
+        // service in every run. Stub it empty so it doesn't pollute the
+        // assertions that target openSyncService.
+        $this->ouinexConnector->method('fetchOpenOrders')
+            ->willReturn(['orders' => [], 'raw_count' => 0]);
+        $this->orderSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'cancelled' => 0]);
 
         $this->importService->method('importNormalizedPositions')
             ->willReturn([
@@ -298,10 +313,10 @@ class BrokerSyncServiceTest extends TestCase
 
     public function testSyncSkipsOpenSnapshotWhenConnectorReturnsEmpty(): void
     {
-        // cTrader and MetaApi return ['positions' => [], ...] by default —
-        // the diff service should still be called (so a connector going
-        // silent doesn't bypass reconciliation), but with empty input the
-        // service is a no-op.
+        // cTrader and MetaApi return ['positions' => [], ...] / ['orders' => [], ...]
+        // by default — the diff services should still be called (so a
+        // silent connector doesn't bypass reconciliation), but with empty
+        // input both services are no-ops.
         $connection = $this->makeConnection('METAAPI');
         $this->connectionRepo->method('findById')->willReturn($connection);
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
@@ -312,6 +327,9 @@ class BrokerSyncServiceTest extends TestCase
         $this->metaApiConnector->expects($this->once())
             ->method('fetchOpenPositions')
             ->willReturn(['positions' => [], 'raw_count' => 0]);
+        $this->metaApiConnector->expects($this->once())
+            ->method('fetchOpenOrders')
+            ->willReturn(['orders' => [], 'raw_count' => 0]);
 
         $this->importService->method('importNormalizedPositions')
             ->willReturn(['batch_id' => 7, 'imported_positions' => 0, 'imported_trades' => 0,
@@ -321,8 +339,64 @@ class BrokerSyncServiceTest extends TestCase
             ->method('apply')
             ->with(10, 5, 7, [], [])
             ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+        $this->orderSyncService->expects($this->once())
+            ->method('apply')
+            ->with(10, 5, 7, [])
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);
         $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
+    public function testSyncCallsOrderSnapshotDiffAfterOpenPositionsDiff(): void
+    {
+        // The Ouinex sync flow runs: closed deals → open positions diff →
+        // open orders diff. The order diff receives the open_orders
+        // snapshot and the same import batch id so cancelled orders stay
+        // traceable to the run that surfaced them.
+        $connection = $this->makeConnection('OUINEX', [
+            'service_api_key' => 'k', 'service_api_secret' => 's',
+            'jwt' => 'cached', 'jwt_expires_at' => time() + 3600,
+        ]);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $openOrders = [
+            [
+                'symbol' => 'BTCUSDT', 'direction' => 'BUY',
+                'entry_price' => 58000, 'size' => 0.5, 'sl_price' => 57000,
+                'tp_price' => 62000, 'expires_at' => '2026-06-01 00:00:00',
+                'created_at' => '2026-05-07 08:00:00',
+                'external_id' => 'ouinex_order_ord-42',
+            ],
+        ];
+
+        $this->ouinexConnector->method('refreshCredentials')->willReturnArgument(0);
+        $this->ouinexConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->ouinexConnector->method('fetchOpenPositions')
+            ->willReturn(['positions' => [], 'raw_count' => 0]);
+        $this->ouinexConnector->expects($this->once())
+            ->method('fetchOpenOrders')
+            ->willReturn(['orders' => $openOrders, 'raw_count' => 1]);
+
+        $this->importService->method('importNormalizedPositions')
+            ->willReturn([
+                'batch_id' => 42, 'imported_positions' => 0, 'imported_trades' => 0,
+                'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+            ]);
+        $this->openSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+
+        $this->orderSyncService->expects($this->once())
+            ->method('apply')
+            ->with(10, 5, 42, $openOrders)
+            ->willReturn(['inserted' => 1, 'updated' => 0, 'cancelled' => 0]);
+
+        $result = $this->service->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+        $this->assertSame(1, $result['pending_inserted']);
+        $this->assertSame(0, $result['pending_cancelled']);
     }
 }

@@ -63,6 +63,13 @@ class MetaApiConnector implements ConnectorInterface
         return ['positions' => [], 'raw_count' => 0];
     }
 
+    public function fetchOpenOrders(array $credentials): array
+    {
+        // MetaApi pending orders live at /accounts/{id}/orders. Not wired
+        // here yet — broker-sync only consumes closed deals on MetaApi.
+        return ['orders' => [], 'raw_count' => 0];
+    }
+
     public function refreshCredentials(array $credentials): array
     {
         // MetaApi tokens are managed via dashboard, no refresh needed

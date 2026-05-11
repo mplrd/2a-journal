@@ -35,6 +35,7 @@ use App\Repositories\SyncLogRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\PlatformSettingsRepository;
 use App\Services\Broker\BrokerOpenSyncService;
+use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncSchedulerService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\CredentialEncryptionService;
@@ -125,6 +126,8 @@ try {
         $brokerConfig['ouinex']['graphql_url']
     );
     $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
+    $orderRepo = new \App\Repositories\OrderRepository($pdo);
+    $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
 
     $syncService = new BrokerSyncService(
         $brokerConnectionRepo,
@@ -136,6 +139,7 @@ try {
         $metaApiConnector,
         $ouinexConnector,
         $brokerOpenSyncService,
+        $brokerOrderSyncService,
     );
 
     // Live settings: prefer DB-backed values (admin BO override), fall back to

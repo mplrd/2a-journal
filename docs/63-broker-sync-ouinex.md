@@ -6,8 +6,9 @@ Ajout d'**Ouinex** comme troisième provider de synchronisation broker, à côt�
 
 1. Les **positions clôturées** depuis le dernier curseur (`closed_margin_positions`, incrémental).
 2. Le **snapshot complet des positions ouvertes** (`open_margin_positions`, plein à chaque run — pas de curseur, c'est le broker la source de vérité du "live").
+3. Le **snapshot complet des ordres en attente** (`open_orders`, limites/stops/conditionnels non encore déclenchés).
 
-Cette livraison couvre la **Phase 1** du plan E-02 (cf. `docs/evolutions.md`) — les **dérivés** uniquement. La Phase 2 (spot, `closed_orders` order-by-order avec pairing FIFO) fera l'objet d'une branche dédiée ultérieure. Une livraison ultérieure (paquet B sur cette même branche) ajoutera la prise en charge des **ordres en attente** (`open_orders`).
+Cette livraison couvre la **Phase 1** du plan E-02 (cf. `docs/evolutions.md`) — les **dérivés** uniquement. La Phase 2 (spot, `closed_orders` order-by-order avec pairing FIFO) fera l'objet d'une branche dédiée ultérieure. Une livraison **paquet C** sur cette même branche ajoutera le crossing avec `closed_orders` pour distinguer un ordre EXECUTED d'un ordre CANCELLED (la Phase 1 actuelle marque CANCELLED par défaut quand un order disparaît du snapshot — conservateur).
 
 Bonus pour l'utilisateur : pas d'export CSV à manipuler, pas de mapping de colonnes, un cursor incrémental qui n'importe que les positions nouvelles, et une réconciliation **différentielle** qui maintient l'état "live" des positions ouvertes à chaque sync **sans écraser les méta-données saisies par l'utilisateur** (setup, notes, custom fields).
 
@@ -38,7 +39,11 @@ Une fois connecté, le bouton **Synchroniser maintenant** rapatrie :
 - l'état **complet** des positions actuellement ouvertes côté Ouinex, réconciliées avec le journal :
   - nouvelle position → insérée en `TradeStatus::OPEN` ;
   - position déjà connue → ses champs broker (entry_price, size, SL) sont rafraîchis, le **setup / notes / champs personnalisés** que l'utilisateur a saisis pendant la durée de vie de la position sont **préservés** ;
-  - position passée de "live" à "fermée" entre deux syncs → le trade OPEN existant **transitionne** vers CLOSED en place (avg_exit_price, pnl, closed_at remplis depuis `closed_margin_positions`), et là encore les méta-données utilisateur sont conservées.
+  - position passée de "live" à "fermée" entre deux syncs → le trade OPEN existant **transitionne** vers CLOSED en place (avg_exit_price, pnl, closed_at remplis depuis `closed_margin_positions`), et là encore les méta-données utilisateur sont conservées ;
+- l'état **complet** des ordres pending côté Ouinex (limit/stop/conditional non déclenchés), réconciliés sur le modèle journal `position(position_type=ORDER) + order(PENDING)` :
+  - nouvel ordre → insertion ;
+  - ordre déjà connu (price changé par l'utilisateur côté Ouinex par ex.) → refresh des champs broker, setup/notes préservés ;
+  - ordre disparu du snapshot → marqué `OrderStatus::CANCELLED` (conservateur ; le paquet C améliorera avec `closed_orders` pour distinguer EXECUTED de CANCELLED). La position parente est **conservée** (le user garde l'historique avec ses annotations).
 
 Un panneau **Historique** liste les runs précédents (date, statut, count).
 
@@ -144,6 +149,20 @@ L'invariant clé qui rend la TRANSITION possible : le `margin_position_id` Ouine
 
 Le scope de la diff est strictement limité par le préfixe `ouinex_` (via `findOpenByExternalIdPrefixInAccount`). Les positions saisies manuellement (no external_id) ou importées depuis un fichier (préfixes type `ftmo_`, `metaapi_`) sont **invisibles** pour le service — aucun risque de touche-touche.
 
+### Snapshot orders PENDING — réconciliation différentielle (BrokerOrderSyncService)
+
+Symétrique de `BrokerOpenSyncService` mais opère sur le lifecycle `ORDER` (positions de type `ORDER` + orders.status `PENDING`) plutôt que sur les trades. `BrokerOrderSyncService::apply(userId, accountId, batchId, openOrdersSnapshot)` :
+
+| Cas | Détection | Action |
+|---|---|---|
+| **INSERT** | snapshot ∖ DB | `positionRepo->create` (position_type=ORDER, entry_price=prix limit, sl_price si fourni, external_id=`ouinex_order_<order_id>`) + `orderRepo->create` (status=PENDING, expires_at). |
+| **UPDATE** | DB ∩ snapshot | `positionRepo->update` whitelisté broker fields (entry_price, size, sl_price, direction, symbol). Setup/notes/custom-fields jamais touchés. |
+| **CANCELLED** | DB ∖ snapshot | `orderRepo->updateStatus(CANCELLED)`. La position **n'est pas supprimée** — l'utilisateur garde la trace de l'ordre annulé avec ses annotations. |
+
+Préfixe distinct (`ouinex_order_` vs `ouinex_` pour les margin positions) — les deux services scopent strictement leurs périmètres : pas de collision.
+
+Quand un order pending s'exécute côté Ouinex, il quitte `open_orders` et la position résultante apparaît dans `open_margin_positions` avec un `margin_position_id` (distinct du `order_id`). Conséquence Phase 1 actuelle : on a en base **deux entrées** — l'order CANCELLED par défaut + la nouvelle position OPEN. Le **paquet C** affinera en consommant `closed_orders` pour marquer correctement l'order EXECUTED (et idéalement le lier via `trades.source_order_id`).
+
 ## Fichiers impactés
 
 ### Backend
@@ -152,17 +171,19 @@ Le scope de la diff est strictement limité par le préfixe `ouinex_` (via `find
 |---|---|---|
 | `api/src/Enums/BrokerProvider.php` | modif | + cas `OUINEX` |
 | `api/src/Services/Broker/ConnectorInterface.php` | modif | + signature `fetchOpenPositions()` (no-op par défaut pour cTrader/MetaApi) |
-| `api/src/Services/Broker/OuinexConnector.php` | nouveau | implémente `ConnectorInterface` (GraphQL, JWT, pagination closed + open) |
-| `api/src/Services/Broker/CtraderConnector.php` | modif | + `fetchOpenPositions()` no-op |
-| `api/src/Services/Broker/MetaApiConnector.php` | modif | + `fetchOpenPositions()` no-op |
-| `api/src/Services/Broker/DealNormalizer.php` | modif | + `normalizeOuinexMarginPosition()` et `normalizeOuinexOpenMarginPosition()` |
-| `api/src/Services/Broker/BrokerOpenSyncService.php` | nouveau | diff snapshot → INSERT/UPDATE/TRANSITION/SKIP en préservant les méta utilisateur |
-| `api/src/Services/Broker/BrokerSyncService.php` | modif | injection 3e connector + 4e service + appel diff après import closed |
-| `api/src/Repositories/PositionRepository.php` | modif | + `findOpenByExternalIdPrefixInAccount()` pour le diff (JOIN trades, scope par préfixe) |
+| `api/src/Services/Broker/OuinexConnector.php` | nouveau | implémente `ConnectorInterface` (GraphQL, JWT, pagination closed + open + orders) |
+| `api/src/Services/Broker/CtraderConnector.php` | modif | + `fetchOpenPositions()` / `fetchOpenOrders()` no-op |
+| `api/src/Services/Broker/MetaApiConnector.php` | modif | + `fetchOpenPositions()` / `fetchOpenOrders()` no-op |
+| `api/src/Services/Broker/DealNormalizer.php` | modif | + `normalizeOuinexMarginPosition()`, `normalizeOuinexOpenMarginPosition()`, `normalizeOuinexOpenOrder()` |
+| `api/src/Services/Broker/BrokerOpenSyncService.php` | nouveau | diff snapshot trades OPEN → INSERT/UPDATE/TRANSITION/SKIP en préservant les méta utilisateur |
+| `api/src/Services/Broker/BrokerOrderSyncService.php` | nouveau | diff snapshot orders PENDING → INSERT/UPDATE/CANCELLED en préservant les méta |
+| `api/src/Services/Broker/BrokerSyncService.php` | modif | injection 3e connector + 4e/5e service + appel diff après import closed |
+| `api/src/Repositories/PositionRepository.php` | modif | + `findOpenByExternalIdPrefixInAccount()` pour le diff trades (JOIN trades, scope par préfixe) |
+| `api/src/Repositories/OrderRepository.php` | modif | + `findPendingByExternalIdPrefixInAccount()` pour le diff orders (JOIN positions, scope par préfixe) |
 | `api/src/Controllers/BrokerSyncController.php` | modif | + branche `createOuinexConnection()` (clé/secret) |
 | `api/config/broker.php` | modif | + section `ouinex.graphql_url` (env `OUINEX_GRAPHQL_URL`) |
 | `api/config/routes.php` | modif | instancie `OuinexConnector` + `BrokerOpenSyncService` et les injecte dans `BrokerSyncService` |
-| `api/cli/sync-brokers.php` | modif | idem côté scheduler CLI (était jusqu'ici à 2 connectors seulement, le 3e n'avait pas été câblé) |
+| `api/cli/sync-brokers.php` | modif | idem côté scheduler CLI (était jusqu'ici à 2 connectors seulement, le 3e n'avait pas été câblé) — + DI des deux nouveaux services |
 | `api/database/migrations/018_broker_provider_ouinex.sql` | nouveau | `ALTER TABLE broker_connections MODIFY provider ENUM(... 'OUINEX')` |
 
 ### Frontend
@@ -184,7 +205,7 @@ Pas de nouvelle variable secrète. La clé `BROKER_ENCRYPTION_KEY` (déjà en pl
 
 ## Couverture de tests
 
-Suite complète au vert (1165 tests, 3182 assertions). Sur le périmètre Ouinex/Diff/Sync :
+Suite complète au vert (1178 tests, 3251 assertions). Sur le périmètre Ouinex/Diff/Sync :
 
 | Test | Type | Fichier |
 |---|---|---|
@@ -221,6 +242,27 @@ Suite complète au vert (1165 tests, 3182 assertions). Sur le périmètre Ouinex
 | Service utilise `ouinexConnector` pour provider OUINEX | Unit | `BrokerSyncServiceTest::testSyncUsesOuinexConnectorForOuinexProvider` |
 | Sync appelle bien diff après import closed | Unit | `…CallsOpenSnapshotDiffAfterClosedImport` |
 | Sync stub OPEN reste no-op si connector silencieux | Unit | `…SkipsOpenSnapshotWhenConnectorReturnsEmpty` |
+| Sync appelle aussi diff orders après diff positions | Unit | `…CallsOrderSnapshotDiffAfterOpenPositionsDiff` |
+| Connector `fetchOpenOrders` happy path + normalize | Unit | `OuinexConnectorTest::testFetchOpenOrdersReturnsNormalizedSnapshot` |
+| Connector `fetchOpenOrders` paginate full | Unit | `…PaginatesUntilEmptyPage` |
+| Connector `fetchOpenOrders` re-signin lazy | Unit | `…RefreshesJwtIfMissing` |
+| Connector `fetchOpenOrders` API vide | Unit | `…ReturnsEmptyWhenApiReturnsEmpty` |
+| Normalizer order mappe les champs pending | Unit | `DealNormalizerTest::testNormalizeOuinexOpenOrderMapsPendingFields` |
+| Normalizer order skip sans price | Unit | `…OpenOrderSkipsIfMissingPrice` |
+| Normalizer order optionnels null si absent | Unit | `…OpenOrderLeavesOptionalsNullWhenAbsent` |
+| OrderDiff insère un order PENDING inconnu (position ORDER + order PENDING) | Unit | `BrokerOrderSyncServiceTest::testInsertsNewPendingOrderAsPositionOrderPlusOrder` |
+| OrderDiff met à jour broker fields **sans** toucher méta user | Unit | `…UpdatesBrokerFieldsOfExistingPendingOrderPreservingMeta` |
+| OrderDiff marque CANCELLED quand disparaît du snapshot | Unit | `…MarksOrderCancelledWhenItDisappearsFromSnapshot` |
+| OrderDiff mixed (insert + update + cancel) | Unit | `…ProcessesMixedOrderSnapshotInOneCall` |
+| OrderDiff scope strict `ouinex_order_` | Unit | `…QueriesRepoWithOuinexOrderPrefix` |
+
+## Paquet C — à venir sur cette même branche
+
+Pour distinguer un order pending **exécuté** d'un order pending **annulé** quand il disparaît du snapshot `open_orders`, il faut consommer la query GraphQL `closed_orders` (historique des fills) et faire le rapprochement par `order_id`. La logique courante (Paquet B) marque CANCELLED par défaut — c'est conservateur mais imprécis pour les orders effectivement exécutés. À implémenter :
+
+1. `OuinexConnector::fetchClosedOrders($credentials)` — paginé, sans curseur (peu d'entries actives à la fois).
+2. Étendre `BrokerOrderSyncService::apply` avec un 5e paramètre `$closedOrdersSnapshot` : matcher par `order_id` les entries DB ∖ openSnapshot pour décider EXECUTED vs CANCELLED.
+3. Idéalement : lier `trades.source_order_id` du nouveau trade OPEN au order EXECUTED quand on peut faire le matching `order_id → margin_position_id` côté Ouinex.
 
 ## Phase 2 — pour mémoire
 

@@ -104,6 +104,13 @@ class CtraderConnector implements ConnectorInterface
         return ['positions' => [], 'raw_count' => 0];
     }
 
+    public function fetchOpenOrders(array $credentials): array
+    {
+        // Same story as fetchOpenPositions for cTrader — pending orders are
+        // reachable via ProtoOAReconcileReq but not wired here yet.
+        return ['orders' => [], 'raw_count' => 0];
+    }
+
     public function refreshCredentials(array $credentials): array
     {
         if (empty($credentials['refresh_token'])) {

@@ -59,6 +59,7 @@ use App\Services\ShareService;
 use App\Services\CustomFieldService;
 use App\Services\SetupService;
 use App\Services\Broker\BrokerOpenSyncService;
+use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\Broker\CtraderConnector;
@@ -338,6 +339,7 @@ $ouinexConnector = new OuinexConnector(
     $brokerConfig['ouinex']['graphql_url']
 );
 $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
+$brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
 $brokerSyncService = new BrokerSyncService(
     $brokerConnectionRepo,
     $syncLogRepo,
@@ -348,6 +350,7 @@ $brokerSyncService = new BrokerSyncService(
     $metaApiConnector,
     $ouinexConnector,
     $brokerOpenSyncService,
+    $brokerOrderSyncService,
 );
 $brokerSyncController = new BrokerSyncController(
     $brokerSyncService,

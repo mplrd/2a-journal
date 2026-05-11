@@ -124,6 +124,38 @@ class DealNormalizer
         ];
     }
 
+    /**
+     * Normalize an Ouinex open_order (pending limit/stop/conditional) into a
+     * journal-side ORDER row. Returns null if price is missing — without a
+     * trigger level, the order is unusable.
+     *
+     * Critical: uses a DISTINCT external_id prefix ('ouinex_order_') vs
+     * normalizeOuinexOpenMarginPosition / normalizeOuinexMarginPosition
+     * ('ouinex_'). Two reasons:
+     *   1. Ouinex's order_id and margin_position_id are separate identifier
+     *      spaces — they could collide if we used the same prefix.
+     *   2. The diff services scope themselves by prefix, so the order diff
+     *      and the position diff never confuse each other's rows.
+     */
+    public function normalizeOuinexOpenOrder(array $order): ?array
+    {
+        if (!isset($order['price']) || $order['price'] === null) {
+            return null;
+        }
+
+        return [
+            'symbol' => $order['instrument_id'] ?? null,
+            'direction' => $order['side'] ?? null,
+            'entry_price' => (float) $order['price'],
+            'size' => (float) ($order['amount'] ?? 0),
+            'sl_price' => isset($order['stop_loss']) ? (float) $order['stop_loss'] : null,
+            'tp_price' => isset($order['take_profit']) ? (float) $order['take_profit'] : null,
+            'expires_at' => !empty($order['expires_at']) ? $this->isoToDatetime($order['expires_at']) : null,
+            'created_at' => $this->isoToDatetime($order['created_at'] ?? ''),
+            'external_id' => 'ouinex_order_' . ($order['order_id'] ?? ''),
+        ];
+    }
+
     private function msTimestampToDatetime(int $ms): string
     {
         return gmdate('Y-m-d H:i:s', (int) ($ms / 1000));

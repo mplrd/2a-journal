@@ -25,6 +25,17 @@ interface ConnectorInterface
     public function fetchOpenPositions(array $credentials): array;
 
     /**
+     * Fetch a full snapshot of currently-pending orders (limit/stop/conditional
+     * orders that haven't triggered yet). Like fetchOpenPositions, this is a
+     * full snapshot — no cursor. Connectors that don't expose pending orders
+     * may return an empty list.
+     *
+     * @param array $credentials Decrypted credentials
+     * @return array{orders: array, raw_count: int}
+     */
+    public function fetchOpenOrders(array $credentials): array;
+
+    /**
      * Refresh credentials (e.g. OAuth token refresh).
      * Returns updated credentials array, or the same if no refresh needed.
      */

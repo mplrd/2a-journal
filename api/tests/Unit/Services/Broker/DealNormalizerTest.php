@@ -356,4 +356,74 @@ class DealNormalizerTest extends TestCase
         $this->assertNull($normalized['sl_price']);
         $this->assertNull($normalized['tp_price']);
     }
+
+    // ── Ouinex open orders ──────────────────────────────────────────
+
+    public function testNormalizeOuinexOpenOrderMapsPendingFields(): void
+    {
+        // open_orders returns pending margin orders (limit/stop/conditional)
+        // that haven't been triggered yet. price is the limit/trigger price —
+        // the journal stores it as entry_price (the level the user wants to
+        // enter at).
+        $order = [
+            'order_id' => 'ord-7',
+            'instrument_id' => 'BTCUSDT',
+            'side' => 'BUY',
+            'order_type' => 'LIMIT',
+            'amount' => 0.5,
+            'price' => 58000.0,
+            'stop_loss' => 57000.0,
+            'take_profit' => 62000.0,
+            'expires_at' => '2026-06-01T00:00:00Z',
+            'created_at' => '2026-05-07T08:00:00Z',
+        ];
+
+        $normalized = $this->normalizer->normalizeOuinexOpenOrder($order);
+
+        $this->assertSame('BTCUSDT', $normalized['symbol']);
+        $this->assertSame('BUY', $normalized['direction']);
+        $this->assertEquals(58000.0, $normalized['entry_price']);
+        $this->assertEquals(0.5, $normalized['size']);
+        $this->assertEquals(57000.0, $normalized['sl_price']);
+        $this->assertEquals(62000.0, $normalized['tp_price']);
+        // Distinct prefix from margin positions: ouinex_order_ vs ouinex_.
+        // Prevents scope collisions in the diff services.
+        $this->assertSame('ouinex_order_ord-7', $normalized['external_id']);
+        $this->assertSame('2026-06-01 00:00:00', $normalized['expires_at']);
+        $this->assertSame('2026-05-07 08:00:00', $normalized['created_at']);
+    }
+
+    public function testNormalizeOuinexOpenOrderSkipsIfMissingPrice(): void
+    {
+        $order = [
+            'order_id' => 'ord-bogus',
+            'instrument_id' => 'BTCUSDT',
+            'side' => 'BUY',
+            'amount' => 0.1,
+            'price' => null,
+            'created_at' => '2026-05-07T08:00:00Z',
+        ];
+
+        $this->assertNull($this->normalizer->normalizeOuinexOpenOrder($order));
+    }
+
+    public function testNormalizeOuinexOpenOrderLeavesOptionalsNullWhenAbsent(): void
+    {
+        // No stop_loss / take_profit / expires_at — order types like a bare
+        // market limit don't carry them.
+        $order = [
+            'order_id' => 'ord-bare',
+            'instrument_id' => 'ETHUSDT',
+            'side' => 'SELL',
+            'amount' => 1.0,
+            'price' => 4500.0,
+            'created_at' => '2026-05-07T08:00:00Z',
+        ];
+
+        $normalized = $this->normalizer->normalizeOuinexOpenOrder($order);
+
+        $this->assertNull($normalized['sl_price']);
+        $this->assertNull($normalized['tp_price']);
+        $this->assertNull($normalized['expires_at']);
+    }
 }

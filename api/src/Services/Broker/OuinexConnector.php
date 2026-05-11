@@ -123,6 +123,42 @@ class OuinexConnector implements ConnectorInterface
         ];
     }
 
+    public function fetchOpenOrders(array $credentials): array
+    {
+        $credentials = $this->refreshCredentials($credentials);
+        $jwt = $credentials['jwt'];
+
+        $orders = [];
+        $rawCount = 0;
+        $offset = 0;
+
+        // open_orders is a full snapshot of pending orders (limit/stop/etc.).
+        // No cursor — the broker is the source of truth and the diff service
+        // reconciles against journal state on each run.
+        do {
+            $response = $this->graphqlRequest($jwt, $this->openOrdersQuery(), [
+                'pager' => ['offset' => $offset, 'limit' => self::PAGE_LIMIT],
+            ]);
+
+            $page = $response['data']['open_orders'] ?? [];
+            $rawCount += count($page);
+
+            foreach ($page as $raw) {
+                $normalized = $this->normalizer->normalizeOuinexOpenOrder($raw);
+                if ($normalized !== null) {
+                    $orders[] = $normalized;
+                }
+            }
+
+            $offset += self::PAGE_LIMIT;
+        } while (count($page) === self::PAGE_LIMIT);
+
+        return [
+            'orders' => $orders,
+            'raw_count' => $rawCount,
+        ];
+    }
+
     public function refreshCredentials(array $credentials): array
     {
         $jwt = $credentials['jwt'] ?? null;
@@ -284,6 +320,30 @@ class OuinexConnector implements ConnectorInterface
             stop_loss
             take_profit
             start_ts
+          }
+        }
+        GQL;
+    }
+
+    private function openOrdersQuery(): string
+    {
+        // Pending margin orders (limits/stops/conditionals not yet triggered).
+        // price = the limit/trigger level. stop_loss/take_profit describe the
+        // risk plan the user attached to the order. expires_at is optional
+        // (orders without TTL stay open until triggered or cancelled).
+        return <<<'GQL'
+        query ($pager: PagerInput) {
+          open_orders(pager: $pager) {
+            order_id
+            instrument_id
+            side
+            order_type
+            amount
+            price
+            stop_loss
+            take_profit
+            expires_at
+            created_at
           }
         }
         GQL;

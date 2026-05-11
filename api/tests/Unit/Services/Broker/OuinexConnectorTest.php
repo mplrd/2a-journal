@@ -415,4 +415,103 @@ class OuinexConnectorTest extends TestCase
         $this->assertSame(0, $result['raw_count']);
         $this->assertSame([], $result['positions']);
     }
+
+    // ── fetchOpenOrders ─────────────────────────────────────────
+
+    private function makeOpenOrder(array $overrides = []): array
+    {
+        return array_merge([
+            'order_id' => 'ord-1',
+            'instrument_id' => 'BTCUSDT',
+            'side' => 'BUY',
+            'order_type' => 'LIMIT',
+            'amount' => 0.5,
+            'price' => 58000.0,
+            'stop_loss' => 57000.0,
+            'take_profit' => 62000.0,
+            'expires_at' => '2026-06-01T00:00:00Z',
+            'created_at' => '2026-05-07T08:00:00Z',
+        ], $overrides);
+    }
+
+    public function testFetchOpenOrdersReturnsNormalizedSnapshot(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse(['open_orders' => [
+                $this->makeOpenOrder(['order_id' => 'ord-42', 'instrument_id' => 'ETHUSDT', 'side' => 'SELL']),
+            ]]),
+            $this->gqlResponse(['open_orders' => []]),
+        ]);
+
+        $result = $connector->fetchOpenOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ]);
+
+        $this->assertSame(1, $result['raw_count']);
+        $this->assertCount(1, $result['orders']);
+        $order = $result['orders'][0];
+        $this->assertSame('ETHUSDT', $order['symbol']);
+        $this->assertSame('SELL', $order['direction']);
+        // Prefix is distinct from margin positions to avoid scope confusion.
+        $this->assertSame('ouinex_order_ord-42', $order['external_id']);
+    }
+
+    public function testFetchOpenOrdersPaginatesUntilEmptyPage(): void
+    {
+        $page1 = array_map(fn($i) => $this->makeOpenOrder(['order_id' => "ord-$i"]), range(1, 100));
+        $page2 = array_map(fn($i) => $this->makeOpenOrder(['order_id' => "ord-$i"]), range(101, 110));
+
+        $connector = $this->createConnector([
+            $this->gqlResponse(['open_orders' => $page1]),
+            $this->gqlResponse(['open_orders' => $page2]),
+            $this->gqlResponse(['open_orders' => []]),
+        ]);
+
+        $result = $connector->fetchOpenOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ]);
+
+        $this->assertSame(110, $result['raw_count']);
+        $this->assertCount(110, $result['orders']);
+    }
+
+    public function testFetchOpenOrdersRefreshesJwtIfMissing(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse(['service_signin' => ['jwt' => 'fresh-jwt', 'expires_at' => '2030-01-01T00:00:00Z']]),
+            $this->gqlResponse(['open_orders' => []]),
+        ]);
+
+        $result = $connector->fetchOpenOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            // no jwt
+        ]);
+
+        $this->assertSame(0, $result['raw_count']);
+        $this->assertSame([], $result['orders']);
+    }
+
+    public function testFetchOpenOrdersReturnsEmptyWhenApiReturnsEmpty(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse(['open_orders' => []]),
+        ]);
+
+        $result = $connector->fetchOpenOrders([
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ]);
+
+        $this->assertSame(0, $result['raw_count']);
+        $this->assertSame([], $result['orders']);
+    }
 }
