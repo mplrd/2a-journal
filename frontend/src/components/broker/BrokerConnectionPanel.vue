@@ -8,6 +8,7 @@ import Tag from 'primevue/tag'
 import Message from 'primevue/message'
 import CtraderConnectDialog from './CtraderConnectDialog.vue'
 import MetaApiConnectDialog from './MetaApiConnectDialog.vue'
+import OuinexConnectDialog from './OuinexConnectDialog.vue'
 import SyncHistoryDialog from './SyncHistoryDialog.vue'
 
 const { t } = useI18n()
@@ -25,13 +26,20 @@ const syncing = ref(false)
 const syncResult = ref(null)
 const showCtraderDialog = ref(false)
 const showMetaApiDialog = ref(false)
+const showOuinexDialog = ref(false)
 const showHistory = ref(false)
 
 const isConnected = computed(() => connection.value && connection.value.status === 'ACTIVE')
 
+const PROVIDER_LABELS = {
+  CTRADER: 'cTrader',
+  METAAPI: 'MetaApi (MT4/MT5)',
+  OUINEX: 'Ouinex',
+}
+
 const providerLabel = computed(() => {
   if (!connection.value) return ''
-  return connection.value.provider === 'CTRADER' ? 'cTrader' : 'MetaApi (MT4/MT5)'
+  return PROVIDER_LABELS[connection.value.provider] || connection.value.provider
 })
 
 const statusSeverity = computed(() => {
@@ -96,6 +104,11 @@ function onMetaApiConnected() {
   showMetaApiDialog.value = false
   loadConnection()
 }
+
+function onOuinexConnected() {
+  showOuinexDialog.value = false
+  loadConnection()
+}
 </script>
 
 <template>
@@ -133,9 +146,10 @@ function onMetaApiConnected() {
     <!-- Not connected -->
     <div v-else class="space-y-3">
       <p class="text-sm text-gray-500">{{ t('broker.not_connected') }}</p>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="showCtraderDialog = true" />
         <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" severity="secondary" @click="showMetaApiDialog = true" />
+        <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="showOuinexDialog = true" />
       </div>
     </div>
 
@@ -150,6 +164,12 @@ function onMetaApiConnected() {
       v-model:visible="showMetaApiDialog"
       :account="account"
       @connected="onMetaApiConnected"
+    />
+
+    <OuinexConnectDialog
+      v-model:visible="showOuinexDialog"
+      :account="account"
+      @connected="onOuinexConnected"
     />
 
     <SyncHistoryDialog

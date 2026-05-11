@@ -58,10 +58,13 @@ use App\Services\PositionService;
 use App\Services\ShareService;
 use App\Services\CustomFieldService;
 use App\Services\SetupService;
+use App\Services\Broker\BrokerOpenSyncService;
+use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\Broker\CtraderConnector;
 use App\Services\Broker\MetaApiConnector;
+use App\Services\Broker\OuinexConnector;
 use App\Services\Import\ImportService;
 use App\Services\Import\FileParserService;
 use App\Services\Import\ColumnMapperService;
@@ -331,6 +334,12 @@ $metaApiConnector = new MetaApiConnector(
     $brokerConfig['metaapi']['base_url']
 );
 $ctraderConnector = new CtraderConnector($brokerConfig['ctrader']);
+$ouinexConnector = new OuinexConnector(
+    new \GuzzleHttp\Client(),
+    $brokerConfig['ouinex']['graphql_url']
+);
+$brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
+$brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
 $brokerSyncService = new BrokerSyncService(
     $brokerConnectionRepo,
     $syncLogRepo,
@@ -339,6 +348,9 @@ $brokerSyncService = new BrokerSyncService(
     $cryptoService,
     $ctraderConnector,
     $metaApiConnector,
+    $ouinexConnector,
+    $brokerOpenSyncService,
+    $brokerOrderSyncService,
 );
 $brokerSyncController = new BrokerSyncController(
     $brokerSyncService,

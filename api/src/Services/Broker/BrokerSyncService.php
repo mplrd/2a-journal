@@ -9,6 +9,7 @@ use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\SyncLogRepository;
+use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Import\ImportService;
 use App\Services\Import\RowGroupingService;
 
@@ -22,6 +23,9 @@ class BrokerSyncService
         private CredentialEncryptionService $crypto,
         private ConnectorInterface $ctraderConnector,
         private ConnectorInterface $metaApiConnector,
+        private ConnectorInterface $ouinexConnector,
+        private BrokerOpenSyncService $openSyncService,
+        private BrokerOrderSyncService $orderSyncService,
     ) {}
 
     /**
@@ -86,6 +90,35 @@ class BrokerSyncService
                 strtolower($connection['provider']),
             );
 
+            // Reconcile the live OPEN snapshot. fetchOpenPositions is best-
+            // effort (cTrader/MetaApi return empty for now) — we still call
+            // the diff service so OPEN→CLOSED transitions of previously-known
+            // Ouinex positions get a chance to run via the closed deals we
+            // just fetched.
+            $openResult = $connector->fetchOpenPositions($credentials);
+            $liveStats = $this->openSyncService->apply(
+                $userId,
+                (int) $connection['account_id'],
+                (int) $importResult['batch_id'],
+                $openResult['positions'],
+                $deals,
+            );
+
+            // Reconcile pending orders. Same pattern as open positions but
+            // on the ORDER lifecycle. closed_orders is consumed alongside
+            // open_orders so disappearances can be tagged EXECUTED,
+            // EXPIRED, or CANCELLED accurately rather than always defaulting
+            // to CANCELLED.
+            $openOrdersResult = $connector->fetchOpenOrders($credentials);
+            $closedOrdersResult = $connector->fetchClosedOrders($credentials);
+            $orderStats = $this->orderSyncService->apply(
+                $userId,
+                (int) $connection['account_id'],
+                (int) $importResult['batch_id'],
+                $openOrdersResult['orders'],
+                $closedOrdersResult['orders'],
+            );
+
             // Update connection state
             $updateData = [
                 'last_sync_at' => date('Y-m-d H:i:s'),
@@ -114,6 +147,14 @@ class BrokerSyncService
                 'imported_trades' => $importResult['imported_trades'],
                 'skipped_duplicates' => $importResult['skipped_duplicates'],
                 'batch_id' => $importResult['batch_id'],
+                'live_inserted' => $liveStats['inserted'],
+                'live_updated' => $liveStats['updated'],
+                'live_transitioned' => $liveStats['transitioned'],
+                'pending_inserted' => $orderStats['inserted'],
+                'pending_updated' => $orderStats['updated'],
+                'pending_executed' => $orderStats['executed'],
+                'pending_expired' => $orderStats['expired'],
+                'pending_cancelled' => $orderStats['cancelled'],
             ];
         } catch (\Throwable $e) {
             // Update connection and log on failure
@@ -138,6 +179,7 @@ class BrokerSyncService
         return match (BrokerProvider::from($provider)) {
             BrokerProvider::CTRADER => $this->ctraderConnector,
             BrokerProvider::METAAPI => $this->metaApiConnector,
+            BrokerProvider::OUINEX => $this->ouinexConnector,
         };
     }
 }

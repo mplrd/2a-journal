@@ -101,6 +101,28 @@ Le même problème existe pour `symbols` (`uk_symbols_user_code`) et probablemen
 
 ---
 
+### Cipher du chiffrement at-rest des credentials broker — passer de CBC à GCM
+
+**Contexte** : audit privacy de la feature E-02 Ouinex (2026-05-07). `api/src/Services/Broker/CredentialEncryptionService.php:7` utilise **`aes-256-cbc`** pour chiffrer le blob de credentials (clé/secret/JWT par connexion broker). CBC n'est pas un mode AEAD : pas d'authentification intégrée du ciphertext, donc malléabilité possible si un attaquant obtient un accès en écriture à la base. La détection se fait indirectement via `json_decode` à la décryption.
+
+**À faire** : migrer vers `aes-256-gcm` (AEAD natif, tag d'authentification stocké à côté du IV+ciphertext). Migration des données : décrypter avec l'ancien cipher CBC, ré-encrypter avec GCM, en utilisant un script CLI dédié (pattern similaire à la rotation de `BROKER_ENCRYPTION_KEY` mentionnée dans `docs/31-broker-auto-sync.md`).
+
+**Repéré le** : 2026-05-07.
+**Priorité** : basse (le risque concret nécessite un accès en écriture à la base = scénario déjà compromis). À planifier hors urgence, idéalement en même temps qu'une rotation de la clé.
+
+---
+
+### Rate-limit sur POST /broker/connections
+
+**Contexte** : audit sécurité de la feature E-02 Ouinex (2026-05-07). La route `POST /broker/connections` (création d'une connexion broker, qui prend des credentials API en body) n'a aucun `RateLimitMiddleware` — seules `authMiddleware`, `requireSubscription` et `brokerFeatureFlag` la protègent. Pas de risque d'amplification vers l'API tierce (le JWT Ouinex/cTrader/MetaApi est négocié lazy au premier sync), mais un compte authentifié pourrait spammer la route à des fins de fuzzing/DoS interne.
+
+**À faire** : câbler un `RateLimitMiddleware` doux (ex. 10 req/min/user) sur `POST /broker/connections` dans `api/config/routes.php`. S'applique aux 3 providers (CTRADER, METAAPI, OUINEX) — pas spécifique à Ouinex.
+
+**Repéré le** : 2026-05-07.
+**Priorité** : basse (pas de surface critique exposée).
+
+---
+
 ## Docs
 
 ### Tracker beta : splitter "DONE" en "OK prod" / "En attente de livraison"

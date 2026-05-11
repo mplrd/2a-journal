@@ -6,4 +6,5 @@ enum BrokerProvider: string
 {
     case CTRADER = 'CTRADER';
     case METAAPI = 'METAAPI';
+    case OUINEX = 'OUINEX';
 }

@@ -22,4 +22,7 @@ return [
     'metaapi' => [
         'base_url' => getenv('METAAPI_BASE_URL') ?: 'https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai',
     ],
+    'ouinex' => [
+        'graphql_url' => getenv('OUINEX_GRAPHQL_URL') ?: 'https://live-api.ouinex.com/graphql',
+    ],
 ];

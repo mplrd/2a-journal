@@ -128,4 +128,37 @@ class OrderRepository
 
         return $stmt->rowCount() > 0;
     }
+
+    /**
+     * Return current PENDING orders of an account whose position.external_id
+     * starts with the given prefix (e.g. 'ouinex_order_'), indexed by
+     * external_id for O(1) lookup in the broker-snapshot diff. external_id
+     * lives on the positions table; we join orders for the lifecycle
+     * filter.
+     *
+     * Wildcard ('%') is appended in the method to keep the LIKE pattern
+     * safe — the caller passes a literal prefix only.
+     */
+    public function findPendingByExternalIdPrefixInAccount(int $accountId, string $prefix): array
+    {
+        $sql = 'SELECT o.id AS order_id, o.position_id, o.expires_at, o.status,
+                       p.external_id
+                FROM orders o
+                INNER JOIN positions p ON p.id = o.position_id
+                WHERE p.account_id = :account_id
+                  AND p.external_id LIKE :prefix
+                  AND o.status = :pending_status';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            'account_id' => $accountId,
+            'prefix' => $prefix . '%',
+            'pending_status' => OrderStatus::PENDING->value,
+        ]);
+
+        $result = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $result[$row['external_id']] = $row;
+        }
+        return $result;
+    }
 }

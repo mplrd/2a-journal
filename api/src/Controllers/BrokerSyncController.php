@@ -51,6 +51,10 @@ class BrokerSyncController extends Controller
             return $this->createCtraderConnection($userId, $accountId, $body);
         }
 
+        if ($provider === BrokerProvider::OUINEX->value) {
+            return $this->createOuinexConnection($userId, $accountId, $body);
+        }
+
         throw new ValidationException('broker.error.unsupported_provider', 'provider');
     }
 
@@ -175,6 +179,37 @@ class BrokerSyncController extends Controller
             'user_id' => $userId,
             'account_id' => $accountId,
             'provider' => BrokerProvider::METAAPI->value,
+            'status' => ConnectionStatus::ACTIVE->value,
+            'credentials_encrypted' => $encrypted['ciphertext'],
+            'credentials_iv' => $encrypted['iv'],
+        ]);
+
+        return $this->jsonSuccess($this->sanitizeConnection($connection));
+    }
+
+    private function createOuinexConnection(int $userId, int $accountId, array $body): Response
+    {
+        $apiKey = $body['service_api_key'] ?? '';
+        $apiSecret = $body['service_api_secret'] ?? '';
+
+        if (!$apiKey || !$apiSecret) {
+            throw new ValidationException('broker.error.credentials_required', 'service_api_key');
+        }
+
+        // Store the API key/secret only — JWT is fetched lazily on first sync
+        // and re-cached into credentials by BrokerSyncService::sync via
+        // OuinexConnector::refreshCredentials.
+        $credentials = [
+            'service_api_key' => $apiKey,
+            'service_api_secret' => $apiSecret,
+        ];
+
+        $encrypted = $this->crypto->encrypt($credentials);
+
+        $connection = $this->connectionRepo->create([
+            'user_id' => $userId,
+            'account_id' => $accountId,
+            'provider' => BrokerProvider::OUINEX->value,
             'status' => ConnectionStatus::ACTIVE->value,
             'credentials_encrypted' => $encrypted['ciphertext'],
             'credentials_iv' => $encrypted['iv'],
