@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Enums\BrokerProvider;
 use App\Enums\ExitType;
 use App\Enums\TradeStatus;
 use App\Repositories\PositionRepository;
@@ -23,21 +24,23 @@ use App\Repositories\TradeRepository;
  *              → leave it untouched (could be an API gap; the next sync
  *              will reconcile if it's a real anomaly)
  *
- * The OUINEX_PREFIX is what scopes the reconciliation: rows whose
- * external_id doesn't start with it are never read or touched by this
- * service. Manually-entered positions (no external_id) and file-imported
- * positions (other prefixes) are therefore safe.
+ * Scoping: the BrokerProvider passed to apply() drives the external_id
+ * prefix used for the diff (cf. BrokerProvider::externalIdPrefix). Rows
+ * whose external_id doesn't start with it are never read or touched.
+ * Manually-entered positions (no external_id) and file-imported positions
+ * (different prefixes, e.g. 'ftmo_') stay invisible. The same service
+ * instance handles every provider — adding a new one means just plugging
+ * a new normalizer + connector, no diff-service duplication.
  */
 class BrokerOpenSyncService
 {
-    public const OUINEX_PREFIX = 'ouinex_';
-
     public function __construct(
         private PositionRepository $positionRepo,
         private TradeRepository $tradeRepo,
     ) {}
 
     /**
+     * @param BrokerProvider $provider Provider whose external_id prefix scopes the diff.
      * @param int $userId Owner of the connection (used for new position creation).
      * @param int $accountId Account scope for the diff.
      * @param int $batchId Import batch ID to tag new positions with — same
@@ -49,6 +52,7 @@ class BrokerOpenSyncService
      * @return array{inserted: int, updated: int, transitioned: int, skipped_orphans: int}
      */
     public function apply(
+        BrokerProvider $provider,
         int $userId,
         int $accountId,
         int $batchId,
@@ -57,7 +61,7 @@ class BrokerOpenSyncService
     ): array {
         $existing = $this->positionRepo->findOpenByExternalIdPrefixInAccount(
             $accountId,
-            self::OUINEX_PREFIX,
+            $provider->externalIdPrefix(),
         );
 
         $closedByExternalId = $this->indexByExternalId($closedSnapshot);

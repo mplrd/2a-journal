@@ -298,6 +298,7 @@ class BrokerSyncServiceTest extends TestCase
         $this->openSyncService->expects($this->once())
             ->method('apply')
             ->with(
+                \App\Enums\BrokerProvider::OUINEX,
                 10,        // userId
                 5,         // accountId
                 42,        // batchId from the closed import
@@ -344,11 +345,11 @@ class BrokerSyncServiceTest extends TestCase
 
         $this->openSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 7, [], [])
+            ->with(\App\Enums\BrokerProvider::METAAPI, 10, 5, 7, [], [])
             ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
         $this->orderSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 7, [], [])
+            ->with(\App\Enums\BrokerProvider::METAAPI, 10, 5, 7, [], [])
             ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);
@@ -403,7 +404,7 @@ class BrokerSyncServiceTest extends TestCase
 
         $this->orderSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 42, $openOrders, $closedOrders)
+            ->with(\App\Enums\BrokerProvider::OUINEX, 10, 5, 42, $openOrders, $closedOrders)
             ->willReturn(['inserted' => 1, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);

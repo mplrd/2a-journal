@@ -97,6 +97,7 @@ class BrokerSyncService
             // just fetched.
             $openResult = $connector->fetchOpenPositions($credentials);
             $liveStats = $this->openSyncService->apply(
+                BrokerProvider::from($connection['provider']),
                 $userId,
                 (int) $connection['account_id'],
                 (int) $importResult['batch_id'],
@@ -112,6 +113,7 @@ class BrokerSyncService
             $openOrdersResult = $connector->fetchOpenOrders($credentials);
             $closedOrdersResult = $connector->fetchClosedOrders($credentials);
             $orderStats = $this->orderSyncService->apply(
+                BrokerProvider::from($connection['provider']),
                 $userId,
                 (int) $connection['account_id'],
                 (int) $importResult['batch_id'],
