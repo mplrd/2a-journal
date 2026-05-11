@@ -24,6 +24,7 @@ class BrokerSyncService
         private ConnectorInterface $ctraderConnector,
         private ConnectorInterface $metaApiConnector,
         private ConnectorInterface $ouinexConnector,
+        private ConnectorInterface $bingxConnector,
         private BrokerOpenSyncService $openSyncService,
         private BrokerOrderSyncService $orderSyncService,
     ) {}
@@ -182,6 +183,7 @@ class BrokerSyncService
             BrokerProvider::CTRADER => $this->ctraderConnector,
             BrokerProvider::METAAPI => $this->metaApiConnector,
             BrokerProvider::OUINEX => $this->ouinexConnector,
+            BrokerProvider::BINGX => $this->bingxConnector,
         };
     }
 }

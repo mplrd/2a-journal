@@ -7,6 +7,7 @@ enum BrokerProvider: string
     case CTRADER = 'CTRADER';
     case METAAPI = 'METAAPI';
     case OUINEX = 'OUINEX';
+    case BINGX = 'BINGX';
 
     /**
      * Prefix applied to `positions.external_id` for rows synced from this

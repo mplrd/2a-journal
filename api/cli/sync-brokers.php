@@ -34,6 +34,7 @@ use App\Repositories\SymbolRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\PlatformSettingsRepository;
+use App\Services\Broker\BingxConnector;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncSchedulerService;
@@ -125,6 +126,10 @@ try {
         new \GuzzleHttp\Client(),
         $brokerConfig['ouinex']['graphql_url']
     );
+    $bingxConnector = new BingxConnector(
+        new \GuzzleHttp\Client(),
+        $brokerConfig['bingx']['base_url']
+    );
     $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
     $orderRepo = new \App\Repositories\OrderRepository($pdo);
     $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
@@ -138,6 +143,7 @@ try {
         $ctraderConnector,
         $metaApiConnector,
         $ouinexConnector,
+        $bingxConnector,
         $brokerOpenSyncService,
         $brokerOrderSyncService,
     );

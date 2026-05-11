@@ -9,6 +9,7 @@ import Message from 'primevue/message'
 import CtraderConnectDialog from './CtraderConnectDialog.vue'
 import MetaApiConnectDialog from './MetaApiConnectDialog.vue'
 import OuinexConnectDialog from './OuinexConnectDialog.vue'
+import BingxConnectDialog from './BingxConnectDialog.vue'
 import SyncHistoryDialog from './SyncHistoryDialog.vue'
 
 const { t } = useI18n()
@@ -27,6 +28,7 @@ const syncResult = ref(null)
 const showCtraderDialog = ref(false)
 const showMetaApiDialog = ref(false)
 const showOuinexDialog = ref(false)
+const showBingxDialog = ref(false)
 const showHistory = ref(false)
 
 const isConnected = computed(() => connection.value && connection.value.status === 'ACTIVE')
@@ -35,6 +37,7 @@ const PROVIDER_LABELS = {
   CTRADER: 'cTrader',
   METAAPI: 'MetaApi (MT4/MT5)',
   OUINEX: 'Ouinex',
+  BINGX: 'BingX',
 }
 
 const providerLabel = computed(() => {
@@ -109,6 +112,11 @@ function onOuinexConnected() {
   showOuinexDialog.value = false
   loadConnection()
 }
+
+function onBingxConnected() {
+  showBingxDialog.value = false
+  loadConnection()
+}
 </script>
 
 <template>
@@ -150,6 +158,7 @@ function onOuinexConnected() {
         <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="showCtraderDialog = true" />
         <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" severity="secondary" @click="showMetaApiDialog = true" />
         <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="showOuinexDialog = true" />
+        <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" @click="showBingxDialog = true" />
       </div>
     </div>
 
@@ -170,6 +179,12 @@ function onOuinexConnected() {
       v-model:visible="showOuinexDialog"
       :account="account"
       @connected="onOuinexConnected"
+    />
+
+    <BingxConnectDialog
+      v-model:visible="showBingxDialog"
+      :account="account"
+      @connected="onBingxConnected"
     />
 
     <SyncHistoryDialog
