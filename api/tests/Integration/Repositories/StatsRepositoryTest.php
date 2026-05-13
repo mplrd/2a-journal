@@ -779,11 +779,11 @@ class StatsRepositoryTest extends TestCase
 
     public function testGetHeatmapReturnsDayHourGrid(): void
     {
-        // Wednesday (day 3) at 10h and 14h
-        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-14 10:30:00']);
-        $this->createClosedTrade(-30.0, 'SL', ['closed_at' => '2026-01-14 14:15:00']);
+        // Wednesday (day 3) at 10h and 14h — entry timestamp drives the bucket.
+        $this->createClosedTrade(100.0, 'TP', ['opened_at' => '2026-01-14 10:30:00']);
+        $this->createClosedTrade(-30.0, 'SL', ['opened_at' => '2026-01-14 14:15:00']);
         // Thursday (day 4) at 10h
-        $this->createClosedTrade(50.0, 'TP', ['closed_at' => '2026-01-15 10:45:00']);
+        $this->createClosedTrade(50.0, 'TP', ['opened_at' => '2026-01-15 10:45:00']);
 
         $result = $this->repo->getHeatmap($this->userId);
 
@@ -805,14 +805,56 @@ class StatsRepositoryTest extends TestCase
 
     public function testGetHeatmapRespectsFilters(): void
     {
-        $this->createClosedTrade(100.0, 'TP', ['closed_at' => '2026-01-14 10:00:00', 'symbol' => 'NASDAQ']);
-        $this->createClosedTrade(-30.0, 'SL', ['closed_at' => '2026-01-14 10:00:00', 'symbol' => 'DAX']);
+        $this->createClosedTrade(100.0, 'TP', ['opened_at' => '2026-01-14 10:00:00', 'symbol' => 'NASDAQ']);
+        $this->createClosedTrade(-30.0, 'SL', ['opened_at' => '2026-01-14 10:00:00', 'symbol' => 'DAX']);
 
         $result = $this->repo->getHeatmap($this->userId, ['symbols' => ['NASDAQ']]);
 
         $this->assertCount(1, $result);
         $this->assertSame(1, (int) $result[0]['trade_count']);
         $this->assertEquals(100.0, (float) $result[0]['total_pnl']);
+    }
+
+    public function testGetHeatmapBucketsByEntryNotExit(): void
+    {
+        // Trade entered Wednesday 10h, closed Friday 16h.
+        // Heatmap must bucket on entry (3-10), never on exit (5-16).
+        $this->createClosedTrade(100.0, 'TP', [
+            'opened_at' => '2026-01-14 10:00:00',
+            'closed_at' => '2026-01-16 16:00:00',
+        ]);
+
+        $result = $this->repo->getHeatmap($this->userId);
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['day'] . '-' . $row['hour']] = $row;
+        }
+
+        $this->assertArrayHasKey('3-10', $indexed);
+        $this->assertArrayNotHasKey('5-16', $indexed);
+    }
+
+    public function testGetHeatmapFiltersByEntryDate(): void
+    {
+        // Entered BEFORE window, closed INSIDE — must be excluded.
+        $this->createClosedTrade(100.0, 'TP', [
+            'opened_at' => '2026-01-10 10:00:00',
+            'closed_at' => '2026-01-16 14:00:00',
+        ]);
+        // Entered INSIDE window, closed AFTER — must be included.
+        $this->createClosedTrade(50.0, 'TP', [
+            'opened_at' => '2026-01-15 11:00:00',
+            'closed_at' => '2026-01-25 09:00:00',
+        ]);
+
+        $result = $this->repo->getHeatmap($this->userId, [
+            'date_from' => '2026-01-14',
+            'date_to'   => '2026-01-18',
+        ]);
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, (int) $result[0]['trade_count']);
+        $this->assertEquals(50.0, (float) $result[0]['total_pnl']);
     }
 
     // ── getTradesForSessionStats ─────────────────────────────
