@@ -71,6 +71,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             }));
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -118,6 +119,7 @@ class BrokerOrderSyncServiceTest extends TestCase
         $this->orderRepo->expects($this->never())->method('create');
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -149,6 +151,7 @@ class BrokerOrderSyncServiceTest extends TestCase
         $this->positionRepo->expects($this->never())->method('delete');
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -184,6 +187,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             ->with(7003, OrderStatus::EXECUTED->value);
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -215,6 +219,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             ->with(7004, OrderStatus::EXPIRED->value);
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -245,6 +250,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             ->with(7005, OrderStatus::CANCELLED->value);
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -281,6 +287,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             ->with(7002, OrderStatus::CANCELLED->value);
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -309,6 +316,7 @@ class BrokerOrderSyncServiceTest extends TestCase
             ->willReturn([]);
 
         $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,

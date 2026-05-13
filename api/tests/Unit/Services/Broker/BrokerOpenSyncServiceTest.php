@@ -86,6 +86,7 @@ class BrokerOpenSyncServiceTest extends TestCase
             }));
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -146,6 +147,7 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->tradeRepo->expects($this->never())->method('create');
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -196,6 +198,7 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->tradeRepo->expects($this->never())->method('create');
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -236,6 +239,7 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->tradeRepo->expects($this->never())->method('delete');
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -274,6 +278,7 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->tradeRepo->expects($this->exactly(2))->method('update'); // update existing + transition
 
         $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,
@@ -307,6 +312,7 @@ class BrokerOpenSyncServiceTest extends TestCase
             ->willReturn([]);
 
         $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
             userId: 10,
             accountId: 5,
             batchId: 99,

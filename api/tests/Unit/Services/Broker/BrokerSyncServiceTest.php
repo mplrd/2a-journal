@@ -26,6 +26,7 @@ class BrokerSyncServiceTest extends TestCase
     private ConnectorInterface $metaApiConnector;
     private ConnectorInterface $ctraderConnector;
     private ConnectorInterface $ouinexConnector;
+    private ConnectorInterface $bingxConnector;
     private BrokerOpenSyncService $openSyncService;
     private BrokerOrderSyncService $orderSyncService;
 
@@ -38,6 +39,7 @@ class BrokerSyncServiceTest extends TestCase
         $this->metaApiConnector = $this->createMock(ConnectorInterface::class);
         $this->ctraderConnector = $this->createMock(ConnectorInterface::class);
         $this->ouinexConnector = $this->createMock(ConnectorInterface::class);
+        $this->bingxConnector = $this->createMock(ConnectorInterface::class);
         $this->openSyncService = $this->createMock(BrokerOpenSyncService::class);
         $this->orderSyncService = $this->createMock(BrokerOrderSyncService::class);
 
@@ -50,6 +52,7 @@ class BrokerSyncServiceTest extends TestCase
             $this->ctraderConnector,
             $this->metaApiConnector,
             $this->ouinexConnector,
+            $this->bingxConnector,
             $this->openSyncService,
             $this->orderSyncService,
         );
@@ -202,6 +205,31 @@ class BrokerSyncServiceTest extends TestCase
         $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
     }
 
+    public function testSyncUsesBingxConnectorForBingxProvider(): void
+    {
+        $connection = $this->makeConnection('BINGX', [
+            'api_key' => 'k', 'api_secret' => 's',
+        ]);
+        $this->stubOpenSnapshotDefaults($this->bingxConnector);
+
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->bingxConnector->method('refreshCredentials')->willReturnArgument(0);
+        $this->bingxConnector->expects($this->once())
+            ->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+
+        $this->importService->method('importNormalizedPositions')
+            ->willReturn([
+                'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+                'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+            ]);
+
+        $result = $this->service->sync(1, 10);
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
     public function testSyncUsesOuinexConnectorForOuinexProvider(): void
     {
         $connection = $this->makeConnection('OUINEX', [
@@ -298,6 +326,7 @@ class BrokerSyncServiceTest extends TestCase
         $this->openSyncService->expects($this->once())
             ->method('apply')
             ->with(
+                \App\Enums\BrokerProvider::OUINEX,
                 10,        // userId
                 5,         // accountId
                 42,        // batchId from the closed import
@@ -344,11 +373,11 @@ class BrokerSyncServiceTest extends TestCase
 
         $this->openSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 7, [], [])
+            ->with(\App\Enums\BrokerProvider::METAAPI, 10, 5, 7, [], [])
             ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
         $this->orderSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 7, [], [])
+            ->with(\App\Enums\BrokerProvider::METAAPI, 10, 5, 7, [], [])
             ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);
@@ -403,7 +432,7 @@ class BrokerSyncServiceTest extends TestCase
 
         $this->orderSyncService->expects($this->once())
             ->method('apply')
-            ->with(10, 5, 42, $openOrders, $closedOrders)
+            ->with(\App\Enums\BrokerProvider::OUINEX, 10, 5, 42, $openOrders, $closedOrders)
             ->willReturn(['inserted' => 1, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
 
         $result = $this->service->sync(1, 10);

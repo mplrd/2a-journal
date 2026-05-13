@@ -58,6 +58,7 @@ use App\Services\PositionService;
 use App\Services\ShareService;
 use App\Services\CustomFieldService;
 use App\Services\SetupService;
+use App\Services\Broker\BingxConnector;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
@@ -338,6 +339,10 @@ $ouinexConnector = new OuinexConnector(
     new \GuzzleHttp\Client(),
     $brokerConfig['ouinex']['graphql_url']
 );
+$bingxConnector = new BingxConnector(
+    new \GuzzleHttp\Client(),
+    $brokerConfig['bingx']['base_url']
+);
 $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
 $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
 $brokerSyncService = new BrokerSyncService(
@@ -349,6 +354,7 @@ $brokerSyncService = new BrokerSyncService(
     $ctraderConnector,
     $metaApiConnector,
     $ouinexConnector,
+    $bingxConnector,
     $brokerOpenSyncService,
     $brokerOrderSyncService,
 );

@@ -49,4 +49,13 @@ export const brokerSyncService = {
       service_api_secret: serviceApiSecret,
     })
   },
+
+  async createBingxConnection(accountId, apiKey, apiSecret) {
+    return api.post('/broker/connections', {
+      provider: 'BINGX',
+      account_id: accountId,
+      api_key: apiKey,
+      api_secret: apiSecret,
+    })
+  },
 }

@@ -25,4 +25,9 @@ return [
     'ouinex' => [
         'graphql_url' => getenv('OUINEX_GRAPHQL_URL') ?: 'https://live-api.ouinex.com/graphql',
     ],
+    'bingx' => [
+        // BingX recommends calling .com first; .pro is the fallback but
+        // typical retail traffic never needs it. Keep .com as default.
+        'base_url' => getenv('BINGX_BASE_URL') ?: 'https://open-api.bingx.com',
+    ],
 ];

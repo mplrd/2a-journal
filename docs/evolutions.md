@@ -101,6 +101,69 @@ Le même problème existe pour `symbols` (`uk_symbols_user_code`) et probablemen
 
 ---
 
+### Connexion BingX — Phase 2 (Coin-M Perpetual + Standard Contracts)
+
+**Contexte** : la Phase 1 BingX (cf. `docs/64-broker-sync-bingx.md`, branche `feat/import-bingx`) couvre uniquement **USDT-M Perpetual** parce que c'est le seul produit BingX qui expose un endpoint `positionHistory` natif (round-trip avec entry/exit/pnl agrégés, directement consommable par notre pipeline). Pour les deux autres produits dérivés :
+
+- **Coin-M Perpetual (`cswap`)** : pas de `positionHistory`. Les fills sont disponibles via `/openApi/cswap/v1/trade/allFillOrders` (avec `realizedPnl` par fill).
+- **Standard Contracts (`contract`)** : pas de `positionHistory` ni de `openOrders` dédiés. Juste `/openApi/contract/v1/allOrders` (history mixte) et `/openApi/contract/v1/allPosition` (live).
+
+→ Il faut **synthétiser les positions clôturées** à partir des order fills (effort équivalent à la Phase 2 spot Ouinex décrite plus haut).
+
+**Sous-tâches** :
+- `BingxCswapConnector` (ou méthodes dédiées dans `BingxConnector`) :
+  - Réutiliser l'auth HMAC déjà en place.
+  - Pour les closed positions : fetch `allFillOrders` paginé par symbol, grouper les fills par `orderId` ou par séquence d'open/close pour reconstituer un round-trip (volume aggregated, prix moyen pondéré, pnl somme des realizedPnl).
+  - Pour les open positions : direct mapping comme USDT-M (les endpoints `cswap/v1/user/positions` et `contract/v1/allPosition` existent).
+- `BingxStandardConnector` :
+  - Idem mais sur l'endpoint `contract/v1/allOrders` (history mixte) avec filtrage status FILLED → pairing FIFO ou par séquence.
+  - À voir si standard contracts ont vraiment des pending orders (la doc ne les mentionne pas explicitement).
+- Persistance de l'état de pairing entre syncs (lots non clôturés) — même problème que la Phase 2 Ouinex spot. Probable champ JSON sur `broker_connections` ou table dédiée.
+- Tests TDD comme pour la Phase 1.
+- Branche dédiée : `feat/import-bingx-cm-std` (à créer après merge Phase 1 sur develop).
+- Doc séparée : `docs/<prochain-num>-broker-sync-bingx-cm-std.md`.
+
+**Réutilisation** :
+- Services de diff (`BrokerOpenSyncService`, `BrokerOrderSyncService`) déjà agnostiques au provider depuis le refactor enum-driven (commit `231ea12`) → aucune modification nécessaire.
+- `DealNormalizer` étendu avec `normalizeBingxCswap*` / `normalizeBingxStandard*` méthodes.
+- DI et controller juste un peu étendus si on garde un seul `BrokerProvider::BINGX` (vraisemblable, l'utilisateur configure une API key qui couvre les 3 produits).
+
+**Risques** :
+- Identifiers d'orders Coin-M ≠ USDT-M (préfixe distinct côté external_id pour ne pas collider).
+- Variations de schéma payload entre produits — chaque normalize* doit être robuste aux fallbacks.
+- L'utilisateur peut trader en Coin-M sans jamais avoir d'open position visible (fermeture rapide) → couverture des symbols à enrichir (cf. limitation suivante).
+
+**Repéré le** : 2026-05-11.
+**Priorité** : moyenne. À déclencher après feedback Phase 1 BingX en prod.
+
+---
+
+### BingX Phase 1 — couverture des symbols élargie
+
+**Contexte** : aujourd'hui `BingxConnector::fetchDeals` et `fetchClosedOrders` énumèrent les symbols depuis `user/positions` (positions actuellement ouvertes). Conséquence : si l'utilisateur ferme toutes ses positions sur un symbol et arrête de sync pendant des semaines, ce symbol n'est plus interrogé pour son `positionHistory` → trou d'historique.
+
+En pratique le scheduler tourne toutes les 15 min (cf. étape 31), donc l'écart entre 2 syncs reste très inférieur à la fenêtre 3 mois supportée par BingX. La limitation se déclenche uniquement sur un usage discontinu.
+
+**À faire** : persister un set "symbols seen" en base (champ JSON sur `broker_connections` ou table associée) — à chaque sync, on union le set avec les symbols vus dans `user/positions`. Le `fetchDeals` itère ce set complet plutôt que juste l'instantané.
+
+**Repéré le** : 2026-05-11.
+**Priorité** : basse, à faire si un user signale le bug.
+
+---
+
+### BingX Phase 1 — vérifier les fields `positionHistory.list[]` au premier test live
+
+**Contexte** : la doc API BingX ne détaille **pas** les fields exacts retournés dans `positionHistory.list[]` (cf. `docs/64-broker-sync-bingx.md`). Le `DealNormalizer::normalizeBingxClosedPosition` utilise des fields **inférés** depuis la schéma des positions ouvertes et la convention BingX : `avgPrice` pour l'entry, `closeAvgPrice` pour l'exit, `realisedProfit` pour le pnl, `closeTime`/`openTime` en millisecondes, `positionAmt` pour la size.
+
+Les fallbacks `??` empêchent l'erreur fatale, mais si BingX utilise d'autres noms en réalité, le normalize retournera `null` ou des champs vides → le user n'aura pas ses closed positions.
+
+**À faire** : au premier sync live d'un user BingX, vérifier les logs sync_logs et `api/last_sync_error`, OU faire un dump direct via curl signé sur `positionHistory` pour confirmer le payload. Ajuster `normalizeBingxClosedPosition` si drift détecté.
+
+**Repéré le** : 2026-05-11.
+**Priorité** : haute dès qu'un user BingX réel existe (sinon on rate ses imports). En attendant : sans utilisateur BingX réel sur la plateforme, pas de pression immédiate.
+
+---
+
 ### Cipher du chiffrement at-rest des credentials broker — passer de CBC à GCM
 
 **Contexte** : audit privacy de la feature E-02 Ouinex (2026-05-07). `api/src/Services/Broker/CredentialEncryptionService.php:7` utilise **`aes-256-cbc`** pour chiffrer le blob de credentials (clé/secret/JWT par connexion broker). CBC n'est pas un mode AEAD : pas d'authentification intégrée du ciphertext, donc malléabilité possible si un attaquant obtient un accès en écriture à la base. La détection se fait indirectement via `json_decode` à la décryption.

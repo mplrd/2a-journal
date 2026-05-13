@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Enums\BrokerProvider;
 use App\Enums\OrderStatus;
 use App\Enums\PositionType;
 use App\Repositories\OrderRepository;
@@ -26,27 +27,28 @@ use App\Repositories\PositionRepository;
  *  - CANCELLED: closed_orders confirms CANCELLED, OR no closed_orders signal
  *               at all → conservative default flip to CANCELLED
  *
- * Scope is enforced by the prefix 'ouinex_order_'. Manual orders (no
+ * Scoping: the BrokerProvider passed to apply() drives the external_id
+ * prefix (cf. BrokerProvider::orderExternalIdPrefix). Manual orders (no
  * external_id) and other-provider orders (different prefix) are invisible
- * to this service.
+ * to this service. Same instance handles every provider — adding a new
+ * one means just plugging a new normalizer + connector.
  *
- * Note on the position parent of an order: when a pending order executes
- * on Ouinex, it leaves open_orders and the resulting margin position
- * appears in open_margin_positions under a DIFFERENT external_id
- * ('ouinex_<margin_position_id>'). The order's position row and the
- * eventual trade's position row therefore stay distinct — we don't try to
- * glue them at this layer.
+ * Note on the position parent of an order: when a pending order executes,
+ * it leaves open_orders and the resulting position appears in the
+ * open-positions feed under a DIFFERENT external_id (positions prefix vs
+ * orders prefix). The order's position row and the eventual trade's
+ * position row therefore stay distinct — we don't try to glue them at
+ * this layer.
  */
 class BrokerOrderSyncService
 {
-    public const OUINEX_ORDER_PREFIX = 'ouinex_order_';
-
     public function __construct(
         private OrderRepository $orderRepo,
         private PositionRepository $positionRepo,
     ) {}
 
     /**
+     * @param BrokerProvider $provider Provider whose order-id prefix scopes the diff.
      * @param int $userId Owner of the connection.
      * @param int $accountId Account scope.
      * @param int $batchId Import batch used for new-order traceability.
@@ -61,6 +63,7 @@ class BrokerOrderSyncService
      * @return array{inserted: int, updated: int, executed: int, expired: int, cancelled: int}
      */
     public function apply(
+        BrokerProvider $provider,
         int $userId,
         int $accountId,
         int $batchId,
@@ -69,7 +72,7 @@ class BrokerOrderSyncService
     ): array {
         $existing = $this->orderRepo->findPendingByExternalIdPrefixInAccount(
             $accountId,
-            self::OUINEX_ORDER_PREFIX,
+            $provider->orderExternalIdPrefix(),
         );
 
         $finalStatusByExternalId = $this->indexFinalStatus($closedOrdersSnapshot);

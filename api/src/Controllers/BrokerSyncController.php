@@ -55,6 +55,10 @@ class BrokerSyncController extends Controller
             return $this->createOuinexConnection($userId, $accountId, $body);
         }
 
+        if ($provider === BrokerProvider::BINGX->value) {
+            return $this->createBingxConnection($userId, $accountId, $body);
+        }
+
         throw new ValidationException('broker.error.unsupported_provider', 'provider');
     }
 
@@ -210,6 +214,35 @@ class BrokerSyncController extends Controller
             'user_id' => $userId,
             'account_id' => $accountId,
             'provider' => BrokerProvider::OUINEX->value,
+            'status' => ConnectionStatus::ACTIVE->value,
+            'credentials_encrypted' => $encrypted['ciphertext'],
+            'credentials_iv' => $encrypted['iv'],
+        ]);
+
+        return $this->jsonSuccess($this->sanitizeConnection($connection));
+    }
+
+    private function createBingxConnection(int $userId, int $accountId, array $body): Response
+    {
+        $apiKey = $body['api_key'] ?? '';
+        $apiSecret = $body['api_secret'] ?? '';
+
+        if (!$apiKey || !$apiSecret) {
+            throw new ValidationException('broker.error.credentials_required', 'api_key');
+        }
+
+        // BingX uses static HMAC credentials — no token refresh ever.
+        $credentials = [
+            'api_key' => $apiKey,
+            'api_secret' => $apiSecret,
+        ];
+
+        $encrypted = $this->crypto->encrypt($credentials);
+
+        $connection = $this->connectionRepo->create([
+            'user_id' => $userId,
+            'account_id' => $accountId,
+            'provider' => BrokerProvider::BINGX->value,
             'status' => ConnectionStatus::ACTIVE->value,
             'credentials_encrypted' => $encrypted['ciphertext'],
             'credentials_iv' => $encrypted['iv'],
