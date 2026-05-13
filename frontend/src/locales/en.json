@@ -882,6 +882,8 @@
   "broker": {
     "connection": "Broker connection",
     "not_connected": "No API connection configured for this account.",
+    "section_platforms": "Platforms",
+    "section_brokers": "Brokers",
     "connect_ctrader": "Connect cTrader",
     "connect_metaapi": "Connect MT4/MT5",
     "connect_ouinex": "Connect Ouinex",
