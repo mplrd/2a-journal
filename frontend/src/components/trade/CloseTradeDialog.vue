@@ -28,10 +28,39 @@ const exitTypeOptions = Object.values(ExitType).map((value) => ({
 function getDefaultForm() {
   return {
     exit_price: 0,
+    exit_points: 0,
     exit_size: 0,
     exit_type: ExitType.TP,
     target_id: null,
   }
+}
+
+// Points convention: signed P&L distance. Positive = profit, negative = loss.
+// BUY:  points = exit - entry  ↔  exit = entry + points
+// SELL: points = entry - exit  ↔  exit = entry - points
+function priceToPoints(price) {
+  if (!props.trade || !price) return 0
+  const entry = Number(props.trade.entry_price)
+  return props.trade.direction === Direction.BUY ? price - entry : entry - price
+}
+
+function pointsToPrice(points) {
+  if (!props.trade) return 0
+  const entry = Number(props.trade.entry_price)
+  if (points === null || points === undefined || points === 0) return entry
+  return props.trade.direction === Direction.BUY ? entry + points : entry - points
+}
+
+function setExitPrice(value) {
+  const numeric = value ?? 0
+  form.value.exit_price = numeric
+  form.value.exit_points = priceToPoints(numeric)
+}
+
+function setExitPoints(value) {
+  const numeric = value ?? 0
+  form.value.exit_points = numeric
+  form.value.exit_price = pointsToPrice(numeric)
 }
 
 watch(
@@ -39,8 +68,10 @@ watch(
   (val) => {
     if (val && props.trade) {
       if (props.prefill) {
+        const price = props.prefill.exit_price ?? 0
         form.value = {
-          exit_price: props.prefill.exit_price ?? 0,
+          exit_price: price,
+          exit_points: priceToPoints(price),
           exit_size: props.prefill.exit_size ?? Number(props.trade.remaining_size),
           exit_type: props.prefill.exit_type ?? ExitType.TP,
           target_id: props.prefill.target_id ?? null,
@@ -48,6 +79,7 @@ watch(
       } else {
         form.value = {
           exit_price: 0,
+          exit_points: 0,
           exit_size: Number(props.trade.remaining_size),
           exit_type: ExitType.TP,
           target_id: null,
@@ -55,6 +87,7 @@ watch(
       }
     }
   },
+  { immediate: true },
 )
 
 const pnlPreview = computed(() => {
@@ -71,7 +104,9 @@ function handleCloseFull() {
 }
 
 function handleSubmit() {
-  emit('close', { ...form.value })
+  // exit_points is a UX convenience — backend only knows exit_price.
+  const { exit_points, ...payload } = form.value
+  emit('close', payload)
 }
 
 function handleClose() {
@@ -95,9 +130,32 @@ function handleClose() {
         {{ t('trades.remaining_size') }}: {{ Number(trade.remaining_size) }}
       </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_price') }} *</label>
-        <InputNumber v-model="form.exit_price" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_price') }} *</label>
+          <InputNumber
+            :modelValue="form.exit_price"
+            data-name="exit_price"
+            class="w-full"
+            :min="0"
+            mode="decimal"
+            locale="en-US"
+            :maxFractionDigits="5"
+            @update:modelValue="setExitPrice"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_points') }}</label>
+          <InputNumber
+            :modelValue="form.exit_points"
+            data-name="exit_points"
+            class="w-full"
+            mode="decimal"
+            locale="en-US"
+            :maxFractionDigits="2"
+            @update:modelValue="setExitPoints"
+          />
+        </div>
       </div>
 
       <div>

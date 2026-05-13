@@ -445,6 +445,7 @@
     "close_trade": "Fermer le trade",
     "close_full": "Fermer en totalité",
     "exit_price": "Prix de sortie",
+    "exit_points": "Points (depuis entrée)",
     "exit_size": "Taille de sortie",
     "exit_type": "Type de sortie",
     "partial_exits": "Sorties partielles",
