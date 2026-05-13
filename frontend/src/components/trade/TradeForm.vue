@@ -169,8 +169,8 @@ function addTarget() {
   form.value.targets.push({
     id: `tp${form.value.targets.length + 1}`,
     label: `TP${form.value.targets.length + 1}`,
-    points: 0,
-    size: 0,
+    points: null,
+    size: null,
   })
 }
 
