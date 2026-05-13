@@ -37,9 +37,12 @@ class StatsRepository
      * doesn't consider the trade secured). Filtering on status would miss those.
      * Since TradeService::close() now sets trades.pnl on every exit, NULL pnl
      * exactly means "no exit ever taken".
+     * @param string|null $dateColumn SQL expression used for date_from/date_to filtering.
+     *                                Defaults to {@see effectiveDate()} (exit-based). Pass
+     *                                't.opened_at' for entry-based filtering (heatmap).
      * @return array{0: string, 1: array}
      */
-    private function buildWhereClause(int $userId, array $filters = []): array
+    private function buildWhereClause(int $userId, array $filters = [], ?string $dateColumn = null): array
     {
         // Soft-deleted accounts must be excluded from every aggregation. The EXISTS
         // is rewritten as a semi-join by MariaDB since accounts.id is the PK, so
@@ -61,7 +64,7 @@ class StatsRepository
             $params['account_id'] = (int) $filters['account_id'];
         }
 
-        $effective = $this->effectiveDate();
+        $effective = $dateColumn ?? $this->effectiveDate();
         if (!empty($filters['date_from'])) {
             $where .= " AND {$effective} >= :date_from";
             $params['date_from'] = $filters['date_from'] . ' 00:00:00';
@@ -428,20 +431,25 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
-    private function localClosedAt(string $tzOffset): string
+    private function localizedTimestamp(string $column, string $tzOffset): string
     {
-        $eff = $this->effectiveDate();
         if ($tzOffset === '+00:00') {
-            return $eff;
+            return $column;
         }
         $tzSafe = $this->pdo->quote($tzOffset);
-        return "CONVERT_TZ({$eff}, '+00:00', {$tzSafe})";
+        return "CONVERT_TZ({$column}, '+00:00', {$tzSafe})";
     }
 
+    /**
+     * Heatmap groups by ENTRY timestamp, not exit. The question "did this hour
+     * of the week work for me?" is about the moment the position was taken,
+     * not the moment it was unwound (which can be hours or days later and
+     * tells us about market regime at exit, not entry).
+     */
     public function getHeatmap(int $userId, array $filters = [], string $tzOffset = '+00:00'): array
     {
-        [$where, $params] = $this->buildWhereClause($userId, $filters);
-        $local = $this->localClosedAt($tzOffset);
+        [$where, $params] = $this->buildWhereClause($userId, $filters, 't.opened_at');
+        $local = $this->localizedTimestamp('t.opened_at', $tzOffset);
 
         $sql = "SELECT
                     DAYOFWEEK({$local}) - 1 AS day,

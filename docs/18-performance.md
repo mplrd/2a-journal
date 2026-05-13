@@ -56,6 +56,10 @@ Distribution des trades par buckets de R:R : `[{bucket, count}]`. Buckets : <-2,
 
 Performances par jour de semaine × heure : `[{day, hour, trade_count, total_pnl, avg_pnl}]`. `day` = 0 (dimanche) à 6 (samedi), `hour` = 0 à 23. Les heures sont converties dans le fuseau horaire du user (via `CONVERT_TZ` et le timezone du profil).
 
+**Bucket = date d'ENTRÉE du trade** (`trades.opened_at`), pas la sortie. La question posée par la heatmap est *« à quels moments de la semaine je prends de bonnes positions ? »* — c'est l'heure d'entrée qui définit le régime de marché auquel le trader s'est exposé, pas l'heure de sortie (qui peut tomber plusieurs heures ou jours plus tard et concerner un tout autre régime).
+
+Conséquence : les filtres `date_from` / `date_to` appliqués à cette route filtrent eux aussi sur `opened_at`, pas sur la date effective de réalisation. Un trade entré la veille de la fenêtre et clos dedans n'apparaît pas ; un trade entré dedans et clos après apparaît. Toutes les autres routes `/stats/*` continuent de filtrer sur la date effective (`COALESCE(closed_at, MAX(partial_exits.exited_at))`).
+
 ### GET /stats/charts
 
 Réutilisé depuis le dashboard : P&L cumulé, distribution W/L, P&L par symbole.

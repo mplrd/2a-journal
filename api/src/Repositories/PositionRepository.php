@@ -142,6 +142,44 @@ class PositionRepository
         return $stmt->rowCount() > 0;
     }
 
+    /**
+     * Return current OPEN positions of an account whose external_id starts
+     * with the given prefix (e.g. 'ouinex_'), indexed by external_id for
+     * O(1) lookup in the broker-snapshot diff. Each row carries the trade id
+     * and status so the caller can decide insert vs update vs transition.
+     *
+     * The prefix is passed as a literal — only the caller knows which
+     * provider scope it wants to reconcile. Wildcard ('%') is appended here
+     * to keep the LIKE pattern safe.
+     */
+    public function findOpenByExternalIdPrefixInAccount(int $accountId, string $prefix): array
+    {
+        // tp_price column doesn't exist (only the targets JSON does); the
+        // diff service doesn't need to read it back from DB to update —
+        // the snapshot is the source of truth for broker-side fields.
+        $stmt = $this->pdo->prepare(
+            'SELECT p.id AS position_id, p.external_id, p.entry_price, p.size,
+                    p.sl_price, p.direction, p.symbol,
+                    t.id AS trade_id, t.status AS trade_status
+             FROM positions p
+             INNER JOIN trades t ON t.position_id = p.id
+             WHERE p.account_id = :account_id
+               AND p.external_id LIKE :prefix
+               AND t.status = :open_status'
+        );
+        $stmt->execute([
+            'account_id' => $accountId,
+            'prefix' => $prefix . '%',
+            'open_status' => TradeStatus::OPEN->value,
+        ]);
+
+        $result = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $result[$row['external_id']] = $row;
+        }
+        return $result;
+    }
+
     public function findAggregatedByUserId(int $userId, array $filters = []): array
     {
         $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured) AND t.remaining_size > 0'

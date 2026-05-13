@@ -296,8 +296,8 @@ function getNextObjective(trade) {
   return null
 }
 
-function openCloseDialog(trade) {
-  closePrefill.value = null
+function openCloseDialog(trade, exitType = null) {
+  closePrefill.value = exitType ? { exit_type: exitType } : null
   selectedTrade.value = trade
   showCloseDialog.value = true
 }
@@ -713,12 +713,29 @@ function openActionMenu(event, trade) {
                 @click="openNextObjective(data)"
               />
               <Button
-                icon="pi pi-sign-out"
-                severity="warn"
+                icon="pi pi-stop-circle"
+                severity="info"
                 size="small"
                 text
-                v-tooltip.top="t('trades.close_trade')"
-                @click="openCloseDialog(data)"
+                :disabled="data.status === TradeStatus.OPEN"
+                v-tooltip.top="data.status === TradeStatus.OPEN ? t('trades.be_requires_secured') : t('trades.close_be')"
+                @click="openCloseDialog(data, ExitType.BE)"
+              />
+              <Button
+                icon="pi pi-times-circle"
+                severity="danger"
+                size="small"
+                text
+                v-tooltip.top="t('trades.close_sl')"
+                @click="openCloseDialog(data, ExitType.SL)"
+              />
+              <Button
+                icon="pi pi-check-circle"
+                severity="success"
+                size="small"
+                text
+                v-tooltip.top="t('trades.close_stop_win')"
+                @click="openCloseDialog(data, ExitType.MANUAL)"
               />
               <Button
                 v-if="authStore.user?.public_settings?.trade_transfer_enabled"
@@ -769,7 +786,9 @@ function openActionMenu(event, trade) {
             </div>
             <div class="flex items-center gap-1 shrink-0">
               <Button v-if="item.status !== TradeStatus.CLOSED && getNextObjective(item)" icon="pi pi-angle-double-up" severity="success" size="small" text rounded :aria-label="getNextObjective(item)?.label" @click="openNextObjective(item)" />
-              <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-sign-out" severity="warn" size="small" text rounded :aria-label="t('trades.close_trade')" @click="openCloseDialog(item)" />
+              <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-stop-circle" severity="info" size="small" text rounded :disabled="item.status === TradeStatus.OPEN" :aria-label="item.status === TradeStatus.OPEN ? t('trades.be_requires_secured') : t('trades.close_be')" @click="openCloseDialog(item, ExitType.BE)" />
+              <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-times-circle" severity="danger" size="small" text rounded :aria-label="t('trades.close_sl')" @click="openCloseDialog(item, ExitType.SL)" />
+              <Button v-if="item.status !== TradeStatus.CLOSED" icon="pi pi-check-circle" severity="success" size="small" text rounded :aria-label="t('trades.close_stop_win')" @click="openCloseDialog(item, ExitType.MANUAL)" />
               <Button v-if="item.status !== TradeStatus.CLOSED && authStore.user?.public_settings?.trade_transfer_enabled" icon="pi pi-arrow-right-arrow-left" severity="info" size="small" text rounded :aria-label="t('positions.transfer')" @click="openTransfer(item)" />
               <Button icon="pi pi-share-alt" severity="info" size="small" text rounded :aria-label="t('share.share')" @click="openShare(item)" />
               <Button icon="pi pi-ellipsis-v" severity="secondary" size="small" text rounded :aria-label="t('common.more')" @click="openActionMenu($event, item)" />

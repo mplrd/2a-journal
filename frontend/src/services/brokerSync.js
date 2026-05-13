@@ -40,4 +40,22 @@ export const brokerSyncService = {
       account_id_ctrader: accountIdCtrader,
     })
   },
+
+  async createOuinexConnection(accountId, serviceApiKey, serviceApiSecret) {
+    return api.post('/broker/connections', {
+      provider: 'OUINEX',
+      account_id: accountId,
+      service_api_key: serviceApiKey,
+      service_api_secret: serviceApiSecret,
+    })
+  },
+
+  async createBingxConnection(accountId, apiKey, apiSecret) {
+    return api.post('/broker/connections', {
+      provider: 'BINGX',
+      account_id: accountId,
+      api_key: apiKey,
+      api_secret: apiSecret,
+    })
+  },
 }
