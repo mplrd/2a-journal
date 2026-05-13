@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import PrimeVue from 'primevue/config'
 import CloseTradeDialog from '../CloseTradeDialog.vue'
+import { ExitType } from '@/constants/enums'
 import fr from '@/locales/fr.json'
 import en from '@/locales/en.json'
 
@@ -26,21 +27,20 @@ function createWrapper(props = {}) {
       plugins: [i18n, PrimeVue],
       stubs: {
         Dialog: {
-          template: '<div v-if="visible" class="dialog-stub"><slot /><slot name="footer" /></div>',
+          template:
+            '<div v-if="visible" class="dialog-stub" :data-header="header"><slot /><slot name="footer" /></div>',
           props: ['visible', 'header', 'modal', 'closable', 'style'],
         },
         InputNumber: {
           template:
-            '<input class="input-number" :data-name="$attrs[`data-name`]" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />',
-          props: ['modelValue'],
+            '<input class="input-number" :data-name="$attrs[`data-name`]" :data-disabled="disabled ? \'true\' : \'false\'" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />',
+          props: ['modelValue', 'disabled'],
           emits: ['update:modelValue'],
         },
-        Select: {
-          template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
-          props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
-          emits: ['update:modelValue'],
+        Button: {
+          template: '<button><slot />{{ label }}</button>',
+          props: ['label', 'severity', 'loading', 'size', 'text'],
         },
-        Button: { template: '<button><slot />{{ label }}</button>', props: ['label', 'severity', 'loading', 'size', 'text'] },
       },
     },
   })
@@ -66,103 +66,236 @@ function getInput(wrapper, name) {
   return wrapper.find(`[data-name="${name}"]`)
 }
 
-describe('CloseTradeDialog — price/points sync', () => {
-  describe('BUY trade', () => {
-    let wrapper
-    beforeEach(async () => {
-      wrapper = createWrapper({ trade: buyTrade })
-      await flushPromises()
+function findConfirmButton(wrapper) {
+  return wrapper.findAll('button').find((b) => {
+    const text = b.text().toLowerCase()
+    return text.includes('confirm') || text.includes('confirmer')
+  })
+}
+
+describe('CloseTradeDialog', () => {
+  describe('header reflects exit_type', () => {
+    it('SL → "Sortie au Stop Loss"', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: { exit_type: ExitType.SL },
+      })
+      expect(wrapper.find('.dialog-stub').attributes('data-header')).toMatch(/Stop Loss/i)
     })
 
-    it('renders both exit_price and exit_points inputs', () => {
-      expect(getInput(wrapper, 'exit_price').exists()).toBe(true)
-      expect(getInput(wrapper, 'exit_points').exists()).toBe(true)
+    it('BE → "Sortie à Breakeven"', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: { exit_type: ExitType.BE },
+      })
+      expect(wrapper.find('.dialog-stub').attributes('data-header')).toMatch(/Breakeven/i)
     })
 
-    it('typing exit_price updates exit_points (profit case)', async () => {
-      await getInput(wrapper, 'exit_price').setValue(18550)
-      await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(50)
+    it('TP → "Sortie au Take Profit"', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: { exit_type: ExitType.TP, exit_price: 18600 },
+      })
+      expect(wrapper.find('.dialog-stub').attributes('data-header')).toMatch(/Take Profit/i)
     })
 
-    it('typing exit_price updates exit_points (loss case)', async () => {
-      await getInput(wrapper, 'exit_price').setValue(18470)
-      await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(-30)
-    })
-
-    it('typing exit_points updates exit_price (profit case)', async () => {
-      await getInput(wrapper, 'exit_points').setValue(50)
-      await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18550)
-    })
-
-    it('typing exit_points updates exit_price (loss case)', async () => {
-      await getInput(wrapper, 'exit_points').setValue(-30)
-      await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18470)
+    it('MANUAL → "Stop Win"', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: { exit_type: ExitType.MANUAL },
+      })
+      expect(wrapper.find('.dialog-stub').attributes('data-header')).toMatch(/Stop Win/i)
     })
   })
 
-  describe('SELL trade', () => {
-    let wrapper
-    beforeEach(async () => {
-      wrapper = createWrapper({ trade: sellTrade })
+  describe('SL (Stop Loss) — points = magnitude of the loss', () => {
+    it('BUY: typing points = 50 yields exit_price = entry - 50', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.SL } })
       await flushPromises()
-    })
-
-    it('typing exit_price below entry yields POSITIVE points (profit)', async () => {
-      await getInput(wrapper, 'exit_price').setValue(18450)
-      await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(50)
-    })
-
-    it('typing exit_price above entry yields NEGATIVE points (loss)', async () => {
-      await getInput(wrapper, 'exit_price').setValue(18530)
-      await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(-30)
-    })
-
-    it('typing positive points yields exit_price BELOW entry (profit)', async () => {
       await getInput(wrapper, 'exit_points').setValue(50)
       await flushPromises()
       expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18450)
     })
 
-    it('typing negative points yields exit_price ABOVE entry (loss)', async () => {
-      await getInput(wrapper, 'exit_points').setValue(-30)
+    it('SELL: typing points = 50 yields exit_price = entry + 50', async () => {
+      const wrapper = createWrapper({ trade: sellTrade, prefill: { exit_type: ExitType.SL } })
       await flushPromises()
-      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18530)
+      await getInput(wrapper, 'exit_points').setValue(50)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18550)
+    })
+
+    it('BUY: typing exit_price = 18430 yields points = 70 (magnitude)', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.SL } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_price').setValue(18430)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(70)
+    })
+  })
+
+  describe('Stop Win (MANUAL) — points = magnitude of the profit', () => {
+    it('BUY: typing points = 50 yields exit_price = entry + 50', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.MANUAL } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_points').setValue(50)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18550)
+    })
+
+    it('SELL: typing points = 50 yields exit_price = entry - 50', async () => {
+      const wrapper = createWrapper({ trade: sellTrade, prefill: { exit_type: ExitType.MANUAL } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_points').setValue(50)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18450)
+    })
+  })
+
+  describe('BE — prefilled at entry but editable (slippage/spread)', () => {
+    it('prefills exit_price = entry and points = 0', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18500)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(0)
+    })
+
+    it('inputs stay editable (NOT disabled)', () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
+      expect(getInput(wrapper, 'exit_price').attributes('data-disabled')).toBe('false')
+      expect(getInput(wrapper, 'exit_points').attributes('data-disabled')).toBe('false')
+    })
+
+    it('BUY: positive points (favorable slippage) → exit_price > entry', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_points').setValue(5)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18505)
+    })
+
+    it('BUY: negative points (unfavorable slippage) → exit_price < entry', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_points').setValue(-5)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18495)
+    })
+
+    it('SELL: positive points (favorable slippage) → exit_price < entry', async () => {
+      const wrapper = createWrapper({ trade: sellTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_points').setValue(5)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18495)
+    })
+
+    it('BUY: typing exit_price > entry → positive points (signed)', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_price').setValue(18505)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(5)
+    })
+
+    it('SELL: typing exit_price > entry → negative points (signed, unfavorable)', async () => {
+      const wrapper = createWrapper({ trade: sellTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_price').setValue(18505)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(-5)
+    })
+  })
+
+  describe('SL prefill from trade.sl_points', () => {
+    it('BUY: prefills exit_price = entry - sl_points and points = sl_points', () => {
+      const wrapper = createWrapper({
+        trade: { ...buyTrade, sl_points: 50 },
+        prefill: { exit_type: ExitType.SL },
+      })
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18450)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(50)
+    })
+
+    it('SELL: prefills exit_price = entry + sl_points and points = sl_points', () => {
+      const wrapper = createWrapper({
+        trade: { ...sellTrade, sl_points: 50 },
+        prefill: { exit_type: ExitType.SL },
+      })
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18550)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(50)
+    })
+
+    it('user can adjust the prefilled magnitude', async () => {
+      const wrapper = createWrapper({
+        trade: { ...buyTrade, sl_points: 50 },
+        prefill: { exit_type: ExitType.SL },
+      })
+      await flushPromises()
+      await getInput(wrapper, 'exit_points').setValue(75)
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18425)
+    })
+
+    it('SL without sl_points on the trade leaves fields empty', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: { exit_type: ExitType.SL },
+      })
+      expect(getInput(wrapper, 'exit_price').element.value).toBe('')
+      expect(getInput(wrapper, 'exit_points').element.value).toBe('')
+    })
+  })
+
+  describe('Stop Win (MANUAL) does not prefill', () => {
+    it('exit_price and points stay empty', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: { exit_type: ExitType.MANUAL },
+      })
+      expect(getInput(wrapper, 'exit_price').element.value).toBe('')
+      expect(getInput(wrapper, 'exit_points').element.value).toBe('')
+    })
+  })
+
+  describe('TP prefill (from "next objective" smart button)', () => {
+    it('hydrates exit_price and recomputes points as magnitude', () => {
+      const wrapper = createWrapper({
+        trade: buyTrade,
+        prefill: {
+          exit_type: ExitType.TP,
+          exit_price: 18600,
+          exit_size: 0.5,
+          target_id: 'tp1',
+        },
+      })
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18600)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(100)
     })
   })
 
   describe('submission contract', () => {
-    it('emits "close" with exit_price (points stays internal to the dialog)', async () => {
-      const wrapper = createWrapper({ trade: buyTrade })
+    it('emits exit_type and exit_price; exit_points stays internal', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.SL } })
       await flushPromises()
-
       await getInput(wrapper, 'exit_points').setValue(50)
       await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
 
-      const confirm = wrapper.findAll('button').find((b) => b.text().includes('Confirm') || b.text().toLowerCase().includes('confirmer'))
-      await confirm.trigger('click')
-
-      const events = wrapper.emitted('close')
-      expect(events).toBeTruthy()
-      const payload = events[0][0]
-      expect(payload.exit_price).toBe(18550)
+      const payload = wrapper.emitted('close')[0][0]
+      expect(payload.exit_type).toBe(ExitType.SL)
+      expect(payload.exit_price).toBe(18450)
       expect(payload).not.toHaveProperty('exit_points')
     })
 
-    it('prefill with exit_price hydrates exit_points consistently', async () => {
-      const wrapper = createWrapper({
-        trade: buyTrade,
-        prefill: { exit_price: 18570, exit_size: 1, exit_type: 'TP', target_id: null },
-      })
+    it('BE emits exit_price = entry', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
       await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
 
-      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18570)
-      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(70)
+      const payload = wrapper.emitted('close')[0][0]
+      expect(payload.exit_type).toBe(ExitType.BE)
+      expect(payload.exit_price).toBe(18500)
     })
   })
 })

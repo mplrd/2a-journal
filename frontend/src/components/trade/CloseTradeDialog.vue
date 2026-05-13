@@ -3,7 +3,6 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
-import Select from 'primevue/select'
 import Button from 'primevue/button'
 import { ExitType, Direction } from '@/constants/enums'
 
@@ -20,75 +19,145 @@ const emit = defineEmits(['update:visible', 'close'])
 
 const form = ref(getDefaultForm())
 
-const exitTypeOptions = Object.values(ExitType).map((value) => ({
-  label: t(`trades.exit_types.${value}`),
-  value,
-}))
-
 function getDefaultForm() {
   return {
     exit_price: 0,
     exit_points: 0,
     exit_size: 0,
-    exit_type: ExitType.TP,
+    exit_type: ExitType.MANUAL,
     target_id: null,
   }
 }
 
-// Points convention: signed P&L distance. Positive = profit, negative = loss.
-// BUY:  points = exit - entry  ↔  exit = entry + points
-// SELL: points = entry - exit  ↔  exit = entry - points
-function priceToPoints(price) {
-  if (!props.trade || !price) return 0
-  const entry = Number(props.trade.entry_price)
-  return props.trade.direction === Direction.BUY ? price - entry : entry - price
+const headerKey = computed(() => {
+  switch (form.value.exit_type) {
+    case ExitType.SL:
+      return 'trades.close_sl'
+    case ExitType.BE:
+      return 'trades.close_be'
+    case ExitType.TP:
+      return 'trades.close_tp'
+    default:
+      return 'trades.close_stop_win'
+  }
+})
+
+// BE is a SIGNED mode: slippage or spread can push exit a few points either
+// side of entry. The user must be able to type both positive and negative
+// magnitudes here. Other modes (SL / TP / MANUAL = Stop Win) carry an
+// unambiguous sign from the bouton intent, so the input stays positive
+// (magnitude only) and the sign is applied automatically.
+const isSignedMode = computed(() => form.value.exit_type === ExitType.BE)
+
+const pointsMin = computed(() => {
+  if (!props.trade) return 0
+  // For signed mode, allow negatives down to "exit_price = 0" on a BUY,
+  // which is the largest meaningful loss in points. PrimeVue InputNumber
+  // filters the `-` keystroke unless min < 0 — hence the dynamic bound.
+  return isSignedMode.value ? -Number(props.trade.entry_price) : 0
+})
+
+// For unsigned modes, magnitude is positive and the sign comes from
+// (direction × exit_type):
+//   TP / MANUAL (Stop Win): profit ⇒ BUY price up, SELL price down
+//   SL: loss               ⇒ BUY price down, SELL price up
+function signedDelta(magnitude) {
+  if (!props.trade) return 0
+  const dirBuy = props.trade.direction === Direction.BUY
+  switch (form.value.exit_type) {
+    case ExitType.SL:
+      return dirBuy ? -magnitude : magnitude
+    case ExitType.BE:
+      // Signed: caller already passed a signed magnitude, just apply direction.
+      return dirBuy ? magnitude : -magnitude
+    default:
+      return dirBuy ? magnitude : -magnitude
+  }
 }
 
-function pointsToPrice(points) {
+function pointsToPrice(magnitude) {
   if (!props.trade) return 0
   const entry = Number(props.trade.entry_price)
-  if (points === null || points === undefined || points === 0) return entry
-  return props.trade.direction === Direction.BUY ? entry + points : entry - points
+  if (magnitude == null || magnitude === 0) return entry
+  return entry + signedDelta(magnitude)
+}
+
+function priceToPoints(price) {
+  if (!props.trade || price == null) return 0
+  const delta = price - Number(props.trade.entry_price)
+  if (isSignedMode.value) {
+    // Preserve sign: BUY direction reads delta directly, SELL inverts.
+    return props.trade.direction === Direction.BUY ? delta : -delta
+  }
+  return Math.abs(delta)
 }
 
 function setExitPrice(value) {
-  const numeric = value ?? 0
-  form.value.exit_price = numeric
-  form.value.exit_points = priceToPoints(numeric)
+  if (value == null) {
+    form.value.exit_price = null
+    form.value.exit_points = null
+    return
+  }
+  form.value.exit_price = value
+  form.value.exit_points = priceToPoints(value)
 }
 
 function setExitPoints(value) {
-  const numeric = value ?? 0
-  form.value.exit_points = numeric
-  form.value.exit_price = pointsToPrice(numeric)
+  if (value == null) {
+    form.value.exit_points = null
+    form.value.exit_price = null
+    return
+  }
+  form.value.exit_points = value
+  form.value.exit_price = pointsToPrice(value)
 }
 
 watch(
   () => props.visible,
   (val) => {
-    if (val && props.trade) {
-      if (props.prefill) {
-        const price = props.prefill.exit_price ?? 0
-        form.value = {
-          exit_price: price,
-          exit_points: priceToPoints(price),
-          exit_size: props.prefill.exit_size ?? Number(props.trade.remaining_size),
-          exit_type: props.prefill.exit_type ?? ExitType.TP,
-          target_id: props.prefill.target_id ?? null,
-        }
-      } else {
-        form.value = {
-          exit_price: 0,
-          exit_points: 0,
-          exit_size: Number(props.trade.remaining_size),
-          exit_type: ExitType.TP,
-          target_id: null,
-        }
-      }
-    }
+    if (!val || !props.trade) return
+    form.value = buildInitialForm(props.trade, props.prefill)
   },
   { immediate: true },
 )
+
+// Initial form values are prefilled based on what the system knows:
+// - BE: exit_price = entry, points = 0 (slippage = 0 by default; user adjusts)
+// - SL: exit_price/points from trade.sl_points (the SL planned at creation;
+//   user adjusts on real slippage)
+// - TP (from "next objective"): exit_price + size from the target spec
+// - MANUAL / Stop Win: nothing prefilled — we don't know the realized exit
+//   ahead of time, the user types it.
+function buildInitialForm(trade, prefill) {
+  const remaining = Number(trade.remaining_size)
+  const entry = Number(trade.entry_price)
+  const exitType = prefill?.exit_type ?? ExitType.MANUAL
+
+  const base = {
+    exit_price: null,
+    exit_points: null,
+    exit_size: prefill?.exit_size ?? remaining,
+    exit_type: exitType,
+    target_id: prefill?.target_id ?? null,
+  }
+
+  if (exitType === ExitType.BE) {
+    return { ...base, exit_price: entry, exit_points: 0 }
+  }
+
+  if (exitType === ExitType.SL && trade.sl_points != null) {
+    const magnitude = Number(trade.sl_points)
+    const price = trade.direction === Direction.BUY ? entry - magnitude : entry + magnitude
+    return { ...base, exit_price: price, exit_points: magnitude }
+  }
+
+  if (exitType === ExitType.TP && prefill?.exit_price != null) {
+    const price = Number(prefill.exit_price)
+    return { ...base, exit_price: price, exit_points: Math.abs(price - entry) }
+  }
+
+  return base
+}
 
 const pnlPreview = computed(() => {
   if (!props.trade || !form.value.exit_price || !form.value.exit_size) return null
@@ -104,7 +173,7 @@ function handleCloseFull() {
 }
 
 function handleSubmit() {
-  // exit_points is a UX convenience — backend only knows exit_price.
+  // exit_points is UX-only; backend reads exit_price.
   const { exit_points, ...payload } = form.value
   emit('close', payload)
 }
@@ -117,7 +186,7 @@ function handleClose() {
 <template>
   <Dialog
     :visible="visible"
-    :header="t('trades.close_trade')"
+    :header="t(headerKey)"
     :modal="true"
     :closable="true"
     :style="{ width: '450px' }"
@@ -150,6 +219,7 @@ function handleClose() {
             :modelValue="form.exit_points"
             data-name="exit_points"
             class="w-full"
+            :min="pointsMin"
             mode="decimal"
             locale="en-US"
             :maxFractionDigits="2"
@@ -164,11 +234,6 @@ function handleClose() {
           <Button :label="t('trades.close_full')" size="small" severity="secondary" text @click="handleCloseFull" />
         </div>
         <InputNumber v-model="form.exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" locale="en-US" :maxFractionDigits="5" />
-      </div>
-
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_type') }} *</label>
-        <Select v-model="form.exit_type" :options="exitTypeOptions" optionLabel="label" optionValue="value" class="w-full" />
       </div>
 
       <div v-if="pnlPreview !== null" class="p-3 rounded text-sm font-medium" :class="Number(pnlPreview) >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
