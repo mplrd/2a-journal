@@ -201,4 +201,21 @@ Les fallbacks `??` empêchent l'erreur fatale, mais si BingX utilise d'autres no
 
 ---
 
+## UX / vocabulaire
+
+### Incohérence « symbole » vs « actif » dans grilles et modales
+
+**Contexte** : aujourd'hui les labels i18n parlent de `positions.symbol` / `trades.symbol` (« Symbole ») dans les grilles trades/positions, les en-têtes de colonnes, et les modales (TradeForm, CloseTradeDialog, etc.), alors que la valeur affichée est en fait le **code de l'actif** (NASDAQ, BTCUSD, EURUSD, …) — c'est-à-dire le ticker / le nom commun de l'instrument, pas un « symbole » au sens graphique.
+
+**À faire** : choisir une terminologie cohérente :
+- soit renommer toutes les clés `*.symbol` → `*.asset` (et label « Actif » / « Asset »), pour refléter ce qu'on affiche réellement ;
+- soit garder « Symbol/Symbole » mais clarifier dans la doc/UI ce qu'il représente.
+
+Recommandation : **renommer en `asset`** — plus naturel pour un utilisateur non-dev. Impact : i18n (fr/en/...), composants Vue (props, columns, headers), stores éventuels. Le champ DB `positions.symbol` peut rester (interne), seul l'affichage UI bouge.
+
+**Repéré le** : 2026-05-13 (pendant feature `feat/close-trade-actions-grid`).
+**Priorité** : moyenne — pas bloquant mais c'est le genre d'incohérence qui rend la doc et le support client maladroits.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
