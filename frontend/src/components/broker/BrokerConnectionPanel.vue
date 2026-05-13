@@ -152,13 +152,23 @@ function onBingxConnected() {
     </div>
 
     <!-- Not connected -->
-    <div v-else class="space-y-3">
+    <div v-else class="space-y-4">
       <p class="text-sm text-gray-500">{{ t('broker.not_connected') }}</p>
-      <div class="flex flex-wrap gap-2">
-        <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="showCtraderDialog = true" />
-        <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" severity="secondary" @click="showMetaApiDialog = true" />
-        <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="showOuinexDialog = true" />
-        <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" @click="showBingxDialog = true" />
+
+      <div>
+        <h5 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">{{ t('broker.section_platforms') }}</h5>
+        <div class="flex flex-wrap gap-2">
+          <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" @click="showMetaApiDialog = true" />
+          <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="showCtraderDialog = true" />
+        </div>
+      </div>
+
+      <div>
+        <h5 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">{{ t('broker.section_brokers') }}</h5>
+        <div class="flex flex-wrap gap-2">
+          <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" @click="showBingxDialog = true" />
+          <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="showOuinexDialog = true" />
+        </div>
       </div>
     </div>
 
