@@ -218,21 +218,35 @@ Recommandation : **renommer en `asset`** — plus naturel pour un utilisateur no
 
 ---
 
-## Connecteurs broker — implémenter `placeOrder/cancelOrder/closePosition`
+## Page « Robots » / « Bots de trading » dans le menu principal
 
-**Contexte** : la feature TradingView webhooks (doc 66) a étendu `ConnectorInterface` avec 3 méthodes outbound (`placeOrder`, `cancelOrder`, `closePosition`). Les 4 connecteurs (cTrader, MetaApi, Ouinex, BingX) ont actuellement des **stubs throwant `BrokerOrderException('NOT_IMPLEMENTED')`**. Le pipeline webhook fonctionne end-to-end mais chaque alerte reçue produit un event `FAILED/BROKER_ERROR` tant que le connecteur cible n'est pas câblé pour de vrai.
+**Contexte** : aujourd'hui les webhooks TradingView sont accessibles via un bouton ⚡ sur la grille des comptes (`AccountsView`) → dialog par compte → liste de webhooks → modale d'historique **par webhook**. Pour un utilisateur avec plusieurs comptes et plusieurs webhooks, voir « ce qui s'est passé récemment » oblige à cliquer compte par compte, webhook par webhook. Pas scalable.
 
-**À faire** : un ticket par broker, dans cet ordre suggéré :
+**À faire** : nouvelle entrée de menu principal « Robots » (ou « Bots de trading ») qui pourrait héberger :
+- une vue agrégée cross-comptes des événements webhook (`tradingview_alert_events`), filtres par compte / statut / webhook
+- la liste des webhooks de tous les comptes, avec leur statut + compteurs en ligne (au lieu d'aller dans chaque compte)
+- à terme, point d'entrée pour d'autres types de bots / automatisations si on en ajoute
 
-- **MetaApi** (REST simple `POST /trade` avec `actionType: ORDER_TYPE_BUY/SELL`). Le plus simple à câbler. Fichier : `api/src/Services/Broker/MetaApiConnector.php`.
-- **BingX** (REST signé HMAC `POST /openApi/swap/v2/trade/order`). Attention au mapping `positionSide` (LONG/SHORT) vs `side` (BUY/SELL) côté hedge mode. Fichier : `api/src/Services/Broker/BingxConnector.php`.
-- **cTrader** (WebSocket Protobuf `ProtoOANewOrderReq`). Plus complexe à cause du payload Protobuf et du volume en cents. Fichier : `api/src/Services/Broker/CtraderConnector.php`.
-- **Ouinex** (GraphQL mutation). Nécessite découverte précise du schéma — le doc API n'est pas exhaustif. Fichier : `api/src/Services/Broker/OuinexConnector.php`.
+Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en raccourci, ou on déplace tout vers la nouvelle page ? Le raccourci reste utile dans le flow « je viens de créer un compte broker, je veux brancher un webhook ».
 
-Pour chacun : compléter `placeOrder/cancelOrder/closePosition` avec un test unitaire mockant HTTP/WS, lever `BrokerOrderException` avec un `providerCode` parlant en cas d'échec. Le test `tests/Integration/Webhooks/TradingViewWebhookFlowTest.php` couvre déjà tout le pipeline applicatif au-dessus.
+**Repéré le** : 2026-05-18 (discussion suite à `feat/broker-place-order`).
+**Priorité** : moyenne — dépend de combien d'utilisateurs adoptent vraiment les webhooks. Tant que c'est 1 webhook par utilisateur, la vue actuelle suffit.
 
-**Repéré le** : 2026-05-18 (feature `feat/tradingview-webhooks`).
-**Priorité** : haute pour MetaApi/BingX (brokers les plus utilisés des bêta-testeurs), moyenne pour cTrader/Ouinex.
+---
+
+## Connecteurs broker — validation sandbox avant activation prod
+
+**Contexte** : la feature TradingView webhooks (doc 66) a livré l'implémentation de `placeOrder/cancelOrder/closePosition` sur les 4 connecteurs (cTrader, MetaApi, Ouinex, BingX) en suivant les specs publiques. **Aucun n'a été exercé contre une sandbox broker réelle** — les tests unitaires couvrent le shape du code émis, pas l'acceptation broker.
+
+**À faire avant activation prod** : pour chaque broker, créer un compte sandbox, configurer les credentials côté journal, déclencher un webhook test, vérifier en console broker que l'ordre est bien placé avec les bons paramètres (size, side, SL/TP), puis valider cancel/close. Points d'attention :
+
+- **MetaApi** : `actionType` mapping correct (LIMIT/STOP nécessite `openPrice`), précision volume selon le symbole (FX = 0.01 lot mini, indices = 1 contrat mini).
+- **BingX** : hedge mode obligatoire pour que `positionSide=LONG/SHORT` soit accepté. Vérifier qu'un compte one-way mode renvoie une erreur claire.
+- **cTrader** : volume × 100 = pas une vérité universelle (selon le `lotSize` du symbole — `ProtoOASymbolByIdReq.lotSize` donne la conversion exacte). Si un broker cTrader utilise un lotSize non-standard, ajuster.
+- **Ouinex** : les noms de mutations (`place_margin_order`, `cancel_margin_order`, `close_margin_position`) sont **best-effort** depuis le read-side schema. Tester contre la vraie API et ajuster les noms/champs si le serveur renvoie « Cannot query field ».
+
+**Repéré le** : 2026-05-18 (feature `feat/broker-place-order`).
+**Priorité** : haute — bloque l'activation du flag `TRADINGVIEW_WEBHOOKS_ENABLED` en prod.
 
 ---
 

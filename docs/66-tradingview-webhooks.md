@@ -121,12 +121,33 @@ i18n : namespace `webhook.tradingview.*` dans `fr.json` et `en.json` (sync véri
 - `tests/Integration/Webhooks/TradingViewWebhookFlowTest.php` — 10 scénarios couvrant tous les `reject_reason`, le `DUPLICATE`, le `FAILED/BROKER_ERROR` (via un FakeConnector qui throw à la demande), le happy path `PROCESSED`, et la redaction du secret dans `payload_raw`.
 - `frontend/src/components/webhook/__tests__/TradingViewWebhooksPanel.spec.js` — empty state, list rendering, disabled state du bouton create, ouverture du one-shot modal avec URL+secret+template visibles.
 
-## Limitations & TODOs
+## Implémentation des connecteurs
 
-- **Connecteurs broker `placeOrder` non implémentés** : cTrader, MetaApi, Ouinex et BingX exposent tous une nouvelle surface `placeOrder`/`cancelOrder`/`closePosition` via `ConnectorInterface`, mais l'implémentation actuelle throw systématiquement `BrokerOrderException('NOT_IMPLEMENTED')`. Côté webhook, ça produit un event `FAILED/BROKER_ERROR` avec `[NOT_IMPLEMENTED] ...` dans `error_message`. À livrer broker par broker (un ticket / un connecteur) une fois les sandbox disponibles. L'ordre PENDING reste en base, l'utilisateur peut le déclencher manuellement via `POST /orders/{id}/execute` en attendant.
+Les 4 connecteurs implémentent `placeOrder/cancelOrder/closePosition` :
+
+| Broker | Transport | Endpoint clé | Spécificités |
+|--------|-----------|---------------|--------------|
+| **MetaApi** | REST | `POST /users/current/accounts/{id}/trade` | Mapping `direction × order_type` → `ORDER_TYPE_*`. Succès = `stringCode ∈ TRADE_RETCODE_DONE/DONE_PARTIAL/PLACED`, sinon `BrokerOrderException` avec le code MT5. |
+| **BingX** | REST signé HMAC | `POST /openApi/swap/v2/trade/order` (DELETE pour cancel, `/closePosition` pour close) | USDT-M perp. `side`+`positionSide` (BUY→LONG, SELL→SHORT). SL/TP envoyés comme JSON imbriqués. Close partiel non supporté (à faire via `placeOrder` reduceOnly). |
+| **cTrader** | WebSocket Protobuf | `ProtoOANewOrderReq` / `ProtoOACancelOrderReq` / `ProtoOAClosePositionReq` | Auth deux étapes (Application puis Account). `symbolId` résolu via `ProtoOASymbolsListReq`. Volume en 1/100 de lot (size × 100, entier). Session refermée systématiquement (finally try/catch). |
+| **Ouinex** | GraphQL | mutations `place_margin_order`, `cancel_margin_order`, `close_margin_position` | JWT auto-rafraîchi via `ensureJwt()` si expiré. `BUY`→`LONG`, `SELL`→`SHORT`. ⚠️ Les signatures de mutations sont best-effort (la doc Ouinex publique ne couvre que le read-side) — à valider/ajuster contre la sandbox. |
+
+Toutes les erreurs broker (margin insuffisante, symbole inconnu, transport KO, credentials invalides…) sont mappées en `BrokerOrderException` avec un `providerCode` parlant (`INSUFFICIENT_MARGIN`, `UNKNOWN_SYMBOL`, `TRANSPORT_ERROR`, `INVALID_CREDENTIALS`, `BROKER_REJECTED`, `UNSUPPORTED_ORDER`, etc.). Le service webhook les attrape et marque l'event `FAILED/BROKER_ERROR` avec `[<providerCode>] <message>` dans `error_message`.
+
+### Tests par broker
+
+- `MetaApiConnectorTest` : market BUY, limit avec openPrice, rejet `TRADE_RETCODE_NO_MONEY`, credentials manquants, cancel, close full + partiel
+- `BingxConnectorTest` : market BUY → LONG, limit SELL → SHORT (vérifie `positionSide` + `price` en query), erreur 101104, credentials manquants, cancel (DELETE), close full, partial close explicitement rejeté
+- `CtraderConnectorTest` : market BUY avec conversion volume×100, limit avec `limitPrice`, symbole inconnu, `ProtoOAErrorRes` mappé en `BROKER_REJECTED`, credentials manquants, cancel, close full + partial
+- `OuinexConnectorTest` : market BUY, limit SELL → SHORT, erreur GraphQL → `BROKER_REJECTED`, auto-signin si JWT absent, credentials manquants, cancel, close full + partial
+
+## Limitations restantes
+
+- **Sandbox non testés** : aucun des 4 brokers n'a été exercé contre un compte de test réel. Les implémentations suivent les specs publiques (et pour Ouinex, des hypothèses sur le schéma GraphQL côté mutation). Avant activation prod, **chaque broker doit être validé contre sa sandbox**. Les tests unitaires couvrent le shape du code, pas l'acceptation broker.
 - **HMAC vrai** : impossible avec TradingView (templates statiques, pas de crypto). Si TV ajoute un jour le support d'un header `X-Signature` calculé, on pourra durcir le pipeline en remplaçant le secret body par une signature.
 - **Whitelist IP TradingView** : non implémentée. Les IPs publiées par TV pourraient être whitelistées comme défense en profondeur.
 - **Retry automatique** : non implémenté. Un event `FAILED/BROKER_ERROR` reste tel quel ; il faut soit recréer l'alerte côté TV, soit déclencher manuellement l'ordre PENDING.
 - **Pas de mapping signal → preset** : on a privilégié l'option « payload complet » plutôt que « payload minimal mappé côté app ». Si le besoin émerge, un futur ticket peut ajouter des presets par signal.
+- **BingX partial close** : pas géré via `closePosition()` (BingX exige un ordre opposé reduceOnly). Si on a besoin, ajouter un wrapper côté service.
 
-Voir `docs/evolutions.md` pour le suivi de ces points.
+Voir `docs/evolutions.md` pour le suivi.
