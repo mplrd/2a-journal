@@ -97,4 +97,28 @@ class MetaApiConnector implements ConnectorInterface
             return false;
         }
     }
+
+    public function placeOrder(array $credentials, array $order): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'MetaApi placeOrder not implemented yet — pending /trade endpoint integration.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
+    public function cancelOrder(array $credentials, string $externalOrderId): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'MetaApi cancelOrder not implemented yet.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
+    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'MetaApi closePosition not implemented yet.',
+            'NOT_IMPLEMENTED',
+        );
+    }
 }

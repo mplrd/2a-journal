@@ -206,6 +206,30 @@ class BingxConnector implements ConnectorInterface
         }
     }
 
+    public function placeOrder(array $credentials, array $order): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'BingX placeOrder not implemented yet — pending /openApi/swap/v2/trade/order integration.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
+    public function cancelOrder(array $credentials, string $externalOrderId): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'BingX cancelOrder not implemented yet.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
+    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'BingX closePosition not implemented yet.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
     /**
      * Issue a signed GET to BingX. Adds timestamp + signature, sets API
      * key header. Throws RuntimeException on transport error or BingX
