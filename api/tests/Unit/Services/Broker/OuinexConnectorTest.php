@@ -590,4 +590,146 @@ class OuinexConnectorTest extends TestCase
         $this->assertSame(0, $result['raw_count']);
         $this->assertSame([], $result['orders']);
     }
+
+    // ── Place / cancel / close ─────────────────────────────────
+
+    private function validCreds(): array
+    {
+        return [
+            'service_api_key' => 'k',
+            'service_api_secret' => 's',
+            'jwt' => 'cached-jwt',
+            'jwt_expires_at' => time() + 3600,
+        ];
+    }
+
+    public function testPlaceMarketBuyOrderReturnsExternalId(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse([
+                'place_margin_order' => [
+                    'margin_order_id' => 'mo-100',
+                    'status' => 'FILLED',
+                    'side' => 'LONG',
+                ],
+            ]),
+        ]);
+
+        $result = $connector->placeOrder($this->validCreds(), [
+            'symbol' => 'BTCUSDT',
+            'direction' => 'BUY',
+            'order_type' => 'MARKET',
+            'size' => 0.5,
+            'sl_price' => 55000.0,
+            'tp_prices' => [70000.0],
+        ]);
+
+        $this->assertSame('mo-100', $result['external_order_id']);
+        $this->assertSame('FILLED', $result['status']);
+    }
+
+    public function testPlaceLimitSellOrderMapsToShortAndIncludesPrice(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse([
+                'place_margin_order' => [
+                    'margin_order_id' => 'mo-200',
+                    'status' => 'OPEN',
+                ],
+            ]),
+        ]);
+
+        $result = $connector->placeOrder($this->validCreds(), [
+            'symbol' => 'ETHUSDT',
+            'direction' => 'SELL',
+            'order_type' => 'LIMIT',
+            'size' => 1.0,
+            'entry_price' => 4500.0,
+        ]);
+
+        $this->assertSame('mo-200', $result['external_order_id']);
+    }
+
+    public function testGraphqlErrorOnPlaceMapsToBrokerRejected(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlError('Insufficient margin'),
+        ]);
+
+        try {
+            $connector->placeOrder($this->validCreds(), [
+                'symbol' => 'BTCUSDT', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1000,
+            ]);
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('BROKER_REJECTED', $e->getProviderCode());
+            $this->assertStringContainsString('Insufficient margin', $e->getMessage());
+        }
+    }
+
+    public function testPlaceOrderWithoutJwtSigninsAutomatically(): void
+    {
+        $connector = $this->createConnector([
+            // service_signin response (no JWT in creds yet)
+            $this->gqlResponse([
+                'service_signin' => ['jwt' => 'fresh', 'expires_at' => gmdate('c', time() + 3600)],
+            ]),
+            // place_margin_order
+            $this->gqlResponse([
+                'place_margin_order' => ['margin_order_id' => 'mo-1', 'status' => 'FILLED'],
+            ]),
+        ]);
+
+        $result = $connector->placeOrder(
+            ['service_api_key' => 'k', 'service_api_secret' => 's'],
+            ['symbol' => 'BTCUSDT', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 0.1],
+        );
+
+        $this->assertSame('mo-1', $result['external_order_id']);
+    }
+
+    public function testMissingCredentialsRaisesInvalidCredentials(): void
+    {
+        $connector = $this->createConnector([]);
+
+        try {
+            $connector->placeOrder(
+                [],
+                ['symbol' => 'BTCUSDT', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 0.1],
+            );
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('INVALID_CREDENTIALS', $e->getProviderCode());
+        }
+    }
+
+    public function testCancelOrderEmitsCancelMutation(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse([
+                'cancel_margin_order' => ['margin_order_id' => 'mo-1', 'status' => 'CANCELLED'],
+            ]),
+        ]);
+
+        $result = $connector->cancelOrder($this->validCreds(), 'mo-1');
+        $this->assertSame('CANCELLED', $result['status']);
+    }
+
+    public function testClosePositionFullAndPartial(): void
+    {
+        $connector = $this->createConnector([
+            $this->gqlResponse([
+                'close_margin_position' => ['margin_position_id' => 'mp-1', 'status' => 'CLOSED'],
+            ]),
+            $this->gqlResponse([
+                'close_margin_position' => ['margin_position_id' => 'mp-1', 'status' => 'PARTIALLY_CLOSED'],
+            ]),
+        ]);
+
+        $full = $connector->closePosition($this->validCreds(), 'mp-1');
+        $partial = $connector->closePosition($this->validCreds(), 'mp-1', 0.25);
+
+        $this->assertSame('CLOSED', $full['status']);
+        $this->assertSame('PARTIALLY_CLOSED', $partial['status']);
+    }
 }

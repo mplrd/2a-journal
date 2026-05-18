@@ -12,10 +12,11 @@ use GuzzleHttp\Client;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Sanity check that every connector satisfies the new outbound-order surface
- * of ConnectorInterface. Real broker integrations replace these stubs one at a
- * time; until then, the webhook ingestion layer relies on the NOT_IMPLEMENTED
- * provider code to mark the event FAILED cleanly.
+ * Cross-broker safety net: every connector must surface credential mistakes
+ * via BrokerOrderException with provider code INVALID_CREDENTIALS, so the
+ * webhook ingestion layer can mark the event FAILED cleanly without leaking
+ * stack traces. Per-broker happy paths and rejection paths live in each
+ * connector's dedicated test file.
  */
 class ConnectorOrderMethodsTest extends TestCase
 {
@@ -30,35 +31,13 @@ class ConnectorOrderMethodsTest extends TestCase
     }
 
     /** @dataProvider connectorProvider */
-    public function testPlaceOrderStubThrowsNotImplemented(ConnectorInterface $connector): void
+    public function testPlaceOrderRaisesInvalidCredentialsWhenCredsAreEmpty(ConnectorInterface $connector): void
     {
         try {
             $connector->placeOrder([], ['symbol' => 'EURUSD', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1.0]);
             $this->fail('Expected BrokerOrderException');
         } catch (BrokerOrderException $e) {
-            $this->assertSame('NOT_IMPLEMENTED', $e->getProviderCode());
-        }
-    }
-
-    /** @dataProvider connectorProvider */
-    public function testCancelOrderStubThrowsNotImplemented(ConnectorInterface $connector): void
-    {
-        try {
-            $connector->cancelOrder([], 'ord-1');
-            $this->fail('Expected BrokerOrderException');
-        } catch (BrokerOrderException $e) {
-            $this->assertSame('NOT_IMPLEMENTED', $e->getProviderCode());
-        }
-    }
-
-    /** @dataProvider connectorProvider */
-    public function testClosePositionStubThrowsNotImplemented(ConnectorInterface $connector): void
-    {
-        try {
-            $connector->closePosition([], 'pos-1');
-            $this->fail('Expected BrokerOrderException');
-        } catch (BrokerOrderException $e) {
-            $this->assertSame('NOT_IMPLEMENTED', $e->getProviderCode());
+            $this->assertSame('INVALID_CREDENTIALS', $e->getProviderCode());
         }
     }
 }

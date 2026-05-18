@@ -394,4 +394,122 @@ class BingxConnectorTest extends TestCase
         $this->assertSame([], $result['deals']);
         $this->assertNull($result['cursor']);
     }
+
+    public function testPlaceMarketBuyMapsToPositionSideLongAndExtractsOrderId(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 1755234567, 'status' => 'FILLED']]),
+        ]);
+
+        $result = $connector->placeOrder(
+            ['api_key' => 'k', 'api_secret' => 's'],
+            [
+                'symbol' => 'BTC-USDT',
+                'direction' => 'BUY',
+                'order_type' => 'MARKET',
+                'size' => 0.01,
+                'sl_price' => 55000.0,
+                'tp_prices' => [70000.0],
+                'client_order_id' => 'tv-1',
+            ]
+        );
+
+        $this->assertSame('1755234567', $result['external_order_id']);
+        $this->assertSame('FILLED', $result['status']);
+
+        // Sanity: outbound request used POST verb on /trade/order
+        $req = $this->capturedRequests[0];
+        $this->assertSame('POST', $req->getMethod());
+        $this->assertStringContainsString('/openApi/swap/v2/trade/order', $req->getUri()->getPath());
+    }
+
+    public function testPlaceSellMapsToPositionSideShort(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 999, 'status' => 'NEW']]),
+        ]);
+
+        $connector->placeOrder(
+            ['api_key' => 'k', 'api_secret' => 's'],
+            [
+                'symbol' => 'ETH-USDT',
+                'direction' => 'SELL',
+                'order_type' => 'LIMIT',
+                'size' => 0.5,
+                'entry_price' => 4500,
+            ]
+        );
+
+        $query = [];
+        parse_str($this->capturedRequests[0]->getUri()->getQuery(), $query);
+        $this->assertSame('SELL', $query['side']);
+        $this->assertSame('SHORT', $query['positionSide']);
+        $this->assertSame('LIMIT', $query['type']);
+        $this->assertSame('4500', $query['price']);
+    }
+
+    public function testRejectedOrderThrowsBrokerOrderException(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxError(101104, 'Insufficient margin'),
+        ]);
+
+        try {
+            $connector->placeOrder(
+                ['api_key' => 'k', 'api_secret' => 's'],
+                ['symbol' => 'BTC-USDT', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1000],
+            );
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('101104', $e->getProviderCode());
+            $this->assertStringContainsString('Insufficient margin', $e->getMessage());
+        }
+    }
+
+    public function testMissingCredentialsRaisesInvalidCredentials(): void
+    {
+        $connector = $this->createConnector([]);
+
+        try {
+            $connector->placeOrder([], ['symbol' => 'X', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1]);
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('INVALID_CREDENTIALS', $e->getProviderCode());
+        }
+    }
+
+    public function testCancelOrderUsesDeleteVerb(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 1, 'status' => 'CANCELED']]),
+        ]);
+
+        $result = $connector->cancelOrder(['api_key' => 'k', 'api_secret' => 's'], '1');
+
+        $this->assertSame('CANCELED', $result['status']);
+        $this->assertSame('DELETE', $this->capturedRequests[0]->getMethod());
+    }
+
+    public function testClosePositionFullCloseHitsClosePositionPath(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['orderId' => 42]),
+        ]);
+
+        $result = $connector->closePosition(['api_key' => 'k', 'api_secret' => 's'], 'pos-1');
+        $this->assertSame('CLOSED', $result['status']);
+        $this->assertStringContainsString('/closePosition', $this->capturedRequests[0]->getUri()->getPath());
+    }
+
+    public function testPartialCloseExplicitlyUnsupported(): void
+    {
+        $connector = $this->createConnector([]);
+
+        try {
+            $connector->closePosition(['api_key' => 'k', 'api_secret' => 's'], 'pos-1', 0.5);
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('PARTIAL_CLOSE_UNSUPPORTED', $e->getProviderCode());
+        }
+    }
 }

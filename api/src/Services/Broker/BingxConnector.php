@@ -208,26 +208,164 @@ class BingxConnector implements ConnectorInterface
 
     public function placeOrder(array $credentials, array $order): array
     {
-        throw new \App\Exceptions\BrokerOrderException(
-            'BingX placeOrder not implemented yet — pending /openApi/swap/v2/trade/order integration.',
-            'NOT_IMPLEMENTED',
-        );
+        $direction = strtoupper($order['direction'] ?? '');
+        $orderType = strtoupper($order['order_type'] ?? 'MARKET');
+        if (!in_array($direction, ['BUY', 'SELL'], true)) {
+            throw new \App\Exceptions\BrokerOrderException(
+                "Unsupported direction {$direction}",
+                'UNSUPPORTED_ORDER',
+            );
+        }
+        if (!in_array($orderType, ['MARKET', 'LIMIT', 'STOP'], true)) {
+            throw new \App\Exceptions\BrokerOrderException(
+                "Unsupported order_type {$orderType}",
+                'UNSUPPORTED_ORDER',
+            );
+        }
+
+        // BingX USDT-M perp uses hedge-mode-aware fields: `side` (BUY/SELL =
+        // direction of the trade) + `positionSide` (LONG/SHORT = which book
+        // to put it on). For a fresh entry we mirror direction → positionSide
+        // (BUY=LONG, SELL=SHORT). Closing is handled via closePosition().
+        $params = [
+            'symbol' => $order['symbol'],
+            'side' => $direction,
+            'positionSide' => $direction === 'BUY' ? 'LONG' : 'SHORT',
+            'type' => $orderType === 'STOP' ? 'TRIGGER_MARKET' : $orderType,
+            'quantity' => (string) (float) $order['size'],
+        ];
+
+        if ($orderType === 'LIMIT' && !empty($order['entry_price'])) {
+            $params['price'] = (string) (float) $order['entry_price'];
+            $params['timeInForce'] = 'GTC';
+        }
+        if ($orderType === 'STOP' && !empty($order['entry_price'])) {
+            $params['stopPrice'] = (string) (float) $order['entry_price'];
+        }
+        if (!empty($order['sl_price'])) {
+            $params['stopLoss'] = json_encode([
+                'type' => 'STOP_MARKET',
+                'stopPrice' => (float) $order['sl_price'],
+                'workingType' => 'MARK_PRICE',
+            ]);
+        }
+        if (!empty($order['tp_prices'][0])) {
+            $params['takeProfit'] = json_encode([
+                'type' => 'TAKE_PROFIT_MARKET',
+                'stopPrice' => (float) $order['tp_prices'][0],
+                'workingType' => 'MARK_PRICE',
+            ]);
+        }
+        if (!empty($order['client_order_id'])) {
+            $params['clientOrderID'] = mb_substr((string) $order['client_order_id'], 0, 40);
+        }
+
+        $data = $this->httpPostSigned('/openApi/swap/v2/trade/order', $params, $credentials);
+
+        // BingX returns { order: { orderId, status, ... } } under `data`.
+        $orderData = (is_array($data) && isset($data['order']) && is_array($data['order'])) ? $data['order'] : (array) $data;
+        $externalId = $orderData['orderId'] ?? null;
+        if ($externalId === null) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'BingX did not return an orderId',
+                'NO_ORDER_ID',
+                $orderData,
+            );
+        }
+
+        return [
+            'external_order_id' => (string) $externalId,
+            'status' => $orderData['status'] ?? null,
+            'raw' => $orderData,
+        ];
     }
 
     public function cancelOrder(array $credentials, string $externalOrderId): array
     {
-        throw new \App\Exceptions\BrokerOrderException(
-            'BingX cancelOrder not implemented yet.',
-            'NOT_IMPLEMENTED',
+        $data = $this->httpPostSigned(
+            '/openApi/swap/v2/trade/order',
+            ['orderId' => $externalOrderId],
+            $credentials,
+            'DELETE',
         );
+        $orderData = (is_array($data) && isset($data['order'])) ? $data['order'] : (array) $data;
+        return ['status' => $orderData['status'] ?? null, 'raw' => $orderData];
     }
 
     public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
     {
+        // BingX has /closePosition for full-close-by-positionId. For partial
+        // closes we issue a market order in the opposite direction with
+        // reduceOnly=true.
+        if ($sizeOverride === null) {
+            $data = $this->httpPostSigned(
+                '/openApi/swap/v2/trade/closePosition',
+                ['positionId' => $externalPositionId],
+                $credentials,
+            );
+            return ['status' => 'CLOSED', 'raw' => is_array($data) ? $data : []];
+        }
+
+        // Partial close: caller has to provide enough context (symbol +
+        // direction of the open position) so we know which side to flip.
+        // closePosition is the wrong abstraction here — for partials, the
+        // caller should use placeOrder with reduceOnly. We keep the existing
+        // signature for full closes and reject partials cleanly.
         throw new \App\Exceptions\BrokerOrderException(
-            'BingX closePosition not implemented yet.',
-            'NOT_IMPLEMENTED',
+            'BingX partial close requires placing an opposite reduceOnly order via placeOrder() — '
+            . 'closePosition() supports full close only.',
+            'PARTIAL_CLOSE_UNSUPPORTED',
         );
+    }
+
+    /**
+     * Issue a signed POST/DELETE to BingX. Body params are signed the same
+     * way as GET (canonical key=value& string, ksorted, raw values) but
+     * delivered as a query string so the signature stays consistent across
+     * all four verbs.
+     */
+    private function httpPostSigned(string $path, array $params, array $credentials, string $method = 'POST'): mixed
+    {
+        $apiKey = $credentials['api_key'] ?? null;
+        $apiSecret = $credentials['api_secret'] ?? null;
+        if (!$apiKey || !$apiSecret) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'BingX credentials missing api_key/api_secret',
+                'INVALID_CREDENTIALS',
+            );
+        }
+
+        $params['timestamp'] = (string) ((int) (microtime(true) * 1000));
+        $params['signature'] = $this->sign($params, $apiSecret);
+
+        try {
+            $response = $this->httpClient->request($method, $this->baseUrl . $path, [
+                'query' => $params,
+                'headers' => [
+                    'X-BX-APIKEY' => $apiKey,
+                    'Accept' => 'application/json',
+                ],
+            ]);
+        } catch (GuzzleException $e) {
+            throw new \App\Exceptions\BrokerOrderException(
+                "BingX HTTP error: {$e->getMessage()}",
+                'TRANSPORT_ERROR',
+                [],
+                $e,
+            );
+        }
+
+        $decoded = json_decode($response->getBody()->getContents(), true) ?: [];
+        $code = (int) ($decoded['code'] ?? 0);
+        if ($code !== 0) {
+            throw new \App\Exceptions\BrokerOrderException(
+                $decoded['msg'] ?? "BingX API error (code {$code})",
+                (string) $code,
+                $decoded,
+            );
+        }
+
+        return $decoded['data'] ?? null;
     }
 
     /**
