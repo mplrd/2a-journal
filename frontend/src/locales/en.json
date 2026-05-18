@@ -941,5 +941,71 @@
     "success": {
       "disconnected": "Connection removed successfully"
     }
+  },
+  "webhook": {
+    "tradingview": {
+      "title": "TradingView Webhooks",
+      "intro": "Receive TradingView alerts to automatically place orders on the broker linked to this account.",
+      "create": "Create webhook",
+      "name_label": "Name",
+      "name_placeholder": "e.g. EUR/USD scalp signal",
+      "no_webhooks": "No webhooks configured for this account.",
+      "status_active": "Active",
+      "status_revoked": "Revoked",
+      "last_triggered": "Last triggered",
+      "never": "Never",
+      "triggered_count": "{count} success",
+      "errors_count": "{count} error(s)",
+      "actions": {
+        "revoke": "Revoke",
+        "events": "View history",
+        "copy_url": "Copy URL",
+        "copy_template": "Copy template",
+        "copy_secret": "Copy secret"
+      },
+      "created_modal": {
+        "title": "Webhook created",
+        "warning": "Save the URL, the secret, and the template below. They will never be shown again. If lost, delete the webhook and create a new one.",
+        "url_label": "Webhook URL (paste into your TradingView alert)",
+        "secret_label": "Secret",
+        "template_label": "JSON template (paste into the Message field of your TradingView alert)",
+        "close": "I have saved them"
+      },
+      "events": {
+        "title": "Alert history",
+        "received_at": "Received at",
+        "status": "Status",
+        "reason": "Reason",
+        "order": "Order",
+        "view_payload": "View payload",
+        "empty": "No events received on this webhook.",
+        "status_received": "Received",
+        "status_processed": "Processed",
+        "status_rejected": "Rejected",
+        "status_failed": "Broker failed",
+        "status_duplicate": "Duplicate"
+      },
+      "reject_reason": {
+        "INVALID_TOKEN": "Invalid token",
+        "INVALID_SECRET": "Invalid secret",
+        "INVALID_PAYLOAD": "Invalid payload",
+        "WEBHOOK_REVOKED": "Webhook revoked",
+        "NO_BROKER": "No broker connected",
+        "BROKER_INACTIVE": "Broker inactive",
+        "BROKER_ERROR": "Broker error",
+        "FEATURE_DISABLED": "Feature disabled"
+      }
+    },
+    "error": {
+      "feature_disabled": "TradingView webhooks are disabled on this server.",
+      "forbidden": "Access denied to this webhook.",
+      "not_found": "Webhook not found.",
+      "invalid_name": "Name is required (max. 120 characters).",
+      "too_many": "Webhook limit reached for this account."
+    },
+    "success": {
+      "created": "Webhook created",
+      "revoked": "Webhook revoked"
+    }
   }
 }

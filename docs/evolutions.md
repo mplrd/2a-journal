@@ -218,4 +218,22 @@ Recommandation : **renommer en `asset`** — plus naturel pour un utilisateur no
 
 ---
 
+## Connecteurs broker — implémenter `placeOrder/cancelOrder/closePosition`
+
+**Contexte** : la feature TradingView webhooks (doc 66) a étendu `ConnectorInterface` avec 3 méthodes outbound (`placeOrder`, `cancelOrder`, `closePosition`). Les 4 connecteurs (cTrader, MetaApi, Ouinex, BingX) ont actuellement des **stubs throwant `BrokerOrderException('NOT_IMPLEMENTED')`**. Le pipeline webhook fonctionne end-to-end mais chaque alerte reçue produit un event `FAILED/BROKER_ERROR` tant que le connecteur cible n'est pas câblé pour de vrai.
+
+**À faire** : un ticket par broker, dans cet ordre suggéré :
+
+- **MetaApi** (REST simple `POST /trade` avec `actionType: ORDER_TYPE_BUY/SELL`). Le plus simple à câbler. Fichier : `api/src/Services/Broker/MetaApiConnector.php`.
+- **BingX** (REST signé HMAC `POST /openApi/swap/v2/trade/order`). Attention au mapping `positionSide` (LONG/SHORT) vs `side` (BUY/SELL) côté hedge mode. Fichier : `api/src/Services/Broker/BingxConnector.php`.
+- **cTrader** (WebSocket Protobuf `ProtoOANewOrderReq`). Plus complexe à cause du payload Protobuf et du volume en cents. Fichier : `api/src/Services/Broker/CtraderConnector.php`.
+- **Ouinex** (GraphQL mutation). Nécessite découverte précise du schéma — le doc API n'est pas exhaustif. Fichier : `api/src/Services/Broker/OuinexConnector.php`.
+
+Pour chacun : compléter `placeOrder/cancelOrder/closePosition` avec un test unitaire mockant HTTP/WS, lever `BrokerOrderException` avec un `providerCode` parlant en cas d'échec. Le test `tests/Integration/Webhooks/TradingViewWebhookFlowTest.php` couvre déjà tout le pipeline applicatif au-dessus.
+
+**Repéré le** : 2026-05-18 (feature `feat/tradingview-webhooks`).
+**Priorité** : haute pour MetaApi/BingX (brokers les plus utilisés des bêta-testeurs), moyenne pour cTrader/Ouinex.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

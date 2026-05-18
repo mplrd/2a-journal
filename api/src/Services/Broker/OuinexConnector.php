@@ -220,6 +220,30 @@ class OuinexConnector implements ConnectorInterface
         }
     }
 
+    public function placeOrder(array $credentials, array $order): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'Ouinex placeOrder not implemented yet — pending GraphQL mutation integration.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
+    public function cancelOrder(array $credentials, string $externalOrderId): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'Ouinex cancelOrder not implemented yet.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
+    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'Ouinex closePosition not implemented yet.',
+            'NOT_IMPLEMENTED',
+        );
+    }
+
     /**
      * Trade the API key/secret for a fresh JWT via the service_signin
      * mutation. Returns updated credentials with `jwt` and `jwt_expires_at`

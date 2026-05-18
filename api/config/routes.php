@@ -1,6 +1,7 @@
 <?php
 
 use App\Controllers\AccountController;
+use App\Controllers\AccountWebhookController;
 use App\Controllers\AdminSettingsController;
 use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
@@ -14,6 +15,7 @@ use App\Controllers\BrokerSyncController;
 use App\Controllers\ImportController;
 use App\Controllers\StatsController;
 use App\Controllers\TradeController;
+use App\Controllers\TradingViewWebhookController;
 use App\Core\Database;
 use App\Core\Router;
 use App\Middlewares\AuthMiddleware;
@@ -43,10 +45,13 @@ use App\Repositories\RefreshTokenRepository;
 use App\Repositories\SsoCodeRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\TradingViewAlertEventRepository;
+use App\Repositories\TradingViewWebhookRepository;
 use App\Repositories\UserRepository;
 use App\Repositories\EmailVerificationTokenRepository;
 use App\Repositories\PasswordResetTokenRepository;
 use App\Services\AccountService;
+use App\Services\AccountWebhookService;
 use App\Services\AuthService;
 use App\Services\AdminUserService;
 use App\Services\BillingService;
@@ -74,6 +79,7 @@ use App\Services\SsoService;
 use App\Services\StatsService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
+use App\Services\TradingViewWebhookService;
 
 /** @var Router $router */
 
@@ -88,9 +94,11 @@ $router->get('/health', function (App\Core\Request $request) {
 
 // ── Features (public) ────────────────────────────────────────────
 $brokerConfigForFeatures = require __DIR__ . '/broker.php';
-$router->get('/features', function (App\Core\Request $request) use ($brokerConfigForFeatures) {
+$webhooksConfigForFeatures = require __DIR__ . '/webhooks.php';
+$router->get('/features', function (App\Core\Request $request) use ($brokerConfigForFeatures, $webhooksConfigForFeatures) {
     return App\Core\Response::success([
         'broker_auto_sync' => (bool) $brokerConfigForFeatures['auto_sync_enabled'],
+        'tradingview_webhooks' => (bool) $webhooksConfigForFeatures['tradingview_enabled'],
     ]);
 });
 
@@ -370,6 +378,46 @@ $router->get('/broker/connections', [$brokerSyncController, 'connections'], [$au
 $router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+
+// ── TradingView Webhooks ─────────────────────────────────────
+$webhooksConfig = require __DIR__ . '/webhooks.php';
+$tradingViewFeatureFlag = new FeatureFlagMiddleware(
+    (bool) $webhooksConfig['tradingview_enabled'],
+    'webhook.error.feature_disabled'
+);
+$tvWebhookRepo = new TradingViewWebhookRepository($pdo);
+$tvEventRepo = new TradingViewAlertEventRepository($pdo);
+$tvWebhookService = new TradingViewWebhookService(
+    $tvWebhookRepo,
+    $tvEventRepo,
+    $brokerConnectionRepo,
+    $orderService,
+    $cryptoService,
+    $ctraderConnector,
+    $metaApiConnector,
+    $ouinexConnector,
+    $bingxConnector,
+);
+$tvWebhookController = new TradingViewWebhookController($tvWebhookService);
+$accountWebhookService = new AccountWebhookService(
+    $tvWebhookRepo,
+    $tvEventRepo,
+    $accountRepo,
+    $webhooksConfig['tradingview_base_url'],
+);
+$accountWebhookController = new AccountWebhookController($accountWebhookService);
+$tvWebhookIngestRateLimit = new RateLimitMiddleware(
+    $rateLimitRepo,
+    $webhooksConfig['tradingview_rate_limit']['max_attempts'],
+    $webhooksConfig['tradingview_rate_limit']['window_seconds'],
+    '/webhooks/tradingview'
+);
+
+$router->post('/webhooks/tradingview/{token}', [$tvWebhookController, 'ingest'], [$tradingViewFeatureFlag, $tvWebhookIngestRateLimit]);
+$router->get('/accounts/{id}/webhooks', [$accountWebhookController, 'index'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->post('/accounts/{id}/webhooks', [$accountWebhookController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->delete('/accounts/{id}/webhooks/{webhookId}', [$accountWebhookController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->get('/accounts/{id}/webhooks/{webhookId}/events', [$accountWebhookController, 'events'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);
