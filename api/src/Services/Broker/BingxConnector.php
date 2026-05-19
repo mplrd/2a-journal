@@ -24,15 +24,12 @@ class BingxConnector implements ConnectorInterface
     private const PAGE_SIZE = 100;
 
     /**
-     * Max-span limit imposed by BingX positionHistory. Originally documented
-     * as 3 months at integration time; BingX tightened it to 7 days
-     * server-side (code 109400 "the query range is more than seven days").
-     * We pin to 7 days here, the cron runs every 5 min so we never miss
-     * anything going forward. First-time syncs only see the last week of
-     * history — backfill of older positions has to be done manually via the
-     * import CSV flow.
+     * Max span BingX allows per request on positionHistory / allOrders
+     * (server-side, returns code 109400 above this). We chunk our actual
+     * lookback into windows of this size — this is a broker constraint,
+     * not a product choice.
      */
-    private const MAX_HISTORY_WINDOW_SECONDS = 7 * 24 * 3600;
+    private const CHUNK_WINDOW_SECONDS = 7 * 24 * 3600;
 
     private Client $httpClient;
     private string $baseUrl;
@@ -68,50 +65,72 @@ class BingxConnector implements ConnectorInterface
         $rawCount = 0;
         $latestCloseTime = null;
 
-        $startTs = $this->resolveStartTs($sinceCursor);
-        $endTs = (int) (microtime(true) * 1000);
+        $now = (int) (microtime(true) * 1000);
+        $cursorMs = $sinceCursor !== null ? (int) $sinceCursor : null;
 
+        // BingX caps each positionHistory request at 7 days (code 109400),
+        // so we chunk. Two distinct stop policies depending on whether the
+        // sync has a cursor:
+        //
+        //   - With cursor (steady-state sync): walk back exactly to cursor,
+        //     keep going through empty chunks. A dormant account is still
+        //     a live account — empty windows are "no opportunities this
+        //     week", not "account gone".
+        //
+        //   - Without cursor (first sync): walk back as far as the account
+        //     has history. Stop at the first empty chunk — that's BingX
+        //     telling us there's no more data older than this point.
         foreach ($symbols as $symbol) {
-            // /v1/trade/positionHistory is the live BingX endpoint (CCXT
-            // tracks it in their bingx adapter, same param names). Earlier
-            // 100001 "signature mismatch" loop was caused by sending an
-            // unknown `pageIndex` param that BingX strips before
-            // reconstructing its canonical — making its HMAC diverge from
-            // ours even though the credentials and the rest of the canonical
-            // are correct. Drop pageIndex, keep pageSize, single-call only.
-            // The cursor on closeTime rattrapes any window overflow on the
-            // next sync; we won't lose positions, just need an extra round
-            // for users who closed more than PAGE_SIZE positions on a
-            // symbol between two syncs.
-            $data = $this->httpGetSigned(
-                '/openApi/swap/v1/trade/positionHistory',
-                [
-                    'symbol' => $symbol,
-                    'startTs' => (string) $startTs,
-                    'endTs' => (string) $endTs,
-                    'pageSize' => (string) self::PAGE_SIZE,
-                ],
-                $credentials,
-            );
+            $chunkEnd = $now;
 
-            $list = $data['list'] ?? [];
-            $rawCount += count($list);
-
-            foreach ($list as $raw) {
-                $closeTime = (int) ($raw['closeTime'] ?? $raw['updateTime'] ?? 0);
-
-                if ($closeTime > 0 && ($latestCloseTime === null || $closeTime > $latestCloseTime)) {
-                    $latestCloseTime = $closeTime;
+            while (true) {
+                $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
+                if ($cursorMs !== null) {
+                    $chunkStart = max($cursorMs + 1, $chunkStart);
+                }
+                if ($chunkStart >= $chunkEnd) {
+                    break;
                 }
 
-                if ($sinceCursor !== null && $closeTime > 0 && $closeTime <= (int) $sinceCursor) {
-                    continue;
+                $data = $this->httpGetSigned(
+                    '/openApi/swap/v1/trade/positionHistory',
+                    [
+                        'symbol' => $symbol,
+                        'startTs' => (string) $chunkStart,
+                        'endTs' => (string) $chunkEnd,
+                        'pageSize' => (string) self::PAGE_SIZE,
+                    ],
+                    $credentials,
+                );
+
+                $list = $data['list'] ?? [];
+                $rawCount += count($list);
+
+                if (empty($list) && $cursorMs === null) {
+                    break;
                 }
 
-                $normalized = $this->normalizer->normalizeBingxClosedPosition($raw);
-                if ($normalized !== null) {
-                    $deals[] = $normalized;
+                foreach ($list as $raw) {
+                    $closeTime = (int) ($raw['closeTime'] ?? $raw['updateTime'] ?? 0);
+
+                    if ($closeTime > 0 && ($latestCloseTime === null || $closeTime > $latestCloseTime)) {
+                        $latestCloseTime = $closeTime;
+                    }
+
+                    if ($cursorMs !== null && $closeTime > 0 && $closeTime <= $cursorMs) {
+                        continue;
+                    }
+
+                    $normalized = $this->normalizer->normalizeBingxClosedPosition($raw);
+                    if ($normalized !== null) {
+                        $deals[] = $normalized;
+                    }
                 }
+
+                // Step the window back by one chunk; the +1ms boundary
+                // guarantees no overlap (closeTime is strictly within
+                // (startTs, endTs] per BingX semantics).
+                $chunkEnd = $chunkStart - 1;
             }
         }
 
@@ -171,8 +190,14 @@ class BingxConnector implements ConnectorInterface
             return ['orders' => [], 'raw_count' => 0];
         }
 
+        // Single 7-day window: BingX caps each /trade/allOrders call at
+        // 7 days (code 109400). fetchClosedOrders is consumed only by the
+        // order diff (matching orders that disappeared from openOrders
+        // between two syncs), so any horizon longer than the sync interval
+        // is wasted work. Cron runs every 5 min → 7 days covers any
+        // realistic gap between two ticks, and the BingX cap matches.
         $endTs = (int) (microtime(true) * 1000);
-        $startTs = $endTs - self::MAX_HISTORY_WINDOW_SECONDS * 1000;
+        $startTs = $endTs - self::CHUNK_WINDOW_SECONDS * 1000;
 
         $orders = [];
         $rawCount = 0;
@@ -545,19 +570,4 @@ class BingxConnector implements ConnectorInterface
         return $list;
     }
 
-    private function resolveStartTs(?string $sinceCursor): int
-    {
-        $now = (int) (microtime(true) * 1000);
-        // Default lookback: 3 months (BingX max window).
-        $defaultStart = $now - self::MAX_HISTORY_WINDOW_SECONDS * 1000;
-
-        if ($sinceCursor === null) {
-            return $defaultStart;
-        }
-
-        $cursor = (int) $sinceCursor;
-        // Clamp to the broker's max window — we can't query further back
-        // than 3 months even if the cursor is older.
-        return max($cursor, $defaultStart);
-    }
 }

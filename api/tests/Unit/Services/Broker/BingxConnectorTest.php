@@ -313,6 +313,13 @@ class BingxConnectorTest extends TestCase
         // positions for a symbol — those won't appear in open_positions,
         // but the previous sync's cursor narrows the next-run window so
         // the gap is bounded.)
+        // First-sync mode (no cursor) → connector walks chunk by chunk per
+        // symbol until BingX returns an empty page (= no older history).
+        // Mock: one non-empty chunk per symbol, then an empty chunk to
+        // terminate that symbol's loop.
+        $emptyChunk = new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'code' => 0, 'msg' => '', 'data' => ['total' => 0, 'list' => []],
+        ]));
         $connector = $this->createConnector([
             // 1) listing symbols via user/positions
             $this->bxResponse([
@@ -321,14 +328,16 @@ class BingxConnectorTest extends TestCase
                 ['positionId' => 'live-2', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
                  'positionAmt' => '1', 'avgPrice' => '4000'],
             ]),
-            // 2) positionHistory?symbol=BTC-USDT
+            // 2) positionHistory?symbol=BTC-USDT — first chunk with data
             new Response(200, ['Content-Type' => 'application/json'], json_encode([
                 'code' => 0, 'msg' => '',
                 'data' => ['total' => 1, 'list' => [$this->makeClosedPositionRaw([
                     'positionId' => 'closed-btc-1', 'symbol' => 'BTC-USDT',
                 ])]],
             ])),
-            // 3) positionHistory?symbol=ETH-USDT
+            // 3) BTC-USDT next chunk back → empty → stop walking back on this symbol
+            $emptyChunk,
+            // 4) positionHistory?symbol=ETH-USDT — first chunk with data
             new Response(200, ['Content-Type' => 'application/json'], json_encode([
                 'code' => 0, 'msg' => '',
                 'data' => ['total' => 1, 'list' => [$this->makeClosedPositionRaw([
@@ -336,6 +345,8 @@ class BingxConnectorTest extends TestCase
                     'avgPrice' => '4200', 'closeAvgPrice' => '4000', 'realisedProfit' => '200',
                 ])]],
             ])),
+            // 5) ETH-USDT next chunk back → empty → stop
+            $emptyChunk,
         ]);
 
         $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
@@ -356,9 +367,13 @@ class BingxConnectorTest extends TestCase
     {
         // Cursor is the closeTime of the latest closed position seen by the
         // previous run. The connector filters out positions whose closeTime
-        // is not strictly greater (preventing re-import).
-        $oldClose = 1714867200000; // 2024-05-05 00:00:00
-        $newClose = 1714896000000; // 2024-05-05 08:00:00
+        // is not strictly greater (preventing re-import). Cursor is set
+        // recently (within the 7-day chunk window) so the walk back stops
+        // in a single iteration once it hits cursor — matches the
+        // steady-state cron run.
+        $nowMs = (int) (microtime(true) * 1000);
+        $oldClose = $nowMs - 3600 * 1000;       // 1 hour ago
+        $newClose = $nowMs - 1800 * 1000;       // 30 min ago
 
         $connector = $this->createConnector([
             $this->bxResponse([
