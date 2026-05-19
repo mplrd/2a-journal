@@ -61,22 +61,52 @@ async function connect() {
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.ctrader_client_id') }}</label>
-        <InputText v-model="clientId" class="w-full" :placeholder="t('broker.ctrader_client_id_placeholder')" />
+        <InputText
+          v-model="clientId"
+          class="w-full"
+          :placeholder="t('broker.ctrader_client_id_placeholder')"
+          autocomplete="off"
+          name="ctrader-client-id"
+          spellcheck="false"
+        />
       </div>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.ctrader_client_secret') }}</label>
-        <InputText v-model="clientSecret" class="w-full" type="password" :placeholder="t('broker.ctrader_client_secret_placeholder')" />
+        <InputText
+          v-model="clientSecret"
+          class="w-full"
+          type="password"
+          :placeholder="t('broker.ctrader_client_secret_placeholder')"
+          autocomplete="new-password"
+          name="ctrader-client-secret"
+          spellcheck="false"
+        />
       </div>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.ctrader_access_token') }}</label>
-        <InputText v-model="accessToken" class="w-full" type="password" :placeholder="t('broker.ctrader_access_token_placeholder')" />
+        <InputText
+          v-model="accessToken"
+          class="w-full"
+          type="password"
+          :placeholder="t('broker.ctrader_access_token_placeholder')"
+          autocomplete="new-password"
+          name="ctrader-access-token"
+          spellcheck="false"
+        />
       </div>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.ctrader_account_id') }}</label>
-        <InputText v-model="accountIdCtrader" class="w-full" :placeholder="t('broker.ctrader_account_id_placeholder')" />
+        <InputText
+          v-model="accountIdCtrader"
+          class="w-full"
+          :placeholder="t('broker.ctrader_account_id_placeholder')"
+          autocomplete="off"
+          name="ctrader-account-id"
+          spellcheck="false"
+        />
       </div>
 
       <Message v-if="error" severity="error" :closable="false">{{ t(error) }}</Message>

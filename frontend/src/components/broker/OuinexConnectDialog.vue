@@ -55,12 +55,27 @@ async function connect() {
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.ouinex_api_key') }}</label>
-        <InputText v-model="apiKey" class="w-full" :placeholder="t('broker.ouinex_api_key_placeholder')" />
+        <InputText
+          v-model="apiKey"
+          class="w-full"
+          :placeholder="t('broker.ouinex_api_key_placeholder')"
+          autocomplete="off"
+          name="ouinex-api-key"
+          spellcheck="false"
+        />
       </div>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.ouinex_api_secret') }}</label>
-        <InputText v-model="apiSecret" class="w-full" type="password" :placeholder="t('broker.ouinex_api_secret_placeholder')" />
+        <InputText
+          v-model="apiSecret"
+          class="w-full"
+          type="password"
+          :placeholder="t('broker.ouinex_api_secret_placeholder')"
+          autocomplete="new-password"
+          name="ouinex-api-secret"
+          spellcheck="false"
+        />
       </div>
 
       <Message v-if="error" severity="error" :closable="false">{{ t(error) }}</Message>

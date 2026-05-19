@@ -55,12 +55,26 @@ async function connect() {
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.metaapi_token') }}</label>
-        <InputText v-model="apiToken" class="w-full" :placeholder="t('broker.metaapi_token_placeholder')" />
+        <InputText
+          v-model="apiToken"
+          class="w-full"
+          :placeholder="t('broker.metaapi_token_placeholder')"
+          autocomplete="new-password"
+          name="metaapi-api-token"
+          spellcheck="false"
+        />
       </div>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.metaapi_account_id') }}</label>
-        <InputText v-model="metaApiAccountId" class="w-full" :placeholder="t('broker.metaapi_account_id_placeholder')" />
+        <InputText
+          v-model="metaApiAccountId"
+          class="w-full"
+          :placeholder="t('broker.metaapi_account_id_placeholder')"
+          autocomplete="off"
+          name="metaapi-account-id"
+          spellcheck="false"
+        />
       </div>
 
       <Message v-if="error" severity="error" :closable="false">{{ t(error) }}</Message>
