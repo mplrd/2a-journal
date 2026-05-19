@@ -68,18 +68,20 @@ class BingxConnector implements ConnectorInterface
             do {
                 // /v1/trade/positionHistory was the original endpoint (doc 64,
                 // Phase 1) and worked at integration time, but BingX silently
-                // deprecated it: every call now returns a generic 100001
-                // "signature mismatch" (their catch-all for endpoints they no
-                // longer route). Migrated to /v2/trade/positionHistory which
-                // accepts the same parameter shape; if BingX has reshuffled
-                // further, we'll get a different, more actionable error code
-                // surfaced via BrokerLogger.
+                // deprecated it and the v2 successor renamed the time-window
+                // params from startTs/endTs → startTime/endTime. Sending the
+                // old names against v2 makes BingX strip them as unknown
+                // before reconstructing its canonical, so its HMAC differs
+                // from ours and you get a generic 100001 even though the key
+                // and clock are fine — the diagnostic JSON in BrokerLogger
+                // showed clock_skew=0 and credentials matching /v2/user/
+                // positions on the same connector.
                 $data = $this->httpGetSigned(
                     '/openApi/swap/v2/trade/positionHistory',
                     [
                         'symbol' => $symbol,
-                        'startTs' => (string) $startTs,
-                        'endTs' => (string) $endTs,
+                        'startTime' => (string) $startTs,
+                        'endTime' => (string) $endTs,
                         'pageIndex' => (string) $pageIndex,
                         'pageSize' => (string) self::PAGE_SIZE,
                     ],
