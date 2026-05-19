@@ -410,6 +410,10 @@ class OuinexConnector implements ConnectorInterface
                 ],
             ]);
         } catch (GuzzleException $e) {
+            BrokerLogger::failure('ouinex', 'request_failed', [
+                'operation' => $this->extractOperationName($query),
+                'msg' => $e->getMessage(),
+            ]);
             throw new \RuntimeException("Ouinex HTTP error: {$e->getMessage()}", 0, $e);
         }
 
@@ -417,10 +421,31 @@ class OuinexConnector implements ConnectorInterface
 
         if (!empty($decoded['errors'])) {
             $first = $decoded['errors'][0]['message'] ?? 'unknown GraphQL error';
+            BrokerLogger::failure('ouinex', 'graphql_error', [
+                'operation' => $this->extractOperationName($query),
+                'msg' => $first,
+                'errors_count' => count($decoded['errors']),
+            ]);
             throw new \RuntimeException("Ouinex GraphQL error: {$first}");
         }
 
         return $decoded;
+    }
+
+    /**
+     * Pull the first identifier after `mutation` / `query` so the log line
+     * carries something more readable than the raw GraphQL body. Falls back
+     * to `unknown` for queries that don't follow the named-operation form.
+     */
+    private function extractOperationName(string $query): string
+    {
+        if (preg_match('/\b(?:query|mutation)\s+(\w+)/i', $query, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/\{\s*(\w+)/', $query, $m)) {
+            return $m[1];
+        }
+        return 'unknown';
     }
 
     private function parseExpiresAt(?string $expiresAt): int

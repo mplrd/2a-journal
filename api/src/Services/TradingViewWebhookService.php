@@ -13,6 +13,7 @@ use App\Exceptions\BrokerOrderException;
 use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
+use App\Services\Broker\BrokerLogger;
 use App\Services\Broker\ConnectorInterface;
 use App\Services\Broker\CredentialEncryptionService;
 
@@ -257,5 +258,19 @@ class TradingViewWebhookService
             'error_message' => $errorMessage,
             'created_order_id' => $orderId,
         ]);
+
+        // Mirror non-OK outcomes to stderr so they show up in Railway logs
+        // alongside the broker connector failures. The DB row stays the
+        // user-facing audit; this is the ops-facing trail.
+        if (in_array($status, [WebhookEventStatus::REJECTED, WebhookEventStatus::FAILED], true)) {
+            BrokerLogger::failure('tradingview', 'alert_' . strtolower($status->value), [
+                'webhook_id' => $webhookId,
+                'account_id' => $accountId,
+                'reject_reason' => $reason?->value,
+                'alert_id' => $externalAlertId,
+                'order_id' => $orderId,
+                'msg' => $errorMessage,
+            ]);
+        }
     }
 }

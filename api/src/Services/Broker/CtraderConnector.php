@@ -300,6 +300,10 @@ class CtraderConnector implements ConnectorInterface
         try {
             $ws = $this->connectWebSocket();
         } catch (\Throwable $e) {
+            BrokerLogger::failure('ctrader', 'ws_connect_failed', [
+                'account_id' => (int) $accountId,
+                'msg' => $e->getMessage(),
+            ]);
             throw new \App\Exceptions\BrokerOrderException(
                 'cTrader WebSocket connect failed: ' . $e->getMessage(),
                 'TRANSPORT_ERROR',
@@ -326,6 +330,10 @@ class CtraderConnector implements ConnectorInterface
             throw $e;
         } catch (\Throwable $e) {
             try { $ws->close(); } catch (\Throwable) {}
+            BrokerLogger::failure('ctrader', 'request_failed', [
+                'account_id' => (int) $accountId,
+                'msg' => $e->getMessage(),
+            ]);
             throw new \App\Exceptions\BrokerOrderException(
                 'cTrader request failed: ' . $e->getMessage(),
                 'BROKER_REJECTED',

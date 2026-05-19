@@ -168,15 +168,23 @@ class MetaApiConnector implements ConnectorInterface
             );
         }
 
+        $path = "/users/current/accounts/{$accountId}/trade";
+
         try {
             $response = $this->httpClient->post(
-                "{$this->baseUrl}/users/current/accounts/{$accountId}/trade",
+                $this->baseUrl . $path,
                 [
                     'headers' => ['auth-token' => $token, 'Accept' => 'application/json'],
                     'json' => $body,
                 ]
             );
         } catch (GuzzleException $e) {
+            BrokerLogger::failure('metaapi', 'request_failed', [
+                'path' => $path,
+                'action' => $body['actionType'] ?? null,
+                'symbol' => $body['symbol'] ?? null,
+                'msg' => $e->getMessage(),
+            ]);
             throw new \App\Exceptions\BrokerOrderException(
                 'MetaApi trade request failed: ' . $e->getMessage(),
                 'TRANSPORT_ERROR',
@@ -205,6 +213,11 @@ class MetaApiConnector implements ConnectorInterface
         if ($ok) {
             return;
         }
+        BrokerLogger::failure('metaapi', 'trade_rejected', [
+            'string_code' => $code,
+            'numeric_code' => $response['numericCode'] ?? null,
+            'msg' => $response['message'] ?? null,
+        ]);
         throw new \App\Exceptions\BrokerOrderException(
             $response['message'] ?? "MetaApi rejected trade ({$code})",
             $code !== '' ? $code : 'UNKNOWN',

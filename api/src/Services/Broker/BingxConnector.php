@@ -335,8 +335,11 @@ class BingxConnector implements ConnectorInterface
             );
         }
 
-        $params['timestamp'] = (string) ((int) (microtime(true) * 1000));
-        $params['signature'] = $this->sign($params, $apiSecret);
+        $timestampMs = (int) (microtime(true) * 1000);
+        $params['timestamp'] = (string) $timestampMs;
+        $signature = $this->sign($params, $apiSecret);
+        $canonical = $this->canonical($params);
+        $params['signature'] = $signature;
 
         try {
             $response = $this->httpClient->request($method, $this->baseUrl . $path, [
@@ -347,6 +350,7 @@ class BingxConnector implements ConnectorInterface
                 ],
             ]);
         } catch (GuzzleException $e) {
+            $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()]);
             throw new \App\Exceptions\BrokerOrderException(
                 "BingX HTTP error: {$e->getMessage()}",
                 'TRANSPORT_ERROR',
@@ -358,8 +362,9 @@ class BingxConnector implements ConnectorInterface
         $decoded = json_decode($response->getBody()->getContents(), true) ?: [];
         $code = (int) ($decoded['code'] ?? 0);
         if ($code !== 0) {
+            $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded);
             throw new \App\Exceptions\BrokerOrderException(
-                $decoded['msg'] ?? "BingX API error (code {$code})",
+                ($decoded['msg'] ?? "BingX API error (code {$code})") . ' [' . $this->codeHint($code) . ']',
                 (string) $code,
                 $decoded,
             );
@@ -384,8 +389,11 @@ class BingxConnector implements ConnectorInterface
             throw new \RuntimeException('BingX credentials missing api_key/api_secret');
         }
 
-        $params['timestamp'] = (string) ((int) (microtime(true) * 1000));
-        $params['signature'] = $this->sign($params, $apiSecret);
+        $timestampMs = (int) (microtime(true) * 1000);
+        $params['timestamp'] = (string) $timestampMs;
+        $signature = $this->sign($params, $apiSecret);
+        $canonical = $this->canonical($params);
+        $params['signature'] = $signature;
 
         try {
             $response = $this->httpClient->get($this->baseUrl . $path, [
@@ -396,6 +404,7 @@ class BingxConnector implements ConnectorInterface
                 ],
             ]);
         } catch (GuzzleException $e) {
+            $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()]);
             throw new \RuntimeException("BingX HTTP error: {$e->getMessage()}", 0, $e);
         }
 
@@ -403,10 +412,60 @@ class BingxConnector implements ConnectorInterface
         $code = (int) ($decoded['code'] ?? 0);
         if ($code !== 0) {
             $msg = $decoded['msg'] ?? 'unknown';
-            throw new \RuntimeException("BingX API error (code {$code}): {$msg}");
+            $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded);
+            throw new \RuntimeException("BingX API error (code {$code}): {$msg} [" . $this->codeHint($code) . "]");
         }
 
         return $decoded['data'] ?? null;
+    }
+
+    private function logFailure(
+        string $path,
+        string $canonicalString,
+        int $timestampMs,
+        ?string $serverDate,
+        ?int $bingxCode,
+        array $responseBody,
+    ): void {
+        BrokerLogger::failure('bingx', 'request_failed', [
+            'path' => $path,
+            'canonical' => $canonicalString,
+            'local_time_utc' => gmdate('Y-m-d\TH:i:s\Z', (int) ($timestampMs / 1000)),
+            'server_date' => $serverDate,
+            'clock_skew_seconds' => BrokerLogger::clockSkewSeconds($serverDate),
+            'code' => $bingxCode,
+            'msg' => $responseBody['msg'] ?? $responseBody['transport'] ?? null,
+        ]);
+    }
+
+    /**
+     * Human-readable hint for the common BingX error codes so the message
+     * surfaced in the UI tells the user where to look (key permissions vs IP
+     * whitelist vs signing) instead of just "code 100001".
+     */
+    private function codeHint(int $code): string
+    {
+        return match ($code) {
+            100001 => 'signing or clock — check server logs for the canonical string and clock_skew_seconds',
+            100403 => 'API key lacks permission for this endpoint (enable Perpetual Futures on the key)',
+            100410 => 'IP whitelist on the BingX key blocks this host',
+            100413 => 'invalid API key',
+            default => "unknown — search BingX docs for code {$code}",
+        };
+    }
+
+    /**
+     * Reconstruct the canonical signed string. Used both by sign() during
+     * the request and by logFailure() to surface what we actually signed.
+     */
+    private function canonical(array $params): string
+    {
+        ksort($params);
+        $segments = [];
+        foreach ($params as $k => $v) {
+            $segments[] = "{$k}={$v}";
+        }
+        return implode('&', $segments);
     }
 
     /**
@@ -416,12 +475,7 @@ class BingxConnector implements ConnectorInterface
      */
     private function sign(array $params, string $secret): string
     {
-        ksort($params);
-        $segments = [];
-        foreach ($params as $k => $v) {
-            $segments[] = "{$k}={$v}";
-        }
-        return hash_hmac('sha256', implode('&', $segments), $secret);
+        return hash_hmac('sha256', $this->canonical($params), $secret);
     }
 
     /**
