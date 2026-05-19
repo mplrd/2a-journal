@@ -88,7 +88,7 @@ class BrokerSyncController extends Controller
     public function sync(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $connectionId = (int) $request->getAttribute('id');
+        $connectionId = (int) $request->getRouteParam('id');
 
         $result = $this->syncService->sync($connectionId, $userId);
 
@@ -101,7 +101,7 @@ class BrokerSyncController extends Controller
     public function deleteConnection(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $connectionId = (int) $request->getAttribute('id');
+        $connectionId = (int) $request->getRouteParam('id');
 
         $connection = $this->connectionRepo->findById($connectionId);
         if (!$connection || (int) $connection['user_id'] !== $userId) {
@@ -119,7 +119,7 @@ class BrokerSyncController extends Controller
     public function syncLogs(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $connectionId = (int) $request->getAttribute('id');
+        $connectionId = (int) $request->getRouteParam('id');
 
         $connection = $this->connectionRepo->findById($connectionId);
         if (!$connection || (int) $connection['user_id'] !== $userId) {
