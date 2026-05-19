@@ -882,6 +882,7 @@
   "broker": {
     "connection": "Connexion broker",
     "not_connected": "Aucune connexion API configurée pour ce compte.",
+    "disabled_help": "Cette connexion a été désactivée suite à plusieurs erreurs consécutives. Supprime-la pour pouvoir en recréer une nouvelle.",
     "section_platforms": "Plateformes",
     "section_brokers": "Brokers",
     "connect_ctrader": "Connecter cTrader",
