@@ -66,8 +66,16 @@ class BingxConnector implements ConnectorInterface
         foreach ($symbols as $symbol) {
             $pageIndex = 1;
             do {
+                // /v1/trade/positionHistory was the original endpoint (doc 64,
+                // Phase 1) and worked at integration time, but BingX silently
+                // deprecated it: every call now returns a generic 100001
+                // "signature mismatch" (their catch-all for endpoints they no
+                // longer route). Migrated to /v2/trade/positionHistory which
+                // accepts the same parameter shape; if BingX has reshuffled
+                // further, we'll get a different, more actionable error code
+                // surfaced via BrokerLogger.
                 $data = $this->httpGetSigned(
-                    '/openApi/swap/v1/trade/positionHistory',
+                    '/openApi/swap/v2/trade/positionHistory',
                     [
                         'symbol' => $symbol,
                         'startTs' => (string) $startTs,
