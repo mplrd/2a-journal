@@ -119,7 +119,15 @@ class BrokerOpenSyncService
 
         $this->tradeRepo->create([
             'position_id' => $position['id'],
-            'opened_at' => $row['opened_at'],
+            // BingX /user/positions doesn't expose an open time on the live
+            // snapshot, so normalizeBingxOpenPosition returns null and we
+            // fall back to "now". It's at worst the moment we discovered the
+            // position, slightly later than the real open — acceptable for
+            // an OPEN row whose lifecycle is being reconciled live anyway.
+            // Ouinex/cTrader/MetaApi provide opened_at when they support
+            // open snapshots, so this fallback only kicks in for connectors
+            // that genuinely don't expose it.
+            'opened_at' => $row['opened_at'] ?? date('Y-m-d H:i:s'),
             'remaining_size' => $row['size'],
             'status' => TradeStatus::OPEN->value,
         ]);
