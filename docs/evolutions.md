@@ -234,6 +234,17 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 
 ---
 
+## Timezones — afficher les timestamps broker en heure locale utilisateur
+
+**Contexte** : repéré 2026-05-19 pendant le debug BingX. La grille « Historique des synchronisations » affiche `started_at` brut (ex. `19/05/2026 10:22:48`) alors que la valeur est en **UTC** côté DB, et l'utilisateur est en `Europe/Paris` (CEST = UTC+2 en mai). Idem probablement pour `last_sync_at` dans `BrokerConnectionPanel` et pour tout autre timestamp persisté UTC consommé par le frontend sans conversion.
+
+**À faire** : auditer le frontend pour identifier tous les timestamps broker (sync_logs, connection, etc.) et les passer par le `Intl.DateTimeFormat` côté Vue avec la TZ utilisateur (déjà disponible dans `useAuthStore().profile.timezone`). Centraliser via un composable `useFormatDateTime()` plutôt que de répéter le pattern dans chaque composant. Faire passer le check sur toute la grille trades/orders/positions au passage — la même incohérence vit probablement ailleurs.
+
+**Repéré le** : 2026-05-19 (debug BingX 100001).
+**Priorité** : moyenne — pas critique mais désorientant pour l'utilisateur, et obligatoire pour la prochaine livraison user-facing qui touche du temps.
+
+---
+
 ## Connecteurs broker — validation sandbox avant activation prod
 
 **Contexte** : la feature TradingView webhooks (doc 66) a livré l'implémentation de `placeOrder/cancelOrder/closePosition` sur les 4 connecteurs (cTrader, MetaApi, Ouinex, BingX) en suivant les specs publiques. **Aucun n'a été exercé contre une sandbox broker réelle** — les tests unitaires couvrent le shape du code émis, pas l'acceptation broker.
