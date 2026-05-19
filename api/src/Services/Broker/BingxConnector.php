@@ -340,10 +340,16 @@ class BingxConnector implements ConnectorInterface
             );
         }
 
+        // Same canonical-order bug as httpGetSigned: BingX rebuilds canonical
+        // from URL-received order, so sort params BEFORE signing AND before
+        // handing them to Guzzle, then append signature last (BingX strips
+        // it before rebuilding so its trailing position is fine).
         $timestampMs = (int) (microtime(true) * 1000);
+        $params['recvWindow'] = (string) 5000;
         $params['timestamp'] = (string) $timestampMs;
-        $signature = $this->sign($params, $apiSecret);
+        ksort($params);
         $canonical = $this->canonical($params);
+        $signature = hash_hmac('sha256', $canonical, $apiSecret);
         $params['signature'] = $signature;
 
         try {
@@ -394,10 +400,22 @@ class BingxConnector implements ConnectorInterface
             throw new \RuntimeException('BingX credentials missing api_key/api_secret');
         }
 
+        // CRITICAL: BingX rebuilds its canonical in the order params arrive
+        // in the URL — NOT alphabetically. We always ksort()'d when signing
+        // (correctly producing an alphabetical canonical) but then handed
+        // the *unsorted* array to Guzzle, which serialised in insertion
+        // order. Result: single-param endpoints like /v2/user/positions
+        // happened to work (insertion == alphabetical with one key), but
+        // multi-param endpoints like /v1/trade/positionHistory had the
+        // canonical we signed diverge from what BingX rebuilt → generic
+        // 100001 signature mismatch. Sort BEFORE both signing and the HTTP
+        // call so the URL order and the signed canonical are byte-identical.
         $timestampMs = (int) (microtime(true) * 1000);
+        $params['recvWindow'] = (string) 5000;
         $params['timestamp'] = (string) $timestampMs;
-        $signature = $this->sign($params, $apiSecret);
+        ksort($params);
         $canonical = $this->canonical($params);
+        $signature = hash_hmac('sha256', $canonical, $apiSecret);
         $params['signature'] = $signature;
 
         try {
@@ -409,7 +427,7 @@ class BingxConnector implements ConnectorInterface
                 ],
             ]);
         } catch (GuzzleException $e) {
-            $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()]);
+            $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()], $signature, strlen($apiSecret), null);
             throw new \RuntimeException("BingX HTTP error: {$e->getMessage()}", 0, $e);
         }
 
@@ -417,7 +435,17 @@ class BingxConnector implements ConnectorInterface
         $code = (int) ($decoded['code'] ?? 0);
         if ($code !== 0) {
             $msg = $decoded['msg'] ?? 'unknown';
-            $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded);
+            $this->logFailure(
+                $path,
+                $canonical,
+                $timestampMs,
+                $response->getHeaderLine('Date'),
+                $code,
+                $decoded,
+                $signature,
+                strlen($apiSecret),
+                (string) $response->getBody(),
+            );
             throw new \RuntimeException("BingX API error (code {$code}): {$msg} [" . $this->codeHint($code) . "]");
         }
 
@@ -431,15 +459,21 @@ class BingxConnector implements ConnectorInterface
         ?string $serverDate,
         ?int $bingxCode,
         array $responseBody,
+        ?string $signatureHex = null,
+        ?int $secretLength = null,
+        ?string $rawBody = null,
     ): void {
         BrokerLogger::failure('bingx', 'request_failed', [
             'path' => $path,
             'canonical' => $canonicalString,
+            'signature' => $signatureHex,
+            'secret_length' => $secretLength,
             'local_time_utc' => gmdate('Y-m-d\TH:i:s\Z', (int) ($timestampMs / 1000)),
             'server_date' => $serverDate,
             'clock_skew_seconds' => BrokerLogger::clockSkewSeconds($serverDate),
             'code' => $bingxCode,
             'msg' => $responseBody['msg'] ?? $responseBody['transport'] ?? null,
+            'raw_body' => $rawBody !== null ? mb_substr($rawBody, 0, 500) : null,
         ]);
     }
 
