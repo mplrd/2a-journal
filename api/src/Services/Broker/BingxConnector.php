@@ -64,52 +64,47 @@ class BingxConnector implements ConnectorInterface
         $endTs = (int) (microtime(true) * 1000);
 
         foreach ($symbols as $symbol) {
-            $pageIndex = 1;
-            do {
-                // /v1/trade/positionHistory was the original endpoint (doc 64,
-                // Phase 1) and worked at integration time, but BingX silently
-                // deprecated it and the v2 successor renamed the time-window
-                // params from startTs/endTs → startTime/endTime. Sending the
-                // old names against v2 makes BingX strip them as unknown
-                // before reconstructing its canonical, so its HMAC differs
-                // from ours and you get a generic 100001 even though the key
-                // and clock are fine — the diagnostic JSON in BrokerLogger
-                // showed clock_skew=0 and credentials matching /v2/user/
-                // positions on the same connector.
-                $data = $this->httpGetSigned(
-                    '/openApi/swap/v2/trade/positionHistory',
-                    [
-                        'symbol' => $symbol,
-                        'startTime' => (string) $startTs,
-                        'endTime' => (string) $endTs,
-                        'pageIndex' => (string) $pageIndex,
-                        'pageSize' => (string) self::PAGE_SIZE,
-                    ],
-                    $credentials,
-                );
+            // /v1/trade/positionHistory is the live BingX endpoint (CCXT
+            // tracks it in their bingx adapter, same param names). Earlier
+            // 100001 "signature mismatch" loop was caused by sending an
+            // unknown `pageIndex` param that BingX strips before
+            // reconstructing its canonical — making its HMAC diverge from
+            // ours even though the credentials and the rest of the canonical
+            // are correct. Drop pageIndex, keep pageSize, single-call only.
+            // The cursor on closeTime rattrapes any window overflow on the
+            // next sync; we won't lose positions, just need an extra round
+            // for users who closed more than PAGE_SIZE positions on a
+            // symbol between two syncs.
+            $data = $this->httpGetSigned(
+                '/openApi/swap/v1/trade/positionHistory',
+                [
+                    'symbol' => $symbol,
+                    'startTs' => (string) $startTs,
+                    'endTs' => (string) $endTs,
+                    'pageSize' => (string) self::PAGE_SIZE,
+                ],
+                $credentials,
+            );
 
-                $list = $data['list'] ?? [];
-                $rawCount += count($list);
+            $list = $data['list'] ?? [];
+            $rawCount += count($list);
 
-                foreach ($list as $raw) {
-                    $closeTime = (int) ($raw['closeTime'] ?? $raw['updateTime'] ?? 0);
+            foreach ($list as $raw) {
+                $closeTime = (int) ($raw['closeTime'] ?? $raw['updateTime'] ?? 0);
 
-                    if ($closeTime > 0 && ($latestCloseTime === null || $closeTime > $latestCloseTime)) {
-                        $latestCloseTime = $closeTime;
-                    }
-
-                    if ($sinceCursor !== null && $closeTime > 0 && $closeTime <= (int) $sinceCursor) {
-                        continue;
-                    }
-
-                    $normalized = $this->normalizer->normalizeBingxClosedPosition($raw);
-                    if ($normalized !== null) {
-                        $deals[] = $normalized;
-                    }
+                if ($closeTime > 0 && ($latestCloseTime === null || $closeTime > $latestCloseTime)) {
+                    $latestCloseTime = $closeTime;
                 }
 
-                $pageIndex++;
-            } while (count($list) === self::PAGE_SIZE);
+                if ($sinceCursor !== null && $closeTime > 0 && $closeTime <= (int) $sinceCursor) {
+                    continue;
+                }
+
+                $normalized = $this->normalizer->normalizeBingxClosedPosition($raw);
+                if ($normalized !== null) {
+                    $deals[] = $normalized;
+                }
+            }
         }
 
         return [
