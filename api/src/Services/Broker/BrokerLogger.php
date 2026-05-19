@@ -24,7 +24,13 @@ class BrokerLogger
             'ts' => gmdate('Y-m-d\TH:i:s\Z'),
         ], $meta);
 
-        fwrite(STDERR, json_encode($entry, JSON_UNESCAPED_SLASHES) . "\n");
+        // error_log() is the portable stderr-ish sink: in CLI it goes to
+        // the global STDERR pointer (same destination as the cron's
+        // existing JSON output), in PHP-FPM / the built-in server it lands
+        // in the SAPI error log which Railway captures into the container
+        // stream. STDERR-the-constant only exists in CLI SAPI — using it
+        // directly would fatal under HTTP (Undefined constant STDERR).
+        error_log(json_encode($entry, JSON_UNESCAPED_SLASHES));
     }
 
     /**
