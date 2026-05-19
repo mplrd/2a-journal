@@ -23,8 +23,16 @@ class BingxConnector implements ConnectorInterface
     /** Page size for positionHistory + allOrders pagination. */
     private const PAGE_SIZE = 100;
 
-    /** Max-span limit imposed by BingX positionHistory (3 months). */
-    private const MAX_HISTORY_WINDOW_SECONDS = 90 * 24 * 3600;
+    /**
+     * Max-span limit imposed by BingX positionHistory. Originally documented
+     * as 3 months at integration time; BingX tightened it to 7 days
+     * server-side (code 109400 "the query range is more than seven days").
+     * We pin to 7 days here, the cron runs every 5 min so we never miss
+     * anything going forward. First-time syncs only see the last week of
+     * history — backfill of older positions has to be done manually via the
+     * import CSV flow.
+     */
+    private const MAX_HISTORY_WINDOW_SECONDS = 7 * 24 * 3600;
 
     private Client $httpClient;
     private string $baseUrl;
