@@ -234,6 +234,45 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 
 ---
 
+## BingX — discriminer exit_type (TP / SL / BE / MANUAL) sur partial_exits issus du sync
+
+**Contexte** : la reconstruction fills-based (doc 67) tague tous les partial exits BingX en `MANUAL`. `/openApi/swap/v2/trade/allOrders` ne distingue pas un fill issu d'un TP, d'un SL ou d'un market close de manière fiable sur le champ `type`. L'utilisateur peut éditer après import mais c'est une perte d'info qui pollue les stats par exit_type.
+
+**À faire** : étudier si BingX expose un champ qui désambiguïse l'origine du fill (un trigger order id séparé qu'on pourrait croiser avec une liste de TP/SL orders posés ?), sinon faire match heuristique côté code (proximité avec SL/TP price connus de la position) avec un fallback `MANUAL`.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : moyenne — affecte la précision des stats "exit type" mais ne casse rien.
+
+## BingX — inclure les frais (commission) dans le P&L reconstruit
+
+**Contexte** : `/allOrders` retourne `commission` par fill mais le journal ne modélise pas les frais séparément aujourd'hui. Le P&L stocké côté trade est donc gross, pas net. Pour un trader scalp avec beaucoup de fills, l'écart peut être significatif.
+
+**À faire** : décision produit. Options :
+- Soustraire commission de `partial_exits.pnl` au moment du sync (P&L net partout, mais on perd la transparence brut/net).
+- Ajouter une colonne `commission` séparée sur `partial_exits` et l'agréger côté affichage (plus propre, plus de travail UI).
+- Ne rien faire et documenter dans la doc utilisateur que les frais ne sont pas comptés.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : haute pour utilisateurs scalp, basse pour swing/position trading.
+
+## BingX — validation sandbox du fills reconstruction sur les vrais comptes
+
+**Contexte** : le reconstructor (doc 67) couvre théoriquement le hedge mode (`positionSide LONG/SHORT` en parallèle), le one-way mode (`positionSide BOTH`), le scaling-in et tous les patterns multi-fills. **Aucun de ces cas n'est testé contre une vraie sandbox BingX**, seulement contre des fixtures unitaires.
+
+**À faire** : créer un compte sandbox BingX, brancher le journal dessus, exécuter une dizaine de scénarios (open + TP partiel + close, scale-in, hedge mode), comparer la base reconstruite vs ce qu'on voit sur BingX. Ajuster si drift.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : haute — bloque l'activation prod du sync BingX en confiance.
+
+## BingX — test d'intégration end-to-end (BingxFillSyncFlowTest)
+
+**Contexte** : le refactor doc 67 livre un unit test du reconstructor (8 fixtures), un unit test du connector (22 tests dont 5 mis à jour), et passe la suite intégration (542 tests). Il manque un test intégration BingX-spécifique qui mocke les réponses HTTP de bout en bout et vérifie l'état DB final (positions + trades + partial_exits + symbols_seen + cursor).
+
+**À faire** : `api/tests/Integration/Broker/BingxFillSyncFlowTest.php` avec 2-3 scénarios : (a) 1ère sync avec historique complet reconstruit, (b) sync incrémental avec curseur, (c) idempotence — 2 syncs successifs sur la même donnée produisent un état DB identique.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : moyenne — la couverture unitaire est solide mais un test intégration BingX précis verrouille les régressions futures.
+
 ## Timezones — afficher les timestamps broker en heure locale utilisateur
 
 **Contexte** : repéré 2026-05-19 pendant le debug BingX. La grille « Historique des synchronisations » affiche `started_at` brut (ex. `19/05/2026 10:22:48`) alors que la valeur est en **UTC** côté DB, et l'utilisateur est en `Europe/Paris` (CEST = UTC+2 en mai). Idem probablement pour `last_sync_at` dans `BrokerConnectionPanel` et pour tout autre timestamp persisté UTC consommé par le frontend sans conversion.
