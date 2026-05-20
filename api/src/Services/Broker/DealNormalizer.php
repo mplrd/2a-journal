@@ -240,6 +240,56 @@ class DealNormalizer
     }
 
     /**
+     * Normalize a BingX raw order from /trade/allOrders into a "fill" — the
+     * unit BingxFillReconstructor consumes to rebuild position lifecycles.
+     *
+     * Only FILLED / PARTIALLY_FILLED orders carry useful fill data; CANCELED
+     * / NEW / EXPIRED orders are skipped (returns null). BingX has variant
+     * field names across endpoints and account types (futures spot, hedge
+     * mode, etc.) — we tolerate the documented aliases via `??` fallback.
+     *
+     * Output shape (consumed by BingxFillReconstructor):
+     *   orderId, symbol, positionSide, side, reduce_only (bool),
+     *   executed_qty, avg_price, profit, time (ms)
+     */
+    public function normalizeBingxFill(array $order): ?array
+    {
+        $status = strtoupper((string) ($order['status'] ?? ''));
+        if (!in_array($status, ['FILLED', 'PARTIALLY_FILLED'], true)) {
+            return null;
+        }
+
+        $executedQty = (float) ($order['executedQty'] ?? $order['cumQuote'] ?? $order['quantity'] ?? 0);
+        if ($executedQty <= 0) {
+            return null;
+        }
+
+        $avgPrice = (float) ($order['avgPrice'] ?? $order['averagePrice'] ?? $order['price'] ?? 0);
+        if ($avgPrice <= 0) {
+            return null;
+        }
+
+        // reduceOnly may come as bool true/false, or string "true"/"false", or
+        // be absent altogether (older payloads). Treat truthy variants as true.
+        $rawReduce = $order['reduceOnly'] ?? $order['reduce_only'] ?? false;
+        $reduceOnly = is_string($rawReduce)
+            ? in_array(strtolower($rawReduce), ['true', '1', 'yes'], true)
+            : (bool) $rawReduce;
+
+        return [
+            'orderId' => (string) ($order['orderId'] ?? ''),
+            'symbol' => (string) ($order['symbol'] ?? ''),
+            'positionSide' => strtoupper((string) ($order['positionSide'] ?? 'BOTH')),
+            'side' => strtoupper((string) ($order['side'] ?? '')),
+            'reduce_only' => $reduceOnly,
+            'executed_qty' => $executedQty,
+            'avg_price' => $avgPrice,
+            'profit' => (float) ($order['profit'] ?? $order['realisedProfit'] ?? 0),
+            'time' => (int) ($order['updateTime'] ?? $order['time'] ?? 0),
+        ];
+    }
+
+    /**
      * Normalize a BingX closed/cancelled/expired order (from /trade/allOrders)
      * into the lifecycle-only shape consumed by the order diff to
      * disambiguate EXECUTED vs CANCELLED vs EXPIRED. Returns null on
