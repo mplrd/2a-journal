@@ -57,7 +57,7 @@ class BrokerConnectionRepository
 
     public function update(int $id, array $data): void
     {
-        $allowed = ['status', 'credentials_encrypted', 'credentials_iv', 'last_sync_at', 'last_sync_status', 'last_sync_error', 'sync_cursor'];
+        $allowed = ['status', 'credentials_encrypted', 'credentials_iv', 'last_sync_at', 'last_sync_status', 'last_sync_error', 'sync_cursor', 'symbols_seen'];
         $sets = [];
         $params = ['id' => $id];
 

@@ -75,6 +75,18 @@ class BrokerSyncService
                 $credentials = $refreshed;
             }
 
+            // Hand the connector the symbols we've persisted from previous
+            // syncs so it can scan history on symbols the user has fully
+            // closed (no longer in /user/positions). Only BingX supports
+            // this today; other connectors silently no-op.
+            if (method_exists($connector, 'setKnownSymbols')) {
+                $persistedSymbols = $this->decodeSymbolsSeen($connection['symbols_seen'] ?? null);
+                $connector->setKnownSymbols($persistedSymbols);
+            }
+            if (method_exists($connector, 'resetSyncCache')) {
+                $connector->resetSyncCache();
+            }
+
             // Fetch deals from broker
             $result = $connector->fetchDeals($credentials, $connection['sync_cursor']);
             $deals = $result['deals'];
@@ -131,6 +143,20 @@ class BrokerSyncService
             if ($result['cursor']) {
                 $updateData['sync_cursor'] = $result['cursor'];
             }
+
+            // Persist the symbols the connector reports having observed
+            // during this run. Union with what was previously stored — we
+            // never lose a symbol once seen.
+            if (method_exists($connector, 'getSeenSymbols')) {
+                $previouslySeen = $this->decodeSymbolsSeen($connection['symbols_seen'] ?? null);
+                $newlySeen = $connector->getSeenSymbols();
+                $union = array_values(array_unique(array_merge($previouslySeen, $newlySeen)));
+                sort($union);
+                if (!empty($union)) {
+                    $updateData['symbols_seen'] = json_encode($union);
+                }
+            }
+
             $this->connectionRepo->update($connectionId, $updateData);
 
             // Update sync log
@@ -185,5 +211,28 @@ class BrokerSyncService
             BrokerProvider::OUINEX => $this->ouinexConnector,
             BrokerProvider::BINGX => $this->bingxConnector,
         };
+    }
+
+    /**
+     * Decode the JSON-encoded symbols_seen blob stored on broker_connections.
+     * Tolerates null, empty string and malformed JSON — the union we re-write
+     * at the end of the sync uses the connector's report as the new source
+     * of truth anyway. Returns a plain string[] of unique symbols.
+     *
+     * @return string[]
+     */
+    private function decodeSymbolsSeen(mixed $stored): array
+    {
+        if ($stored === null || $stored === '') {
+            return [];
+        }
+        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        return array_values(array_unique(array_filter(
+            array_map('strval', $decoded),
+            fn($v) => $v !== ''
+        )));
     }
 }

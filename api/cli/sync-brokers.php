@@ -130,7 +130,8 @@ try {
         new \GuzzleHttp\Client(),
         $brokerConfig['bingx']['base_url']
     );
-    $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
+    $partialExitRepo = new \App\Repositories\PartialExitRepository($pdo);
+    $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo, $partialExitRepo);
     $orderRepo = new \App\Repositories\OrderRepository($pdo);
     $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
 
