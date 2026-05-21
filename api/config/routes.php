@@ -351,7 +351,7 @@ $bingxConnector = new BingxConnector(
     new \GuzzleHttp\Client(),
     $brokerConfig['bingx']['base_url']
 );
-$brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo);
+$brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo, $partialExitRepo);
 $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
 $brokerSyncService = new BrokerSyncService(
     $brokerConnectionRepo,

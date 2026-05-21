@@ -8,25 +8,32 @@ use GuzzleHttp\Exception\GuzzleException;
 /**
  * BingX USDT-M Perpetual Futures connector.
  *
- * Scope (Phase 1): USDT-M Perpetual only. Coin-M and Standard Contracts
- * are out of scope on this branch because they require synthesizing
- * closed positions from order fills (no native `positionHistory`
- * endpoint) — equivalent in effort to the Ouinex spot Phase 2 chantier.
+ * Source of truth: raw FILLS pulled from /openApi/swap/v2/trade/allOrders
+ * (status IN FILLED, PARTIALLY_FILLED), grouped into position lifecycles
+ * by BingxFillReconstructor. Position lifecycles split into:
+ *   - closed cycles → fed to fetchDeals (with their exits[]) → journal
+ *     creates positions + trades CLOSED + partial_exits
+ *   - open cycles  → fed to fetchOpenPositions (with their exits[]) →
+ *     journal creates/updates positions + trades OPEN + partial_exits for
+ *     prior partial closes
  *
- * Auth: HMAC-SHA256 over ASCII-sorted "key=value&..." canonical string,
- * unencoded. Signature is appended to the query as `&signature=<hex>`.
+ * The connector memoises the fills walk per (credentials, cursor) pair so
+ * a single sync only ever pulls allOrders once even though both fetch
+ * methods are called.
+ *
+ * Auth: HMAC-SHA256 over the canonical "key=value&..." string in URL order.
  * `X-BX-APIKEY` header carries the key. No JWT cycle — refreshCredentials
  * is a no-op (API key/secret are static credentials).
  */
 class BingxConnector implements ConnectorInterface
 {
-    /** Page size for positionHistory + allOrders pagination. */
+    /** Page size for allOrders pagination per chunk. */
     private const PAGE_SIZE = 100;
 
     /**
-     * Max span BingX allows per request on positionHistory / allOrders
-     * (server-side, returns code 109400 above this). We chunk our actual
-     * lookback into windows of this size — this is a broker constraint,
+     * Max span BingX allows per request on /allOrders and other history
+     * endpoints (server-side, returns code 109400 above this). We chunk
+     * our actual lookback into windows of this size — broker constraint,
      * not a product choice.
      */
     private const CHUNK_WINDOW_SECONDS = 7 * 24 * 3600;
@@ -34,55 +41,157 @@ class BingxConnector implements ConnectorInterface
     private Client $httpClient;
     private string $baseUrl;
     private DealNormalizer $normalizer;
+    private BingxFillReconstructor $reconstructor;
+
+    /**
+     * Symbols persisted across syncs (from broker_connections.symbols_seen).
+     * Set by the caller before fetch* methods so the connector can walk
+     * fills for symbols the user has fully closed since the last sync.
+     * @var string[]
+     */
+    private array $knownSymbols = [];
+
+    /**
+     * Memoised reconstruction result for the current sync run, keyed by
+     * the sinceCursor value passed to fetchDeals/fetchOpenPositions. Reset
+     * by resetSyncCache() between syncs (called by BrokerSyncService).
+     */
+    private ?array $cachedReconstruction = null;
+    private ?string $cachedCursorKey = null;
 
     public function __construct(Client $httpClient, string $baseUrl)
     {
         $this->httpClient = $httpClient;
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->normalizer = new DealNormalizer();
+        $this->reconstructor = new BingxFillReconstructor();
+    }
+
+    /**
+     * Symbols the caller knows have been seen on this connection previously
+     * (read from broker_connections.symbols_seen). The connector unions them
+     * with currently-open symbols when walking fills, so a symbol the user
+     * fully closed since last sync still gets re-scanned for late fills.
+     *
+     * @param string[] $symbols
+     */
+    public function setKnownSymbols(array $symbols): void
+    {
+        $this->knownSymbols = array_values(array_unique(array_filter($symbols, 'is_string')));
+    }
+
+    /**
+     * Force the next fetch* call to repull from BingX rather than reuse a
+     * cached reconstruction. Called by BrokerSyncService at the start of
+     * each sync to keep instances safely reusable.
+     */
+    public function resetSyncCache(): void
+    {
+        $this->cachedReconstruction = null;
+        $this->cachedCursorKey = null;
+    }
+
+    /**
+     * Symbols actually observed during the latest reconstruction, used by
+     * the caller to update broker_connections.symbols_seen.
+     *
+     * @return string[]
+     */
+    public function getSeenSymbols(): array
+    {
+        return $this->cachedReconstruction['seenSymbols'] ?? [];
     }
 
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
     {
-        // Step 1: enumerate symbols the user is currently active on. BingX
-        // requires `symbol` per positionHistory call, so we use open
-        // positions as the symbol seed. Note the limitation: a symbol the
-        // user fully closed before the previous sync cursor won't be
-        // re-scanned here. The cursor + 3-month window bounds the gap in
-        // practice.
-        $openPositions = $this->httpGetSigned(
-            '/openApi/swap/v2/user/positions',
-            [],
-            $credentials,
-        );
-        $symbols = $this->extractActiveSymbols($openPositions);
+        $reconstruction = $this->runReconstruction($credentials, $sinceCursor);
 
-        if (empty($symbols)) {
-            return ['deals' => [], 'cursor' => null, 'raw_count' => 0];
+        return [
+            'deals' => $reconstruction['closed'],
+            'cursor' => $reconstruction['latestFillTime'] !== null
+                ? (string) $reconstruction['latestFillTime']
+                : null,
+            'raw_count' => $reconstruction['rawCount'],
+        ];
+    }
+
+    public function fetchOpenPositions(array $credentials): array
+    {
+        // Same reconstruction the closed-deals path uses — the run is
+        // memoised so we don't double-pull allOrders. The "open" bucket
+        // is positions that still have non-zero remaining_size after the
+        // walk; each carries its exits[] array so any partial closes
+        // already taken before the position fully closes are inserted
+        // into the journal as partial_exits.
+        $reconstruction = $this->runReconstruction($credentials, null);
+
+        $positions = $reconstruction['open'];
+        // Cross-check with the live /user/positions snapshot we already
+        // pulled inside runReconstruction (no extra HTTP call). Positions
+        // visible to BingX but absent from the fills walk (because their
+        // opening fill is older than what BingX serves) are surfaced
+        // minimally so the journal still has a row.
+        $liveSnapshotMissing = $this->buildLiveOpenPositionsNotInReconstruction(
+            $reconstruction['liveSnapshot'] ?? [],
+            $reconstruction['open']
+        );
+        foreach ($liveSnapshotMissing as $live) {
+            $positions[] = $live;
         }
 
-        $deals = [];
-        $rawCount = 0;
-        $latestCloseTime = null;
+        return [
+            'positions' => $positions,
+            'raw_count' => count($positions),
+        ];
+    }
 
+    /**
+     * Memoised wrapper around the actual fills walk + reconstruction. Same
+     * input → same output, second call within a sync is free.
+     *
+     * @return array{closed: array, open: array, latestFillTime: ?int, rawCount: int, seenSymbols: string[]}
+     */
+    private function runReconstruction(array $credentials, ?string $sinceCursor): array
+    {
+        $key = (string) $sinceCursor;
+        if ($this->cachedReconstruction !== null && $this->cachedCursorKey === $key) {
+            return $this->cachedReconstruction;
+        }
+
+        // 1. Enumerate symbols: currently open positions + persisted
+        // "symbols seen" (set via setKnownSymbols). The fills walk needs
+        // a symbol per request — symbols closed before the cursor won't
+        // appear in /user/positions, hence the persisted history.
+        $openPositionsRaw = $this->httpGetSigned('/openApi/swap/v2/user/positions', [], $credentials);
+        $liveSymbols = $this->extractActiveSymbols($openPositionsRaw);
+        $symbols = array_values(array_unique(array_merge($liveSymbols, $this->knownSymbols)));
+
+        if (empty($symbols)) {
+            $result = [
+                'closed' => [],
+                'open' => [],
+                'latestFillTime' => null,
+                'rawCount' => 0,
+                'seenSymbols' => [],
+                'liveSnapshot' => $openPositionsRaw,
+            ];
+            $this->cachedReconstruction = $result;
+            $this->cachedCursorKey = $key;
+            return $result;
+        }
+
+        // 2. Walk fills per symbol, accumulate into a single normalised list.
         $now = (int) (microtime(true) * 1000);
-        $cursorMs = $sinceCursor !== null ? (int) $sinceCursor : null;
+        $cursorMs = $sinceCursor !== null && $sinceCursor !== '' ? (int) $sinceCursor : null;
 
-        // BingX caps each positionHistory request at 7 days (code 109400),
-        // so we chunk. Two distinct stop policies depending on whether the
-        // sync has a cursor:
-        //
-        //   - With cursor (steady-state sync): walk back exactly to cursor,
-        //     keep going through empty chunks. A dormant account is still
-        //     a live account — empty windows are "no opportunities this
-        //     week", not "account gone".
-        //
-        //   - Without cursor (first sync): walk back as far as the account
-        //     has history. Stop at the first empty chunk — that's BingX
-        //     telling us there's no more data older than this point.
+        $allFills = [];
+        $rawCount = 0;
+        $latestFillTime = null;
+        $seenSymbols = [];
+
         foreach ($symbols as $symbol) {
+            $hasFillsOnSymbol = false;
             $chunkEnd = $now;
-
             while (true) {
                 $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
                 if ($cursorMs !== null) {
@@ -93,68 +202,171 @@ class BingxConnector implements ConnectorInterface
                 }
 
                 $data = $this->httpGetSigned(
-                    '/openApi/swap/v1/trade/positionHistory',
+                    '/openApi/swap/v2/trade/allOrders',
                     [
                         'symbol' => $symbol,
-                        'startTs' => (string) $chunkStart,
-                        'endTs' => (string) $chunkEnd,
-                        'pageSize' => (string) self::PAGE_SIZE,
+                        'startTime' => (string) $chunkStart,
+                        'endTime' => (string) $chunkEnd,
+                        'limit' => (string) self::PAGE_SIZE,
                     ],
                     $credentials,
                 );
 
-                $list = $data['list'] ?? [];
+                $list = $data['orders'] ?? (is_array($data) ? $data : []);
                 $rawCount += count($list);
 
                 if (empty($list) && $cursorMs === null) {
                     break;
                 }
 
+                $chunkFillCount = 0;
                 foreach ($list as $raw) {
-                    $closeTime = (int) ($raw['closeTime'] ?? $raw['updateTime'] ?? 0);
-
-                    if ($closeTime > 0 && ($latestCloseTime === null || $closeTime > $latestCloseTime)) {
-                        $latestCloseTime = $closeTime;
-                    }
-
-                    if ($cursorMs !== null && $closeTime > 0 && $closeTime <= $cursorMs) {
+                    $fill = $this->normalizer->normalizeBingxFill($raw);
+                    if ($fill === null) {
                         continue;
                     }
-
-                    $normalized = $this->normalizer->normalizeBingxClosedPosition($raw);
-                    if ($normalized !== null) {
-                        $deals[] = $normalized;
+                    $chunkFillCount++;
+                    $hasFillsOnSymbol = true;
+                    $allFills[] = $fill;
+                    if ($fill['time'] > 0 && ($latestFillTime === null || $fill['time'] > $latestFillTime)) {
+                        $latestFillTime = $fill['time'];
                     }
                 }
 
-                // Step the window back by one chunk; the +1ms boundary
-                // guarantees no overlap (closeTime is strictly within
-                // (startTs, endTs] per BingX semantics).
                 $chunkEnd = $chunkStart - 1;
+            }
+            if ($hasFillsOnSymbol) {
+                $seenSymbols[] = $symbol;
             }
         }
 
+        // 3. Reconstruct position lifecycles from fills.
+        $reconstructed = $this->reconstructor->reconstruct($allFills);
+
+        // Map reconstructed rows to the journal-side normalised shape.
+        $closed = array_map([$this, 'toJournalClosedShape'], $reconstructed['closed']);
+        $open = array_map([$this, 'toJournalOpenShape'], $reconstructed['open']);
+
+        $result = [
+            'closed' => $closed,
+            'open' => $open,
+            'latestFillTime' => $latestFillTime,
+            'rawCount' => $rawCount,
+            'seenSymbols' => array_values(array_unique($seenSymbols)),
+            'liveSnapshot' => $openPositionsRaw,
+        ];
+        $this->cachedReconstruction = $result;
+        $this->cachedCursorKey = $key;
+        return $result;
+    }
+
+    /**
+     * Convert a reconstructor "closed" cycle to the row shape downstream
+     * services (ImportService.importNormalizedPositions) consume.
+     */
+    private function toJournalClosedShape(array $cycle): array
+    {
         return [
-            'deals' => $deals,
-            'cursor' => $latestCloseTime !== null ? (string) $latestCloseTime : null,
-            'raw_count' => $rawCount,
+            'symbol' => $cycle['symbol'],
+            'direction' => $cycle['direction'],
+            'entry_price' => round((float) $cycle['entry_price'], 5),
+            'exit_price' => round((float) $cycle['exit_price'], 5),
+            'size' => round((float) $cycle['size'], 5),
+            'pnl' => round((float) $cycle['pnl'], 2),
+            'opened_at' => $this->msToDatetime((int) $cycle['opened_at']),
+            'closed_at' => $this->msToDatetime((int) $cycle['closed_at']),
+            'external_id' => $cycle['external_id'],
+            'pips' => null,
+            'comment' => null,
+            'exits' => array_map([$this, 'mapExitToJournal'], $cycle['exits']),
         ];
     }
 
-    public function fetchOpenPositions(array $credentials): array
+    /**
+     * Convert a reconstructor "open" cycle to the row shape
+     * BrokerOpenSyncService consumes for INSERT/UPDATE on currently-open
+     * positions, carrying any prior partial exits so the journal logs them
+     * as partial_exits attached to the OPEN trade.
+     */
+    private function toJournalOpenShape(array $cycle): array
     {
-        $data = $this->httpGetSigned('/openApi/swap/v2/user/positions', [], $credentials);
+        return [
+            'symbol' => $cycle['symbol'],
+            'direction' => $cycle['direction'],
+            'entry_price' => round((float) $cycle['entry_price'], 5),
+            'size' => round((float) $cycle['size'], 5),
+            'remaining_size' => round((float) $cycle['remaining_size'], 5),
+            'sl_price' => null,
+            'tp_price' => null,
+            'opened_at' => $this->msToDatetime((int) $cycle['opened_at']),
+            'external_id' => $cycle['external_id'],
+            'pnl' => round((float) $cycle['pnl'], 2),
+            'comment' => null,
+            'exits' => array_map([$this, 'mapExitToJournal'], $cycle['exits']),
+        ];
+    }
 
-        $positions = [];
-        $rawCount = is_array($data) ? count($data) : 0;
-        foreach (($data ?? []) as $raw) {
-            $normalized = $this->normalizer->normalizeBingxOpenPosition($raw);
-            if ($normalized !== null) {
-                $positions[] = $normalized;
-            }
+    private function mapExitToJournal(array $exit): array
+    {
+        return [
+            'exit_price' => round((float) $exit['exit_price'], 5),
+            'size' => round((float) $exit['size'], 5),
+            'pnl' => round((float) $exit['pnl'], 2),
+            'closed_at' => $this->msToDatetime((int) $exit['exited_at']),
+            'exit_type' => $exit['exit_type'] ?? 'MANUAL',
+            'external_id' => $exit['external_id'] ?? null,
+            'pips' => null,
+        ];
+    }
+
+    private function msToDatetime(int $ms): ?string
+    {
+        if ($ms <= 0) {
+            return null;
+        }
+        return gmdate('Y-m-d H:i:s', (int) ($ms / 1000));
+    }
+
+    /**
+     * For positions reported live by /user/positions but absent from the
+     * reconstructed "open" bucket (because the fills walk didn't reach
+     * the opening fill — typically a position opened months before any
+     * fill BingX still serves): surface them minimally so the journal
+     * still has a row. They carry no exits[] because we have no fill
+     * record for them.
+     *
+     * Operates on the already-fetched raw snapshot from runReconstruction
+     * to avoid a duplicate HTTP call.
+     *
+     * Dedup is by symbol+direction since the legacy normalizer uses
+     * `bingx_<positionId>` while the reconstructor uses
+     * `bingx_position_<orderId>` — different identifiers for the same
+     * real-world position. Matching by (symbol, direction) is sufficient
+     * because BingX only allows one open position per (symbol, side) in
+     * one-way mode, and in hedge mode positionSide gives the direction.
+     */
+    private function buildLiveOpenPositionsNotInReconstruction(array $liveSnapshot, array $reconstructedOpen): array
+    {
+        $reconstructedKeys = [];
+        foreach ($reconstructedOpen as $pos) {
+            $reconstructedKeys[$pos['symbol'] . '|' . $pos['direction']] = true;
         }
 
-        return ['positions' => $positions, 'raw_count' => $rawCount];
+        $live = [];
+        foreach ($liveSnapshot as $raw) {
+            $normalized = $this->normalizer->normalizeBingxOpenPosition($raw);
+            if ($normalized === null) {
+                continue;
+            }
+            $key = $normalized['symbol'] . '|' . $normalized['direction'];
+            if (isset($reconstructedKeys[$key])) {
+                continue;
+            }
+            $normalized['remaining_size'] = $normalized['size'];
+            $normalized['exits'] = [];
+            $live[] = $normalized;
+        }
+        return $live;
     }
 
     public function fetchOpenOrders(array $credentials): array
