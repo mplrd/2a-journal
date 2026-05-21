@@ -59,6 +59,16 @@ class BingxConnector implements ConnectorInterface
     private ?array $cachedReconstruction = null;
     private ?string $cachedCursorKey = null;
 
+    /**
+     * Memoised symbol-discovery result, keyed by the cursor passed in.
+     * Used by both runReconstruction (drives the fills walk) and
+     * fetchClosedOrders (drives the orders walk). Avoids hitting the
+     * income endpoint twice per sync.
+     */
+    private ?array $cachedSymbols = null;
+    private ?string $cachedSymbolsCursorKey = null;
+    private ?array $cachedLiveSnapshot = null;
+
     public function __construct(Client $httpClient, string $baseUrl)
     {
         $this->httpClient = $httpClient;
@@ -89,6 +99,9 @@ class BingxConnector implements ConnectorInterface
     {
         $this->cachedReconstruction = null;
         $this->cachedCursorKey = null;
+        $this->cachedSymbols = null;
+        $this->cachedSymbolsCursorKey = null;
+        $this->cachedLiveSnapshot = null;
     }
 
     /**
@@ -158,13 +171,11 @@ class BingxConnector implements ConnectorInterface
             return $this->cachedReconstruction;
         }
 
-        // 1. Enumerate symbols: currently open positions + persisted
-        // "symbols seen" (set via setKnownSymbols). The fills walk needs
-        // a symbol per request — symbols closed before the cursor won't
-        // appear in /user/positions, hence the persisted history.
-        $openPositionsRaw = $this->httpGetSigned('/openApi/swap/v2/user/positions', [], $credentials);
-        $liveSymbols = $this->extractActiveSymbols($openPositionsRaw);
-        $symbols = array_values(array_unique(array_merge($liveSymbols, $this->knownSymbols)));
+        // 1. Enumerate symbols (memoised, shared with fetchClosedOrders).
+        $now = (int) (microtime(true) * 1000);
+        $cursorMs = $sinceCursor !== null && $sinceCursor !== '' ? (int) $sinceCursor : null;
+        $symbols = $this->discoverAllSymbols($credentials, $cursorMs, $now);
+        $openPositionsRaw = $this->cachedLiveSnapshot ?? [];
 
         if (empty($symbols)) {
             $result = [
@@ -181,8 +192,7 @@ class BingxConnector implements ConnectorInterface
         }
 
         // 2. Walk fills per symbol, accumulate into a single normalised list.
-        $now = (int) (microtime(true) * 1000);
-        $cursorMs = $sinceCursor !== null && $sinceCursor !== '' ? (int) $sinceCursor : null;
+        // $now and $cursorMs were computed above for the income enumeration.
 
         $allFills = [];
         $rawCount = 0;
@@ -389,51 +399,63 @@ class BingxConnector implements ConnectorInterface
         return ['orders' => $orders, 'raw_count' => $rawCount];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
-        // Note: allOrders also requires `symbol` per BingX rules. For
-        // Phase 1 we query the same symbol set as fetchDeals (the user's
-        // currently active ones). If we needed broader coverage we'd
-        // persist a "symbols seen" set; out of scope here.
-        $openPositions = $this->httpGetSigned('/openApi/swap/v2/user/positions', [], $credentials);
-        $symbols = $this->extractActiveSymbols($openPositions);
+        // /allOrders requires `symbol` per call. Same symbol enumeration as
+        // fetchDeals: union of live positions + income-discovered history
+        // + persisted symbols_seen. Memoised within a single sync.
+        $now = (int) (microtime(true) * 1000);
+        $cursorMs = $sinceCursor !== null && $sinceCursor !== '' ? (int) $sinceCursor : null;
+        $symbols = $this->discoverAllSymbols($credentials, $cursorMs, $now);
 
         if (empty($symbols)) {
             return ['orders' => [], 'raw_count' => 0];
         }
 
-        // Single 7-day window: BingX caps each /trade/allOrders call at
-        // 7 days (code 109400). fetchClosedOrders is consumed only by the
-        // order diff (matching orders that disappeared from openOrders
-        // between two syncs), so any horizon longer than the sync interval
-        // is wasted work. Cron runs every 5 min → 7 days covers any
-        // realistic gap between two ticks, and the BingX cap matches.
-        $endTs = (int) (microtime(true) * 1000);
-        $startTs = $endTs - self::CHUNK_WINDOW_SECONDS * 1000;
-
+        // Chunk-walk /allOrders per symbol, same pattern as fetchDeals:
+        // walk to cursor on incremental sync, walk to first empty chunk
+        // on first sync. No arbitrary cap — the broker's empty response
+        // is the only stop signal.
         $orders = [];
         $rawCount = 0;
 
         foreach ($symbols as $symbol) {
-            $data = $this->httpGetSigned(
-                '/openApi/swap/v2/trade/allOrders',
-                [
-                    'symbol' => $symbol,
-                    'startTime' => (string) $startTs,
-                    'endTime' => (string) $endTs,
-                    'limit' => (string) self::PAGE_SIZE,
-                ],
-                $credentials,
-            );
-
-            $list = $data['orders'] ?? (is_array($data) ? $data : []);
-            $rawCount += count($list);
-
-            foreach ($list as $raw) {
-                $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
-                if ($normalized !== null) {
-                    $orders[] = $normalized;
+            $chunkEnd = $now;
+            while (true) {
+                $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
+                if ($cursorMs !== null) {
+                    $chunkStart = max($cursorMs + 1, $chunkStart);
                 }
+                if ($chunkStart >= $chunkEnd) {
+                    break;
+                }
+
+                $data = $this->httpGetSigned(
+                    '/openApi/swap/v2/trade/allOrders',
+                    [
+                        'symbol' => $symbol,
+                        'startTime' => (string) $chunkStart,
+                        'endTime' => (string) $chunkEnd,
+                        'limit' => (string) self::PAGE_SIZE,
+                    ],
+                    $credentials,
+                );
+
+                $list = $data['orders'] ?? (is_array($data) ? $data : []);
+                $rawCount += count($list);
+
+                if (empty($list) && $cursorMs === null) {
+                    break;
+                }
+
+                foreach ($list as $raw) {
+                    $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
+                    if ($normalized !== null) {
+                        $orders[] = $normalized;
+                    }
+                }
+
+                $chunkEnd = $chunkStart - 1;
             }
         }
 
@@ -454,6 +476,26 @@ class BingxConnector implements ConnectorInterface
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        try {
+            $data = $this->httpGetSigned('/openApi/swap/v3/user/balance', [], $credentials);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        // BingX swap v3 response shape (best-effort, alias-tolerant):
+        //   data.balance.equity  → preferred (balance + unrealized PnL)
+        //   data.balance.balance → fallback (just available + frozen)
+        //   data.equity / data.balance → some accounts/versions
+        $inner = is_array($data) ? ($data['balance'] ?? $data) : [];
+        $equity = $inner['equity'] ?? $inner['balance'] ?? null;
+        if ($equity === null) {
+            return null;
+        }
+        return (float) $equity;
     }
 
     public function placeOrder(array $credentials, array $order): array
@@ -780,6 +822,96 @@ class BingxConnector implements ConnectorInterface
         $list = array_keys($symbols);
         sort($list);
         return $list;
+    }
+
+    /**
+     * Full symbol discovery for a sync run: union of live positions,
+     * historically-active symbols (from /user/income walk), and the
+     * symbols_seen set persisted from prior syncs. Memoised per cursor
+     * key so the income walk runs once per sync at most.
+     *
+     * @return string[] Union of symbols to scan for this sync
+     */
+    private function discoverAllSymbols(array $credentials, ?int $cursorMs, int $now): array
+    {
+        $key = (string) $cursorMs;
+        if ($this->cachedSymbols !== null && $this->cachedSymbolsCursorKey === $key) {
+            return $this->cachedSymbols;
+        }
+
+        $openPositionsRaw = $this->httpGetSigned('/openApi/swap/v2/user/positions', [], $credentials);
+        $liveSymbols = $this->extractActiveSymbols($openPositionsRaw);
+        $incomeSymbols = $this->discoverSymbolsFromIncome($credentials, $cursorMs, $now);
+
+        $union = array_values(array_unique(array_merge($liveSymbols, $incomeSymbols, $this->knownSymbols)));
+        sort($union);
+
+        $this->cachedSymbols = $union;
+        $this->cachedSymbolsCursorKey = $key;
+        $this->cachedLiveSnapshot = $openPositionsRaw;
+        return $union;
+    }
+
+    /**
+     * Discover all symbols the user has ever had trading activity on, by
+     * walking /openApi/swap/v2/user/income (P&L, commission, funding fee
+     * records). Called WITHOUT a `symbol` param, BingX returns income
+     * records across every symbol in one call — exactly what we need to
+     * enumerate the historical breadth of an account.
+     *
+     * Chunk-walked in 7-day windows (BingX caps every history endpoint at
+     * 7 days per request, code 109400). Walks to cursor on incremental
+     * syncs, to the first empty chunk on first sync. No arbitrary cap on
+     * lookback — the broker's empty response is the only stop signal.
+     *
+     * @return string[] Unique symbols observed in income records
+     */
+    private function discoverSymbolsFromIncome(array $credentials, ?int $cursorMs, int $now): array
+    {
+        $found = [];
+        $chunkEnd = $now;
+
+        while (true) {
+            $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
+            if ($cursorMs !== null) {
+                $chunkStart = max($cursorMs + 1, $chunkStart);
+            }
+            if ($chunkStart >= $chunkEnd) {
+                break;
+            }
+
+            $data = $this->httpGetSigned(
+                '/openApi/swap/v2/user/income',
+                [
+                    'startTime' => (string) $chunkStart,
+                    'endTime' => (string) $chunkEnd,
+                    'limit' => '1000',
+                ],
+                $credentials,
+            );
+
+            // Response shape: array of income records (no wrapping under
+            // "incomes" or similar at the time of writing). Tolerate both
+            // for safety.
+            $list = is_array($data) ? $data : ($data['incomes'] ?? []);
+
+            if (empty($list) && $cursorMs === null) {
+                break;
+            }
+
+            foreach ($list as $row) {
+                $symbol = $row['symbol'] ?? '';
+                if ($symbol !== '') {
+                    $found[$symbol] = true;
+                }
+            }
+
+            $chunkEnd = $chunkStart - 1;
+        }
+
+        $out = array_keys($found);
+        sort($out);
+        return $out;
     }
 
 }

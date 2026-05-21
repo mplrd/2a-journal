@@ -45,9 +45,13 @@ interface ConnectorInterface
      * disappearances.
      *
      * @param array $credentials Decrypted credentials
+     * @param ?string $sinceCursor Optional cursor to walk back to (same
+     *                              format as fetchDeals's cursor). Connectors
+     *                              that don't paginate historically may
+     *                              ignore it.
      * @return array{orders: array, raw_count: int}
      */
-    public function fetchClosedOrders(array $credentials): array;
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array;
 
     /**
      * Refresh credentials (e.g. OAuth token refresh).
@@ -59,6 +63,19 @@ interface ConnectorInterface
      * Test the connection with current credentials.
      */
     public function testConnection(array $credentials): bool;
+
+    /**
+     * Fetch the current account equity (or balance — connector chooses
+     * whichever is the most meaningful "total value" figure the broker
+     * exposes, typically equity = balance + unrealized PnL).
+     *
+     * Returns null when the broker doesn't expose a balance endpoint or
+     * the call fails — the sync logs the failure but doesn't abort the
+     * rest of the run.
+     *
+     * @param array $credentials Decrypted credentials
+     */
+    public function fetchBalance(array $credentials): ?float;
 
     /**
      * Place an order on the broker. Throws BrokerOrderException on rejection
