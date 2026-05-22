@@ -70,7 +70,7 @@ class MetaApiConnector implements ConnectorInterface
         return ['orders' => [], 'raw_count' => 0];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
         return ['orders' => [], 'raw_count' => 0];
     }
@@ -96,6 +96,14 @@ class MetaApiConnector implements ConnectorInterface
         } catch (GuzzleException) {
             return false;
         }
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        // MetaApi balance lives on /accounts/{id}/account-information.equity
+        // — not wired yet on this connector. Return null so BrokerSyncService
+        // skips the update silently for MetaApi-synced accounts.
+        return null;
     }
 
     public function placeOrder(array $credentials, array $order): array

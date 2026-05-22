@@ -11,6 +11,7 @@ use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\SyncLogRepository;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Import\ImportService;
+use App\Repositories\AccountRepository;
 use App\Services\Import\RowGroupingService;
 
 class BrokerSyncService
@@ -27,6 +28,7 @@ class BrokerSyncService
         private ConnectorInterface $bingxConnector,
         private BrokerOpenSyncService $openSyncService,
         private BrokerOrderSyncService $orderSyncService,
+        private ?AccountRepository $accountRepo = null,
     ) {}
 
     /**
@@ -124,7 +126,7 @@ class BrokerSyncService
             // EXPIRED, or CANCELLED accurately rather than always defaulting
             // to CANCELLED.
             $openOrdersResult = $connector->fetchOpenOrders($credentials);
-            $closedOrdersResult = $connector->fetchClosedOrders($credentials);
+            $closedOrdersResult = $connector->fetchClosedOrders($credentials, $connection['sync_cursor']);
             $orderStats = $this->orderSyncService->apply(
                 BrokerProvider::from($connection['provider']),
                 $userId,
@@ -158,6 +160,25 @@ class BrokerSyncService
             }
 
             $this->connectionRepo->update($connectionId, $updateData);
+
+            // Pull the broker-reported balance and persist it on the account
+            // row. Failure-tolerant: a connector that doesn't expose balance
+            // returns null and we leave the previous value alone. Wrapped in
+            // a try/catch so a balance hiccup never aborts an otherwise
+            // successful sync.
+            try {
+                $balance = $connector->fetchBalance($credentials);
+                if ($balance !== null && $this->accountRepo !== null) {
+                    $this->accountRepo->updateBrokerBalance((int) $connection['account_id'], $balance);
+                }
+            } catch (\Throwable $e) {
+                // Logged via BrokerLogger? Keep silent here — the sync logs
+                // status SUCCESS regardless; the balance is "best effort".
+                BrokerLogger::failure(strtolower($connection['provider']), 'balance_fetch_failed', [
+                    'msg' => $e->getMessage(),
+                    'account_id' => (int) $connection['account_id'],
+                ]);
+            }
 
             // Update sync log
             $this->syncLogRepo->update($syncLog['id'], [

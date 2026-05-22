@@ -365,6 +365,7 @@ $brokerSyncService = new BrokerSyncService(
     $bingxConnector,
     $brokerOpenSyncService,
     $brokerOrderSyncService,
+    $accountRepo,
 );
 $brokerSyncController = new BrokerSyncController(
     $brokerSyncService,

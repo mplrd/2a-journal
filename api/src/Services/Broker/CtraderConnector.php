@@ -111,7 +111,7 @@ class CtraderConnector implements ConnectorInterface
         return ['orders' => [], 'raw_count' => 0];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
         return ['orders' => [], 'raw_count' => 0];
     }
@@ -164,6 +164,14 @@ class CtraderConnector implements ConnectorInterface
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        // cTrader balance is exposed via ProtoOATraderRes (account snapshot
+        // returned after ProtoOAAccountAuthReq). Not wired yet on this
+        // connector. Return null so the broker sync skips the update.
+        return null;
     }
 
     public function placeOrder(array $credentials, array $order): array

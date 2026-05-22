@@ -147,6 +147,7 @@ try {
         $bingxConnector,
         $brokerOpenSyncService,
         $brokerOrderSyncService,
+        $accountRepo,
     );
 
     // Live settings: prefer DB-backed values (admin BO override), fall back to

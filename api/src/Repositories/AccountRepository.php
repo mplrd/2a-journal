@@ -39,6 +39,21 @@ class AccountRepository
         return $this->findById((int)$this->pdo->lastInsertId());
     }
 
+    /**
+     * Update the broker-reported balance + sync timestamp. Called by
+     * BrokerSyncService at the end of a successful sync when the connector's
+     * fetchBalance() returns a numeric value. NOT touched on connectors that
+     * don't expose balance (returns null) — the previous value stays, the
+     * sync timestamp stays, and the UI can display "stale since ...".
+     */
+    public function updateBrokerBalance(int $accountId, float $balance): void
+    {
+        $this->pdo->prepare(
+            'UPDATE accounts SET broker_balance = :balance, broker_balance_synced_at = CURRENT_TIMESTAMP
+             WHERE id = :id'
+        )->execute(['balance' => $balance, 'id' => $accountId]);
+    }
+
     public function findById(int $id): ?array
     {
         $stmt = $this->pdo->prepare(

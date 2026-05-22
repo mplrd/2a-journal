@@ -385,7 +385,7 @@ class FakeConnector implements ConnectorInterface
         return ['orders' => [], 'raw_count' => 0];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
         return ['orders' => [], 'raw_count' => 0];
     }
@@ -398,6 +398,11 @@ class FakeConnector implements ConnectorInterface
     public function testConnection(array $credentials): bool
     {
         return true;
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        return null;
     }
 
     public function placeOrder(array $credentials, array $order): array

@@ -159,7 +159,7 @@ class OuinexConnector implements ConnectorInterface
         ];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
         $credentials = $this->refreshCredentials($credentials);
         $jwt = $credentials['jwt'];
@@ -218,6 +218,13 @@ class OuinexConnector implements ConnectorInterface
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        // Ouinex balance via GraphQL account query — not wired yet.
+        // Return null so the broker sync skips the update.
+        return null;
     }
 
     public function placeOrder(array $credentials, array $order): array
