@@ -45,9 +45,13 @@ interface ConnectorInterface
      * disappearances.
      *
      * @param array $credentials Decrypted credentials
+     * @param ?string $sinceCursor Optional cursor to walk back to (same
+     *                              format as fetchDeals's cursor). Connectors
+     *                              that don't paginate historically may
+     *                              ignore it.
      * @return array{orders: array, raw_count: int}
      */
-    public function fetchClosedOrders(array $credentials): array;
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array;
 
     /**
      * Refresh credentials (e.g. OAuth token refresh).
@@ -59,4 +63,64 @@ interface ConnectorInterface
      * Test the connection with current credentials.
      */
     public function testConnection(array $credentials): bool;
+
+    /**
+     * Fetch the current account equity (or balance — connector chooses
+     * whichever is the most meaningful "total value" figure the broker
+     * exposes, typically equity = balance + unrealized PnL).
+     *
+     * Returns null when the broker doesn't expose a balance endpoint or
+     * the call fails — the sync logs the failure but doesn't abort the
+     * rest of the run.
+     *
+     * @param array $credentials Decrypted credentials
+     */
+    public function fetchBalance(array $credentials): ?float;
+
+    /**
+     * Place an order on the broker. Throws BrokerOrderException on rejection
+     * (insufficient margin, invalid symbol, broker offline…). Connectors that
+     * do not yet support outbound orders may throw BrokerOrderException with
+     * providerCode='NOT_IMPLEMENTED'.
+     *
+     * $order shape (all keys ASCII snake_case):
+     * - symbol (string, required) — broker-side symbol identifier
+     * - direction (string, required) — 'BUY' | 'SELL'
+     * - order_type (string, required) — 'MARKET' | 'LIMIT' | 'STOP'
+     * - size (float, required) — lot/contract size in the broker's unit
+     * - entry_price (float|null) — required for LIMIT/STOP, ignored for MARKET
+     * - sl_price (float|null) — absolute stop-loss price
+     * - tp_prices (float[]) — absolute take-profit prices (broker may only honor [0])
+     * - expires_at (string|null) — ISO-8601 UTC; broker may ignore
+     * - client_order_id (string|null) — caller-provided idempotency key
+     *
+     * Return shape:
+     * - external_order_id (string) — broker's id for the placed order
+     * - status (string|null) — broker's internal status if known
+     * - raw (array) — broker's raw response (for audit)
+     *
+     * @param array $credentials Decrypted credentials
+     * @param array $order Normalized order spec (see above)
+     * @return array{external_order_id: string, status: string|null, raw: array}
+     */
+    public function placeOrder(array $credentials, array $order): array;
+
+    /**
+     * Cancel a pending order on the broker.
+     *
+     * @param array $credentials Decrypted credentials
+     * @param string $externalOrderId Broker's order id (as returned by placeOrder)
+     * @return array{status: string|null, raw: array}
+     */
+    public function cancelOrder(array $credentials, string $externalOrderId): array;
+
+    /**
+     * Close (fully or partially) an open position on the broker.
+     *
+     * @param array $credentials Decrypted credentials
+     * @param string $externalPositionId Broker's position id
+     * @param float|null $sizeOverride If null, close the entire position
+     * @return array{status: string|null, raw: array}
+     */
+    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array;
 }

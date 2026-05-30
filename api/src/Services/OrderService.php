@@ -45,6 +45,21 @@ class OrderService
 
     public function create(int $userId, array $data): array
     {
+        return $this->createInternal($userId, $data, TriggerType::MANUAL);
+    }
+
+    /**
+     * Create an order on behalf of an automated trigger (e.g. TradingView
+     * webhook). Same validation/derivation rules as create(), but the
+     * status_history row carries TriggerType::WEBHOOK.
+     */
+    public function createFromWebhook(int $userId, array $data): array
+    {
+        return $this->createInternal($userId, $data, TriggerType::WEBHOOK);
+    }
+
+    private function createInternal(int $userId, array $data, TriggerType $trigger): array
+    {
         // Validate account ownership
         $this->validateRequired($data, 'account_id', 'orders.error.field_required');
         $accountId = (int) $data['account_id'];
@@ -127,7 +142,7 @@ class OrderService
             'previous_status' => null,
             'new_status' => OrderStatus::PENDING->value,
             'user_id' => $userId,
-            'trigger_type' => TriggerType::MANUAL->value,
+            'trigger_type' => $trigger->value,
         ]);
 
         return $order;

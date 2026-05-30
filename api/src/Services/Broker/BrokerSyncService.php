@@ -11,6 +11,7 @@ use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\SyncLogRepository;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Import\ImportService;
+use App\Repositories\AccountRepository;
 use App\Services\Import\RowGroupingService;
 
 class BrokerSyncService
@@ -27,6 +28,7 @@ class BrokerSyncService
         private ConnectorInterface $bingxConnector,
         private BrokerOpenSyncService $openSyncService,
         private BrokerOrderSyncService $orderSyncService,
+        private ?AccountRepository $accountRepo = null,
     ) {}
 
     /**
@@ -75,6 +77,18 @@ class BrokerSyncService
                 $credentials = $refreshed;
             }
 
+            // Hand the connector the symbols we've persisted from previous
+            // syncs so it can scan history on symbols the user has fully
+            // closed (no longer in /user/positions). Only BingX supports
+            // this today; other connectors silently no-op.
+            if (method_exists($connector, 'setKnownSymbols')) {
+                $persistedSymbols = $this->decodeSymbolsSeen($connection['symbols_seen'] ?? null);
+                $connector->setKnownSymbols($persistedSymbols);
+            }
+            if (method_exists($connector, 'resetSyncCache')) {
+                $connector->resetSyncCache();
+            }
+
             // Fetch deals from broker
             $result = $connector->fetchDeals($credentials, $connection['sync_cursor']);
             $deals = $result['deals'];
@@ -112,7 +126,7 @@ class BrokerSyncService
             // EXPIRED, or CANCELLED accurately rather than always defaulting
             // to CANCELLED.
             $openOrdersResult = $connector->fetchOpenOrders($credentials);
-            $closedOrdersResult = $connector->fetchClosedOrders($credentials);
+            $closedOrdersResult = $connector->fetchClosedOrders($credentials, $connection['sync_cursor']);
             $orderStats = $this->orderSyncService->apply(
                 BrokerProvider::from($connection['provider']),
                 $userId,
@@ -131,7 +145,40 @@ class BrokerSyncService
             if ($result['cursor']) {
                 $updateData['sync_cursor'] = $result['cursor'];
             }
+
+            // Persist the symbols the connector reports having observed
+            // during this run. Union with what was previously stored — we
+            // never lose a symbol once seen.
+            if (method_exists($connector, 'getSeenSymbols')) {
+                $previouslySeen = $this->decodeSymbolsSeen($connection['symbols_seen'] ?? null);
+                $newlySeen = $connector->getSeenSymbols();
+                $union = array_values(array_unique(array_merge($previouslySeen, $newlySeen)));
+                sort($union);
+                if (!empty($union)) {
+                    $updateData['symbols_seen'] = json_encode($union);
+                }
+            }
+
             $this->connectionRepo->update($connectionId, $updateData);
+
+            // Pull the broker-reported balance and persist it on the account
+            // row. Failure-tolerant: a connector that doesn't expose balance
+            // returns null and we leave the previous value alone. Wrapped in
+            // a try/catch so a balance hiccup never aborts an otherwise
+            // successful sync.
+            try {
+                $balance = $connector->fetchBalance($credentials);
+                if ($balance !== null && $this->accountRepo !== null) {
+                    $this->accountRepo->updateBrokerBalance((int) $connection['account_id'], $balance);
+                }
+            } catch (\Throwable $e) {
+                // Logged via BrokerLogger? Keep silent here — the sync logs
+                // status SUCCESS regardless; the balance is "best effort".
+                BrokerLogger::failure(strtolower($connection['provider']), 'balance_fetch_failed', [
+                    'msg' => $e->getMessage(),
+                    'account_id' => (int) $connection['account_id'],
+                ]);
+            }
 
             // Update sync log
             $this->syncLogRepo->update($syncLog['id'], [
@@ -185,5 +232,28 @@ class BrokerSyncService
             BrokerProvider::OUINEX => $this->ouinexConnector,
             BrokerProvider::BINGX => $this->bingxConnector,
         };
+    }
+
+    /**
+     * Decode the JSON-encoded symbols_seen blob stored on broker_connections.
+     * Tolerates null, empty string and malformed JSON — the union we re-write
+     * at the end of the sync uses the connector's report as the new source
+     * of truth anyway. Returns a plain string[] of unique symbols.
+     *
+     * @return string[]
+     */
+    private function decodeSymbolsSeen(mixed $stored): array
+    {
+        if ($stored === null || $stored === '') {
+            return [];
+        }
+        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        return array_values(array_unique(array_filter(
+            array_map('strval', $decoded),
+            fn($v) => $v !== ''
+        )));
     }
 }

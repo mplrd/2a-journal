@@ -165,7 +165,7 @@ class ImportController extends Controller
     public function rollback(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $batchId = (int) $request->getAttribute('id');
+        $batchId = (int) $request->getRouteParam('id');
 
         $this->importService->rollback($batchId, $userId);
 

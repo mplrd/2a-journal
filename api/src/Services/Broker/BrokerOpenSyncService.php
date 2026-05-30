@@ -5,6 +5,7 @@ namespace App\Services\Broker;
 use App\Enums\BrokerProvider;
 use App\Enums\ExitType;
 use App\Enums\TradeStatus;
+use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\TradeRepository;
 
@@ -37,6 +38,7 @@ class BrokerOpenSyncService
     public function __construct(
         private PositionRepository $positionRepo,
         private TradeRepository $tradeRepo,
+        private ?PartialExitRepository $partialExitRepo = null,
     ) {}
 
     /**
@@ -117,18 +119,36 @@ class BrokerOpenSyncService
             'position_type' => 'TRADE',
         ]);
 
-        $this->tradeRepo->create([
+        $trade = $this->tradeRepo->create([
             'position_id' => $position['id'],
-            'opened_at' => $row['opened_at'],
-            'remaining_size' => $row['size'],
+            // BingX /user/positions doesn't expose an open time on the live
+            // snapshot, so normalizeBingxOpenPosition returns null and we
+            // fall back to "now". It's at worst the moment we discovered the
+            // position, slightly later than the real open — acceptable for
+            // an OPEN row whose lifecycle is being reconciled live anyway.
+            // Ouinex/cTrader/MetaApi provide opened_at when they support
+            // open snapshots, so this fallback only kicks in for connectors
+            // that genuinely don't expose it.
+            'opened_at' => $row['opened_at'] ?? date('Y-m-d H:i:s'),
+            'remaining_size' => $row['remaining_size'] ?? $row['size'],
             'status' => TradeStatus::OPEN->value,
         ]);
+
+        // BingX (and any connector that reconstructs from fills) may emit
+        // an exits[] array on still-open positions — partial closes that
+        // happened before the position fully closes. Persist them as
+        // partial_exits rows so the journal reflects the real activity.
+        $this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []);
     }
 
     /**
-     * Refresh the columns that Ouinex owns (entry_price, size, SL/TP,
+     * Refresh the columns the broker owns (entry_price, size, SL/TP,
      * direction, symbol). Setup, notes, and custom_field_values belong to
      * the user — they MUST NOT be touched by this service.
+     *
+     * Also reconciles partial_exits when the snapshot carries an exits[]
+     * array (broker connectors that walk fills): inserts any exit whose
+     * external_id isn't already on the trade. Idempotent across sync ticks.
      */
     private function updateBrokerFields(array $existing, array $snapshot): void
     {
@@ -141,8 +161,38 @@ class BrokerOpenSyncService
         ]);
 
         $this->tradeRepo->update((int) $existing['trade_id'], [
-            'remaining_size' => $snapshot['size'],
+            'remaining_size' => $snapshot['remaining_size'] ?? $snapshot['size'],
         ]);
+
+        $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
+    }
+
+    /**
+     * Insert exits[] coming from a connector reconstruction, dedup'd by
+     * external_id against what's already attached to the trade. No-op when
+     * the partial-exit repository wasn't injected (legacy connectors).
+     */
+    private function insertPartialExits(int $tradeId, array $exits): void
+    {
+        if (empty($exits) || $this->partialExitRepo === null) {
+            return;
+        }
+        $existing = $this->partialExitRepo->existingExternalIdsForTrade($tradeId);
+        foreach ($exits as $exit) {
+            $externalId = $exit['external_id'] ?? null;
+            if ($externalId !== null && isset($existing[$externalId])) {
+                continue;
+            }
+            $this->partialExitRepo->create([
+                'trade_id' => $tradeId,
+                'exited_at' => $exit['closed_at'] ?? $exit['exited_at'] ?? date('Y-m-d H:i:s'),
+                'exit_price' => $exit['exit_price'],
+                'size' => $exit['size'],
+                'exit_type' => $exit['exit_type'] ?? ExitType::MANUAL->value,
+                'pnl' => $exit['pnl'] ?? 0,
+                'external_id' => $externalId,
+            ]);
+        }
     }
 
     /**

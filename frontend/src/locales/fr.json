@@ -336,6 +336,7 @@
     "add_target": "Ajouter un objectif",
     "target_label": "Label",
     "target_points": "Points",
+    "target_price": "Prix",
     "target_size": "Taille",
     "transfer": "Transférer",
     "transfer_description": "Sélectionnez le compte cible pour transférer cette position.",
@@ -882,6 +883,7 @@
   "broker": {
     "connection": "Connexion broker",
     "not_connected": "Aucune connexion API configurée pour ce compte.",
+    "disabled_help": "Cette connexion a été désactivée suite à plusieurs erreurs consécutives. Supprime-la pour pouvoir en recréer une nouvelle.",
     "section_platforms": "Plateformes",
     "section_brokers": "Brokers",
     "connect_ctrader": "Connecter cTrader",
@@ -940,6 +942,72 @@
     },
     "success": {
       "disconnected": "Connexion supprimée avec succès"
+    }
+  },
+  "webhook": {
+    "tradingview": {
+      "title": "Webhooks TradingView",
+      "intro": "Recevez des alertes TradingView pour placer automatiquement des ordres sur le broker lié à ce compte.",
+      "create": "Créer un webhook",
+      "name_label": "Nom",
+      "name_placeholder": "ex. Signal scalping EUR/USD",
+      "no_webhooks": "Aucun webhook configuré pour ce compte.",
+      "status_active": "Actif",
+      "status_revoked": "Révoqué",
+      "last_triggered": "Dernier déclenchement",
+      "never": "Jamais",
+      "triggered_count": "{count} succès",
+      "errors_count": "{count} erreur(s)",
+      "actions": {
+        "revoke": "Révoquer",
+        "events": "Voir l'historique",
+        "copy_url": "Copier l'URL",
+        "copy_template": "Copier le template",
+        "copy_secret": "Copier le secret"
+      },
+      "created_modal": {
+        "title": "Webhook créé",
+        "warning": "Conservez l'URL, le secret et le template ci-dessous. Ils ne seront plus jamais affichés. En cas de perte, supprimez le webhook et recréez-en un nouveau.",
+        "url_label": "URL du webhook (à coller dans l'alerte TradingView)",
+        "secret_label": "Secret",
+        "template_label": "Template JSON (à coller dans le champ Message de l'alerte TradingView)",
+        "close": "J'ai bien sauvegardé"
+      },
+      "events": {
+        "title": "Historique des alertes",
+        "received_at": "Reçu le",
+        "status": "Statut",
+        "reason": "Raison",
+        "order": "Ordre",
+        "view_payload": "Voir le payload",
+        "empty": "Aucun événement reçu sur ce webhook.",
+        "status_received": "Reçu",
+        "status_processed": "Traité",
+        "status_rejected": "Rejeté",
+        "status_failed": "Échec broker",
+        "status_duplicate": "Doublon"
+      },
+      "reject_reason": {
+        "INVALID_TOKEN": "Token invalide",
+        "INVALID_SECRET": "Secret invalide",
+        "INVALID_PAYLOAD": "Payload invalide",
+        "WEBHOOK_REVOKED": "Webhook révoqué",
+        "NO_BROKER": "Aucun broker connecté",
+        "BROKER_INACTIVE": "Broker inactif",
+        "BROKER_ERROR": "Erreur broker",
+        "FEATURE_DISABLED": "Fonctionnalité désactivée"
+      }
+    },
+    "error": {
+      "feature_disabled": "Les webhooks TradingView sont désactivés sur ce serveur.",
+      "forbidden": "Accès refusé à ce webhook.",
+      "not_found": "Webhook introuvable.",
+      "invalid_name": "Le nom est requis (max. 120 caractères).",
+      "too_many": "Limite de webhooks atteinte pour ce compte."
+    },
+    "success": {
+      "created": "Webhook créé",
+      "revoked": "Webhook révoqué"
     }
   }
 }

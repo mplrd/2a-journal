@@ -111,7 +111,7 @@ class CtraderConnector implements ConnectorInterface
         return ['orders' => [], 'raw_count' => 0];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
         return ['orders' => [], 'raw_count' => 0];
     }
@@ -164,6 +164,212 @@ class CtraderConnector implements ConnectorInterface
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        // cTrader balance is exposed via ProtoOATraderRes (account snapshot
+        // returned after ProtoOAAccountAuthReq). Not wired yet on this
+        // connector. Return null so the broker sync skips the update.
+        return null;
+    }
+
+    public function placeOrder(array $credentials, array $order): array
+    {
+        $direction = strtoupper($order['direction'] ?? '');
+        $orderType = strtoupper($order['order_type'] ?? 'MARKET');
+        if (!in_array($direction, ['BUY', 'SELL'], true)) {
+            throw new \App\Exceptions\BrokerOrderException(
+                "Unsupported direction {$direction}",
+                'UNSUPPORTED_ORDER',
+            );
+        }
+        $orderTypeProto = match ($orderType) {
+            'MARKET' => 'MARKET',
+            'LIMIT' => 'LIMIT',
+            'STOP' => 'STOP',
+            default => throw new \App\Exceptions\BrokerOrderException(
+                "Unsupported order_type {$orderType}",
+                'UNSUPPORTED_ORDER',
+            ),
+        };
+
+        return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) use ($order, $direction, $orderTypeProto) {
+            $symbolId = $this->resolveSymbolId($ws, $accountId, (string) $order['symbol']);
+
+            // cTrader expresses volume in 1/100 lots (one lot = 100k for FX,
+            // 100 for index CFDs etc.). The caller passes a fractional lot
+            // ("size = 0.10") so we multiply by 100 and floor to int.
+            $volume = (int) floor(((float) $order['size']) * 100);
+            if ($volume <= 0) {
+                throw new \App\Exceptions\BrokerOrderException(
+                    'cTrader requires a positive integer volume (100 = 0.01 lot)',
+                    'INVALID_VOLUME',
+                );
+            }
+
+            $payload = [
+                'ctidTraderAccountId' => $accountId,
+                'symbolId' => $symbolId,
+                'orderType' => $orderTypeProto,
+                'tradeSide' => $direction,
+                'volume' => $volume,
+            ];
+
+            if ($orderTypeProto !== 'MARKET' && !empty($order['entry_price'])) {
+                $payload[$orderTypeProto === 'LIMIT' ? 'limitPrice' : 'stopPrice'] = (float) $order['entry_price'];
+            }
+            if (!empty($order['sl_price'])) {
+                $payload['stopLoss'] = (float) $order['sl_price'];
+            }
+            if (!empty($order['tp_prices'][0])) {
+                $payload['takeProfit'] = (float) $order['tp_prices'][0];
+            }
+            if (!empty($order['client_order_id'])) {
+                $payload['comment'] = mb_substr((string) $order['client_order_id'], 0, 256);
+            }
+
+            $response = $this->sendAndReceive($ws, 'ProtoOANewOrderReq', $payload);
+
+            // cTrader acknowledges with ProtoOAExecutionEvent carrying an order
+            // sub-object. The orderId lives at executionEvent.order.orderId.
+            $event = $response['order'] ?? $response['executionEvent']['order'] ?? null;
+            $orderId = $event['orderId'] ?? $response['orderId'] ?? null;
+            if ($orderId === null) {
+                throw new \App\Exceptions\BrokerOrderException(
+                    'cTrader did not return an orderId in ProtoOAExecutionEvent',
+                    'NO_ORDER_ID',
+                    is_array($response) ? $response : [],
+                );
+            }
+
+            return [
+                'external_order_id' => (string) $orderId,
+                'status' => $event['orderStatus'] ?? null,
+                'raw' => $response,
+            ];
+        });
+    }
+
+    public function cancelOrder(array $credentials, string $externalOrderId): array
+    {
+        return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) use ($externalOrderId) {
+            $response = $this->sendAndReceive($ws, 'ProtoOACancelOrderReq', [
+                'ctidTraderAccountId' => $accountId,
+                'orderId' => (int) $externalOrderId,
+            ]);
+            $event = $response['order'] ?? $response['executionEvent']['order'] ?? [];
+            return ['status' => $event['orderStatus'] ?? null, 'raw' => $response];
+        });
+    }
+
+    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
+    {
+        return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) use ($externalPositionId, $sizeOverride) {
+            $payload = [
+                'ctidTraderAccountId' => $accountId,
+                'positionId' => (int) $externalPositionId,
+            ];
+            // 0 = full close in ProtoOAClosePositionReq semantics — but we
+            // forward an explicit volume when the caller wants partial close.
+            if ($sizeOverride !== null) {
+                $partial = (int) floor($sizeOverride * 100);
+                if ($partial <= 0) {
+                    throw new \App\Exceptions\BrokerOrderException(
+                        'cTrader partial close requires a positive volume',
+                        'INVALID_VOLUME',
+                    );
+                }
+                $payload['volume'] = $partial;
+            }
+
+            $response = $this->sendAndReceive($ws, 'ProtoOAClosePositionReq', $payload);
+            return ['status' => $response['executionEvent']['executionType'] ?? null, 'raw' => $response];
+        });
+    }
+
+    /**
+     * Open a WebSocket, run the two-step auth dance (application then account)
+     * and pass the live session to the caller. Closes the socket on success
+     * AND on any throwable, including BrokerOrderException. Centralises the
+     * session boilerplate so the three outbound order methods stay compact.
+     */
+    private function withAuthenticatedSession(array $credentials, callable $callback): array
+    {
+        $accountId = $credentials['ctid_trader_account_id'] ?? null;
+        $accessToken = $credentials['access_token'] ?? null;
+        if (!$accountId || !$accessToken) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'cTrader credentials missing ctid_trader_account_id/access_token',
+                'INVALID_CREDENTIALS',
+            );
+        }
+
+        try {
+            $ws = $this->connectWebSocket();
+        } catch (\Throwable $e) {
+            BrokerLogger::failure('ctrader', 'ws_connect_failed', [
+                'account_id' => (int) $accountId,
+                'msg' => $e->getMessage(),
+            ]);
+            throw new \App\Exceptions\BrokerOrderException(
+                'cTrader WebSocket connect failed: ' . $e->getMessage(),
+                'TRANSPORT_ERROR',
+                [],
+                $e,
+            );
+        }
+
+        try {
+            $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
+                'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
+                'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
+            ]);
+            $this->sendAndReceive($ws, 'ProtoOAAccountAuthReq', [
+                'ctidTraderAccountId' => (int) $accountId,
+                'accessToken' => $accessToken,
+            ]);
+
+            $result = $callback($ws, (int) $accountId);
+            try { $ws->close(); } catch (\Throwable) {}
+            return $result;
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            try { $ws->close(); } catch (\Throwable) {}
+            throw $e;
+        } catch (\Throwable $e) {
+            try { $ws->close(); } catch (\Throwable) {}
+            BrokerLogger::failure('ctrader', 'request_failed', [
+                'account_id' => (int) $accountId,
+                'msg' => $e->getMessage(),
+            ]);
+            throw new \App\Exceptions\BrokerOrderException(
+                'cTrader request failed: ' . $e->getMessage(),
+                'BROKER_REJECTED',
+                [],
+                $e,
+            );
+        }
+    }
+
+    private function resolveSymbolId(WsClient $ws, int $accountId, string $symbolName): int
+    {
+        // ProtoOASymbolsListReq returns every tradable symbol on the account
+        // with its numeric id. We cache nothing here — placeOrder is rare
+        // enough that the extra round-trip is acceptable, and it keeps the
+        // connector stateless.
+        $response = $this->sendAndReceive($ws, 'ProtoOASymbolsListReq', [
+            'ctidTraderAccountId' => $accountId,
+        ]);
+        $target = strtoupper($symbolName);
+        foreach ($response['symbol'] ?? [] as $symbol) {
+            if (strtoupper((string) ($symbol['symbolName'] ?? '')) === $target) {
+                return (int) $symbol['symbolId'];
+            }
+        }
+        throw new \App\Exceptions\BrokerOrderException(
+            "cTrader symbol '{$symbolName}' not found on account {$accountId}",
+            'UNKNOWN_SYMBOL',
+        );
     }
 
     /**

@@ -1,0 +1,15 @@
+<?php
+
+namespace App\Enums;
+
+enum WebhookRejectReason: string
+{
+    case INVALID_TOKEN = 'INVALID_TOKEN';
+    case INVALID_SECRET = 'INVALID_SECRET';
+    case INVALID_PAYLOAD = 'INVALID_PAYLOAD';
+    case WEBHOOK_REVOKED = 'WEBHOOK_REVOKED';
+    case NO_BROKER = 'NO_BROKER';
+    case BROKER_INACTIVE = 'BROKER_INACTIVE';
+    case BROKER_ERROR = 'BROKER_ERROR';
+    case FEATURE_DISABLED = 'FEATURE_DISABLED';
+}

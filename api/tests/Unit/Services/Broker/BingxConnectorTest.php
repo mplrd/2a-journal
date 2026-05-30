@@ -157,58 +157,144 @@ class BingxConnectorTest extends TestCase
 
     // ── fetchOpenPositions ─────────────────────────────────────────
 
-    public function testFetchOpenPositionsReturnsNormalizedSnapshot(): void
+    private function emptyChunk(): Response
     {
+        return new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'code' => 0, 'msg' => '', 'data' => ['orders' => []],
+        ]));
+    }
+
+    private function fillsChunk(array $orders): Response
+    {
+        return new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'code' => 0, 'msg' => '', 'data' => ['orders' => $orders],
+        ]));
+    }
+
+    /**
+     * Empty income response — used after /user/positions in tests where we
+     * don't care about cross-symbol enumeration via income (the test
+     * symbols are already covered by the live positions snapshot).
+     */
+    private function emptyIncomeChunk(): Response
+    {
+        return new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'code' => 0, 'msg' => '', 'data' => [],
+        ]));
+    }
+
+    private function incomeChunk(array $records): Response
+    {
+        return new Response(200, ['Content-Type' => 'application/json'], json_encode([
+            'code' => 0, 'msg' => '', 'data' => $records,
+        ]));
+    }
+
+    private function makeFillRaw(array $overrides = []): array
+    {
+        return array_merge([
+            'orderId' => '100',
+            'symbol' => 'BTC-USDT',
+            'positionSide' => 'LONG',
+            'side' => 'BUY',
+            'status' => 'FILLED',
+            'reduceOnly' => false,
+            'executedQty' => '0.01',
+            'avgPrice' => '60000',
+            'profit' => '0',
+            'updateTime' => 1716000000000,
+        ], $overrides);
+    }
+
+    public function testFetchOpenPositionsSurfacesLivePositionWhenNoFillsHistory(): void
+    {
+        // Live position exists on BingX but no fills found (account too old
+        // for the walk to reach the opening fill). Connector falls back to
+        // the live snapshot and surfaces the position with no exits[].
         $connector = $this->createConnector([
+            // 1) /user/positions (symbol enumeration seed)
             $this->bxResponse([
                 [
                     'positionId' => 'pos-100',
                     'symbol' => 'BTC-USDT',
                     'positionSide' => 'LONG',
                     'positionAmt' => '0.5',
-                    'availableAmt' => '0.5',
                     'avgPrice' => '60000',
-                    'leverage' => 10,
-                    'unrealizedProfit' => '500',
-                    'realisedProfit' => '0',
-                    'liquidationPrice' => 55000.0,
-                    'isolated' => true,
-                    'currency' => 'USDT',
                 ],
             ]),
-        ]);
-
-        $result = $connector->fetchOpenPositions([
-            'api_key' => 'k', 'api_secret' => 's',
-        ]);
-
-        $this->assertSame(1, $result['raw_count']);
-        $this->assertCount(1, $result['positions']);
-        $pos = $result['positions'][0];
-        $this->assertSame('BTC-USDT', $pos['symbol']);
-        $this->assertSame('BUY', $pos['direction']); // LONG → BUY
-        $this->assertSame('bingx_pos-100', $pos['external_id']);
-        $this->assertEquals(60000.0, $pos['entry_price']);
-        $this->assertEquals(0.5, $pos['size']);
-        $this->assertArrayNotHasKey('closed_at', $pos);
-    }
-
-    public function testFetchOpenPositionsMapsShortToSell(): void
-    {
-        $connector = $this->createConnector([
-            $this->bxResponse([
-                ['positionId' => 'p2', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
-                 'positionAmt' => '1', 'avgPrice' => '4000'],
-            ]),
+            // 2) /user/income walk → empty (no income history)
+            $this->emptyIncomeChunk(),
+            // 3) /allOrders chunk for BTC-USDT → empty (no fills in walk)
+            $this->emptyChunk(),
         ]);
 
         $result = $connector->fetchOpenPositions(['api_key' => 'k', 'api_secret' => 's']);
-        $this->assertSame('SELL', $result['positions'][0]['direction']);
+
+        $this->assertCount(1, $result['positions']);
+        $pos = $result['positions'][0];
+        $this->assertSame('BTC-USDT', $pos['symbol']);
+        $this->assertSame('BUY', $pos['direction']);
+        $this->assertEquals(0.5, $pos['size']);
+        $this->assertSame([], $pos['exits']);
     }
 
-    public function testFetchOpenPositionsReturnsEmptyWhenApiReturnsEmptyList(): void
+    public function testFetchOpenPositionsReconstructsExitsForPositionWithPartialClose(): void
     {
-        $connector = $this->createConnector([$this->bxResponse([])]);
+        // Live position BTC-USDT, 0.005 remaining. The fills walk uncovers
+        // the original open (0.01) and a prior partial close (0.005). The
+        // open position surfaces WITH that partial exit in exits[].
+        $connector = $this->createConnector([
+            // 1) /user/positions
+            $this->bxResponse([
+                [
+                    'positionId' => 'pos-100',
+                    'symbol' => 'BTC-USDT',
+                    'positionSide' => 'LONG',
+                    'positionAmt' => '0.005',
+                    'avgPrice' => '60000',
+                ],
+            ]),
+            // 2) /user/income walk → empty (test doesn't exercise income enum)
+            $this->emptyIncomeChunk(),
+            // 3) /allOrders chunk with the open + partial close fills
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'open1', 'reduceOnly' => false, 'side' => 'BUY',
+                    'executedQty' => '0.01', 'avgPrice' => '60000', 'updateTime' => 1000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'tp1', 'reduceOnly' => true, 'side' => 'SELL',
+                    'executedQty' => '0.005', 'avgPrice' => '65000', 'profit' => '25',
+                    'updateTime' => 2000,
+                ]),
+            ]),
+            // 4) next chunk back → empty → stop walking
+            $this->emptyChunk(),
+        ]);
+
+        $result = $connector->fetchOpenPositions(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertCount(1, $result['positions']);
+        $pos = $result['positions'][0];
+        $this->assertSame('BTC-USDT', $pos['symbol']);
+        $this->assertSame('BUY', $pos['direction']);
+        $this->assertCount(1, $pos['exits']);
+        $this->assertEqualsWithDelta(0.005, $pos['remaining_size'], 0.00001);
+        $this->assertSame('bingx_position_open1', $pos['external_id']);
+        $this->assertSame('bingx_fill_tp1', $pos['exits'][0]['external_id']);
+    }
+
+    public function testFetchOpenPositionsReturnsEmptyWhenLiveAndIncomeAreEmpty(): void
+    {
+        // No live positions AND no income history → no symbols to walk →
+        // connector returns the empty bucket without making any /allOrders
+        // call.
+        $connector = $this->createConnector([
+            // 1) /user/positions → empty
+            $this->bxResponse([]),
+            // 2) /user/income walk → empty → no symbols discovered
+            $this->emptyIncomeChunk(),
+        ]);
 
         $result = $connector->fetchOpenPositions(['api_key' => 'k', 'api_secret' => 's']);
 
@@ -277,13 +363,19 @@ class BingxConnectorTest extends TestCase
 
     public function testFetchClosedOrdersReturnsFinalStatuses(): void
     {
-        // fetchClosedOrders needs the active symbol list first (allOrders
-        // requires `symbol` per call), then queries each symbol.
+        // fetchClosedOrders now uses the same symbol enumeration as
+        // fetchDeals (live positions + income walk) and chunk-walks
+        // /allOrders per symbol. Mock order:
+        //   1. /user/positions (symbol enumeration)
+        //   2. /user/income walk (empty, no historical-only symbols here)
+        //   3. /allOrders chunk for BTC-USDT
+        //   4. /allOrders next chunk → empty → stop
         $connector = $this->createConnector([
             $this->bxResponse([
                 ['positionId' => 'live', 'symbol' => 'BTC-USDT', 'positionSide' => 'LONG',
                  'positionAmt' => '0.5', 'avgPrice' => '60000'],
             ]),
+            $this->emptyIncomeChunk(),
             new Response(200, ['Content-Type' => 'application/json'], json_encode([
                 'code' => 0, 'msg' => '',
                 'data' => ['orders' => [
@@ -292,6 +384,7 @@ class BingxConnectorTest extends TestCase
                     ['orderId' => 102, 'status' => 'EXPIRED', 'updateTime' => 1714867200000],
                 ]],
             ])),
+            $this->emptyChunk(),  // next chunk back → stop walk
         ]);
 
         $result = $connector->fetchClosedOrders(['api_key' => 'k', 'api_secret' => 's']);
@@ -303,89 +396,126 @@ class BingxConnectorTest extends TestCase
         $this->assertSame('bingx_order_100', $result['orders'][0]['external_id']);
     }
 
-    // ── fetchDeals (closed positions via positionHistory) ──────────
+    // ── fetchDeals (closed positions reconstructed from fills) ─────
 
-    public function testFetchDealsIteratesActiveSymbolsAndReturnsNormalizedClosedPositions(): void
+    public function testFetchDealsReconstructsClosedPositionsFromFills(): void
     {
-        // positionHistory requires a `symbol` per call. To enumerate
-        // symbols, the connector first fetches open positions, then queries
-        // positionHistory per symbol. (The user may have closed all their
-        // positions for a symbol — those won't appear in open_positions,
-        // but the previous sync's cursor narrows the next-run window so
-        // the gap is bounded.)
+        // BTC-USDT: complete cycle (open + full close) → 1 closed cycle
+        // ETH-USDT: complete cycle (open + full close) → 1 closed cycle
         $connector = $this->createConnector([
-            // 1) listing symbols via user/positions
+            // 1) /user/positions for symbol enumeration (positions present so
+            // both symbols are picked up as live or income-discovered)
             $this->bxResponse([
                 ['positionId' => 'live-1', 'symbol' => 'BTC-USDT', 'positionSide' => 'LONG',
-                 'positionAmt' => '0.5', 'avgPrice' => '60000'],
+                 'positionAmt' => '0', 'avgPrice' => '60000'],
                 ['positionId' => 'live-2', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
-                 'positionAmt' => '1', 'avgPrice' => '4000'],
+                 'positionAmt' => '0', 'avgPrice' => '4000'],
             ]),
-            // 2) positionHistory?symbol=BTC-USDT
-            new Response(200, ['Content-Type' => 'application/json'], json_encode([
-                'code' => 0, 'msg' => '',
-                'data' => ['total' => 1, 'list' => [$this->makeClosedPositionRaw([
-                    'positionId' => 'closed-btc-1', 'symbol' => 'BTC-USDT',
-                ])]],
-            ])),
-            // 3) positionHistory?symbol=ETH-USDT
-            new Response(200, ['Content-Type' => 'application/json'], json_encode([
-                'code' => 0, 'msg' => '',
-                'data' => ['total' => 1, 'list' => [$this->makeClosedPositionRaw([
-                    'positionId' => 'closed-eth-1', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
-                    'avgPrice' => '4200', 'closeAvgPrice' => '4000', 'realisedProfit' => '200',
-                ])]],
-            ])),
+            // 2) /user/income walk → empty (live snapshot already has both
+            // symbols, no need to test income enum here)
+            $this->emptyIncomeChunk(),
+            // 2) /allOrders BTC-USDT chunk with the complete cycle
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'btc-open', 'reduceOnly' => false, 'side' => 'BUY',
+                    'executedQty' => '0.01', 'avgPrice' => '60000', 'updateTime' => 1000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'btc-close', 'reduceOnly' => true, 'side' => 'SELL',
+                    'executedQty' => '0.01', 'avgPrice' => '61500', 'profit' => '15',
+                    'updateTime' => 2000,
+                ]),
+            ]),
+            // 3) BTC chunk back → empty → stop on BTC
+            $this->emptyChunk(),
+            // 4) /allOrders ETH-USDT chunk
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'eth-open', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => false, 'side' => 'SELL',
+                    'executedQty' => '1', 'avgPrice' => '4200', 'updateTime' => 3000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'eth-close', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => true, 'side' => 'BUY',
+                    'executedQty' => '1', 'avgPrice' => '4000', 'profit' => '200',
+                    'updateTime' => 4000,
+                ]),
+            ]),
+            // 5) ETH chunk back → empty
+            $this->emptyChunk(),
         ]);
 
         $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
 
-        $this->assertSame(2, $result['raw_count']);
         $this->assertCount(2, $result['deals']);
-        // Cursor on max closeTime so the next run picks up later closures.
         $this->assertNotNull($result['cursor']);
 
-        $btcDeal = $result['deals'][0];
-        $this->assertSame('bingx_closed-btc-1', $btcDeal['external_id']);
-        $this->assertEquals(60000.0, $btcDeal['entry_price']);
-        $this->assertEquals(61500.0, $btcDeal['exit_price']);
-        $this->assertEquals(750.0, $btcDeal['pnl']);
+        // Map by external_id for stable assertions regardless of order.
+        $byExternalId = [];
+        foreach ($result['deals'] as $deal) {
+            $byExternalId[$deal['external_id']] = $deal;
+        }
+
+        $this->assertArrayHasKey('bingx_position_btc-open', $byExternalId);
+        $btc = $byExternalId['bingx_position_btc-open'];
+        $this->assertSame('BTC-USDT', $btc['symbol']);
+        $this->assertSame('BUY', $btc['direction']);
+        $this->assertEquals(60000.0, $btc['entry_price']);
+        $this->assertEquals(61500.0, $btc['exit_price']);
+        $this->assertEqualsWithDelta(15.0, $btc['pnl'], 0.001);
+        $this->assertCount(1, $btc['exits']);
+
+        $this->assertArrayHasKey('bingx_position_eth-open', $byExternalId);
+        $eth = $byExternalId['bingx_position_eth-open'];
+        $this->assertSame('SELL', $eth['direction']);
     }
 
-    public function testFetchDealsFiltersClosedPositionsOlderThanCursor(): void
+    public function testFetchDealsStopsWalkingAtCursor(): void
     {
-        // Cursor is the closeTime of the latest closed position seen by the
-        // previous run. The connector filters out positions whose closeTime
-        // is not strictly greater (preventing re-import).
-        $oldClose = 1714867200000; // 2024-05-05 00:00:00
-        $newClose = 1714896000000; // 2024-05-05 08:00:00
+        $nowMs = (int) (microtime(true) * 1000);
+        $cursorMs = $nowMs - 3600 * 1000;       // 1 hour ago
+        $fillAfterCursor = $nowMs - 1800 * 1000; // 30 min ago
 
         $connector = $this->createConnector([
+            // /user/positions
             $this->bxResponse([
                 ['positionId' => 'live', 'symbol' => 'BTC-USDT', 'positionSide' => 'LONG',
-                 'positionAmt' => '0.5', 'avgPrice' => '60000'],
+                 'positionAmt' => '0', 'avgPrice' => '60000'],
             ]),
-            new Response(200, ['Content-Type' => 'application/json'], json_encode([
-                'code' => 0, 'msg' => '',
-                'data' => ['total' => 2, 'list' => [
-                    $this->makeClosedPositionRaw(['positionId' => 'old', 'closeTime' => $oldClose]),
-                    $this->makeClosedPositionRaw(['positionId' => 'new', 'closeTime' => $newClose]),
-                ]],
-            ])),
+            // /user/income walk → single chunk to cursor (in-cursor sync), empty
+            $this->emptyIncomeChunk(),
+            // /allOrders — single chunk: open + close, both within the cursor window
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'recent-open', 'reduceOnly' => false, 'side' => 'BUY',
+                    'executedQty' => '0.01', 'avgPrice' => '60000',
+                    'updateTime' => $fillAfterCursor - 100,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'recent-close', 'reduceOnly' => true, 'side' => 'SELL',
+                    'executedQty' => '0.01', 'avgPrice' => '61000', 'profit' => '10',
+                    'updateTime' => $fillAfterCursor,
+                ]),
+            ]),
         ]);
 
-        $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's'], (string) $oldClose);
+        $result = $connector->fetchDeals(
+            ['api_key' => 'k', 'api_secret' => 's'],
+            (string) $cursorMs,
+        );
 
-        // 'old' filtered out (closeTime not > cursor), only 'new' survives.
         $this->assertCount(1, $result['deals']);
-        $this->assertSame('bingx_new', $result['deals'][0]['external_id']);
-        $this->assertSame((string) $newClose, $result['cursor']);
+        $this->assertSame('bingx_position_recent-open', $result['deals'][0]['external_id']);
+        // Cursor advances to the latest fill seen.
+        $this->assertSame((string) $fillAfterCursor, $result['cursor']);
     }
 
-    public function testFetchDealsReturnsEmptyWhenNoSymbols(): void
+    public function testFetchDealsReturnsEmptyWhenNoSymbolsAndNoIncome(): void
     {
         $connector = $this->createConnector([
-            $this->bxResponse([]), // no open positions → no symbols to query
+            $this->bxResponse([]),        // no open positions
+            $this->emptyIncomeChunk(),    // no income history either
         ]);
 
         $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
@@ -393,5 +523,182 @@ class BingxConnectorTest extends TestCase
         $this->assertSame(0, $result['raw_count']);
         $this->assertSame([], $result['deals']);
         $this->assertNull($result['cursor']);
+    }
+
+    public function testFetchDealsDiscoversHistoricalSymbolsViaIncome(): void
+    {
+        // Critical scenario: user has trades on ETH-USDT historically but no
+        // currently-open ETH position. The legacy seed (live positions only)
+        // would miss ETH entirely. /user/income surfaces it from past P&L
+        // records so the fills walk picks it up.
+        $connector = $this->createConnector([
+            // /user/positions — only BTC-USDT currently
+            $this->bxResponse([
+                ['positionId' => 'live', 'symbol' => 'BTC-USDT', 'positionSide' => 'LONG',
+                 'positionAmt' => '0', 'avgPrice' => '60000'],
+            ]),
+            // /user/income — chunk with ETH-USDT income records
+            $this->incomeChunk([
+                ['symbol' => 'ETH-USDT', 'incomeType' => 'REALIZED_PNL', 'income' => '50', 'time' => 1716000000000],
+                ['symbol' => 'ETH-USDT', 'incomeType' => 'COMMISSION', 'income' => '-0.5', 'time' => 1716000000000],
+            ]),
+            // /user/income next chunk → empty → stop income walk
+            $this->emptyIncomeChunk(),
+            // /allOrders BTC-USDT chunk
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'btc-open', 'reduceOnly' => false, 'side' => 'BUY',
+                    'executedQty' => '0.01', 'avgPrice' => '60000', 'updateTime' => 1000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'btc-close', 'reduceOnly' => true, 'side' => 'SELL',
+                    'executedQty' => '0.01', 'avgPrice' => '61000', 'profit' => '10',
+                    'updateTime' => 2000,
+                ]),
+            ]),
+            $this->emptyChunk(),  // BTC next chunk → stop
+            // /allOrders ETH-USDT chunk (only fetched because income surfaced this symbol)
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'eth-open', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => false, 'side' => 'SELL',
+                    'executedQty' => '1', 'avgPrice' => '4000', 'updateTime' => 3000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'eth-close', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => true, 'side' => 'BUY',
+                    'executedQty' => '1', 'avgPrice' => '3950', 'profit' => '50',
+                    'updateTime' => 4000,
+                ]),
+            ]),
+            $this->emptyChunk(),  // ETH next chunk → stop
+        ]);
+
+        $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
+
+        // 2 closed cycles: 1 BTC + 1 ETH. Without income discovery, ETH
+        // would have been missed entirely.
+        $this->assertCount(2, $result['deals']);
+        $externalIds = array_column($result['deals'], 'external_id');
+        $this->assertContains('bingx_position_btc-open', $externalIds);
+        $this->assertContains('bingx_position_eth-open', $externalIds);
+    }
+
+    public function testPlaceMarketBuyMapsToPositionSideLongAndExtractsOrderId(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 1755234567, 'status' => 'FILLED']]),
+        ]);
+
+        $result = $connector->placeOrder(
+            ['api_key' => 'k', 'api_secret' => 's'],
+            [
+                'symbol' => 'BTC-USDT',
+                'direction' => 'BUY',
+                'order_type' => 'MARKET',
+                'size' => 0.01,
+                'sl_price' => 55000.0,
+                'tp_prices' => [70000.0],
+                'client_order_id' => 'tv-1',
+            ]
+        );
+
+        $this->assertSame('1755234567', $result['external_order_id']);
+        $this->assertSame('FILLED', $result['status']);
+
+        // Sanity: outbound request used POST verb on /trade/order
+        $req = $this->capturedRequests[0];
+        $this->assertSame('POST', $req->getMethod());
+        $this->assertStringContainsString('/openApi/swap/v2/trade/order', $req->getUri()->getPath());
+    }
+
+    public function testPlaceSellMapsToPositionSideShort(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 999, 'status' => 'NEW']]),
+        ]);
+
+        $connector->placeOrder(
+            ['api_key' => 'k', 'api_secret' => 's'],
+            [
+                'symbol' => 'ETH-USDT',
+                'direction' => 'SELL',
+                'order_type' => 'LIMIT',
+                'size' => 0.5,
+                'entry_price' => 4500,
+            ]
+        );
+
+        $query = [];
+        parse_str($this->capturedRequests[0]->getUri()->getQuery(), $query);
+        $this->assertSame('SELL', $query['side']);
+        $this->assertSame('SHORT', $query['positionSide']);
+        $this->assertSame('LIMIT', $query['type']);
+        $this->assertSame('4500', $query['price']);
+    }
+
+    public function testRejectedOrderThrowsBrokerOrderException(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxError(101104, 'Insufficient margin'),
+        ]);
+
+        try {
+            $connector->placeOrder(
+                ['api_key' => 'k', 'api_secret' => 's'],
+                ['symbol' => 'BTC-USDT', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1000],
+            );
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('101104', $e->getProviderCode());
+            $this->assertStringContainsString('Insufficient margin', $e->getMessage());
+        }
+    }
+
+    public function testMissingCredentialsRaisesInvalidCredentials(): void
+    {
+        $connector = $this->createConnector([]);
+
+        try {
+            $connector->placeOrder([], ['symbol' => 'X', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1]);
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('INVALID_CREDENTIALS', $e->getProviderCode());
+        }
+    }
+
+    public function testCancelOrderUsesDeleteVerb(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 1, 'status' => 'CANCELED']]),
+        ]);
+
+        $result = $connector->cancelOrder(['api_key' => 'k', 'api_secret' => 's'], '1');
+
+        $this->assertSame('CANCELED', $result['status']);
+        $this->assertSame('DELETE', $this->capturedRequests[0]->getMethod());
+    }
+
+    public function testClosePositionFullCloseHitsClosePositionPath(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['orderId' => 42]),
+        ]);
+
+        $result = $connector->closePosition(['api_key' => 'k', 'api_secret' => 's'], 'pos-1');
+        $this->assertSame('CLOSED', $result['status']);
+        $this->assertStringContainsString('/closePosition', $this->capturedRequests[0]->getUri()->getPath());
+    }
+
+    public function testPartialCloseExplicitlyUnsupported(): void
+    {
+        $connector = $this->createConnector([]);
+
+        try {
+            $connector->closePosition(['api_key' => 'k', 'api_secret' => 's'], 'pos-1', 0.5);
+            $this->fail('Expected BrokerOrderException');
+        } catch (\App\Exceptions\BrokerOrderException $e) {
+            $this->assertSame('PARTIAL_CLOSE_UNSUPPORTED', $e->getProviderCode());
+        }
     }
 }

@@ -159,7 +159,7 @@ class OuinexConnector implements ConnectorInterface
         ];
     }
 
-    public function fetchClosedOrders(array $credentials): array
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
         $credentials = $this->refreshCredentials($credentials);
         $jwt = $credentials['jwt'];
@@ -220,6 +220,145 @@ class OuinexConnector implements ConnectorInterface
         }
     }
 
+    public function fetchBalance(array $credentials): ?float
+    {
+        // Ouinex balance via GraphQL account query — not wired yet.
+        // Return null so the broker sync skips the update.
+        return null;
+    }
+
+    public function placeOrder(array $credentials, array $order): array
+    {
+        $direction = strtoupper($order['direction'] ?? '');
+        $orderType = strtoupper($order['order_type'] ?? 'MARKET');
+        if (!in_array($direction, ['BUY', 'SELL'], true)) {
+            throw new \App\Exceptions\BrokerOrderException(
+                "Unsupported direction {$direction}",
+                'UNSUPPORTED_ORDER',
+            );
+        }
+        if (!in_array($orderType, ['MARKET', 'LIMIT', 'STOP'], true)) {
+            throw new \App\Exceptions\BrokerOrderException(
+                "Unsupported order_type {$orderType}",
+                'UNSUPPORTED_ORDER',
+            );
+        }
+
+        $jwt = $this->ensureJwt($credentials);
+
+        $variables = [
+            'input' => [
+                'instrument_id' => $order['symbol'],
+                'side' => $direction === 'BUY' ? 'LONG' : 'SHORT',
+                'order_type' => $orderType,
+                'amount' => (float) $order['size'],
+                'stop_loss' => isset($order['sl_price']) ? (float) $order['sl_price'] : null,
+                'take_profit' => isset($order['tp_prices'][0]) ? (float) $order['tp_prices'][0] : null,
+                'price' => $orderType !== 'MARKET' && isset($order['entry_price'])
+                    ? (float) $order['entry_price']
+                    : null,
+                'client_order_id' => isset($order['client_order_id'])
+                    ? mb_substr((string) $order['client_order_id'], 0, 64)
+                    : null,
+            ],
+        ];
+
+        try {
+            $response = $this->graphqlRequest($jwt, $this->placeMarginOrderMutation(), $variables);
+        } catch (\RuntimeException $e) {
+            throw new \App\Exceptions\BrokerOrderException(
+                $e->getMessage(),
+                'BROKER_REJECTED',
+                [],
+                $e,
+            );
+        }
+
+        $orderData = $response['data']['place_margin_order'] ?? null;
+        if (!is_array($orderData) || empty($orderData['margin_order_id'])) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'Ouinex did not return a margin_order_id',
+                'NO_ORDER_ID',
+                is_array($response) ? $response : [],
+            );
+        }
+
+        return [
+            'external_order_id' => (string) $orderData['margin_order_id'],
+            'status' => $orderData['status'] ?? null,
+            'raw' => $orderData,
+        ];
+    }
+
+    public function cancelOrder(array $credentials, string $externalOrderId): array
+    {
+        $jwt = $this->ensureJwt($credentials);
+
+        try {
+            $response = $this->graphqlRequest($jwt, $this->cancelMarginOrderMutation(), [
+                'margin_order_id' => $externalOrderId,
+            ]);
+        } catch (\RuntimeException $e) {
+            throw new \App\Exceptions\BrokerOrderException(
+                $e->getMessage(),
+                'BROKER_REJECTED',
+                [],
+                $e,
+            );
+        }
+
+        $orderData = $response['data']['cancel_margin_order'] ?? [];
+        return ['status' => $orderData['status'] ?? null, 'raw' => $orderData];
+    }
+
+    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
+    {
+        $jwt = $this->ensureJwt($credentials);
+
+        try {
+            $response = $this->graphqlRequest($jwt, $this->closeMarginPositionMutation(), [
+                'margin_position_id' => $externalPositionId,
+                'amount' => $sizeOverride,
+            ]);
+        } catch (\RuntimeException $e) {
+            throw new \App\Exceptions\BrokerOrderException(
+                $e->getMessage(),
+                'BROKER_REJECTED',
+                [],
+                $e,
+            );
+        }
+
+        $positionData = $response['data']['close_margin_position'] ?? [];
+        return ['status' => $positionData['status'] ?? null, 'raw' => $positionData];
+    }
+
+    /**
+     * Centralise the "no JWT or invalid credentials" branch for the three
+     * outbound order methods so they emit the same provider code.
+     */
+    private function ensureJwt(array $credentials): string
+    {
+        try {
+            $fresh = $this->refreshCredentials($credentials);
+        } catch (\Throwable $e) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'Ouinex credentials invalid: ' . $e->getMessage(),
+                'INVALID_CREDENTIALS',
+                [],
+                $e,
+            );
+        }
+        $jwt = $fresh['jwt'] ?? null;
+        if (!$jwt) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'Ouinex returned no JWT',
+                'INVALID_CREDENTIALS',
+            );
+        }
+        return $jwt;
+    }
+
     /**
      * Trade the API key/secret for a fresh JWT via the service_signin
      * mutation. Returns updated credentials with `jwt` and `jwt_expires_at`
@@ -278,6 +417,10 @@ class OuinexConnector implements ConnectorInterface
                 ],
             ]);
         } catch (GuzzleException $e) {
+            BrokerLogger::failure('ouinex', 'request_failed', [
+                'operation' => $this->extractOperationName($query),
+                'msg' => $e->getMessage(),
+            ]);
             throw new \RuntimeException("Ouinex HTTP error: {$e->getMessage()}", 0, $e);
         }
 
@@ -285,10 +428,31 @@ class OuinexConnector implements ConnectorInterface
 
         if (!empty($decoded['errors'])) {
             $first = $decoded['errors'][0]['message'] ?? 'unknown GraphQL error';
+            BrokerLogger::failure('ouinex', 'graphql_error', [
+                'operation' => $this->extractOperationName($query),
+                'msg' => $first,
+                'errors_count' => count($decoded['errors']),
+            ]);
             throw new \RuntimeException("Ouinex GraphQL error: {$first}");
         }
 
         return $decoded;
+    }
+
+    /**
+     * Pull the first identifier after `mutation` / `query` so the log line
+     * carries something more readable than the raw GraphQL body. Falls back
+     * to `unknown` for queries that don't follow the named-operation form.
+     */
+    private function extractOperationName(string $query): string
+    {
+        if (preg_match('/\b(?:query|mutation)\s+(\w+)/i', $query, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/\{\s*(\w+)/', $query, $m)) {
+            return $m[1];
+        }
+        return 'unknown';
     }
 
     private function parseExpiresAt(?string $expiresAt): int
@@ -310,6 +474,54 @@ class OuinexConnector implements ConnectorInterface
           ) {
             jwt
             expires_at
+          }
+        }
+        GQL;
+    }
+
+    private function placeMarginOrderMutation(): string
+    {
+        // Field naming follows the same snake_case + lowercase enum
+        // convention as closed_margin_positions. The exact mutation signature
+        // is not exhaustively documented in the public Ouinex docs — the
+        // shape here is best-effort based on the read-side schema and should
+        // be adjusted if the broker returns "Cannot query field" errors.
+        return <<<'GQL'
+        mutation ($input: PlaceMarginOrderInput!) {
+          place_margin_order(input: $input) {
+            margin_order_id
+            margin_position_id
+            status
+            instrument_id
+            side
+            amount
+            entry_price
+          }
+        }
+        GQL;
+    }
+
+    private function cancelMarginOrderMutation(): string
+    {
+        return <<<'GQL'
+        mutation ($margin_order_id: ID!) {
+          cancel_margin_order(margin_order_id: $margin_order_id) {
+            margin_order_id
+            status
+          }
+        }
+        GQL;
+    }
+
+    private function closeMarginPositionMutation(): string
+    {
+        return <<<'GQL'
+        mutation ($margin_position_id: ID!, $amount: Float) {
+          close_margin_position(margin_position_id: $margin_position_id, amount: $amount) {
+            margin_position_id
+            status
+            exit_price
+            pnl
           }
         }
         GQL;

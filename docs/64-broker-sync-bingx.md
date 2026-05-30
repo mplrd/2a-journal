@@ -1,5 +1,10 @@
 # Étape 64 — Synchronisation broker BingX (Phase 1 USDT-M Perpetual)
 
+> **⚠️ Document historique.** Le sync décrit ici (via `/openApi/swap/v1/trade/positionHistory`)
+> ne ramenait que les positions entièrement clôturées et manquait les TP partiels, le
+> scaling-out et les trades en plusieurs fills. Voir **doc 67** pour le refactor
+> fills-based qui le remplace.
+
 ## Résumé
 
 Ajout de **BingX** comme quatrième provider de synchronisation broker (à côté de cTrader, MetaApi, Ouinex). Cette livraison **réutilise intégralement** le pipeline de sync mis en place pour Ouinex (étape 63) grâce au refactor "enum-driven prefix" qui rend les services de diff (`BrokerOpenSyncService`, `BrokerOrderSyncService`) agnostiques au provider — seul le `BingxConnector` et les méthodes `normalizeBingxXxx` du `DealNormalizer` sont nouveaux.

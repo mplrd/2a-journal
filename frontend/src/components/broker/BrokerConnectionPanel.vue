@@ -32,6 +32,7 @@ const showBingxDialog = ref(false)
 const showHistory = ref(false)
 
 const isConnected = computed(() => connection.value && connection.value.status === 'ACTIVE')
+const isBroken = computed(() => connection.value && connection.value.status !== 'ACTIVE')
 
 const PROVIDER_LABELS = {
   CTRADER: 'cTrader',
@@ -148,6 +149,33 @@ function onBingxConnected() {
         <Button :label="t('broker.sync_now')" icon="pi pi-refresh" size="small" :loading="syncing" @click="doSync" />
         <Button :label="t('broker.history')" icon="pi pi-list" size="small" severity="secondary" text @click="showHistory = true" />
         <Button :label="t('broker.disconnect')" icon="pi pi-times" size="small" severity="danger" text @click="disconnect" />
+      </div>
+    </div>
+
+    <!-- Connection exists but not ACTIVE (ERROR / REVOKED / PENDING). The
+         backend refuses to create a fresh connection while a row exists for
+         this account, so we surface the broken row explicitly with its last
+         error and a Delete button — otherwise the user is stuck in a
+         cul-de-sac (connect form visible but every submit returns
+         already_connected). -->
+    <div v-else-if="isBroken" class="space-y-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        <Tag :value="providerLabel" severity="warn" />
+        <Tag :value="connection.status" :severity="statusSeverity" />
+        <span v-if="connection.last_sync_at" class="text-xs text-gray-400">
+          {{ t('broker.last_sync') }}: {{ new Date(connection.last_sync_at).toLocaleString() }}
+        </span>
+      </div>
+
+      <div v-if="connection.last_sync_error" class="text-xs text-red-500 break-words">
+        {{ connection.last_sync_error }}
+      </div>
+
+      <p class="text-sm text-gray-500">{{ t('broker.disabled_help') }}</p>
+
+      <div class="flex gap-2">
+        <Button :label="t('broker.history')" icon="pi pi-list" size="small" severity="secondary" text @click="showHistory = true" />
+        <Button :label="t('broker.disconnect')" icon="pi pi-trash" size="small" severity="danger" @click="disconnect" />
       </div>
     </div>
 

@@ -88,7 +88,7 @@ class BrokerSyncController extends Controller
     public function sync(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $connectionId = (int) $request->getAttribute('id');
+        $connectionId = (int) $request->getRouteParam('id');
 
         $result = $this->syncService->sync($connectionId, $userId);
 
@@ -101,7 +101,7 @@ class BrokerSyncController extends Controller
     public function deleteConnection(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $connectionId = (int) $request->getAttribute('id');
+        $connectionId = (int) $request->getRouteParam('id');
 
         $connection = $this->connectionRepo->findById($connectionId);
         if (!$connection || (int) $connection['user_id'] !== $userId) {
@@ -119,7 +119,7 @@ class BrokerSyncController extends Controller
     public function syncLogs(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
-        $connectionId = (int) $request->getAttribute('id');
+        $connectionId = (int) $request->getRouteParam('id');
 
         $connection = $this->connectionRepo->findById($connectionId);
         if (!$connection || (int) $connection['user_id'] !== $userId) {
@@ -133,10 +133,14 @@ class BrokerSyncController extends Controller
 
     private function createCtraderConnection(int $userId, int $accountId, array $body): Response
     {
-        $clientId = $body['client_id'] ?? '';
-        $clientSecret = $body['client_secret'] ?? '';
-        $accessToken = $body['access_token'] ?? '';
-        $accountNumber = $body['account_id_ctrader'] ?? '';
+        // trim() every credential: browser password-manager autofill or hand
+        // copy-paste from the broker UI tends to drag trailing spaces or
+        // newlines, which silently invalidate every HMAC signature downstream.
+        // The connector layer cannot recover from this — sanitise at the gate.
+        $clientId = trim((string) ($body['client_id'] ?? ''));
+        $clientSecret = trim((string) ($body['client_secret'] ?? ''));
+        $accessToken = trim((string) ($body['access_token'] ?? ''));
+        $accountNumber = trim((string) ($body['account_id_ctrader'] ?? ''));
 
         if (!$clientId || !$clientSecret || !$accessToken || !$accountNumber) {
             throw new ValidationException('broker.error.credentials_required', 'access_token');
@@ -165,8 +169,8 @@ class BrokerSyncController extends Controller
 
     private function createMetaApiConnection(int $userId, int $accountId, array $body): Response
     {
-        $apiToken = $body['api_token'] ?? '';
-        $metaApiAccountId = $body['metaapi_account_id'] ?? '';
+        $apiToken = trim((string) ($body['api_token'] ?? ''));
+        $metaApiAccountId = trim((string) ($body['metaapi_account_id'] ?? ''));
 
         if (!$apiToken || !$metaApiAccountId) {
             throw new ValidationException('broker.error.credentials_required', 'api_token');
@@ -193,8 +197,8 @@ class BrokerSyncController extends Controller
 
     private function createOuinexConnection(int $userId, int $accountId, array $body): Response
     {
-        $apiKey = $body['service_api_key'] ?? '';
-        $apiSecret = $body['service_api_secret'] ?? '';
+        $apiKey = trim((string) ($body['service_api_key'] ?? ''));
+        $apiSecret = trim((string) ($body['service_api_secret'] ?? ''));
 
         if (!$apiKey || !$apiSecret) {
             throw new ValidationException('broker.error.credentials_required', 'service_api_key');
@@ -224,8 +228,8 @@ class BrokerSyncController extends Controller
 
     private function createBingxConnection(int $userId, int $accountId, array $body): Response
     {
-        $apiKey = $body['api_key'] ?? '';
-        $apiSecret = $body['api_secret'] ?? '';
+        $apiKey = trim((string) ($body['api_key'] ?? ''));
+        $apiSecret = trim((string) ($body['api_secret'] ?? ''));
 
         if (!$apiKey || !$apiSecret) {
             throw new ValidationException('broker.error.credentials_required', 'api_key');

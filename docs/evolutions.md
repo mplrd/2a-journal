@@ -218,4 +218,105 @@ Recommandation : **renommer en `asset`** — plus naturel pour un utilisateur no
 
 ---
 
+## Page « Robots » / « Bots de trading » dans le menu principal
+
+**Contexte** : aujourd'hui les webhooks TradingView sont accessibles via un bouton ⚡ sur la grille des comptes (`AccountsView`) → dialog par compte → liste de webhooks → modale d'historique **par webhook**. Pour un utilisateur avec plusieurs comptes et plusieurs webhooks, voir « ce qui s'est passé récemment » oblige à cliquer compte par compte, webhook par webhook. Pas scalable.
+
+**À faire** : nouvelle entrée de menu principal « Robots » (ou « Bots de trading ») qui pourrait héberger :
+- une vue agrégée cross-comptes des événements webhook (`tradingview_alert_events`), filtres par compte / statut / webhook
+- la liste des webhooks de tous les comptes, avec leur statut + compteurs en ligne (au lieu d'aller dans chaque compte)
+- à terme, point d'entrée pour d'autres types de bots / automatisations si on en ajoute
+
+Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en raccourci, ou on déplace tout vers la nouvelle page ? Le raccourci reste utile dans le flow « je viens de créer un compte broker, je veux brancher un webhook ».
+
+**Repéré le** : 2026-05-18 (discussion suite à `feat/broker-place-order`).
+**Priorité** : moyenne — dépend de combien d'utilisateurs adoptent vraiment les webhooks. Tant que c'est 1 webhook par utilisateur, la vue actuelle suffit.
+
+---
+
+## BingX — discriminer exit_type (TP / SL / BE / MANUAL) sur partial_exits issus du sync
+
+**Contexte** : la reconstruction fills-based (doc 67) tague tous les partial exits BingX en `MANUAL`. `/openApi/swap/v2/trade/allOrders` ne distingue pas un fill issu d'un TP, d'un SL ou d'un market close de manière fiable sur le champ `type`. L'utilisateur peut éditer après import mais c'est une perte d'info qui pollue les stats par exit_type.
+
+**À faire** : étudier si BingX expose un champ qui désambiguïse l'origine du fill (un trigger order id séparé qu'on pourrait croiser avec une liste de TP/SL orders posés ?), sinon faire match heuristique côté code (proximité avec SL/TP price connus de la position) avec un fallback `MANUAL`.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : moyenne — affecte la précision des stats "exit type" mais ne casse rien.
+
+## BingX — inclure les frais (commission) dans le P&L reconstruit
+
+**Contexte** : `/allOrders` retourne `commission` par fill mais le journal ne modélise pas les frais séparément aujourd'hui. Le P&L stocké côté trade est donc gross, pas net. Pour un trader scalp avec beaucoup de fills, l'écart peut être significatif.
+
+**À faire** : décision produit. Options :
+- Soustraire commission de `partial_exits.pnl` au moment du sync (P&L net partout, mais on perd la transparence brut/net).
+- Ajouter une colonne `commission` séparée sur `partial_exits` et l'agréger côté affichage (plus propre, plus de travail UI).
+- Ne rien faire et documenter dans la doc utilisateur que les frais ne sont pas comptés.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : haute pour utilisateurs scalp, basse pour swing/position trading.
+
+## BingX — validation sandbox du fills reconstruction sur les vrais comptes
+
+**Contexte** : le reconstructor (doc 67) couvre théoriquement le hedge mode (`positionSide LONG/SHORT` en parallèle), le one-way mode (`positionSide BOTH`), le scaling-in et tous les patterns multi-fills. **Aucun de ces cas n'est testé contre une vraie sandbox BingX**, seulement contre des fixtures unitaires.
+
+**À faire** : créer un compte sandbox BingX, brancher le journal dessus, exécuter une dizaine de scénarios (open + TP partiel + close, scale-in, hedge mode), comparer la base reconstruite vs ce qu'on voit sur BingX. Ajuster si drift.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : haute — bloque l'activation prod du sync BingX en confiance.
+
+## BingX — test d'intégration end-to-end (BingxFillSyncFlowTest)
+
+**Contexte** : le refactor doc 67 livre un unit test du reconstructor (8 fixtures), un unit test du connector (22 tests dont 5 mis à jour), et passe la suite intégration (542 tests). Il manque un test intégration BingX-spécifique qui mocke les réponses HTTP de bout en bout et vérifie l'état DB final (positions + trades + partial_exits + symbols_seen + cursor).
+
+**À faire** : `api/tests/Integration/Broker/BingxFillSyncFlowTest.php` avec 2-3 scénarios : (a) 1ère sync avec historique complet reconstruit, (b) sync incrémental avec curseur, (c) idempotence — 2 syncs successifs sur la même donnée produisent un état DB identique.
+
+**Repéré le** : 2026-05-20 (doc 67).
+**Priorité** : moyenne — la couverture unitaire est solide mais un test intégration BingX précis verrouille les régressions futures.
+
+## Timezones — afficher les timestamps broker en heure locale utilisateur
+
+**Contexte** : repéré 2026-05-19 pendant le debug BingX. La grille « Historique des synchronisations » affiche `started_at` brut (ex. `19/05/2026 10:22:48`) alors que la valeur est en **UTC** côté DB, et l'utilisateur est en `Europe/Paris` (CEST = UTC+2 en mai). Idem probablement pour `last_sync_at` dans `BrokerConnectionPanel` et pour tout autre timestamp persisté UTC consommé par le frontend sans conversion.
+
+**À faire** : auditer le frontend pour identifier tous les timestamps broker (sync_logs, connection, etc.) et les passer par le `Intl.DateTimeFormat` côté Vue avec la TZ utilisateur (déjà disponible dans `useAuthStore().profile.timezone`). Centraliser via un composable `useFormatDateTime()` plutôt que de répéter le pattern dans chaque composant. Faire passer le check sur toute la grille trades/orders/positions au passage — la même incohérence vit probablement ailleurs.
+
+**Repéré le** : 2026-05-19 (debug BingX 100001).
+**Priorité** : moyenne — pas critique mais désorientant pour l'utilisateur, et obligatoire pour la prochaine livraison user-facing qui touche du temps.
+
+---
+
+## Connecteurs broker — validation sandbox avant activation prod
+
+**Contexte** : la feature TradingView webhooks (doc 66) a livré l'implémentation de `placeOrder/cancelOrder/closePosition` sur les 4 connecteurs (cTrader, MetaApi, Ouinex, BingX) en suivant les specs publiques. **Aucun n'a été exercé contre une sandbox broker réelle** — les tests unitaires couvrent le shape du code émis, pas l'acceptation broker.
+
+**À faire avant activation prod** : pour chaque broker, créer un compte sandbox, configurer les credentials côté journal, déclencher un webhook test, vérifier en console broker que l'ordre est bien placé avec les bons paramètres (size, side, SL/TP), puis valider cancel/close. Points d'attention :
+
+- **MetaApi** : `actionType` mapping correct (LIMIT/STOP nécessite `openPrice`), précision volume selon le symbole (FX = 0.01 lot mini, indices = 1 contrat mini).
+- **BingX** : hedge mode obligatoire pour que `positionSide=LONG/SHORT` soit accepté. Vérifier qu'un compte one-way mode renvoie une erreur claire.
+- **cTrader** : volume × 100 = pas une vérité universelle (selon le `lotSize` du symbole — `ProtoOASymbolByIdReq.lotSize` donne la conversion exacte). Si un broker cTrader utilise un lotSize non-standard, ajuster.
+- **Ouinex** : les noms de mutations (`place_margin_order`, `cancel_margin_order`, `close_margin_position`) sont **best-effort** depuis le read-side schema. Tester contre la vraie API et ajuster les noms/champs si le serveur renvoie « Cannot query field ».
+
+**Repéré le** : 2026-05-18 (feature `feat/broker-place-order`).
+**Priorité** : haute — bloque l'activation du flag `TRADINGVIEW_WEBHOOKS_ENABLED` en prod.
+
+---
+
+## Saisie / formats
+
+### Nombres au format local utilisateur (séparateurs décimal / milliers)
+
+**Contexte** : retour Robin du 30/05/2026 (`docs/retours-beta-tests.md#e-10`). Les nombres sont saisis et affichés en **format international** (`23,924.4` : virgule = millier, point = décimale). Pour un utilisateur FR, c'est désorientant : il attend `23 924,4` (espace = millier, virgule = décimale). Le besoin est de **saisir ET afficher** dans le format du pays de l'utilisateur.
+
+**À distinguer du bug B-05** : la remarque d'origine mélangeait deux sujets. La **corruption** d'un prix collé depuis l'Excel FTMO (`23924,6` → `239246`, virgule mangée comme séparateur de milliers) est un **bug** (`#b-05`, repro à cadrer : chemin import fichier vs collage dans `InputNumber`). Le **confort de format** (cette évolution) est séparé : même si la valeur est correcte, l'affichage international gêne.
+
+**À faire** :
+- Centraliser le formatage via un composable `useFormatNumber()` (à l'image de `useFormatDateTime()` proposé pour les timezones plus haut), branché sur la locale utilisateur (`useAuthStore().profile` — vérifier s'il y a déjà une préférence `locale`/`timezone`, sinon dériver de la langue i18n active).
+- Côté **affichage** : passer les montants/prix/points par `Intl.NumberFormat(locale)` plutôt que des `toFixed`/concaténations brutes. Auditer grilles trades/positions/orders, tuiles stats, détails de trade.
+- Côté **saisie** : configurer les `InputNumber` PrimeVue avec `locale` (et `minFractionDigits`/`maxFractionDigits` adéquats) pour que la virgule soit acceptée comme décimale en FR. ⚠️ croiser avec le quirk connu `InputNumber` + `:min` (cf. memory `feedback_primevue_inputnumber_negative`) — tester en navigateur, pas seulement en stub Vitest.
+- Vérifier la cohérence aller-retour : ce qui est saisi au format FR doit être persisté en numérique « propre » côté API (le back attend des décimaux point, pas de séparateur de milliers).
+
+**Repéré le** : 2026-05-30 (retour Robin, remarque 2).
+**Priorité** : moyenne — pas bloquant (la valeur reste correcte si on évite le chemin qui corrompt), mais c'est un irritant UX récurrent pour les utilisateurs non-anglophones.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

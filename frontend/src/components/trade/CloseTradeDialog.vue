@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
+import PricePointsInput from '@/components/common/PricePointsInput.vue'
 import { ExitType, Direction } from '@/constants/enums'
 
 const { t } = useI18n()
@@ -42,75 +43,18 @@ const headerKey = computed(() => {
   }
 })
 
-// BE is a SIGNED mode: slippage or spread can push exit a few points either
-// side of entry. The user must be able to type both positive and negative
-// magnitudes here. Other modes (SL / TP / MANUAL = Stop Win) carry an
-// unambiguous sign from the bouton intent, so the input stays positive
-// (magnitude only) and the sign is applied automatically.
-const isSignedMode = computed(() => form.value.exit_type === ExitType.BE)
-
-const pointsMin = computed(() => {
-  if (!props.trade) return 0
-  // For signed mode, allow negatives down to "exit_price = 0" on a BUY,
-  // which is the largest meaningful loss in points. PrimeVue InputNumber
-  // filters the `-` keystroke unless min < 0 — hence the dynamic bound.
-  return isSignedMode.value ? -Number(props.trade.entry_price) : 0
-})
-
-// For unsigned modes, magnitude is positive and the sign comes from
-// (direction × exit_type):
-//   TP / MANUAL (Stop Win): profit ⇒ BUY price up, SELL price down
-//   SL: loss               ⇒ BUY price down, SELL price up
-function signedDelta(magnitude) {
-  if (!props.trade) return 0
-  const dirBuy = props.trade.direction === Direction.BUY
+// Maps the exit intent to the paired-input offset mode (cf. PricePointsInput):
+//   SL → loss direction · BE → signed slippage around entry · TP/MANUAL → profit.
+const priceMode = computed(() => {
   switch (form.value.exit_type) {
     case ExitType.SL:
-      return dirBuy ? -magnitude : magnitude
+      return 'SL'
     case ExitType.BE:
-      // Signed: caller already passed a signed magnitude, just apply direction.
-      return dirBuy ? magnitude : -magnitude
+      return 'BE'
     default:
-      return dirBuy ? magnitude : -magnitude
+      return 'TP'
   }
-}
-
-function pointsToPrice(magnitude) {
-  if (!props.trade) return 0
-  const entry = Number(props.trade.entry_price)
-  if (magnitude == null || magnitude === 0) return entry
-  return entry + signedDelta(magnitude)
-}
-
-function priceToPoints(price) {
-  if (!props.trade || price == null) return 0
-  const delta = price - Number(props.trade.entry_price)
-  if (isSignedMode.value) {
-    // Preserve sign: BUY direction reads delta directly, SELL inverts.
-    return props.trade.direction === Direction.BUY ? delta : -delta
-  }
-  return Math.abs(delta)
-}
-
-function setExitPrice(value) {
-  if (value == null) {
-    form.value.exit_price = null
-    form.value.exit_points = null
-    return
-  }
-  form.value.exit_price = value
-  form.value.exit_points = priceToPoints(value)
-}
-
-function setExitPoints(value) {
-  if (value == null) {
-    form.value.exit_points = null
-    form.value.exit_price = null
-    return
-  }
-  form.value.exit_points = value
-  form.value.exit_price = pointsToPrice(value)
-}
+})
 
 watch(
   () => props.visible,
@@ -199,34 +143,18 @@ function handleClose() {
         {{ t('trades.remaining_size') }}: {{ Number(trade.remaining_size) }}
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_price') }} *</label>
-          <InputNumber
-            :modelValue="form.exit_price"
-            data-name="exit_price"
-            class="w-full"
-            :min="0"
-            mode="decimal"
-            locale="en-US"
-            :maxFractionDigits="5"
-            @update:modelValue="setExitPrice"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('trades.exit_points') }}</label>
-          <InputNumber
-            :modelValue="form.exit_points"
-            data-name="exit_points"
-            class="w-full"
-            :min="pointsMin"
-            mode="decimal"
-            locale="en-US"
-            :maxFractionDigits="2"
-            @update:modelValue="setExitPoints"
-          />
-        </div>
-      </div>
+      <PricePointsInput
+        v-model:points="form.exit_points"
+        v-model:price="form.exit_price"
+        :entry-price="Number(trade.entry_price)"
+        :direction="trade.direction"
+        :mode="priceMode"
+        price-first
+        :price-label="`${t('trades.exit_price')} *`"
+        :points-label="t('trades.exit_points')"
+        points-name="exit_points"
+        price-name="exit_price"
+      />
 
       <div>
         <div class="flex items-center justify-between mb-1">
