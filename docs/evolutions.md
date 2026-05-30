@@ -300,4 +300,23 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 
 ---
 
+## Saisie / formats
+
+### Nombres au format local utilisateur (séparateurs décimal / milliers)
+
+**Contexte** : retour Robin du 30/05/2026 (`docs/retours-beta-tests.md#e-10`). Les nombres sont saisis et affichés en **format international** (`23,924.4` : virgule = millier, point = décimale). Pour un utilisateur FR, c'est désorientant : il attend `23 924,4` (espace = millier, virgule = décimale). Le besoin est de **saisir ET afficher** dans le format du pays de l'utilisateur.
+
+**À distinguer du bug B-05** : la remarque d'origine mélangeait deux sujets. La **corruption** d'un prix collé depuis l'Excel FTMO (`23924,6` → `239246`, virgule mangée comme séparateur de milliers) est un **bug** (`#b-05`, repro à cadrer : chemin import fichier vs collage dans `InputNumber`). Le **confort de format** (cette évolution) est séparé : même si la valeur est correcte, l'affichage international gêne.
+
+**À faire** :
+- Centraliser le formatage via un composable `useFormatNumber()` (à l'image de `useFormatDateTime()` proposé pour les timezones plus haut), branché sur la locale utilisateur (`useAuthStore().profile` — vérifier s'il y a déjà une préférence `locale`/`timezone`, sinon dériver de la langue i18n active).
+- Côté **affichage** : passer les montants/prix/points par `Intl.NumberFormat(locale)` plutôt que des `toFixed`/concaténations brutes. Auditer grilles trades/positions/orders, tuiles stats, détails de trade.
+- Côté **saisie** : configurer les `InputNumber` PrimeVue avec `locale` (et `minFractionDigits`/`maxFractionDigits` adéquats) pour que la virgule soit acceptée comme décimale en FR. ⚠️ croiser avec le quirk connu `InputNumber` + `:min` (cf. memory `feedback_primevue_inputnumber_negative`) — tester en navigateur, pas seulement en stub Vitest.
+- Vérifier la cohérence aller-retour : ce qui est saisi au format FR doit être persisté en numérique « propre » côté API (le back attend des décimaux point, pas de séparateur de milliers).
+
+**Repéré le** : 2026-05-30 (retour Robin, remarque 2).
+**Priorité** : moyenne — pas bloquant (la valeur reste correcte si on évite le chemin qui corrompt), mais c'est un irritant UX récurrent pour les utilisateurs non-anglophones.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
