@@ -94,12 +94,64 @@ async function request(method, path, body = null, { auth = true, retry = true } 
   return data
 }
 
+async function upload(path, formData) {
+  const headers = {}
+  const token = getAccessToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    credentials: 'include',
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    const error = new Error(data.error?.message_key || 'error.internal')
+    error.status = response.status
+    error.code = data.error?.code
+    error.field = data.error?.field
+    error.messageKey = data.error?.message_key
+    throw error
+  }
+
+  return data
+}
+
+async function getBlob(path) {
+  const headers = {}
+  const token = getAccessToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const error = new Error('error.internal')
+    error.status = response.status
+    throw error
+  }
+
+  return response.blob()
+}
+
 export const api = {
   get: (path, options) => request('GET', path, null, options),
   post: (path, body, options) => request('POST', path, body, options),
   put: (path, body, options) => request('PUT', path, body, options),
   patch: (path, body, options) => request('PATCH', path, body, options),
   delete: (path, body = null, options) => request('DELETE', path, body, options),
+  upload,
+  getBlob,
   setTokens,
   clearTokens,
   getAccessToken,

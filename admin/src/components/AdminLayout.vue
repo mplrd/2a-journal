@@ -27,6 +27,9 @@ async function logout() {
           <router-link to="/users" class="text-sm hover:underline" active-class="font-semibold text-brand-green-700 dark:text-brand-green-400">
             {{ t('nav.users') }}
           </router-link>
+          <router-link to="/support" class="text-sm hover:underline" active-class="font-semibold text-brand-green-700 dark:text-brand-green-400">
+            {{ t('nav.support') }}
+          </router-link>
           <router-link to="/settings" class="text-sm hover:underline" active-class="font-semibold text-brand-green-700 dark:text-brand-green-400">
             {{ t('nav.settings') }}
           </router-link>

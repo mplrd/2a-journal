@@ -1009,5 +1009,73 @@
       "created": "Webhook created",
       "revoked": "Webhook revoked"
     }
+  },
+  "support": {
+    "title": "My requests",
+    "subtitle": "Track your support requests and chat with our team.",
+    "help": "Help",
+    "my_requests": "My requests",
+    "new_request": "New request",
+    "send_request": "Send request",
+    "send_reply": "Reply",
+    "reply_placeholder": "Write your reply…",
+    "closed_notice": "This request is closed. Open a new request if needed.",
+    "empty": "You don't have any request yet.",
+    "support_team": "Support",
+    "you": "You",
+    "type": {
+      "SUPPORT": "Support",
+      "BUG": "Bug",
+      "FEATURE": "Feature request"
+    },
+    "status": {
+      "OPEN": "Open",
+      "IN_PROGRESS": "In progress",
+      "WAITING_USER": "Waiting for your reply",
+      "RESOLVED": "Resolved",
+      "CLOSED": "Closed"
+    },
+    "priority": {
+      "LOW": "Low",
+      "NORMAL": "Normal",
+      "HIGH": "High"
+    },
+    "field": {
+      "type": "Type",
+      "subject": "Subject",
+      "subject_placeholder": "Summarize your request in one line",
+      "description": "Description",
+      "description_placeholder": "Describe your request in detail",
+      "attachments": "Attachments",
+      "add_attachment": "Add an image",
+      "attachments_hint": "JPEG, PNG or WebP images — 5 MB max, 5 files max.",
+      "status": "Status",
+      "priority": "Priority",
+      "updated": "Updated"
+    },
+    "success": {
+      "created": "Request created"
+    },
+    "error": {
+      "not_found": "Request not found.",
+      "attachment_not_found": "Attachment not found.",
+      "invalid_type": "Invalid request type.",
+      "subject_required": "Subject is required.",
+      "subject_too_long": "Subject is too long (max. 200 characters).",
+      "body_required": "Message is required.",
+      "ticket_closed": "This request is closed.",
+      "invalid_status": "Invalid status.",
+      "invalid_priority": "Invalid priority.",
+      "attachment_type": "Unsupported image format (JPEG, PNG, WebP).",
+      "attachment_too_large": "Image too large (5 MB max).",
+      "too_many_attachments": "5 attachments maximum."
+    }
+  },
+  "upload": {
+    "error": {
+      "required": "File is required.",
+      "too_large": "File is too large.",
+      "invalid_type": "Unsupported file type."
+    }
   }
 }

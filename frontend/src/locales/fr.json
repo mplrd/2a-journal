@@ -1009,5 +1009,73 @@
       "created": "Webhook créé",
       "revoked": "Webhook révoqué"
     }
+  },
+  "support": {
+    "title": "Mes demandes",
+    "subtitle": "Suivez vos demandes de support et échangez avec notre équipe.",
+    "help": "Aide",
+    "my_requests": "Mes demandes",
+    "new_request": "Nouvelle demande",
+    "send_request": "Envoyer la demande",
+    "send_reply": "Répondre",
+    "reply_placeholder": "Écrivez votre réponse…",
+    "closed_notice": "Cette demande est fermée. Ouvrez une nouvelle demande si besoin.",
+    "empty": "Vous n'avez aucune demande pour le moment.",
+    "support_team": "Support",
+    "you": "Vous",
+    "type": {
+      "SUPPORT": "Support",
+      "BUG": "Bug",
+      "FEATURE": "Évolution"
+    },
+    "status": {
+      "OPEN": "Ouvert",
+      "IN_PROGRESS": "En cours",
+      "WAITING_USER": "En attente de votre réponse",
+      "RESOLVED": "Résolu",
+      "CLOSED": "Fermé"
+    },
+    "priority": {
+      "LOW": "Basse",
+      "NORMAL": "Normale",
+      "HIGH": "Haute"
+    },
+    "field": {
+      "type": "Type",
+      "subject": "Sujet",
+      "subject_placeholder": "Résumez votre demande en une ligne",
+      "description": "Description",
+      "description_placeholder": "Décrivez votre demande en détail",
+      "attachments": "Pièces jointes",
+      "add_attachment": "Ajouter une image",
+      "attachments_hint": "Images JPEG, PNG ou WebP — 5 Mo max, 5 fichiers max.",
+      "status": "Statut",
+      "priority": "Priorité",
+      "updated": "Mise à jour"
+    },
+    "success": {
+      "created": "Demande créée"
+    },
+    "error": {
+      "not_found": "Demande introuvable.",
+      "attachment_not_found": "Pièce jointe introuvable.",
+      "invalid_type": "Type de demande invalide.",
+      "subject_required": "Le sujet est requis.",
+      "subject_too_long": "Le sujet est trop long (max. 200 caractères).",
+      "body_required": "Le message est requis.",
+      "ticket_closed": "Cette demande est fermée.",
+      "invalid_status": "Statut invalide.",
+      "invalid_priority": "Priorité invalide.",
+      "attachment_type": "Format d'image non supporté (JPEG, PNG, WebP).",
+      "attachment_too_large": "Image trop volumineuse (5 Mo max).",
+      "too_many_attachments": "5 pièces jointes maximum."
+    }
+  },
+  "upload": {
+    "error": {
+      "required": "Fichier requis.",
+      "too_large": "Fichier trop volumineux.",
+      "invalid_type": "Type de fichier non supporté."
+    }
   }
 }

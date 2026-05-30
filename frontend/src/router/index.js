@@ -97,6 +97,12 @@ const router = createRouter({
           component: () => import('@/views/AccountView.vue'),
           meta: { titleKey: 'account.title' },
         },
+        {
+          path: 'support',
+          name: 'support',
+          component: () => import('@/views/SupportView.vue'),
+          meta: { titleKey: 'support.title' },
+        },
       ],
     },
   ],

@@ -145,6 +145,23 @@ class UserRepository
         ]);
     }
 
+    /**
+     * Active (non-deleted) admins, with the minimal fields needed to notify
+     * them by email (id, email, locale). Used by the support module to fan out
+     * a "new ticket" / "user replied" notification to every admin.
+     *
+     * @return array<int, array{id:int, email:string, locale:string}>
+     */
+    public function findAdmins(): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, email, locale FROM users WHERE role = :role AND deleted_at IS NULL ORDER BY id ASC'
+        );
+        $stmt->execute(['role' => UserRole::ADMIN->value]);
+
+        return $stmt->fetchAll();
+    }
+
     public function setSuspendedAt(int $id): void
     {
         $stmt = $this->pdo->prepare(

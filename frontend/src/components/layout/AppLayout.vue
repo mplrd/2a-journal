@@ -51,6 +51,16 @@ async function openAdmin() {
 
 const userMenuRef = ref(null)
 const localeMenuRef = ref(null)
+const helpMenuRef = ref(null)
+
+function toggleHelpMenu(event) {
+  helpMenuRef.value.toggle(event)
+}
+
+function goToSupport(event) {
+  helpMenuRef.value.toggle(event)
+  router.push('/support')
+}
 
 const isMobile = ref(window.innerWidth < 768)
 function onResize() {
@@ -199,6 +209,29 @@ async function handleLogout() {
           >
             <i :class="themeIcon" class="text-lg"></i>
           </button>
+
+          <!-- Help / support menu -->
+          <button
+            data-testid="help-menu-trigger"
+            class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer p-1"
+            :aria-label="t('support.help')"
+            @click="toggleHelpMenu"
+          >
+            <i class="pi pi-question-circle text-lg"></i>
+          </button>
+          <Popover ref="helpMenuRef">
+            <div class="p-2 min-w-[200px]">
+              <p class="px-2 pb-2 mb-1 text-xs font-semibold text-gray-400 uppercase border-b border-gray-200 dark:border-gray-600">{{ t('support.help') }}</p>
+              <button
+                class="w-full flex items-center gap-2 px-2 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md cursor-pointer"
+                data-testid="my-requests-link"
+                @click="goToSupport"
+              >
+                <i class="pi pi-inbox"></i>
+                {{ t('support.my_requests') }}
+              </button>
+            </div>
+          </Popover>
 
           <button
             class="flex items-center gap-2 cursor-pointer"

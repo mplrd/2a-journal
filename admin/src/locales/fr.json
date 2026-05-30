@@ -18,6 +18,7 @@
   },
   "nav": {
     "users": "Utilisateurs",
+    "support": "Support",
     "settings": "Paramètres"
   },
   "login": {
@@ -123,6 +124,56 @@
         "billing_grace_days": "Délai de grâce après échec de paiement Stripe (jours)",
         "trade_transfer_enabled": "Active la fonctionnalité de transfert d'un trade entre comptes"
       }
+    }
+  },
+  "support": {
+    "title": "Support",
+    "search": "Rechercher (sujet, email)",
+    "user": "Utilisateur",
+    "support_team": "Support",
+    "reply_placeholder": "Écrivez votre réponse…",
+    "send_reply": "Répondre",
+    "filter": {
+      "all": "Tous"
+    },
+    "type": {
+      "SUPPORT": "Support",
+      "BUG": "Bug",
+      "FEATURE": "Évolution"
+    },
+    "status": {
+      "OPEN": "Ouvert",
+      "IN_PROGRESS": "En cours",
+      "WAITING_USER": "En attente utilisateur",
+      "RESOLVED": "Résolu",
+      "CLOSED": "Fermé"
+    },
+    "priority": {
+      "LOW": "Basse",
+      "NORMAL": "Normale",
+      "HIGH": "Haute"
+    },
+    "field": {
+      "type": "Type",
+      "subject": "Sujet",
+      "status": "Statut",
+      "priority": "Priorité",
+      "updated": "Mise à jour",
+      "add_attachment": "Ajouter une image"
+    },
+    "columns": {
+      "user": "Utilisateur",
+      "messages": "Messages"
+    },
+    "actions": {
+      "open": "Ouvrir la discussion"
+    },
+    "toast": {
+      "status_updated": "Statut mis à jour",
+      "priority_updated": "Priorité mise à jour"
+    },
+    "error": {
+      "not_found": "Demande introuvable."
     }
   },
   "error": {
