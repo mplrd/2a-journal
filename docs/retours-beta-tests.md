@@ -58,6 +58,17 @@ Tickets restants à traiter / arbitrer / clarifier.
 | [S-02](#s-02) | Compliments puissance/ergonomie — réutiliser en com | Stratégie | — | — | 💡 |
 | [S-03](#s-03) | Maintenir la valeur ajoutée 2A vs FTMO natif | Stratégie | — | — | 💡 |
 
+#### Source 2 — Retours Robin (30/05/2026)
+
+| ID | Titre | Type | Priorité | Effort | Statut |
+|----|-------|------|----------|--------|--------|
+| [B-04](#b-04) | Vérification email réapparaît après reload / changement d'onglet | Bug | Haute | Faible | 🟢 |
+| [B-05](#b-05) | Séparateur décimal : prix Excel FTMO mangé (`23924,6` → `239246`) | Bug | Haute | — | 🟡 |
+| [E-10](#e-10) | Saisie & affichage des nombres au format local utilisateur | Évol | Moyenne | Moyen | 🟡 |
+| [E-11](#e-11) | Saisir le TP / SL en prix, pas seulement en nombre de points | Évol | Moyenne | Faible | ⏳ |
+| [E-12](#e-12) | Faire évoluer un trade en 1 clic (BE / TP1-2-3 pris) | Évol | — | — | 🟡 |
+| [B-06](#b-06) | Préremplissage des valeurs dans la modale de mise à BE | Bug | — | — | 🟡 |
+
 ---
 
 ## Source 1 — Retours Robin (01/05/2026)
@@ -303,5 +314,81 @@ Vérifier en continu (le diff actuel = setups + heures, à entretenir).
 
 ---
 
-*Source brute : `Remarques Journal 2A au 01 05 26.docx` (hors repo) + retours oraux complémentaires.*
+## Source 2 — Retours Robin (30/05/2026)
+
+> Doc reçu : `Remarques sur 2Ai journal prod 30 05 26.docx` (hors repo), suivi d'un échange oral Maxime ⇄ Robin.
+
+**Note de méthode (rappel de Maxime sur ce retour)** : une remarque mélange souvent **deux sujets distincts** qu'il faut séparer :
+- un **bug** = comportement cassé → pas besoin de formalisme « pour qui / pourquoi / comment », mais besoin d'un **scénario de reproduction précis** (d'où vient la donnée, quelles étapes, quel résultat observé vs attendu) ;
+- une **évolution** = nouveau besoin fonctionnel → là le formalisme « pour qui / pourquoi / comment » a du sens, et la repro n'a pas lieu d'être.
+
+La remarque 2 ci-dessous est l'exemple type : elle porte **à la fois** un bug (le nombre est corrompu) **et** une évolution (saisir/afficher au format local), qu'on traite en deux tickets.
+
+### Bugs / comportements à investiguer
+
+<a id="b-04"></a>
+#### B-04. Vérification email réapparaît après reload / changement d'onglet — 🟢
+
+> *(Robin, remarque 1)* « 2A envoie bien le mail de vérification, l'utilisateur le reçoit et clique sur "valider". Pourtant, en rechargeant la page ou en changeant d'onglet, le message "vérifier mon adresse email" réapparaît. »
+>
+> Attendu : une fois l'adresse vérifiée, et tant qu'elle n'est pas modifiée, l'invitation à vérifier disparaît.
+
+- **Verdict** (Maxime, 30/05) : **c'est un bug**, pas besoin de formalisme. La vérification semble ne pas se persister / ne pas être relue côté front au rechargement.
+- **Pistes** : statut `email_verified` correctement mis à jour en base après clic sur le lien ? Le front relit-il bien ce statut au boot (store auth / `GET profile`) ou se base-t-il sur un état en mémoire perdu au reload ? Vérifier aussi la réponse de l'endpoint de vérification.
+- **À faire** : reproduire (créer un compte, vérifier, recharger), tracer où l'état se perd, corriger, test de non-régression.
+
+<a id="b-05"></a>
+#### B-05. Séparateur décimal : prix Excel FTMO corrompu à la saisie — 🟡 _(repro à cadrer)_
+
+> *(Robin, remarque 2 — partie bug)* « Le prix d'entrée dispo sur l'Excel FTMO est `23924,6`. Une fois saisi dans la création d'un trade, il devient `239,246`. Et en corrigeant à la main `23924,4`, 2A affiche `23,924.4`. »
+
+- **Symptôme** : la virgule (décimale FR) est interprétée comme séparateur de milliers → le nombre est **corrompu** (`23924,6` → `239246`).
+- **Source de la donnée — confirmée dans l'échange** : Maxime a demandé « FTMO ou cTrader ? » → **Robin a confirmé : export Excel FTMO** (`Ok saisi ! Depuis Excel FTMO`).
+- **Chemin à confirmer (les deux n'ont pas le même code)** :
+  - Robin décrit un **copier-coller** de la valeur Excel **dans le formulaire de création de trade** (champ `InputNumber`) → parsing locale du champ.
+  - Maxime, lui, **ne copie-colle jamais** : il **importe** l'Excel FTMO → parsing du fichier d'import. À vérifier si ce chemin est **aussi** touché.
+  → Le bug remonté par Robin = chemin **collage manuel**. Reproduire d'abord celui-là (coller `23924,6` dans le champ prix), puis vérifier le chemin import en parallèle. Demander à Robin une capture si besoin.
+- **À distinguer de [E-10](#e-10)** : ici on parle de **corruption de la valeur** (bug). Le confort d'affichage/saisie au format local est l'évolution E-10.
+
+<a id="b-06"></a>
+#### B-06. Préremplissage des valeurs dans la modale de mise à BE — 🟡 _(repro à cadrer)_
+
+> *(Robin, remarque 5)* « Lors de la mise à BE, que la valeur par défaut proposée soit celle renseignée à la création du trade, tout en restant modifiable (si l'utilisateur passe BE plus tôt que prévu). Dans ce cas le bouton "BE" n'a plus besoin de redemander taille de lot et prix ; et si l'utilisateur a déjà renseigné "trade mis à BE", un clic sur "BE" peut passer directement le trade dans "fermé". »
+
+- **Intention de design (Maxime)** : la modale demande **prix + taille** volontairement, parce qu'un BE n'est **pas forcément** le prix d'entrée — slippage, ou BE remonté pour couvrir les frais. **Mais** ces champs sont censés être **préremplis** (comme les TP quand ils sont paramétrés), justes éditables.
+- **Verdict** : **si les valeurs ne sont PAS préremplies → c'est un bug.** Demander à Robin le **scénario de reproduction** (trade avec/sans objectifs paramétrés, ce qui s'affiche dans la modale).
+- **Volet évolution** (séparé du bug) : « si le trade est déjà à BE, clic BE → passe direct en fermé sans redemander » — petit raccourci de flow à arbitrer une fois le préremplissage confirmé.
+
+### Évolutions fonctionnelles
+
+<a id="e-10"></a>
+#### E-10. Saisie & affichage des nombres au format local utilisateur — 🟡
+
+> *(Robin, remarque 2 — partie évolution)* L'affichage international (`23,924.4`, virgule = millier, point = décimale) désoriente un utilisateur FR.
+
+- **Besoin** : saisir **et** voir les nombres dans le **format du pays** de l'utilisateur (FR : `23 924,4`), pas en format international.
+- **Type** : i18n des nombres (séparateurs décimal/milliers selon la locale), distinct de la simple traduction de libellés.
+- **Lié à** [B-05](#b-05) (même remarque, mais B-05 = corruption de valeur = bug ; E-10 = confort de format = évolution).
+- **Plan détaillé** : `docs/evolutions.md` → section « Saisie / formats — nombres au format local ».
+
+<a id="e-11"></a>
+#### E-11. Saisir le TP / SL en prix, pas seulement en nombre de points — ⏳ _(implémenté, branche `feat/objectives-price-points-input`, en attente merge)_
+
+> *(Robin, remarque 3)* « Pouvoir indiquer le prix où poser son TP / SL sans avoir à calculer le nombre de points. Que les champs "nombre de points" et "prix" soient tous deux renseignables, pas seulement "points" qui calcule le prix. »
+
+- **Verdict** (Maxime, 30/05) : à faire. **Le composant de saisie du prix de sortie fonctionne déjà comme ça** (prix ⇄ points liés) — il sera **repris pour le paramétrage des objectifs** (TP/SL).
+- **Livré** (30/05) : composant partagé `PricePointsInput` extrait de la logique inline de `CloseTradeDialog`, réutilisé sur le `TradeForm` (SL, BE, chaque TP) — les prix passent de lecture seule à éditables et liés aux points. Modale de clôture migrée dessus (drop-in, tests inchangés). Règle : les points restent figés quand le prix d'entrée bouge. Backend inchangé (le form envoie les points). Cf. `docs/68-objectives-price-points-input.md`.
+- **Tests** : 22 (composant) + 7 (TradeForm) + 24 (modale, repris) — suite frontend au vert.
+
+<a id="e-12"></a>
+#### E-12. Faire évoluer un trade en 1 clic (BE / TP1-2-3 pris) — 🟡 _(possiblement déjà couvert)_
+
+> *(Robin, remarque 4)* « Donner la possibilité de préciser en un clic qu'on a passé le trade à BE, ou pris TP1 / TP2 / TP3. Ajouter à droite un bouton "mise à BE", "TP1 pris", puis "TP2 pris", "TP3 pris". »
+
+- **Réaction Maxime (30/05)** : « Le bouton ⏫ (le premier) joue déjà les objectifs **les uns derrière les autres** s'ils ont été paramétrés. Ça ne fait pas le taf ? Ou j'ai mal compris la demande ? »
+- **À clarifier avec Robin** : le bouton ⏫ existant couvre-t-il déjà son besoin (avancer le trade objectif par objectif), ou veut-il des boutons **distincts et explicitement libellés** (« BE », « TP1 pris »…) plutôt qu'un seul bouton séquentiel ? → trancher entre **✅ déjà couvert** et **évolution UX** (libellés/boutons dédiés).
+
+---
+
+*Sources brutes : `Remarques Journal 2A au 01 05 26.docx` (Source 1) + `Remarques sur 2Ai journal prod 30 05 26.docx` (Source 2), hors repo, + retours oraux complémentaires.*
 *À mettre à jour quand un item est traité (statut + lien vers commit/doc).*

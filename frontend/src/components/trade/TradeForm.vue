@@ -14,6 +14,7 @@ import { Direction, CustomFieldType } from '@/constants/enums'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useToast } from 'primevue/usetoast'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
+import PricePointsInput from '@/components/common/PricePointsInput.vue'
 import { useSharePreview } from '@/composables/useSharePreview'
 
 const { t } = useI18n()
@@ -61,7 +62,9 @@ function getDefaultForm() {
     entry_price: 0,
     size: 1,
     sl_points: 0,
+    sl_price: null,
     be_points: null,
+    be_price: null,
     be_size: null,
     direction: Direction.BUY,
     symbol: '',
@@ -100,18 +103,33 @@ function populateFromTrade(trade) {
   const targets = trade.targets
     ? typeof trade.targets === 'string' ? JSON.parse(trade.targets) : trade.targets
     : []
+  // Seed the price companions from the stored points so the paired inputs show
+  // a coherent price on open (the component keeps them in sync afterwards).
+  const entry = Number(trade.entry_price)
+  const isBuy = trade.direction === Direction.BUY
+  const slPts = Number(trade.sl_points)
+  const bePts = trade.be_points != null ? Number(trade.be_points) : null
+  const hydratedTargets = (targets || []).map((tp) => {
+    const pts = tp.points != null ? Number(tp.points) : null
+    return {
+      ...tp,
+      price: pts != null ? (isBuy ? entry + pts : entry - pts) : (tp.price ?? null),
+    }
+  })
   return {
     account_id: trade.account_id ?? null,
-    entry_price: Number(trade.entry_price),
+    entry_price: entry,
     size: Number(trade.size),
-    sl_points: Number(trade.sl_points),
-    be_points: trade.be_points != null ? Number(trade.be_points) : null,
+    sl_points: slPts,
+    sl_price: slPts ? (isBuy ? entry - slPts : entry + slPts) : null,
+    be_points: bePts,
+    be_price: bePts != null ? (isBuy ? entry + bePts : entry - bePts) : null,
     be_size: trade.be_size != null ? Number(trade.be_size) : null,
     direction: trade.direction,
     symbol: trade.symbol,
     setup: parseSetup(trade.setup),
     notes: trade.notes || '',
-    targets: targets || [],
+    targets: hydratedTargets,
     opened_at: trade.opened_at ? new Date(trade.opened_at) : new Date(),
     closed_at: trade.closed_at ? new Date(trade.closed_at) : null,
     custom_fields: customFieldsToMap(trade.custom_fields, props.customFieldDefinitions),
@@ -170,6 +188,7 @@ function addTarget() {
     id: `tp${form.value.targets.length + 1}`,
     label: `TP${form.value.targets.length + 1}`,
     points: null,
+    price: null,
     size: null,
   })
 }
@@ -187,6 +206,10 @@ function formatDateTime(date) {
 
 function handleSave() {
   const data = { ...form.value }
+  // sl_price / be_price are UX companions of the points fields; the backend
+  // reads points only.
+  delete data.sl_price
+  delete data.be_price
   if (data.targets.length > 0) {
     data.targets = calculatedTargets.value
   } else {
@@ -304,30 +327,31 @@ async function handleSymbolCreate(data) {
         />
       </div>
 
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.sl_points') }} *</label>
-          <InputNumber v-model="form.sl_points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.sl_price') }}</label>
-          <div class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600 text-sm dark:text-gray-300 flex items-center min-h-[38px]">
-            {{ calculatedSlPrice != null ? calculatedSlPrice.toLocaleString() : '-' }}
-          </div>
-        </div>
-      </div>
+      <PricePointsInput
+        v-model:points="form.sl_points"
+        v-model:price="form.sl_price"
+        :entry-price="form.entry_price"
+        :direction="form.direction"
+        mode="SL"
+        points-name="sl_points"
+        price-name="sl_price"
+        :points-label="`${t('positions.sl_points')} *`"
+        :price-label="t('positions.sl_price')"
+      />
 
       <div class="grid grid-cols-3 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_points') }}</label>
-          <InputNumber v-model="form.be_points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_price') }}</label>
-          <div class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600 text-sm dark:text-gray-300 flex items-center min-h-[38px]">
-            {{ calculatedBePrice != null ? calculatedBePrice.toLocaleString() : '-' }}
-          </div>
-        </div>
+        <PricePointsInput
+          class="col-span-2"
+          v-model:points="form.be_points"
+          v-model:price="form.be_price"
+          :entry-price="form.entry_price"
+          :direction="form.direction"
+          mode="TP"
+          points-name="be_points"
+          price-name="be_price"
+          :points-label="t('positions.be_points')"
+          :price-label="t('positions.be_price')"
+        />
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_size') }}</label>
           <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
@@ -339,13 +363,20 @@ async function handleSymbolCreate(data) {
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('positions.targets') }}</label>
           <Button :label="t('positions.add_target')" icon="pi pi-plus" size="small" severity="secondary" text @click="addTarget" />
         </div>
-        <div v-for="(target, index) in form.targets" :key="index" class="grid grid-cols-[64px_1fr_1fr_80px_32px] gap-2 mb-2 items-center">
+        <div v-for="(target, index) in form.targets" :key="index" class="grid grid-cols-[64px_2fr_1fr_32px] gap-2 mb-2 items-center">
           <InputText v-model="target.label" class="w-full" :placeholder="t('positions.target_label')" />
-          <InputNumber v-model="target.points" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" :placeholder="t('positions.target_points')" />
+          <PricePointsInput
+            v-model:points="target.points"
+            v-model:price="target.price"
+            :entry-price="form.entry_price"
+            :direction="form.direction"
+            mode="TP"
+            :points-name="`tp_points_${index}`"
+            :price-name="`tp_price_${index}`"
+            :points-placeholder="t('positions.target_points')"
+            :price-placeholder="t('positions.target_price')"
+          />
           <InputNumber v-model="target.size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" :placeholder="t('positions.target_size')" />
-          <span class="text-sm text-gray-500 dark:text-gray-400 text-right">
-            {{ calculatedTargets[index]?.price != null ? calculatedTargets[index].price.toLocaleString() : '-' }}
-          </span>
           <Button icon="pi pi-times" severity="danger" size="small" text @click="removeTarget(index)" />
         </div>
       </div>

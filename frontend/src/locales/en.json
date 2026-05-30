@@ -336,6 +336,7 @@
     "add_target": "Add target",
     "target_label": "Label",
     "target_points": "Points",
+    "target_price": "Price",
     "target_size": "Size",
     "transfer": "Transfer",
     "transfer_description": "Select the target account to transfer this position to.",
