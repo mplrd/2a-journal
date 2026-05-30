@@ -73,8 +73,9 @@ class AdminSupportTicketController extends Controller
         $resolved = $this->service->getAttachmentForAdmin($attachmentId);
 
         $attachment = $resolved['attachment'];
+        $safeName = preg_replace('/[\"\r\n]+/', '', basename((string) $attachment['original_name']));
         header('Content-Type: ' . $attachment['mime_type']);
-        header('Content-Disposition: inline; filename="' . basename($attachment['original_name']) . '"');
+        header('Content-Disposition: inline; filename="' . $safeName . '"');
         header('Content-Length: ' . (string) ($attachment['size_bytes'] ?? filesize($resolved['path'])));
         header('X-Content-Type-Options: nosniff');
         readfile($resolved['path']);

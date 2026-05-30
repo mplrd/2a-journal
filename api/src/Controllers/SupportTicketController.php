@@ -73,8 +73,11 @@ class SupportTicketController extends Controller
     private function streamAttachment(array $resolved): never
     {
         $attachment = $resolved['attachment'];
+        // Strip quotes / control chars from the client-supplied name before it
+        // lands in the Content-Disposition header (header-injection guard).
+        $safeName = preg_replace('/[\"\r\n]+/', '', basename((string) $attachment['original_name']));
         header('Content-Type: ' . $attachment['mime_type']);
-        header('Content-Disposition: inline; filename="' . basename($attachment['original_name']) . '"');
+        header('Content-Disposition: inline; filename="' . $safeName . '"');
         header('Content-Length: ' . (string) ($attachment['size_bytes'] ?? filesize($resolved['path'])));
         header('X-Content-Type-Options: nosniff');
         readfile($resolved['path']);

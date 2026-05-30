@@ -319,4 +319,44 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 
 ---
 
+## Support (tickets)
+
+### Nettoyage physique des pièces jointes
+
+**Contexte** : les PJ des tickets sont stockées sur disque dans `api/storage/uploads/tickets/`. Les lignes `support_ticket_attachments` sont supprimées en cascade (FK `ON DELETE CASCADE`) si un ticket ou un user est hard-deleted, mais **les fichiers sur disque ne sont pas supprimés** (orphelins). En flux normal ce n'est pas critique (la suppression de compte est un soft-delete, les tickets restent), mais à prévoir si on ajoute une purge RGPD / un hard-delete de tickets.
+
+**À faire** : brancher un nettoyage disque (`FileUploadService::delete()`) sur la suppression d'un ticket / la purge d'un compte, ou un job de GC qui supprime les fichiers sans ligne associée.
+
+**Repéré le** : 2026-05-30 (audit privacy feat/support).
+**Priorité** : basse (pas de hard-delete de ticket aujourd'hui).
+
+### Rate limiting création de tickets
+
+**Contexte** : `POST /support/tickets` n'a pas de `RateLimitMiddleware` (seuls les endpoints auth en ont). Un user authentifié pourrait spammer la création de tickets / l'envoi de mails admin.
+
+**À faire** : ajouter un `RateLimitMiddleware` dédié sur la création de ticket et la réponse (ex. 10/h) ; éventuellement throttler les notifications admin.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse à moyenne.
+
+### Confort PJ : preview inline + PDF
+
+**Contexte** : v1 limitée aux images (JPEG/PNG/WebP), affichées via un lien « ouvrir » (fetch blob authentifié → nouvel onglet), pas de vignette inline dans le fil. PDF non supporté.
+
+**À faire** : vignettes inline (charger les blobs en `objectURL` et les afficher en `<img>` dans le thread), support `application/pdf` (whitelist `FileUploadService` + icône), lightbox.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse.
+
+### Refacto upload avatar sur FileUploadService
+
+**Contexte** : `AuthService::uploadProfilePicture()` duplique la logique de validation/stockage désormais factorisée dans `FileUploadService`. Non refactorée pour rester hors-scope.
+
+**À faire** : faire passer l'upload avatar par `FileUploadService` (sous-dossier public `avatars`), supprimer le code dupliqué.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse (dette technique mineure).
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
