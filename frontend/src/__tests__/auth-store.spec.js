@@ -177,4 +177,45 @@ describe('auth store', () => {
     // User data unchanged, no exception
     expect(store.user.theme).toBe('light')
   })
+
+  it('notifyEmailVerified broadcasts an email-verified message to other tabs', async () => {
+    const received = []
+    const listener = new BroadcastChannel('auth')
+    listener.onmessage = (event) => received.push(event.data)
+
+    store.notifyEmailVerified()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    listener.close()
+
+    expect(received).toContainEqual({ type: 'email-verified' })
+  })
+
+  it('startCrossTabSync refetches the profile when another tab signals verification', async () => {
+    api.setTokens('token')
+    store.user = { id: 1, email_verified: false }
+    authService.me.mockResolvedValue({ data: { id: 1, email_verified: true } })
+
+    store.startCrossTabSync()
+    const otherTab = new BroadcastChannel('auth')
+    otherTab.postMessage({ type: 'email-verified' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    otherTab.close()
+
+    expect(authService.me).toHaveBeenCalled()
+    expect(store.user.email_verified).toBe(true)
+  })
+
+  it('startCrossTabSync ignores unrelated messages and does not refetch', async () => {
+    api.setTokens('token')
+    store.user = { id: 1, email_verified: false }
+    authService.me.mockClear()
+
+    store.startCrossTabSync()
+    const otherTab = new BroadcastChannel('auth')
+    otherTab.postMessage({ type: 'something-else' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    otherTab.close()
+
+    expect(authService.me).not.toHaveBeenCalled()
+  })
 })

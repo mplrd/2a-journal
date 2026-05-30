@@ -3,10 +3,12 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 import Button from 'primevue/button'
 
 const { t } = useI18n()
 const route = useRoute()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const success = ref(false)
@@ -23,6 +25,15 @@ onMounted(async () => {
   try {
     await api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`, { auth: false })
     success.value = true
+    // Tell the other open tabs (e.g. a dashboard still showing the banner)
+    // to refresh their cached profile — the sending tab is not notified.
+    authStore.notifyEmailVerified()
+    // Resync this tab's profile too, so the verification banner disappears
+    // without requiring a manual page reload (the cached profile still has
+    // email_verified === false until the next session init).
+    if (authStore.isAuthenticated) {
+      await authStore.fetchProfile()
+    }
   } catch (err) {
     errorKey.value = err.messageKey || 'error.internal'
   } finally {

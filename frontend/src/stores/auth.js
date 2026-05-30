@@ -9,6 +9,20 @@ import { useOrdersStore } from '@/stores/orders'
 import { useTradesStore } from '@/stores/trades'
 import { useBillingStore } from '@/stores/billing'
 
+// Cross-tab channel: lets a tab that just verified its email tell the other
+// open tabs to refresh their cached profile, so the verification banner
+// disappears everywhere without a manual reload. Module-level (one per
+// document) and guarded for environments without BroadcastChannel.
+const EMAIL_VERIFIED = 'email-verified'
+let authChannel = null
+
+function getAuthChannel() {
+  if (authChannel === null && typeof BroadcastChannel !== 'undefined') {
+    authChannel = new BroadcastChannel('auth')
+  }
+  return authChannel
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const loading = ref(false)
@@ -130,6 +144,25 @@ export const useAuthStore = defineStore('auth', () => {
     return response
   }
 
+  // Start listening for verification signals from other tabs. Safe to call
+  // once at app startup; the listener survives route changes.
+  function startCrossTabSync() {
+    const channel = getAuthChannel()
+    if (!channel) return
+    channel.onmessage = (event) => {
+      if (event.data?.type === EMAIL_VERIFIED && api.getAccessToken()) {
+        fetchProfile()
+      }
+    }
+  }
+
+  // Tell the other open tabs that this account's email is now verified.
+  // The sending tab does not receive its own message, so callers still
+  // refresh their own profile separately.
+  function notifyEmailVerified() {
+    getAuthChannel()?.postMessage({ type: EMAIL_VERIFIED })
+  }
+
   async function initSession() {
     try {
       const response = await api.refreshAccessToken()
@@ -163,5 +196,7 @@ export const useAuthStore = defineStore('auth', () => {
     changePassword,
     deleteAccount,
     initSession,
+    startCrossTabSync,
+    notifyEmailVerified,
   }
 })
