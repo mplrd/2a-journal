@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 const LoginView = () => import('@/views/LoginView.vue')
 const UsersView = () => import('@/views/UsersView.vue')
 const SettingsView = () => import('@/views/SettingsView.vue')
+const SupportView = () => import('@/views/SupportView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -11,6 +12,7 @@ const router = createRouter({
     { path: '/', redirect: '/users' },
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/users', name: 'users', component: UsersView },
+    { path: '/support', name: 'support', component: SupportView },
     { path: '/settings', name: 'settings', component: SettingsView },
     { path: '/:pathMatch(.*)*', redirect: '/users' },
   ],

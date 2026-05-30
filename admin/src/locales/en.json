@@ -18,6 +18,7 @@
   },
   "nav": {
     "users": "Users",
+    "support": "Support",
     "settings": "Settings"
   },
   "login": {
@@ -123,6 +124,56 @@
         "billing_grace_days": "Grace period after a failed Stripe payment (days)",
         "trade_transfer_enabled": "Enables the trade-transfer feature between accounts"
       }
+    }
+  },
+  "support": {
+    "title": "Support",
+    "search": "Search (subject, email)",
+    "user": "User",
+    "support_team": "Support",
+    "reply_placeholder": "Write your reply…",
+    "send_reply": "Reply",
+    "filter": {
+      "all": "All"
+    },
+    "type": {
+      "SUPPORT": "Support",
+      "BUG": "Bug",
+      "FEATURE": "Feature request"
+    },
+    "status": {
+      "OPEN": "Open",
+      "IN_PROGRESS": "In progress",
+      "WAITING_USER": "Waiting for user",
+      "RESOLVED": "Resolved",
+      "CLOSED": "Closed"
+    },
+    "priority": {
+      "LOW": "Low",
+      "NORMAL": "Normal",
+      "HIGH": "High"
+    },
+    "field": {
+      "type": "Type",
+      "subject": "Subject",
+      "status": "Status",
+      "priority": "Priority",
+      "updated": "Updated",
+      "add_attachment": "Add an image"
+    },
+    "columns": {
+      "user": "User",
+      "messages": "Messages"
+    },
+    "actions": {
+      "open": "Open conversation"
+    },
+    "toast": {
+      "status_updated": "Status updated",
+      "priority_updated": "Priority updated"
+    },
+    "error": {
+      "not_found": "Request not found."
     }
   },
   "error": {
