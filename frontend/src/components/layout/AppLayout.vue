@@ -157,27 +157,29 @@ async function handleLogout() {
   <div class="flex flex-col h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
     <!-- Header (full width, always on top) -->
     <header class="shrink-0 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 z-10">
-      <div class="px-4 py-3 flex items-center justify-between">
-        <!-- Left: Burger + Title -->
-        <div class="flex items-center gap-3">
+      <div class="px-4 py-3 flex items-center justify-between gap-3">
+        <!-- Left: Burger + Title — min-w-0 lets the title truncate instead of
+             pushing the header and crushing the right-hand controls on mobile. -->
+        <div class="flex items-center gap-3 min-w-0">
           <button
-            class="md:hidden text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+            class="md:hidden text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white cursor-pointer shrink-0"
             data-testid="burger-menu"
             :aria-label="t('nav.menu')"
             @click="toggleSidebar"
           >
             <i class="pi pi-bars text-xl"></i>
           </button>
-          <RouterLink to="/" class="flex items-center gap-2">
+          <RouterLink to="/" class="flex items-center gap-2 shrink-0">
             <BrandLogo :size="40" class="text-brand-navy-900 dark:text-brand-cream" />
             <h1 class="text-lg font-semibold text-gray-800 dark:text-gray-100 hidden sm:inline">{{ t('app.title') }}</h1>
           </RouterLink>
-          <span v-if="pageTitle" class="text-gray-300 dark:text-gray-600 hidden sm:inline" aria-hidden="true">·</span>
-          <span v-if="pageTitle" class="text-lg font-semibold text-gray-500 dark:text-gray-400 truncate" data-testid="page-title">{{ pageTitle }}</span>
+          <span v-if="pageTitle" class="text-gray-300 dark:text-gray-600 hidden sm:inline shrink-0" aria-hidden="true">·</span>
+          <span v-if="pageTitle" class="text-base sm:text-lg font-semibold text-gray-500 dark:text-gray-400 truncate min-w-0" data-testid="page-title">{{ pageTitle }}</span>
         </div>
 
-        <!-- Right: Locale selector + Dark mode toggle + Avatar + User menu -->
-        <div class="flex items-center gap-3">
+        <!-- Right: Locale selector + Dark mode toggle + Avatar + User menu —
+             shrink-0 keeps the controls from being compressed by a long title. -->
+        <div class="flex items-center gap-3 shrink-0">
           <!-- Locale selector (flag badge) -->
           <button
             data-testid="locale-select"
