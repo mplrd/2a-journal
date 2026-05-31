@@ -107,21 +107,42 @@ async function upload(path, formData) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    headers,
-    body: formData,
-    credentials: 'include',
-  })
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      credentials: 'include',
+    })
+  } catch {
+    // fetch() itself rejected: offline, DNS, or — most often for uploads — the
+    // connection was cut by an upstream proxy that refused an oversized body
+    // before sending any HTTP response. Never reaches our PHP logs.
+    const error = new Error('error.network')
+    error.status = 0
+    error.messageKey = 'error.network'
+    throw error
+  }
 
-  const data = await response.json()
+  // Read the body defensively. An edge proxy rejecting an oversized upload
+  // (HTTP 413) answers with HTML, not our JSON envelope — a bare
+  // response.json() would throw and surface as a misleading "internal error".
+  const raw = await response.text().catch(() => '')
+  let data = null
+  try {
+    data = raw ? JSON.parse(raw) : null
+  } catch {
+    data = null
+  }
 
   if (!response.ok) {
-    const error = new Error(data.error?.message_key || 'error.internal')
+    const fallback = response.status === 413 ? 'upload.error.too_large' : 'error.internal'
+    const error = new Error(data?.error?.message_key || fallback)
     error.status = response.status
-    error.code = data.error?.code
-    error.field = data.error?.field
-    error.messageKey = data.error?.message_key
+    error.code = data?.error?.code
+    error.field = data?.error?.field
+    error.messageKey = data?.error?.message_key || fallback
     throw error
   }
 
