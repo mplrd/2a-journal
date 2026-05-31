@@ -33,7 +33,16 @@ class FileUploadService
      */
     public function store(array $file, string $subdir, array $mimeToExt, int $maxBytes, string $field = 'file'): array
     {
-        if (empty($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $error = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+
+        // PHP rejected the file for size before we ever see its bytes
+        // (upload_max_filesize / MAX_FILE_SIZE form limit). Surface a clear
+        // "too large" message instead of the misleading "required" one.
+        if ($error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE) {
+            throw new ValidationException('upload.error.too_large', $field);
+        }
+
+        if (empty($file) || $error !== UPLOAD_ERR_OK) {
             throw new ValidationException('upload.error.required', $field);
         }
 

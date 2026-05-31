@@ -10,6 +10,7 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useSupportStore } from '@/stores/support'
 import { TicketType } from '@/constants/support'
+import { compressImageIfNeeded } from '@/utils/imageCompression'
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_FILES = 5
@@ -51,21 +52,23 @@ function pickFiles() {
   fileInput.value?.click()
 }
 
-function onFilesSelected(event) {
+async function onFilesSelected(event) {
   clientError.value = null
   const selected = Array.from(event.target.files || [])
-  for (const file of selected) {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
+  for (const original of selected) {
+    if (!ACCEPTED_TYPES.includes(original.type)) {
       clientError.value = t('support.error.attachment_type')
-      continue
-    }
-    if (file.size > MAX_SIZE) {
-      clientError.value = t('support.error.attachment_too_large')
       continue
     }
     if (files.value.length >= MAX_FILES) {
       clientError.value = t('support.error.too_many_attachments')
       break
+    }
+    // Shrink heavy phone photos before they ever leave the browser.
+    const file = await compressImageIfNeeded(original)
+    if (file.size > MAX_SIZE) {
+      clientError.value = t('support.error.attachment_too_large')
+      continue
     }
     files.value.push(file)
   }

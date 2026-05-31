@@ -2,8 +2,22 @@
 
 namespace App\Core;
 
+use App\Exceptions\ValidationException;
+
 abstract class Controller
 {
+    /**
+     * Reject a multipart request whose body PHP discarded for exceeding
+     * post_max_size (empty $_POST/$_FILES despite bytes on the wire) with a
+     * clean "too large" error rather than a misleading downstream failure.
+     */
+    protected function guardUploadNotTruncated(Request $request): void
+    {
+        if ($request->isMultipartTruncated()) {
+            throw new ValidationException('upload.error.too_large', 'attachments');
+        }
+    }
+
     protected function jsonSuccess(array $data = [], ?array $meta = null, int $status = 200): Response
     {
         return Response::success($data, $meta, $status);

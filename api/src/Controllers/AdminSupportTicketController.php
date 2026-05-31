@@ -41,6 +41,7 @@ class AdminSupportTicketController extends Controller
 
     public function reply(Request $request): Response
     {
+        $this->guardUploadNotTruncated($request);
         $adminId = (int) $request->getAttribute('user_id');
         $ticketId = (int) $request->getRouteParam('id');
         $files = $this->normalizeUploadedFiles($request->getFile('attachments'));

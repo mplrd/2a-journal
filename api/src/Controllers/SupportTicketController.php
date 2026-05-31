@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
+use App\Exceptions\ValidationException;
 use App\Services\SupportTicketService;
 
 /**
@@ -36,6 +37,7 @@ class SupportTicketController extends Controller
 
     public function store(Request $request): Response
     {
+        $this->guardUploadNotTruncated($request);
         $userId = (int) $request->getAttribute('user_id');
         $files = $this->normalizeUploadedFiles($request->getFile('attachments'));
         $detail = $this->service->createTicket($userId, $request->getBody(), $files);
@@ -53,6 +55,7 @@ class SupportTicketController extends Controller
 
     public function reply(Request $request): Response
     {
+        $this->guardUploadNotTruncated($request);
         $userId = (int) $request->getAttribute('user_id');
         $ticketId = (int) $request->getRouteParam('id');
         $files = $this->normalizeUploadedFiles($request->getFile('attachments'));

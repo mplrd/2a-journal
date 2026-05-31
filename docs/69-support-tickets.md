@@ -35,6 +35,14 @@ FK `ON DELETE CASCADE` depuis `users` et entre ticket → messages → attachmen
 - Téléchargement **uniquement via endpoint authentifié** qui vérifie que le demandeur est le créateur **ou** un admin, puis stream le fichier (`Content-Type` validé, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`, nom de fichier sanitisé contre l'injection d'en-tête). Pas d'URL statique Apache.
 - Max 5 PJ par message.
 
+#### Robustesse taille — mobile (fix 2026-05-31)
+
+Symptôme : sur mobile (photos de pellicule lourdes, 3-8 Mo / 12 Mpx), l'envoi pouvait échouer (« erreur interne du serveur » ou message trompeur), alors que la même image passe sur desktop — le fichier réellement envoyé n'est pas le même poids. Trois corrections en défense en profondeur :
+
+- **Compression côté client** (`frontend/src/utils/imageCompression.js`) : avant l'upload, les images > 1,5 Mo sont redimensionnées (2000 px max sur le grand côté, JPEG qualité 0,82) dans le navigateur via `<canvas>`. Non-images et petites images laissées intactes ; fallback sur le fichier original si la compression échoue (jamais bloquant). Câblé dans `NewTicketDialog` et `TicketDetailDialog`. → la photo lourde n'atteint plus le serveur.
+- **`FileUploadService::store()`** : un fichier rejeté par PHP pour dépassement (`UPLOAD_ERR_INI_SIZE` / `UPLOAD_ERR_FORM_SIZE`) renvoie désormais `upload.error.too_large` au lieu du trompeur `upload.error.required`.
+- **`Request::isMultipartTruncated()` + `Controller::guardUploadNotTruncated()`** : si le corps multipart dépasse `post_max_size` (PHP vide alors `$_POST`/`$_FILES`), les endpoints d'upload renvoient un `upload.error.too_large` propre (422) au lieu d'un 500 / d'une validation incohérente. Limites serveur : `upload_max_filesize` / `post_max_size` = 32 Mo (`api/docker/php.ini`).
+
 ### Endpoints
 
 Côté utilisateur — `AuthMiddleware` seul (**pas** de gate abonnement) :
@@ -104,8 +112,8 @@ Bloc `support.*` (+ `upload.error.*`) ajouté dans `frontend/src/locales/{fr,en}
 
 ## Tests
 
-- **Backend** (PHPUnit) : enums (`SupportEnumsTest`), `FileUploadServiceTest` (rejet MIME/taille, nom non devinable), `SupportTicketServiceTest` (création, ownership, déclencheurs mail, transitions de statut), `SupportTicketRepositoryTest` (CRUD + scoping), `SupportFlowTest` (intégration bout-en-bout : création, scoping, fil admin, statut/priorité, accès **sans abonnement**, ownership sur le download des PJ). 44 tests support, suite complète verte.
-- **Frontend** (Vitest) : `support-store.spec.js`, `support-service.spec.js` (journal) et `support-store.spec.js` (admin).
+- **Backend** (PHPUnit) : enums (`SupportEnumsTest`), `FileUploadServiceTest` (rejet MIME/taille dont `INI_SIZE`/`FORM_SIZE` → `too_large`, nom non devinable), `RequestTest` (détection multipart tronqué), `SupportTicketServiceTest` (création, ownership, déclencheurs mail, transitions de statut), `SupportTicketRepositoryTest` (CRUD + scoping), `SupportFlowTest` (intégration bout-en-bout : création, scoping, fil admin, statut/priorité, accès **sans abonnement**, ownership sur le download des PJ). Suite complète verte.
+- **Frontend** (Vitest) : `support-store.spec.js`, `support-service.spec.js`, `imageCompression.spec.js` (journal) et `support-store.spec.js` (admin).
 
 ## Limitations / suite
 
