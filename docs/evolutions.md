@@ -319,4 +319,66 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 
 ---
 
+## Support (tickets)
+
+### Nettoyage physique des pièces jointes
+
+**Contexte** : les PJ des tickets sont stockées sur disque dans `api/storage/uploads/tickets/`. Les lignes `support_ticket_attachments` sont supprimées en cascade (FK `ON DELETE CASCADE`) si un ticket ou un user est hard-deleted, mais **les fichiers sur disque ne sont pas supprimés** (orphelins). En flux normal ce n'est pas critique (la suppression de compte est un soft-delete, les tickets restent), mais à prévoir si on ajoute une purge RGPD / un hard-delete de tickets.
+
+**À faire** : brancher un nettoyage disque (`FileUploadService::delete()`) sur la suppression d'un ticket / la purge d'un compte, ou un job de GC qui supprime les fichiers sans ligne associée.
+
+**Repéré le** : 2026-05-30 (audit privacy feat/support).
+**Priorité** : basse (pas de hard-delete de ticket aujourd'hui).
+
+### Rate limiting création de tickets
+
+**Contexte** : `POST /support/tickets` n'a pas de `RateLimitMiddleware` (seuls les endpoints auth en ont). Un user authentifié pourrait spammer la création de tickets / l'envoi de mails admin.
+
+**À faire** : ajouter un `RateLimitMiddleware` dédié sur la création de ticket et la réponse (ex. 10/h) ; éventuellement throttler les notifications admin.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse à moyenne.
+
+### Confort PJ : preview inline + PDF
+
+**Contexte** : v1 limitée aux images (JPEG/PNG/WebP), affichées via un lien « ouvrir » (fetch blob authentifié → nouvel onglet), pas de vignette inline dans le fil. PDF non supporté.
+
+**À faire** : vignettes inline (charger les blobs en `objectURL` et les afficher en `<img>` dans le thread), support `application/pdf` (whitelist `FileUploadService` + icône), lightbox.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse.
+
+### Refacto upload avatar sur FileUploadService
+
+**Contexte** : `AuthService::uploadProfilePicture()` duplique la logique de validation/stockage désormais factorisée dans `FileUploadService`. Non refactorée pour rester hors-scope.
+
+**À faire** : faire passer l'upload avatar par `FileUploadService` (sous-dossier public `avatars`), supprimer le code dupliqué.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse (dette technique mineure).
+
+---
+
+## Auth / sessions
+
+### Bandeau de vérification email — sync cross-onglet incomplète
+
+**Contexte** : suite au fix du bandeau de vérification email (commit `a690cb5`, livré prod `aecc26e` le 2026-05-30, cf. `EmailVerificationBanner.vue` / `VerifyEmailView.vue` / `stores/auth.js`). Le fix combine (1) refetch du profil dans l'onglet qui vérifie, et (2) un `BroadcastChannel('auth')` pour que les **autres onglets déjà ouverts** rafraîchissent leur profil et masquent le bandeau sans reload.
+
+Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-30 avec deux onglets du **même navigateur** et le nouveau code, l'ancien onglet (dashboard, bandeau affiché) **ne s'est pas régularisé** — il a fallu recharger. Le point (1) marche.
+
+**Diag (lecture seule, non concluant)** :
+- Le token d'accès est **en mémoire par onglet** (`services/api.js:3`, pas en localStorage). La garde `api.getAccessToken()` du listener (`startCrossTabSync`) devrait pourtant être vraie dans l'onglet A (il est loggé).
+- Par élimination : bandeau qui **reste** ⇒ `fetchProfile()` n'a pas tourné dans l'onglet A (sinon `/auth/me` renverrait `email_verified: true` → bandeau masqué). Donc soit le message `BroadcastChannel` n'est pas reçu, soit `startCrossTabSync` n'a pas posé le `onmessage` dans l'onglet A.
+- Aucune cause évidente trouvée en lecture seule pour un scénario même-navigateur/même-origine. **Repro locale (2 onglets, console) nécessaire** pour trancher : vérifier que `onmessage` se déclenche côté A et que `postMessage` part côté B.
+
+**À faire** :
+- Reproduire en local (2 onglets) pour identifier la cause exacte du non-déclenchement.
+- Piste de correctif robuste indépendante du mystère BroadcastChannel : **option 1 — refetch du profil au retour de focus/visibilité de l'onglet** (`visibilitychange`/`focus`), scopé à `email_verified === false` pour ne pas taper l'API inutilement une fois vérifié. Couvre l'onglet A quel que soit le contexte où la vérif a eu lieu (y compris cross-navigateur, que BroadcastChannel ne peut structurellement pas franchir). ~10 lignes, en TDD.
+
+**Repéré le** : 2026-05-30.
+**Priorité** : basse — pire cas = comportement d'avant le fix (reload nécessaire dans le vieil onglet), aucune régression. Le flux principal (onglet de vérif + reload) fonctionne.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

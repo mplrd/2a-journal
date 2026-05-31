@@ -15,8 +15,9 @@ class Request
     private array $cookies;
     private array $files;
     private string $rawBody = '';
+    private int $contentLength = 0;
 
-    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [], array $files = [], string $rawBody = '')
+    private function __construct(string $method, string $uri, array $body, array $query, array $headers, string $clientIp = '127.0.0.1', array $cookies = [], array $files = [], string $rawBody = '', int $contentLength = 0)
     {
         $this->method = $method;
         $this->uri = $uri;
@@ -29,6 +30,7 @@ class Request
         $this->cookies = $cookies;
         $this->files = $files;
         $this->rawBody = $rawBody;
+        $this->contentLength = $contentLength;
     }
 
     public static function capture(): self
@@ -81,8 +83,9 @@ class Request
         }
 
         $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
 
-        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES, $rawBodyString);
+        return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES, $rawBodyString, $contentLength);
     }
 
     public static function create(string $method, string $uri, array $body = [], array $query = [], array $headers = [], array $cookies = [], string $rawBody = ''): self
@@ -96,7 +99,8 @@ class Request
         if ($rawBody === '' && !empty($body)) {
             $rawBody = json_encode($body);
         }
-        return new self($method, $uri, $body, $query, $normalized, '127.0.0.1', $cookies, [], $rawBody);
+        $contentLength = (int) ($normalized['CONTENT-LENGTH'] ?? 0);
+        return new self($method, $uri, $body, $query, $normalized, '127.0.0.1', $cookies, [], $rawBody, $contentLength);
     }
 
     public function getRawBody(): string
@@ -176,8 +180,35 @@ class Request
         return $this->files[$name] ?? null;
     }
 
+    public function getFiles(): array
+    {
+        return $this->files;
+    }
+
     public function setFiles(array $files): void
     {
         $this->files = $files;
+    }
+
+    public function getContentLength(): int
+    {
+        return $this->contentLength;
+    }
+
+    /**
+     * True when a multipart upload arrived with bytes on the wire but PHP
+     * produced no parsed fields nor files — the tell-tale sign that the body
+     * exceeded post_max_size and PHP silently discarded $_POST and $_FILES.
+     * Lets controllers return a clean "too large" error instead of a
+     * misleading validation failure (or a 500).
+     */
+    public function isMultipartTruncated(): bool
+    {
+        $contentType = (string) ($this->getHeader('content-type') ?? '');
+        if (!str_contains($contentType, 'multipart/form-data')) {
+            return false;
+        }
+
+        return $this->contentLength > 0 && $this->body === [] && $this->files === [];
     }
 }

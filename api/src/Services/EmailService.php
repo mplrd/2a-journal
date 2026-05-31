@@ -122,6 +122,101 @@ class EmailService
         $this->send($toEmail, $subject, $body);
     }
 
+    /**
+     * Notify an admin that a new support ticket was opened. $ticket is a row
+     * from support_tickets (id, type, subject, ...).
+     */
+    public function sendTicketCreatedToAdmin(string $toEmail, array $ticket, string $locale = 'en'): void
+    {
+        $typeLabel = $this->ticketTypeLabel((string) $ticket['type'], $locale);
+        $subject = $locale === 'fr'
+            ? "Nouveau ticket #{$ticket['id']} — {$ticket['subject']}"
+            : "New ticket #{$ticket['id']} — {$ticket['subject']}";
+        $title = $locale === 'fr' ? 'Nouveau ticket de support' : 'New support ticket';
+
+        $content = $this->loadTemplate('ticket-created-admin', $locale, [
+            'ticket_id' => (string) $ticket['id'],
+            'type' => $typeLabel,
+            'subject' => (string) $ticket['subject'],
+            'url' => $this->ticketUrl((int) $ticket['id']),
+        ]);
+        $this->send($toEmail, $subject, $this->wrapLayout($title, $content));
+    }
+
+    /**
+     * Notify the other party that a reply was posted on a ticket.
+     * $fromAdmin = true → the message came from an admin (recipient is the
+     * ticket creator); false → it came from the user (recipient is an admin).
+     */
+    public function sendTicketReplyEmail(string $toEmail, array $ticket, string $locale = 'en', bool $fromAdmin = false): void
+    {
+        if ($locale === 'fr') {
+            $subject = "Nouvelle réponse — ticket #{$ticket['id']}";
+            $title = $fromAdmin ? 'Réponse du support' : 'Nouvelle réponse utilisateur';
+        } else {
+            $subject = "New reply — ticket #{$ticket['id']}";
+            $title = $fromAdmin ? 'Support replied' : 'New user reply';
+        }
+
+        $content = $this->loadTemplate('ticket-reply', $locale, [
+            'ticket_id' => (string) $ticket['id'],
+            'subject' => (string) $ticket['subject'],
+            'url' => $this->ticketUrl((int) $ticket['id']),
+        ]);
+        $this->send($toEmail, $subject, $this->wrapLayout($title, $content));
+    }
+
+    /** Notify the ticket creator that an admin changed the ticket status. */
+    public function sendTicketStatusChangedEmail(string $toEmail, array $ticket, string $oldStatus, string $newStatus, string $locale = 'en'): void
+    {
+        $subject = $locale === 'fr'
+            ? "Statut mis à jour — ticket #{$ticket['id']}"
+            : "Status updated — ticket #{$ticket['id']}";
+        $title = $locale === 'fr' ? 'Statut du ticket mis à jour' : 'Ticket status updated';
+
+        $content = $this->loadTemplate('ticket-status-changed', $locale, [
+            'ticket_id' => (string) $ticket['id'],
+            'subject' => (string) $ticket['subject'],
+            'old_status' => $this->ticketStatusLabel($oldStatus, $locale),
+            'new_status' => $this->ticketStatusLabel($newStatus, $locale),
+            'url' => $this->ticketUrl((int) $ticket['id']),
+        ]);
+        $this->send($toEmail, $subject, $this->wrapLayout($title, $content));
+    }
+
+    private function ticketUrl(int $ticketId): string
+    {
+        return rtrim((string) ($this->config['frontend_url'] ?? ''), '/') . '/support?ticket=' . $ticketId;
+    }
+
+    private function ticketTypeLabel(string $type, string $locale): string
+    {
+        $labels = [
+            'fr' => ['SUPPORT' => 'Support', 'BUG' => 'Bug', 'FEATURE' => 'Évolution'],
+            'en' => ['SUPPORT' => 'Support', 'BUG' => 'Bug', 'FEATURE' => 'Feature request'],
+        ];
+        $set = $labels[$locale] ?? $labels['en'];
+
+        return $set[$type] ?? $type;
+    }
+
+    private function ticketStatusLabel(string $status, string $locale): string
+    {
+        $labels = [
+            'fr' => [
+                'OPEN' => 'Ouvert', 'IN_PROGRESS' => 'En cours', 'WAITING_USER' => 'En attente de votre réponse',
+                'RESOLVED' => 'Résolu', 'CLOSED' => 'Fermé',
+            ],
+            'en' => [
+                'OPEN' => 'Open', 'IN_PROGRESS' => 'In progress', 'WAITING_USER' => 'Waiting for your reply',
+                'RESOLVED' => 'Resolved', 'CLOSED' => 'Closed',
+            ],
+        ];
+        $set = $labels[$locale] ?? $labels['en'];
+
+        return $set[$status] ?? $status;
+    }
+
     private function send(string $to, string $subject, string $htmlBody): void
     {
         if (!$this->isEnabled()) {

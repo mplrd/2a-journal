@@ -14,6 +14,8 @@ use App\Controllers\SymbolController;
 use App\Controllers\BrokerSyncController;
 use App\Controllers\ImportController;
 use App\Controllers\StatsController;
+use App\Controllers\SupportTicketController;
+use App\Controllers\AdminSupportTicketController;
 use App\Controllers\TradeController;
 use App\Controllers\TradingViewWebhookController;
 use App\Core\Database;
@@ -39,6 +41,9 @@ use App\Repositories\RateLimitRepository;
 use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\ImportBatchRepository;
 use App\Repositories\StatsRepository;
+use App\Repositories\SupportTicketRepository;
+use App\Repositories\SupportTicketMessageRepository;
+use App\Repositories\SupportTicketAttachmentRepository;
 use App\Repositories\SymbolAliasRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\RefreshTokenRepository;
@@ -77,6 +82,8 @@ use App\Services\Import\ColumnMapperService;
 use App\Services\Import\RowGroupingService;
 use App\Services\SsoService;
 use App\Services\StatsService;
+use App\Services\SupportTicketService;
+use App\Services\FileUploadService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
 use App\Services\TradingViewWebhookService;
@@ -440,6 +447,30 @@ $router->get('/stats/by-session', [$statsController, 'bySession'], [$authMiddlew
 $router->get('/stats/by-account', [$statsController, 'byAccount'], [$authMiddleware, $requireSubscription]);
 $router->get('/stats/by-account-type', [$statsController, 'byAccountType'], [$authMiddleware, $requireSubscription]);
 
+// ── Support (tickets) ───────────────────────────────────────
+// No subscription gate: support must reach every authenticated user. Attachments
+// live OUTSIDE the public web root and are streamed through the controller.
+$supportTicketRepo = new SupportTicketRepository($pdo);
+$supportMessageRepo = new SupportTicketMessageRepository($pdo);
+$supportAttachmentRepo = new SupportTicketAttachmentRepository($pdo);
+$ticketUploadService = new FileUploadService(dirname(__DIR__) . '/storage/uploads');
+$supportTicketService = new SupportTicketService(
+    $supportTicketRepo,
+    $supportMessageRepo,
+    $supportAttachmentRepo,
+    $ticketUploadService,
+    $userRepo,
+    $emailService
+);
+$supportTicketController = new SupportTicketController($supportTicketService);
+$adminSupportTicketController = new AdminSupportTicketController($supportTicketService);
+
+$router->get('/support/tickets', [$supportTicketController, 'index'], [$authMiddleware]);
+$router->post('/support/tickets', [$supportTicketController, 'store'], [$authMiddleware]);
+$router->get('/support/tickets/{id}', [$supportTicketController, 'show'], [$authMiddleware]);
+$router->post('/support/tickets/{id}/messages', [$supportTicketController, 'reply'], [$authMiddleware]);
+$router->get('/support/tickets/{id}/attachments/{attId}', [$supportTicketController, 'downloadAttachment'], [$authMiddleware]);
+
 // ── Admin BO ────────────────────────────────────────────────
 $requireAdmin = new RequireAdminMiddleware();
 $adminUserService = new AdminUserService($userRepo, $authService, $pdo);
@@ -455,3 +486,11 @@ $router->delete('/admin/users/{id}', [$adminUserController, 'destroy'], [$authMi
 $adminSettingsController = new AdminSettingsController($platformSettingsService);
 $router->get('/admin/settings', [$adminSettingsController, 'index'], [$authMiddleware, $requireAdmin]);
 $router->put('/admin/settings/{key}', [$adminSettingsController, 'update'], [$authMiddleware, $requireAdmin]);
+
+// Admin support tickets (all users' tickets)
+$router->get('/admin/support/tickets', [$adminSupportTicketController, 'index'], [$authMiddleware, $requireAdmin]);
+$router->get('/admin/support/tickets/{id}', [$adminSupportTicketController, 'show'], [$authMiddleware, $requireAdmin]);
+$router->post('/admin/support/tickets/{id}/messages', [$adminSupportTicketController, 'reply'], [$authMiddleware, $requireAdmin]);
+$router->patch('/admin/support/tickets/{id}/status', [$adminSupportTicketController, 'updateStatus'], [$authMiddleware, $requireAdmin]);
+$router->patch('/admin/support/tickets/{id}/priority', [$adminSupportTicketController, 'updatePriority'], [$authMiddleware, $requireAdmin]);
+$router->get('/admin/support/tickets/{id}/attachments/{attId}', [$adminSupportTicketController, 'downloadAttachment'], [$authMiddleware, $requireAdmin]);

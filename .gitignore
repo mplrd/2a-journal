@@ -29,3 +29,7 @@ Thumbs.db
 
 # PHPUnit
 .phpunit.cache
+
+# Support ticket attachments (private uploads, kept out of the repo & web root)
+/api/storage/uploads/tickets/*
+!/api/storage/uploads/tickets/.gitkeep
