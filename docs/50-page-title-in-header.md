@@ -46,6 +46,19 @@ Réactif au switch de locale (`t()` capture la locale courante).
 
 Sur mobile (< 640px / `sm`), le label « Journal » et le séparateur sont masqués (`hidden sm:inline`) — seul le logo + le titre de page restent. Le logo continue à porter la marque, le titre de page reste visible pour ne pas perdre le contexte de navigation.
 
+#### Troncature des titres longs (fix 2026-05-31)
+
+Symptôme mobile : un titre de page long poussait la rangée du header et écrasait / faisait déborder les contrôles de droite (langue, thème, aide, avatar). Le `truncate` posé sur le titre était **inopérant** : dans un conteneur flex, `truncate` (qui pose `overflow:hidden`) n'a aucun effet sans `min-w-0` sur l'élément **et** ses parents flex.
+
+Correctif (`AppLayout.vue`, rangée du header) :
+
+- `min-w-0` sur la zone gauche **et** sur le `<span>` du titre → le titre peut enfin rétrécir et se tronquer au lieu de pousser la mise en page ;
+- `shrink-0` sur la zone droite (contrôles), le burger, le bloc logo et le séparateur → ils ne se compriment jamais ;
+- `gap-3` sur la rangée → les deux zones ne se collent jamais ;
+- titre en `text-base` sur mobile, `sm:text-lg` à partir de `sm` → moins encombrant sur petit écran.
+
+Test : `app-layout-header.spec.js` épingle ces classes (garde-fou anti-régression). La validation visuelle responsive finale reste à faire en navigateur sur un vrai mobile.
+
 ### Vues nettoyées
 
 Les 7 vues routées perdent leur `<h1>` (ou `<h2>` pour `AccountView`) en tête de template :

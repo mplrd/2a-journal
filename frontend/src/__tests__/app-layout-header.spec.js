@@ -1,10 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import { createPinia, setActivePinia } from 'pinia'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import en from '@/locales/en.json'
-import fr from '@/locales/fr.json'
+import { createPinia } from 'pinia'
+import PrimeVue from 'primevue/config'
+import ToastService from 'primevue/toastservice'
 
 // The header crams the page title next to the brand on the left and the
 // locale/theme/help/avatar controls on the right. On a narrow (mobile)
@@ -13,44 +12,44 @@ import fr from '@/locales/fr.json'
 // its container) can shrink (min-w-0) and the controls cannot (shrink-0).
 // These tests pin those classes so the regression can't silently return.
 
-const i18n = createI18n({
-  legacy: false,
-  locale: 'en',
-  fallbackLocale: 'en',
-  messages: { en, fr },
-})
-
 // Route carries a titleKey so the page-title span renders.
-const mockRoute = { path: '/', meta: { titleKey: 'trades.title' } }
-
 vi.mock('vue-router', () => ({
-  useRoute: () => mockRoute,
-  useRouter: () => ({ push: () => {} }),
-  RouterLink: { template: '<a><slot /></a>' },
-  RouterView: { template: '<div />' },
+  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ path: '/', meta: { titleKey: 'trades.title' } }),
 }))
 
-const baseGlobal = {
-  plugins: [i18n],
-  stubs: {
-    FlagIcon: true,
-    BrandLogo: true,
-    Button: true,
-    Popover: {
-      template: '<div><slot /></div>',
-      methods: { toggle() {} },
-    },
-  },
-  directives: { tooltip: () => {} },
-}
+import AppLayout from '../components/layout/AppLayout.vue'
+import fr from '../locales/fr.json'
+import en from '../locales/en.json'
 
-function createWrapper() {
-  return mount(AppLayout, { global: baseGlobal })
+function createWrapper(locale = 'fr') {
+  const i18n = createI18n({
+    legacy: false,
+    locale,
+    fallbackLocale: 'en',
+    messages: { fr, en },
+  })
+
+  return mount(AppLayout, {
+    global: {
+      plugins: [createPinia(), i18n, PrimeVue, ToastService],
+      stubs: {
+        RouterView: true,
+        RouterLink: true,
+        Popover: {
+          template: '<div><slot /></div>',
+          methods: { toggle() {} },
+        },
+        FlagIcon: true,
+        BrandLogo: true,
+      },
+    },
+  })
 }
 
 describe('AppLayout header — responsive title truncation', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
+    localStorage.clear()
     vi.stubGlobal('innerWidth', 375) // mobile width
   })
 
