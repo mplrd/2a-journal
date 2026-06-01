@@ -129,15 +129,35 @@ async function getBlob(path) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'GET',
-    headers,
-    credentials: 'include',
-  })
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+  } catch {
+    const error = new Error('error.network')
+    error.status = 0
+    error.messageKey = 'error.network'
+    throw error
+  }
 
   if (!response.ok) {
-    const error = new Error('error.internal')
+    // Surface the JSON error envelope (e.g. attachment_not_found) when present,
+    // reading defensively in case the body is a non-JSON proxy/HTML page.
+    const raw = await response.text().catch(() => '')
+    let data = null
+    try {
+      data = raw ? JSON.parse(raw) : null
+    } catch {
+      data = null
+    }
+    const error = new Error(data?.error?.message_key || 'error.internal')
     error.status = response.status
+    error.code = data?.error?.code
+    error.field = data?.error?.field
+    error.messageKey = data?.error?.message_key || 'error.internal'
     throw error
   }
 

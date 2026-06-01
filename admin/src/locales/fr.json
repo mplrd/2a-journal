@@ -182,10 +182,12 @@
       "priority_updated": "Priorité mise à jour"
     },
     "error": {
-      "not_found": "Demande introuvable."
+      "not_found": "Demande introuvable.",
+      "attachment_not_found": "Pièce jointe introuvable."
     }
   },
   "error": {
-    "internal": "Une erreur est survenue"
+    "internal": "Une erreur est survenue",
+    "network": "Erreur de connexion au serveur"
   }
 }

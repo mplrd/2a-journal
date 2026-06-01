@@ -182,10 +182,12 @@
       "priority_updated": "Priority updated"
     },
     "error": {
-      "not_found": "Request not found."
+      "not_found": "Request not found.",
+      "attachment_not_found": "Attachment not found."
     }
   },
   "error": {
-    "internal": "An error occurred"
+    "internal": "An error occurred",
+    "network": "Connection error"
   }
 }

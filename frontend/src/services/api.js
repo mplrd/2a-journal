@@ -156,15 +156,38 @@ async function getBlob(path) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'GET',
-    headers,
-    credentials: 'include',
-  })
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+  } catch {
+    // fetch() rejected before any response: offline, DNS, dropped connection.
+    const error = new Error('error.network')
+    error.status = 0
+    error.messageKey = 'error.network'
+    throw error
+  }
 
   if (!response.ok) {
-    const error = new Error('error.internal')
+    // The endpoint may answer with our JSON error envelope (e.g. a 404 with
+    // support.error.attachment_not_found). Read it defensively — the body can
+    // also be a non-JSON proxy/HTML page — and surface a real message_key
+    // instead of a blanket "internal error".
+    const raw = await response.text().catch(() => '')
+    let data = null
+    try {
+      data = raw ? JSON.parse(raw) : null
+    } catch {
+      data = null
+    }
+    const error = new Error(data?.error?.message_key || 'error.internal')
     error.status = response.status
+    error.code = data?.error?.code
+    error.field = data?.error?.field
+    error.messageKey = data?.error?.message_key || 'error.internal'
     throw error
   }
 
