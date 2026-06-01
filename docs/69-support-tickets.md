@@ -127,10 +127,14 @@ Envoi best-effort (try/catch + log, ne bloque jamais la requête). Lien `fronten
 
 Bloc `support.*` (+ `upload.error.*`) ajouté dans `frontend/src/locales/{fr,en}.json` et `admin/src/locales/{fr,en}.json`. Parité fr/en vérifiée. Les `message_key` renvoyés par l'API (`support.error.*`, `upload.error.*`) sont résolus côté front.
 
+## Remontée d'erreur côté client (fix 2026-06-01)
+
+Les helpers `api.upload()` (fix 2026-05-31) et `api.getBlob()` (fix 2026-06-01) — côté `frontend/` ET `admin/` — n'affichent plus un « erreur interne » générique en cas d'échec. Les deux : attrapent un rejet de `fetch()` → `error.network` (`status = 0`) ; lisent le corps **défensivement** (`text()` + `JSON.parse` sous try/catch, car un proxy peut renvoyer du HTML) ; exposent le vrai `message_key` (ex. `support.error.attachment_not_found` sur un 404 de téléchargement) avec fallback `error.internal`. Les appelants (`TicketDetailDialog`, `AdminTicketDialog`) consomment `err.messageKey` dans le toast. Clés `support.error.attachment_not_found` et `error.network` ajoutées aux locales admin.
+
 ## Tests
 
 - **Backend** (PHPUnit) : enums (`SupportEnumsTest`), `FileUploadServiceTest` (rejet MIME/taille dont `INI_SIZE`/`FORM_SIZE` → `too_large`, nom non devinable), `RequestTest` (détection multipart tronqué), `SupportTicketServiceTest` (création, ownership, déclencheurs mail, transitions de statut, **whitelist + normalisation des `details` par type, décodage JSON en lecture**), `SupportTicketRepositoryTest` (CRUD + scoping), `SupportFlowTest` (intégration bout-en-bout : création, scoping, fil admin, statut/priorité, accès **sans abonnement**, ownership sur le download des PJ, **round-trip DB des `details` bug/feature + `null` pour support**). Suite complète verte.
-- **Frontend** (Vitest) : `support-store.spec.js`, `support-service.spec.js` (dont mapping `details[clé]` multipart), `new-ticket-dialog.spec.js` (champs structurés réactifs au type), `imageCompression.spec.js` (journal) et `support-store.spec.js` (admin).
+- **Frontend** (Vitest) : `support-store.spec.js`, `support-service.spec.js` (dont mapping `details[clé]` multipart), `new-ticket-dialog.spec.js` (champs structurés réactifs au type), `imageCompression.spec.js`, `api.spec.js` (dont `getBlob` : succès, `error.network`, `message_key` JSON, fallback non-JSON) (journal) et `support-store.spec.js` + `support-service.spec.js` (admin, dont filtres CSV multi-valeur).
 
 ## Limitations / suite
 

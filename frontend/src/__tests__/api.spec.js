@@ -140,4 +140,56 @@ describe('api service', () => {
       expect(err.messageKey).toBe('auth.error.token_missing')
     }
   })
+
+  describe('getBlob', () => {
+    it('returns the blob on success', async () => {
+      const blob = new Blob(['x'])
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve(blob),
+      })
+
+      const result = await api.getBlob('/support/tickets/1/attachments/2')
+      expect(result).toBe(blob)
+    })
+
+    it('throws error.network when fetch itself rejects', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+
+      await expect(api.getBlob('/x')).rejects.toMatchObject({
+        messageKey: 'error.network',
+        status: 0,
+      })
+    })
+
+    it('surfaces the JSON message_key on an HTTP error', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve(JSON.stringify({
+          success: false,
+          error: { code: 'NOT_FOUND', message_key: 'support.error.attachment_not_found' },
+        })),
+      })
+
+      await expect(api.getBlob('/x')).rejects.toMatchObject({
+        messageKey: 'support.error.attachment_not_found',
+        status: 404,
+      })
+    })
+
+    it('falls back to error.internal when the error body is not JSON', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('<html>oops</html>'),
+      })
+
+      await expect(api.getBlob('/x')).rejects.toMatchObject({
+        messageKey: 'error.internal',
+        status: 500,
+      })
+    })
+  })
 })

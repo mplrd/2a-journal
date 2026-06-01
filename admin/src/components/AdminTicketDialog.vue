@@ -106,8 +106,8 @@ async function openAttachment(attachment) {
     const url = await supportService.attachmentUrl(ticket.value.id, attachment.id)
     window.open(url, '_blank', 'noopener,noreferrer')
     setTimeout(() => URL.revokeObjectURL(url), 60000)
-  } catch {
-    toast.add({ severity: 'error', summary: t('error.internal'), detail: t('error.internal'), life: 4000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('error.internal'), detail: t(err.messageKey || 'error.internal'), life: 4000 })
   }
 }
 
