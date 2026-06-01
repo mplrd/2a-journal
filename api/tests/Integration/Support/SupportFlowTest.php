@@ -120,6 +120,40 @@ class SupportFlowTest extends TestCase
         $this->assertSame(0, (int) $body['data']['messages'][0]['author_is_admin']);
     }
 
+    public function testBugTicketPersistsAndReturnsStructuredDetails(): void
+    {
+        $detail = $this->createTicket($this->userToken, [
+            'type' => 'BUG',
+            'subject' => 'Crash on close',
+            'body' => 'app crashes',
+            'details' => [
+                'expected_behavior' => 'should close cleanly',
+                'reproduction_steps' => "1. open trade\n2. click close",
+                'not_allowed' => 'ignored',
+            ],
+        ])['data'];
+
+        $this->assertIsArray($detail['details']);
+        $this->assertSame('should close cleanly', $detail['details']['expected_behavior']);
+        $this->assertArrayNotHasKey('not_allowed', $detail['details']);
+
+        // Round-trips through the DB on a fresh read too.
+        $reread = $this->router->dispatch(
+            $this->req($this->userToken, 'GET', "/support/tickets/{$detail['id']}")
+        )->getBody()['data'];
+        $this->assertSame("1. open trade\n2. click close", $reread['details']['reproduction_steps']);
+    }
+
+    public function testSupportTicketHasNullDetails(): void
+    {
+        $detail = $this->createTicket($this->userToken, [
+            'type' => 'SUPPORT', 'subject' => 'Q', 'body' => 'how?',
+            'details' => ['expected_behavior' => 'nope'],
+        ])['data'];
+
+        $this->assertNull($detail['details']);
+    }
+
     public function testCreateWorksWithoutActiveSubscription(): void
     {
         // Fresh registered users have no active subscription; the support routes

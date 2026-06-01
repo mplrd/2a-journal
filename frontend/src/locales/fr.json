@@ -1046,6 +1046,28 @@
       "subject_placeholder": "Résumez votre demande en une ligne",
       "description": "Description",
       "description_placeholder": "Décrivez votre demande en détail",
+      "body_label": {
+        "SUPPORT": "Description",
+        "BUG": "Description du problème",
+        "FEATURE": "Quel est votre besoin ?"
+      },
+      "body_placeholder": {
+        "SUPPORT": "Décrivez votre demande en détail",
+        "BUG": "Que s'est-il passé ? Décrivez le problème rencontré.",
+        "FEATURE": "Qu'est-ce qui vous manque ou vous ralentit aujourd'hui ?"
+      },
+      "detail": {
+        "expected_behavior": "Comportement attendu",
+        "reproduction_steps": "Étapes pour reproduire",
+        "benefit": "Qu'est-ce que ça vous permettrait ?",
+        "imagined_solution": "Comment vous l'imaginez ?"
+      },
+      "detail_placeholder": {
+        "expected_behavior": "À quoi vous attendiez-vous à la place ?",
+        "reproduction_steps": "1. Aller sur…\n2. Cliquer sur…\n3. Le problème survient",
+        "benefit": "Le bénéfice ou le gain de temps que vous en attendez",
+        "imagined_solution": "Une idée de la façon dont ça pourrait fonctionner (facultatif)"
+      },
       "attachments": "Pièces jointes",
       "add_attachment": "Ajouter une image",
       "attachments_hint": "Images JPEG, PNG ou WebP — 5 Mo max, 5 fichiers max.",

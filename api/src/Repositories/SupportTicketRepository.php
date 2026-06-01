@@ -18,15 +18,17 @@ class SupportTicketRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO support_tickets (user_id, type, status, priority, subject)
-             VALUES (:user_id, :type, :status, :priority, :subject)'
+            'INSERT INTO support_tickets (user_id, type, status, priority, subject, details)
+             VALUES (:user_id, :type, :status, :priority, :subject, :details)'
         );
+        $details = $data['details'] ?? null;
         $stmt->execute([
             'user_id' => $data['user_id'],
             'type' => $data['type'],
             'status' => $data['status'] ?? TicketStatus::OPEN->value,
             'priority' => $data['priority'] ?? TicketPriority::NORMAL->value,
             'subject' => $data['subject'],
+            'details' => $details === null ? null : json_encode($details, JSON_UNESCAPED_UNICODE),
         ]);
 
         return $this->findById((int) $this->pdo->lastInsertId());
