@@ -119,6 +119,7 @@ Envoi best-effort (try/catch + log, ne bloque jamais la requête). Lien `fronten
 
 - Route `/support` + lien nav (`AdminLayout.vue`).
 - `SupportView.vue` : `DataTable` de **tous** les tickets + filtres (type / statut / priorité / recherche email & sujet), e-mail du demandeur, badges, nombre de messages.
+  - **Filtres multi-valeur** (2026-06-01) : type, statut et priorité sont des `MultiSelect` (plusieurs valeurs combinables, ex. statut `OPEN` + `IN_PROGRESS` + `WAITING_USER`). Une dimension vide = pas de filtre. La recherche reste un champ texte. Transport : les valeurs sont jointes en CSV dans la query (`?status=OPEN,IN_PROGRESS`). Côté back, `SupportTicketRepository::applyEnumFilter()` parse le CSV, **valide chaque valeur contre l'enum** (les inconnues sont ignorées) et génère un `IN (…)` à paramètres liés (mono-valeur → `=`, rétrocompatible). Tests : `SupportTicketRepositoryTest` (filtre IN, valeurs invalides ignorées), `SupportFlowTest` (`?status=OPEN,CLOSED` bout-en-bout), `admin/support-service.spec.js` (jointure CSV).
 - `AdminTicketDialog.vue` : édition statut & priorité (`Select` → `PATCH` instantané), fil de discussion, réponse avec PJ, téléchargement authentifié.
 - `services/support.js`, `stores/support.js`. `api.js` enrichi de `upload` + `getBlob`.
 

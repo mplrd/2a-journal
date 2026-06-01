@@ -134,7 +134,10 @@
     "reply_placeholder": "Write your reply…",
     "send_reply": "Reply",
     "filter": {
-      "all": "All"
+      "all": "All",
+      "type": "All types",
+      "status": "All statuses",
+      "priority": "All priorities"
     },
     "type": {
       "SUPPORT": "Support",
