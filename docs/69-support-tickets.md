@@ -18,7 +18,7 @@ Jusqu'ici aucun canal structuré : les retours passaient par des e-mails épars,
 
 Trois tables additives :
 
-- `support_tickets` — une ligne par demande : `user_id` (créateur), `type` ∈ `SUPPORT | BUG | FEATURE`, `status` ∈ `OPEN | IN_PROGRESS | WAITING_USER | RESOLVED | CLOSED` (défaut `OPEN`), `priority` ∈ `LOW | NORMAL | HIGH` (défaut `NORMAL`), `subject`, timestamps. `closed_at` est horodaté au passage en `CLOSED`.
+- `support_tickets` — une ligne par demande : `user_id` (créateur), `type` ∈ `SUPPORT | BUG | FEATURE`, `status` ∈ `OPEN | IN_PROGRESS | WAITING_USER | RESOLVED | CLOSED` (défaut `OPEN`), `priority` ∈ `LOW | NORMAL | HIGH` (défaut `NORMAL`), `subject`, `details` (JSON nullable, cf. migration `026`), timestamps. `closed_at` est horodaté au passage en `CLOSED`.
 - `support_ticket_messages` — le fil. Une ligne par message (créateur ou admin). `author_is_admin` fige le côté à l'écriture (le fil reste correct même si le compte auteur est supprimé → `author_id` devient `NULL` via `ON DELETE SET NULL`).
 - `support_ticket_attachments` — métadonnées des images jointes (`stored_path`, `original_name`, `mime_type`, `size_bytes`). Les fichiers vivent **hors webroot** ; la table ne stocke que les métadonnées.
 
@@ -27,6 +27,22 @@ FK `ON DELETE CASCADE` depuis `users` et entre ticket → messages → attachmen
 ### Enums
 
 `TicketType`, `TicketStatus`, `TicketPriority` (PHP natifs, `App\Enums`), répliqués côté front dans `frontend/src/constants/support.js` et inline côté admin.
+
+### Champs structurés par type (`details`, migration 026, 2026-06-01)
+
+Pour transformer des tickets vagues en tickets actionnables, le formulaire de création s'adapte au **type** choisi. La **description** (premier message, `body`) reste le **seul champ obligatoire** pour tous les types ; seul son libellé change. Les champs structurés en plus sont **facultatifs**, saisis une seule fois à la création, **en lecture seule** ensuite (user + admin).
+
+| Type | Description (`body`, requise) | Champs `details` (facultatifs) |
+|---|---|---|
+| `SUPPORT` | « Description » | — (aucun, `details` = `null`) |
+| `BUG` | « Description du problème » | `expected_behavior`, `reproduction_steps` |
+| `FEATURE` | « Quel est votre besoin ? » | `benefit`, `imagined_solution` |
+
+Pour une évolution, les champs (besoin via `body` + bénéfice + solution imaginée) capturent l'essence d'une user story (problème → valeur) sans jargon.
+
+**Stockage** : colonne `details JSON NULL` sur `support_tickets`. La whitelist des clés par type est portée par `TicketType::detailKeys()` (single source of truth backend). À la création, `SupportTicketService::normalizeDetails()` ne garde que les clés autorisées pour le type, trim, cap à 5000 caractères, et retombe sur `null` si tout est vide (SUPPORT, ou bug aux champs vides) → la colonne reste `NULL`, jamais un objet vide. À la lecture, `assembleDetail()` décode le JSON en tableau.
+
+**Transport** : le front envoie des champs multipart `details[clé]` (PHP les reparse en `$_POST['details']`). Le back re-valide et re-whiteliste systématiquement (jamais de confiance au client). Rétrocompatible : les tickets antérieurs ont `details = NULL` et s'affichent inchangés.
 
 ### Pièces jointes — stockage & sécurité
 
@@ -112,8 +128,8 @@ Bloc `support.*` (+ `upload.error.*`) ajouté dans `frontend/src/locales/{fr,en}
 
 ## Tests
 
-- **Backend** (PHPUnit) : enums (`SupportEnumsTest`), `FileUploadServiceTest` (rejet MIME/taille dont `INI_SIZE`/`FORM_SIZE` → `too_large`, nom non devinable), `RequestTest` (détection multipart tronqué), `SupportTicketServiceTest` (création, ownership, déclencheurs mail, transitions de statut), `SupportTicketRepositoryTest` (CRUD + scoping), `SupportFlowTest` (intégration bout-en-bout : création, scoping, fil admin, statut/priorité, accès **sans abonnement**, ownership sur le download des PJ). Suite complète verte.
-- **Frontend** (Vitest) : `support-store.spec.js`, `support-service.spec.js`, `imageCompression.spec.js` (journal) et `support-store.spec.js` (admin).
+- **Backend** (PHPUnit) : enums (`SupportEnumsTest`), `FileUploadServiceTest` (rejet MIME/taille dont `INI_SIZE`/`FORM_SIZE` → `too_large`, nom non devinable), `RequestTest` (détection multipart tronqué), `SupportTicketServiceTest` (création, ownership, déclencheurs mail, transitions de statut, **whitelist + normalisation des `details` par type, décodage JSON en lecture**), `SupportTicketRepositoryTest` (CRUD + scoping), `SupportFlowTest` (intégration bout-en-bout : création, scoping, fil admin, statut/priorité, accès **sans abonnement**, ownership sur le download des PJ, **round-trip DB des `details` bug/feature + `null` pour support**). Suite complète verte.
+- **Frontend** (Vitest) : `support-store.spec.js`, `support-service.spec.js` (dont mapping `details[clé]` multipart), `new-ticket-dialog.spec.js` (champs structurés réactifs au type), `imageCompression.spec.js` (journal) et `support-store.spec.js` (admin).
 
 ## Limitations / suite
 

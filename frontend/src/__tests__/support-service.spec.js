@@ -34,6 +34,30 @@ describe('support service', () => {
     expect(formData.getAll('attachments[]')).toHaveLength(1)
   })
 
+  it('create appends non-empty details as details[key] multipart fields', async () => {
+    api.upload.mockResolvedValue({ success: true, data: { id: 1 } })
+
+    await supportService.create({
+      type: 'BUG',
+      subject: 'S',
+      body: 'B',
+      details: { expected_behavior: '  should open  ', reproduction_steps: '', benefit: 'x' },
+      attachments: [],
+    })
+
+    const [, formData] = api.upload.mock.calls[0]
+    expect(formData.get('details[expected_behavior]')).toBe('should open') // trimmed
+    expect(formData.has('details[reproduction_steps]')).toBe(false) // empty skipped
+    expect(formData.get('details[benefit]')).toBe('x')
+  })
+
+  it('create without details sends none', async () => {
+    api.upload.mockResolvedValue({ success: true, data: { id: 1 } })
+    await supportService.create({ type: 'SUPPORT', subject: 'S', body: 'B', attachments: [] })
+    const [, formData] = api.upload.mock.calls[0]
+    expect([...formData.keys()].some((k) => k.startsWith('details['))).toBe(false)
+  })
+
   it('reply posts FormData to the messages endpoint', async () => {
     api.upload.mockResolvedValue({ success: true, data: { id: 1 } })
     await supportService.reply(7, { body: 'hello', attachments: [] })

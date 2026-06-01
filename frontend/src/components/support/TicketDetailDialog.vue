@@ -40,6 +40,16 @@ const fileInput = ref(null)
 const ticket = computed(() => supportStore.current)
 const isClosed = computed(() => ticket.value?.status === TicketStatus.CLOSED)
 
+// Structured fields captured at creation (bug/feature). Read-only; order
+// follows the object's insertion order from the API.
+const detailEntries = computed(() => {
+  const d = ticket.value?.details
+  if (!d || typeof d !== 'object') return []
+  return Object.entries(d)
+    .filter(([, value]) => value)
+    .map(([key, value]) => ({ key, label: t(`support.field.detail.${key}`), value }))
+})
+
 watch(
   () => [props.visible, props.ticketId],
   async ([visible, id]) => {
@@ -151,6 +161,18 @@ function handleClose() {
         <Tag :value="t(`support.status.${ticket.status}`)" :severity="TICKET_STATUS_SEVERITY[ticket.status]" data-testid="ticket-status-tag" />
         <Tag :value="t(`support.priority.${ticket.priority}`)" :severity="TICKET_PRIORITY_SEVERITY[ticket.priority]" />
       </div>
+
+      <!-- Structured details captured at creation (bug / feature) -->
+      <dl
+        v-if="detailEntries.length"
+        class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-3 text-sm flex flex-col gap-2"
+        data-testid="ticket-details"
+      >
+        <div v-for="entry in detailEntries" :key="entry.key">
+          <dt class="font-semibold text-gray-600 dark:text-gray-300">{{ entry.label }}</dt>
+          <dd class="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{{ entry.value }}</dd>
+        </div>
+      </dl>
 
       <!-- Thread -->
       <div class="flex flex-col gap-3 max-h-[45vh] overflow-y-auto pr-1" data-testid="ticket-thread">

@@ -23,7 +23,22 @@ const supportStore = useSupportStore()
 const props = defineProps({ visible: Boolean })
 const emit = defineEmits(['update:visible', 'created'])
 
+// Structured detail fields shown per type. The description (body) stays the
+// single required field for every type; these are optional and nudge the user
+// toward an actionable ticket. Keys must match the backend whitelist
+// (TicketType::detailKeys()).
+const DETAIL_FIELDS = {
+  [TicketType.BUG]: ['expected_behavior', 'reproduction_steps'],
+  [TicketType.FEATURE]: ['benefit', 'imagined_solution'],
+  [TicketType.SUPPORT]: [],
+}
+
+function emptyDetails() {
+  return { expected_behavior: '', reproduction_steps: '', benefit: '', imagined_solution: '' }
+}
+
 const form = ref({ type: TicketType.SUPPORT, subject: '', body: '' })
+const details = ref(emptyDetails())
 const files = ref([])
 const submitting = ref(false)
 const clientError = ref(null)
@@ -32,6 +47,11 @@ const fileInput = ref(null)
 const typeOptions = computed(() =>
   Object.values(TicketType).map((value) => ({ value, label: t(`support.type.${value}`) })),
 )
+
+// The description label/placeholder is type-aware (e.g. a feature asks for the need).
+const bodyLabel = computed(() => t(`support.field.body_label.${form.value.type}`))
+const bodyPlaceholder = computed(() => t(`support.field.body_placeholder.${form.value.type}`))
+const detailFields = computed(() => DETAIL_FIELDS[form.value.type] || [])
 
 const canSubmit = computed(
   () => form.value.type && form.value.subject.trim() && form.value.body.trim(),
@@ -42,6 +62,7 @@ watch(
   (val) => {
     if (val) {
       form.value = { type: TicketType.SUPPORT, subject: '', body: '' }
+      details.value = emptyDetails()
       files.value = []
       clientError.value = null
     }
@@ -88,6 +109,7 @@ async function handleSubmit() {
       type: form.value.type,
       subject: form.value.subject.trim(),
       body: form.value.body.trim(),
+      details: details.value,
       attachments: files.value,
     })
     toast.add({
@@ -144,14 +166,31 @@ function handleClose() {
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('support.field.description') }}</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ bodyLabel }}</label>
         <Textarea
           v-model="form.body"
           class="w-full"
           rows="5"
           auto-resize
-          :placeholder="t('support.field.description_placeholder')"
+          :placeholder="bodyPlaceholder"
           data-testid="ticket-body"
+        />
+      </div>
+
+      <!-- Type-specific structured fields (optional; nudge toward a clear ticket) -->
+      <div
+        v-for="field in detailFields"
+        :key="field"
+        :data-testid="`detail-field-${field}`"
+      >
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t(`support.field.detail.${field}`) }}</label>
+        <Textarea
+          v-model="details[field]"
+          class="w-full"
+          rows="3"
+          auto-resize
+          :placeholder="t(`support.field.detail_placeholder.${field}`)"
+          :data-testid="`detail-input-${field}`"
         />
       </div>
 

@@ -38,6 +38,15 @@ const priorityModel = ref(null)
 
 const ticket = computed(() => store.current)
 
+// Structured fields the user filled at creation (bug / feature). Read-only.
+const detailEntries = computed(() => {
+  const d = ticket.value?.details
+  if (!d || typeof d !== 'object') return []
+  return Object.entries(d)
+    .filter(([, value]) => value)
+    .map(([key, value]) => ({ key, label: t(`support.field.detail.${key}`), value }))
+})
+
 const statusOptions = computed(() => TICKET_STATUS.map((value) => ({ value, label: t(`support.status.${value}`) })))
 const priorityOptions = computed(() => TICKET_PRIORITY.map((value) => ({ value, label: t(`support.priority.${value}`) })))
 
@@ -183,6 +192,18 @@ function handleClose() {
           <Tag :value="t(`support.priority.${ticket.priority}`)" :severity="PRIORITY_SEVERITY[ticket.priority]" />
         </div>
       </div>
+
+      <!-- Structured details captured at creation (bug / feature) -->
+      <dl
+        v-if="detailEntries.length"
+        class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-3 text-sm flex flex-col gap-2"
+        data-testid="admin-ticket-details"
+      >
+        <div v-for="entry in detailEntries" :key="entry.key">
+          <dt class="font-semibold text-gray-600 dark:text-gray-300">{{ entry.label }}</dt>
+          <dd class="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{{ entry.value }}</dd>
+        </div>
+      </dl>
 
       <!-- Thread -->
       <div class="flex flex-col gap-3 max-h-[40vh] overflow-y-auto pr-1" data-testid="admin-ticket-thread">
