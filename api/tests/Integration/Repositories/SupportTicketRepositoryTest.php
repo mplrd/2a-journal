@@ -125,6 +125,48 @@ class SupportTicketRepositoryTest extends TestCase
         $this->assertSame(1, $bugs['total']);
     }
 
+    public function testFindAllAdminFiltersByMultipleStatusesCsv(): void
+    {
+        $this->makeTicket(); // OPEN
+        $inProgress = $this->makeTicket();
+        $this->tickets->updateStatus((int) $inProgress['id'], TicketStatus::IN_PROGRESS->value, null);
+        $closed = $this->makeTicket();
+        $this->tickets->updateStatus((int) $closed['id'], TicketStatus::CLOSED->value, date('Y-m-d H:i:s'));
+
+        // CSV multi-value: OPEN + IN_PROGRESS → 2 of the 3.
+        $res = $this->tickets->findAllAdmin(['status' => 'OPEN,IN_PROGRESS']);
+        $this->assertSame(2, $res['total']);
+
+        $statuses = array_column($res['items'], 'status');
+        $this->assertContains('OPEN', $statuses);
+        $this->assertContains('IN_PROGRESS', $statuses);
+        $this->assertNotContains('CLOSED', $statuses);
+    }
+
+    public function testFindAllAdminFiltersByMultipleTypesCsv(): void
+    {
+        $this->makeTicket(['type' => TicketType::BUG->value]);
+        $this->makeTicket(['type' => TicketType::FEATURE->value]);
+        $this->makeTicket(['type' => TicketType::SUPPORT->value]);
+
+        $res = $this->tickets->findAllAdmin(['type' => 'BUG,FEATURE']);
+        $this->assertSame(2, $res['total']);
+    }
+
+    public function testMultiValueFilterIgnoresUnknownValues(): void
+    {
+        $this->makeTicket(['type' => TicketType::BUG->value]);
+
+        // Garbage values must be dropped, leaving only the valid one applied.
+        $res = $this->tickets->findAllAdmin(['type' => 'BUG,NONSENSE']);
+        $this->assertSame(1, $res['total']);
+
+        // All-garbage → no valid value → filter not applied (returns everything).
+        $this->makeTicket(['type' => TicketType::FEATURE->value]);
+        $resAllBad = $this->tickets->findAllAdmin(['type' => 'NONSENSE,WAT']);
+        $this->assertSame(2, $resAllBad['total']);
+    }
+
     public function testUpdateStatusStampsClosedAt(): void
     {
         $ticket = $this->makeTicket();

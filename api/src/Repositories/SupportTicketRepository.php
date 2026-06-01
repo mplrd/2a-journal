@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Enums\TicketPriority;
 use App\Enums\TicketStatus;
+use App\Enums\TicketType;
 use PDO;
 
 class SupportTicketRepository
@@ -96,22 +97,55 @@ class SupportTicketRepository
 
     private function applyCommonFilters(array $filters, string &$where, array &$params, bool $admin): void
     {
-        if (!empty($filters['type'])) {
-            $where .= ' AND t.type = :type';
-            $params['type'] = $filters['type'];
-        }
-        if (!empty($filters['status'])) {
-            $where .= ' AND t.status = :status';
-            $params['status'] = $filters['status'];
-        }
-        if (!empty($filters['priority'])) {
-            $where .= ' AND t.priority = :priority';
-            $params['priority'] = $filters['priority'];
-        }
+        $this->applyEnumFilter('t.type', $filters['type'] ?? null, TicketType::class, $where, $params);
+        $this->applyEnumFilter('t.status', $filters['status'] ?? null, TicketStatus::class, $where, $params);
+        $this->applyEnumFilter('t.priority', $filters['priority'] ?? null, TicketPriority::class, $where, $params);
+
         if ($admin && !empty($filters['search'])) {
             $where .= ' AND (t.subject LIKE :search OR u.email LIKE :search)';
             $params['search'] = '%' . $filters['search'] . '%';
         }
+    }
+
+    /**
+     * Apply a single- or multi-value enum filter. Accepts a scalar or a CSV
+     * string (e.g. "OPEN,IN_PROGRESS"); each value is validated against the
+     * backing enum so unknown values are silently dropped. With one value it
+     * emits `col = :p`, with several `col IN (:p0, :p1, …)`. If nothing valid
+     * remains, the dimension is left unfiltered.
+     *
+     * @param class-string<\BackedEnum> $enumClass
+     */
+    private function applyEnumFilter(string $column, mixed $raw, string $enumClass, string &$where, array &$params): void
+    {
+        if ($raw === null || $raw === '') {
+            return;
+        }
+
+        $values = is_array($raw) ? $raw : explode(',', (string) $raw);
+        $valid = [];
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            if ($value !== '' && $enumClass::tryFrom($value) !== null && !in_array($value, $valid, true)) {
+                $valid[] = $value;
+            }
+        }
+        if ($valid === []) {
+            return;
+        }
+
+        // Derive safe placeholder names from the column (e.g. t.type → type0).
+        $base = str_contains($column, '.') ? substr($column, strpos($column, '.') + 1) : $column;
+        $placeholders = [];
+        foreach ($valid as $i => $value) {
+            $key = "{$base}{$i}";
+            $placeholders[] = ":{$key}";
+            $params[$key] = $value;
+        }
+
+        $where .= count($placeholders) === 1
+            ? " AND {$column} = {$placeholders[0]}"
+            : " AND {$column} IN (" . implode(', ', $placeholders) . ')';
     }
 
     private function paginate(string $where, array $params, int $limit, int $offset, bool $admin): array

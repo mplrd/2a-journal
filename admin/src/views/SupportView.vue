@@ -7,7 +7,7 @@ import AdminTicketDialog from '@/components/AdminTicketDialog.vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 
@@ -20,36 +20,26 @@ const { t } = useI18n()
 const store = useSupportStore()
 
 const search = ref('')
-const type = ref(null)
-const status = ref(null)
-const priority = ref(null)
+// Multi-value filters: empty array = no filter on that dimension.
+const type = ref([])
+const status = ref([])
+const priority = ref([])
 
 const showDetail = ref(false)
 const selectedId = ref(null)
 
-const typeOptions = [
-  { label: t('support.filter.all'), value: null },
-  { label: t('support.type.SUPPORT'), value: 'SUPPORT' },
-  { label: t('support.type.BUG'), value: 'BUG' },
-  { label: t('support.type.FEATURE'), value: 'FEATURE' },
-]
-const statusOptions = [
-  { label: t('support.filter.all'), value: null },
-  ...['OPEN', 'IN_PROGRESS', 'WAITING_USER', 'RESOLVED', 'CLOSED'].map((v) => ({ label: t(`support.status.${v}`), value: v })),
-]
-const priorityOptions = [
-  { label: t('support.filter.all'), value: null },
-  ...['LOW', 'NORMAL', 'HIGH'].map((v) => ({ label: t(`support.priority.${v}`), value: v })),
-]
+const typeOptions = ['SUPPORT', 'BUG', 'FEATURE'].map((v) => ({ label: t(`support.type.${v}`), value: v }))
+const statusOptions = ['OPEN', 'IN_PROGRESS', 'WAITING_USER', 'RESOLVED', 'CLOSED'].map((v) => ({ label: t(`support.status.${v}`), value: v }))
+const priorityOptions = ['LOW', 'NORMAL', 'HIGH'].map((v) => ({ label: t(`support.priority.${v}`), value: v }))
 
 onMounted(load)
 
 async function load() {
   store.setFilters({
     search: search.value || undefined,
-    type: type.value || undefined,
-    status: status.value || undefined,
-    priority: priority.value || undefined,
+    type: type.value,
+    status: status.value,
+    priority: priority.value,
   })
   await store.fetchTickets()
 }
@@ -68,9 +58,42 @@ function openDetail(row) {
 
     <div class="flex flex-wrap gap-3 mb-4">
       <InputText v-model="search" :placeholder="t('support.search')" class="w-72" @keyup.enter="load" />
-      <Select v-model="type" :options="typeOptions" option-label="label" option-value="value" class="w-44" @change="load" />
-      <Select v-model="status" :options="statusOptions" option-label="label" option-value="value" class="w-52" @change="load" />
-      <Select v-model="priority" :options="priorityOptions" option-label="label" option-value="value" class="w-40" @change="load" />
+      <MultiSelect
+        v-model="type"
+        :options="typeOptions"
+        option-label="label"
+        option-value="value"
+        :placeholder="t('support.filter.type')"
+        :max-selected-labels="2"
+        show-clear
+        class="w-44"
+        data-testid="filter-type"
+        @change="load"
+      />
+      <MultiSelect
+        v-model="status"
+        :options="statusOptions"
+        option-label="label"
+        option-value="value"
+        :placeholder="t('support.filter.status')"
+        :max-selected-labels="2"
+        show-clear
+        class="w-56"
+        data-testid="filter-status"
+        @change="load"
+      />
+      <MultiSelect
+        v-model="priority"
+        :options="priorityOptions"
+        option-label="label"
+        option-value="value"
+        :placeholder="t('support.filter.priority')"
+        :max-selected-labels="2"
+        show-clear
+        class="w-44"
+        data-testid="filter-priority"
+        @change="load"
+      />
       <Button icon="pi pi-search" :label="t('common.search')" @click="load" />
     </div>
 
