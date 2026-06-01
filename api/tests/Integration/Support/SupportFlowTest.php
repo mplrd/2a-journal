@@ -223,6 +223,30 @@ class SupportFlowTest extends TestCase
         $this->assertArrayHasKey('user_email', $res->getBody()['data'][0]);
     }
 
+    public function testAdminListFiltersByMultipleStatusesViaCsvQuery(): void
+    {
+        $open = $this->createTicket($this->userToken)['data'];
+        $closed = $this->createTicket($this->userToken)['data'];
+        $this->router->dispatch($this->req($this->adminToken, 'PATCH', "/admin/support/tickets/{$closed['id']}/status", [
+            'status' => 'CLOSED',
+        ]));
+        $resolved = $this->createTicket($this->otherToken)['data'];
+        $this->router->dispatch($this->req($this->adminToken, 'PATCH', "/admin/support/tickets/{$resolved['id']}/status", [
+            'status' => 'RESOLVED',
+        ]));
+
+        // ?status=OPEN,CLOSED → the open one + the closed one, not the resolved.
+        $res = $this->router->dispatch(
+            $this->req($this->adminToken, 'GET', '/admin/support/tickets', [], ['status' => 'OPEN,CLOSED'])
+        )->getBody();
+
+        $this->assertSame(2, $res['meta']['total']);
+        $ids = array_column($res['data'], 'id');
+        $this->assertContains($open['id'], $ids);
+        $this->assertContains($closed['id'], $ids);
+        $this->assertNotContains($resolved['id'], $ids);
+    }
+
     public function testAdminListRequiresAdminRole(): void
     {
         try {

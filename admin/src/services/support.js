@@ -4,6 +4,11 @@ export const supportService = {
   async list(filters = {}) {
     const params = new URLSearchParams()
     for (const [key, value] of Object.entries(filters)) {
+      // Multi-value filters (type/status/priority) arrive as arrays → CSV.
+      if (Array.isArray(value)) {
+        if (value.length) params.append(key, value.join(','))
+        continue
+      }
       if (value == null || value === '') continue
       params.append(key, value)
     }
