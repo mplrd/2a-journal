@@ -159,7 +159,13 @@
       "status": "Statut",
       "priority": "Priorité",
       "updated": "Mise à jour",
-      "add_attachment": "Ajouter une image"
+      "add_attachment": "Ajouter une image",
+      "detail": {
+        "expected_behavior": "Comportement attendu",
+        "reproduction_steps": "Étapes pour reproduire",
+        "benefit": "Bénéfice attendu",
+        "imagined_solution": "Solution imaginée"
+      }
     },
     "columns": {
       "user": "Utilisateur",

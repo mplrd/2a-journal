@@ -15,6 +15,17 @@ function appendAttachments(formData, attachments = []) {
   }
 }
 
+// PHP parses `details[key]` multipart fields into $_POST['details'][key].
+// Empty values are skipped; the backend re-validates and whitelists per type.
+function appendDetails(formData, details = {}) {
+  for (const [key, value] of Object.entries(details)) {
+    const trimmed = (value ?? '').trim()
+    if (trimmed !== '') {
+      formData.append(`details[${key}]`, trimmed)
+    }
+  }
+}
+
 export const supportService = {
   async list(filters = {}) {
     const query = buildQueryString(filters)
@@ -25,11 +36,12 @@ export const supportService = {
     return api.get(`/support/tickets/${id}`)
   },
 
-  async create({ type, subject, body, attachments }) {
+  async create({ type, subject, body, details, attachments }) {
     const formData = new FormData()
     formData.append('type', type)
     formData.append('subject', subject)
     formData.append('body', body)
+    appendDetails(formData, details)
     appendAttachments(formData, attachments)
     return api.upload('/support/tickets', formData)
   },

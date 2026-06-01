@@ -82,6 +82,115 @@ class SupportTicketServiceTest extends TestCase
         $this->service->createTicket(42, ['type' => 'WAT', 'subject' => 's', 'body' => 'b']);
     }
 
+    public function testCreateBugKeepsOnlyWhitelistedDetailKeys(): void
+    {
+        $captured = null;
+        $this->ticketRepo->method('create')->willReturnCallback(function (array $data) use (&$captured) {
+            $captured = $data;
+            return $this->fakeTicket();
+        });
+        $this->ticketRepo->method('findByIdForUser')->willReturn($this->fakeTicket());
+        $this->messageRepo->method('create')->willReturn(['id' => 1]);
+        $this->messageRepo->method('findByTicketId')->willReturn([]);
+        $this->attachmentRepo->method('findByTicketId')->willReturn([]);
+
+        $this->service->createTicket(42, [
+            'type' => 'BUG',
+            'subject' => 'It broke',
+            'body' => 'description',
+            'details' => [
+                'expected_behavior' => '  should open  ',
+                'reproduction_steps' => 'click X',
+                'evil_key' => 'dropped',
+            ],
+        ]);
+
+        $this->assertIsArray($captured['details']);
+        $this->assertSame(['expected_behavior', 'reproduction_steps'], array_keys($captured['details']));
+        $this->assertSame('should open', $captured['details']['expected_behavior']); // trimmed
+        $this->assertArrayNotHasKey('evil_key', $captured['details']);
+    }
+
+    public function testCreateFeatureKeepsBenefitAndImaginedSolution(): void
+    {
+        $captured = null;
+        $this->ticketRepo->method('create')->willReturnCallback(function (array $data) use (&$captured) {
+            $captured = $data;
+            return $this->fakeTicket(['type' => 'FEATURE']);
+        });
+        $this->ticketRepo->method('findByIdForUser')->willReturn($this->fakeTicket(['type' => 'FEATURE']));
+        $this->messageRepo->method('create')->willReturn(['id' => 1]);
+        $this->messageRepo->method('findByTicketId')->willReturn([]);
+        $this->attachmentRepo->method('findByTicketId')->willReturn([]);
+
+        $this->service->createTicket(42, [
+            'type' => 'FEATURE',
+            'subject' => 'Export',
+            'body' => 'I need to export',
+            'details' => ['benefit' => 'save time', 'imagined_solution' => 'a button', 'expected_behavior' => 'nope'],
+        ]);
+
+        $this->assertSame(['benefit', 'imagined_solution'], array_keys($captured['details']));
+    }
+
+    public function testCreateSupportIgnoresDetails(): void
+    {
+        $captured = null;
+        $this->ticketRepo->method('create')->willReturnCallback(function (array $data) use (&$captured) {
+            $captured = $data;
+            return $this->fakeTicket(['type' => 'SUPPORT']);
+        });
+        $this->ticketRepo->method('findByIdForUser')->willReturn($this->fakeTicket(['type' => 'SUPPORT']));
+        $this->messageRepo->method('create')->willReturn(['id' => 1]);
+        $this->messageRepo->method('findByTicketId')->willReturn([]);
+        $this->attachmentRepo->method('findByTicketId')->willReturn([]);
+
+        $this->service->createTicket(42, [
+            'type' => 'SUPPORT',
+            'subject' => 'Question',
+            'body' => 'how?',
+            'details' => ['expected_behavior' => 'x', 'benefit' => 'y'],
+        ]);
+
+        $this->assertNull($captured['details']);
+    }
+
+    public function testCreateBugWithAllEmptyDetailsStoresNull(): void
+    {
+        $captured = null;
+        $this->ticketRepo->method('create')->willReturnCallback(function (array $data) use (&$captured) {
+            $captured = $data;
+            return $this->fakeTicket();
+        });
+        $this->ticketRepo->method('findByIdForUser')->willReturn($this->fakeTicket());
+        $this->messageRepo->method('create')->willReturn(['id' => 1]);
+        $this->messageRepo->method('findByTicketId')->willReturn([]);
+        $this->attachmentRepo->method('findByTicketId')->willReturn([]);
+
+        $this->service->createTicket(42, [
+            'type' => 'BUG',
+            'subject' => 'It broke',
+            'body' => 'description',
+            'details' => ['expected_behavior' => '   ', 'reproduction_steps' => ''],
+        ]);
+
+        $this->assertNull($captured['details']);
+    }
+
+    public function testAssembleDetailDecodesJsonDetails(): void
+    {
+        $this->ticketRepo->method('findByIdForUser')->willReturn($this->fakeTicket([
+            'details' => json_encode(['expected_behavior' => 'should open', 'reproduction_steps' => 'click']),
+        ]));
+        $this->messageRepo->method('findByTicketId')->willReturn([]);
+        $this->attachmentRepo->method('findByTicketId')->willReturn([]);
+
+        $detail = $this->service->getDetailForUser(42, 7);
+
+        $this->assertIsArray($detail['details']);
+        $this->assertSame('should open', $detail['details']['expected_behavior']);
+    }
+
     public function testCreateTicketRejectsEmptyBody(): void
     {
         $this->expectException(ValidationException::class);

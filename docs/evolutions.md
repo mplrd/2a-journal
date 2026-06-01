@@ -357,6 +357,15 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 **Repéré le** : 2026-05-30.
 **Priorité** : basse (dette technique mineure).
 
+### `getBlob()` : remontée d'erreur générique sur le téléchargement de PJ
+
+**Contexte** : `api.getBlob()` (le helper de téléchargement authentifié des pièces jointes, côté `frontend/` ET `admin/`) a le même défaut que `upload()` avant son correctif du 2026-05-31 : il fait un `response.blob()` sans garde et n'attrape pas un rejet de `fetch()`, et jette toujours `error.internal` sans distinguer les cas. Conséquence : si un téléchargement de PJ échoue (404 pièce introuvable, 403, connexion coupée), l'utilisateur voit « erreur interne du serveur » au lieu d'un message utile. Pas bloquant (le download nominal fonctionne), c'est uniquement le message d'erreur qui serait trompeur en cas d'échec.
+
+**À faire** : harmoniser `getBlob()` avec `upload()` (cf. commit `0302191`) dans `frontend/src/services/api.js` et `admin/src/services/api.js` : try/catch autour de `fetch()` → `error.network` ; lecture défensive du corps d'erreur (`text()` + `JSON.parse` sous try/catch, car un proxy renvoie du HTML) ; exposer le vrai `message_key` (ex. `support.error.attachment_not_found` sur un 404) avec fallback `error.internal`. Mettre à jour les appelants (`TicketDetailDialog`, `AdminTicketDialog`) pour consommer `err.messageKey`, et ajouter la clé `support.error.attachment_not_found` aux locales admin (absente). Test à ajouter (`api-service.spec.js`).
+
+**Repéré le** : 2026-05-31 (pendant le fix des PJ mobile).
+**Priorité** : basse (cosmétique — message d'erreur uniquement).
+
 ---
 
 ## Auth / sessions

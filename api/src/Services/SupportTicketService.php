@@ -32,6 +32,7 @@ class SupportTicketService
     public const MAX_ATTACHMENTS = 5;
     private const ATTACHMENT_SUBDIR = 'tickets';
     private const SUBJECT_MAX = 200;
+    private const DETAIL_FIELD_MAX = 5000;
 
     public function __construct(
         private SupportTicketRepository $ticketRepo,
@@ -50,12 +51,14 @@ class SupportTicketService
         $type = $this->validateType($data['type'] ?? null);
         $subject = $this->validateSubject($data['subject'] ?? null);
         $body = $this->validateBody($data['body'] ?? null);
+        $details = $this->normalizeDetails($type, $data['details'] ?? null);
         $this->validateAttachmentCount($files);
 
         $ticket = $this->ticketRepo->create([
             'user_id' => $userId,
             'type' => $type->value,
             'subject' => $subject,
+            'details' => $details,
             'status' => TicketStatus::OPEN->value,
             'priority' => TicketPriority::NORMAL->value,
         ]);
@@ -255,8 +258,47 @@ class SupportTicketService
 
         $ticket['messages'] = $messages;
         $ticket['attachments'] = $attachments;
+        $ticket['details'] = $this->decodeDetails($ticket['details'] ?? null);
 
         return $ticket;
+    }
+
+    /**
+     * Keep only the structured detail keys whitelisted for the ticket type,
+     * trim them, cap length, and drop empties. Returns null when nothing
+     * usable remains (e.g. SUPPORT, or a BUG with all fields blank) so the
+     * column stays NULL rather than an empty object.
+     */
+    private function normalizeDetails(TicketType $type, mixed $raw): ?array
+    {
+        if (!is_array($raw)) {
+            return null;
+        }
+
+        $out = [];
+        foreach ($type->detailKeys() as $key) {
+            $value = trim((string) ($raw[$key] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            $out[$key] = mb_substr($value, 0, self::DETAIL_FIELD_MAX);
+        }
+
+        return $out === [] ? null : $out;
+    }
+
+    /** Decode the JSON `details` column back to an array (or null) for output. */
+    private function decodeDetails(mixed $stored): ?array
+    {
+        if (is_array($stored)) {
+            return $stored;
+        }
+        if (!is_string($stored) || $stored === '') {
+            return null;
+        }
+        $decoded = json_decode($stored, true);
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     /** @return array{0:string, 1:array, 2:int} stored row + absolute path */
