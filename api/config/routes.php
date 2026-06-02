@@ -99,16 +99,6 @@ $router->get('/health', function (App\Core\Request $request) {
     ]);
 });
 
-// ── Features (public) ────────────────────────────────────────────
-$brokerConfigForFeatures = require __DIR__ . '/broker.php';
-$webhooksConfigForFeatures = require __DIR__ . '/webhooks.php';
-$router->get('/features', function (App\Core\Request $request) use ($brokerConfigForFeatures, $webhooksConfigForFeatures) {
-    return App\Core\Response::success([
-        'broker_auto_sync' => (bool) $brokerConfigForFeatures['auto_sync_enabled'],
-        'tradingview_webhooks' => (bool) $webhooksConfigForFeatures['tradingview_enabled'],
-    ]);
-});
-
 // ── Auth ─────────────────────────────────────────────────────────
 $authConfig = require __DIR__ . '/auth.php';
 $pdo = Database::getConnection();
@@ -124,6 +114,18 @@ $resetTokenRepo = new PasswordResetTokenRepository($pdo);
 // admin BO endpoints. Build it once and inject into every consumer that needs
 // to honour DB > env overrides for runtime-tunable settings.
 $platformSettingsService = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
+
+// ── Features (public) ────────────────────────────────────────────
+// Feature flags surfaced to the SPA. Resolved through PlatformSettingsService
+// so an admin toggle in the BO (DB) takes effect at runtime, falling back to
+// the legacy env var, then to false (feature off).
+$router->get('/features', function (App\Core\Request $request) use ($platformSettingsService) {
+    return App\Core\Response::success([
+        'broker_auto_sync' => (bool) $platformSettingsService->resolve('broker_auto_sync_enabled'),
+        'tradingview_webhooks' => (bool) $platformSettingsService->resolve('tradingview_webhooks_enabled'),
+    ]);
+});
+
 $emailService = new EmailService($mailConfig, $platformSettingsService);
 $authService = new AuthService($userRepo, $tokenRepo, $symbolRepo, $setupRepo, $authConfig, $verificationTokenRepo, $resetTokenRepo, $emailService, $securityConfig, $platformSettingsService);
 $ssoCodeRepo = new SsoCodeRepository($pdo);
@@ -339,7 +341,7 @@ $router->post('/imports/batches/{id}/rollback', [$importController, 'rollback'],
 // ── Broker Sync ──────────────────────────────────────────────
 $brokerConfig = require __DIR__ . '/broker.php';
 $brokerFeatureFlag = new FeatureFlagMiddleware(
-    (bool) $brokerConfig['auto_sync_enabled'],
+    (bool) $platformSettingsService->resolve('broker_auto_sync_enabled'),
     'broker.error.auto_sync_disabled'
 );
 $brokerConnectionRepo = new BrokerConnectionRepository($pdo);
@@ -390,7 +392,7 @@ $router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'
 // ── TradingView Webhooks ─────────────────────────────────────
 $webhooksConfig = require __DIR__ . '/webhooks.php';
 $tradingViewFeatureFlag = new FeatureFlagMiddleware(
-    (bool) $webhooksConfig['tradingview_enabled'],
+    (bool) $platformSettingsService->resolve('tradingview_webhooks_enabled'),
     'webhook.error.feature_disabled'
 );
 $tvWebhookRepo = new TradingViewWebhookRepository($pdo);

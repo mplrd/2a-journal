@@ -109,6 +109,24 @@ class AdminSettingsFlowTest extends TestCase
         $this->assertContains('mail_enabled', $keys);
         $this->assertContains('mail_from_address', $keys);
         $this->assertContains('billing_grace_days', $keys);
+        $this->assertContains('tradingview_webhooks_enabled', $keys);
+    }
+
+    public function testTogglingTradingViewFlagInDbDrivesFeaturesEndpoint(): void
+    {
+        // Off by default (no DB row, env cleared in this suite's bootstrap path).
+        putenv('TRADINGVIEW_WEBHOOKS_ENABLED');
+        $before = $this->router->dispatch(Request::create('GET', '/features'))->getBody()['data'];
+        $this->assertFalse($before['tradingview_webhooks']);
+
+        // Admin enables it from the BO → persisted in DB.
+        $this->router->dispatch(
+            $this->adminRequest('PUT', '/admin/settings/tradingview_webhooks_enabled', ['value' => true])
+        );
+
+        // Public /features now reflects the DB override, no redeploy needed.
+        $after = $this->router->dispatch(Request::create('GET', '/features'))->getBody()['data'];
+        $this->assertTrue($after['tradingview_webhooks']);
     }
 
     public function testUpdateRequiresAdminRole(): void
