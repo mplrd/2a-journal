@@ -32,7 +32,7 @@ POST /api/webhooks/tradingview/{token}
 ```
 
 - **Pas d'AuthMiddleware** (TV ne sait pas envoyer de header `Authorization`).
-- `FeatureFlagMiddleware` lié à l'env `TRADINGVIEW_WEBHOOKS_ENABLED` (default `false`).
+- `FeatureFlagMiddleware` lié au réglage `tradingview_webhooks_enabled` (cf. *Activation* ci-dessous).
 - `RateLimitMiddleware` : 120 req/min/IP par défaut (cf. `TRADINGVIEW_RATE_MAX`).
 - Le contrôleur retourne **toujours HTTP 200** avec `{ "received": true }`. Chaque outcome (token invalide, secret invalide, doublon, échec broker, etc.) est tracé dans `tradingview_alert_events` mais jamais exposé au caller public — pour éviter qu'un attaquant fingerprint un token valide.
 
@@ -103,6 +103,17 @@ Dans `AccountsView`, un nouveau bouton ⚡ (icône `pi-bolt`, jaune) à côté d
 - propose pour chaque webhook : « Voir l'historique » (table paginée des events) + « Révoquer » (avec confirmation PrimeVue)
 
 i18n : namespace `webhook.tradingview.*` dans `fr.json` et `en.json` (sync vérifié).
+
+## Activation (réglage admin, 2026-06-01)
+
+Le flag `tradingview_webhooks_enabled` est désormais un **réglage de plateforme** géré via `PlatformSettingsService` (BO admin → *Paramètres de la plateforme*), au même titre que `broker_auto_sync_enabled`. Chaîne de résolution : **BDD (toggle admin) > variable d'env `TRADINGVIEW_WEBHOOKS_ENABLED` (legacy, fallback) > `false`**. Conséquences :
+
+- l'admin **active/désactive la disponibilité** de la feature à chaud depuis l'écran Paramètres, sans redéploiement ;
+- une fois activée, **chaque utilisateur gère ses propres webhooks** par compte (bouton ⚡ dans `AccountsView`, inchangé) ;
+- le flag pilote à la fois l'endpoint `/features` (affichage du bouton ⚡ côté SPA), le `FeatureFlagMiddleware` de l'ingestion `POST /webhooks/tradingview/{token}` et le CRUD `/accounts/{id}/webhooks` ;
+- **OFF par défaut** (cohérent avec la règle « connecteurs broker OFF tant que pas validés sandbox »).
+
+> Note : le même rapatriement a été appliqué à `broker_auto_sync_enabled`, qui était déclaré dans `knownSettings()` mais dont `/features` et le middleware lisaient encore l'env brut — le toggle admin est maintenant effectif pour les deux.
 
 ## Sécurité
 

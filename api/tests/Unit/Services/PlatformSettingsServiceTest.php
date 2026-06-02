@@ -18,6 +18,7 @@ class PlatformSettingsServiceTest extends TestCase
         putenv('BROKER_AUTO_SYNC_ENABLED');
         putenv('BROKER_SYNC_INTERVAL_MINUTES');
         putenv('BROKER_SYNC_MAX_FAILURES');
+        putenv('TRADINGVIEW_WEBHOOKS_ENABLED');
     }
 
     protected function tearDown(): void
@@ -25,6 +26,7 @@ class PlatformSettingsServiceTest extends TestCase
         putenv('BROKER_AUTO_SYNC_ENABLED');
         putenv('BROKER_SYNC_INTERVAL_MINUTES');
         putenv('BROKER_SYNC_MAX_FAILURES');
+        putenv('TRADINGVIEW_WEBHOOKS_ENABLED');
     }
 
     public function testResolveReturnsNullWhenBothSourcesAbsent(): void
@@ -155,5 +157,47 @@ class PlatformSettingsServiceTest extends TestCase
 
         $service = new PlatformSettingsService($this->repo);
         $service->update('broker_sync_interval_minutes', '20', 42);
+    }
+
+    // ── TradingView webhooks flag (rapatrié des env vars vers les settings) ──
+
+    public function testTradingViewWebhooksKnownAndDbOverridesEnv(): void
+    {
+        $this->repo->method('get')->willReturn([
+            'setting_value' => 'true',
+            'value_type' => 'BOOL',
+        ]);
+        putenv('TRADINGVIEW_WEBHOOKS_ENABLED=false');
+
+        $service = new PlatformSettingsService($this->repo);
+        $this->assertTrue($service->resolve('tradingview_webhooks_enabled'));
+    }
+
+    public function testTradingViewWebhooksFallsBackToLegacyEnvVar(): void
+    {
+        $this->repo->method('get')->willReturn(null);
+        putenv('TRADINGVIEW_WEBHOOKS_ENABLED=true');
+
+        $service = new PlatformSettingsService($this->repo);
+        $this->assertTrue($service->resolve('tradingview_webhooks_enabled'));
+    }
+
+    public function testTradingViewWebhooksDefaultsOffWhenNoSource(): void
+    {
+        $this->repo->method('get')->willReturn(null);
+
+        $service = new PlatformSettingsService($this->repo);
+        // No DB, no env → null; the /features endpoint casts null to false (off).
+        $this->assertNull($service->resolve('tradingview_webhooks_enabled'));
+    }
+
+    public function testTradingViewWebhooksAppearsInAdminList(): void
+    {
+        $this->repo->method('list')->willReturn([]);
+
+        $service = new PlatformSettingsService($this->repo);
+        $keys = array_column($service->list(), 'key');
+
+        $this->assertContains('tradingview_webhooks_enabled', $keys);
     }
 }

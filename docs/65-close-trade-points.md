@@ -72,6 +72,8 @@ BE n'a **pas de sens** profit/loss intrinsèque — c'est juste une intention «
 
 Pour SL/TP/MANUAL, l'intention dicte le signe : SL → toujours dans le sens perdant, TP/MANUAL → toujours dans le sens gagnant. L'utilisateur saisit la magnitude, le système applique le signe. Cela évite l'écueil du `:min` PrimeVue (cf. [[feedback-primevue-inputnumber-negative]]).
 
+**BE sans allègement** : sur un BE, ramener la taille de sortie à `0` (« je protège mais je n'allège pas ») route vers `markBeHit()` au lieu de la clôture partielle — une sortie de taille 0 n'est pas un fill et serait rejetée (`invalid_exit_size`). Concrètement la modale émet `mark-be` au lieu de `close`. Spécialisé pour BE uniquement.
+
 ## Architecture
 
 ### Frontend uniquement
@@ -80,8 +82,8 @@ Aucun changement backend — `POST /trades/{id}/close` continue d'attendre `exit
 
 | Fichier | Changement |
 |---------|-----------|
-| `frontend/src/components/trade/CloseTradeDialog.vue` | Refonte logique : `signedDelta()`, `priceToPoints` = `Math.abs`, mode BE disabled, header dynamique, plus de Select exit_type |
-| `frontend/src/views/TradesView.vue` | `openCloseDialog(trade, exitType)` signature étendue. Bouton « Fermer » remplacé par 3 boutons SL/BE/Stop Win (desktop + mobile) |
+| `frontend/src/components/trade/CloseTradeDialog.vue` | Refonte logique : `signedDelta()`, `priceToPoints` = `Math.abs`, mode BE disabled, header dynamique, plus de Select exit_type. Émet `mark-be` quand `exit_type === BE && exit_size === 0` (BE sans allègement) |
+| `frontend/src/views/TradesView.vue` | `openCloseDialog(trade, exitType)` signature étendue. Bouton « Fermer » remplacé par 3 boutons SL/BE/Stop Win (desktop + mobile). `@mark-be="handleMarkBe"` → `store.markBeHit()` |
 | `frontend/src/locales/{fr,en}.json` | 4 clés titres (`close_sl`, `close_be`, `close_tp`, `close_stop_win`) + 3 clés actions (`action_sl`, `action_be`, `action_stop_win`) |
 
 ### Édition a posteriori
@@ -90,7 +92,7 @@ Si l'utilisateur s'est trompé de bouton (a cliqué SL au lieu de Stop Win), il 
 
 ## Tests
 
-`frontend/src/components/trade/__tests__/CloseTradeDialog.spec.js` (19 tests, suite réécrite) :
+`frontend/src/components/trade/__tests__/CloseTradeDialog.spec.js` (28 tests) :
 
 - **Header dynamique** : SL/BE/TP/MANUAL → header correct (4 tests)
 - **SL** : BUY et SELL, sens points → prix, sens prix → magnitude (3 tests)
@@ -98,6 +100,7 @@ Si l'utilisateur s'est trompé de bouton (a cliqué SL au lieu de Stop Win), il 
 - **BE éditable signed** : prefill à entry/0, inputs NOT disabled, slippage favorable/défavorable BUY et SELL via points et via prix (7 tests)
 - **TP prefill** : `next objective` hydrate exit_price + magnitude (1 test)
 - **Submission** : payload contient `exit_type` + `exit_price`, jamais `exit_points` ; BE émet `exit_price = entry` (2 tests)
+- **BE sans allègement** : `exit_size = 0` sur BE → émet `mark-be` (prefill ou saisie manuelle) ; taille > 0 → `close` normal ; non-BE taille 0 → `close` (pas de spécialisation) (4 tests)
 
 ## Clés i18n ajoutées
 

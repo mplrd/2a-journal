@@ -98,8 +98,10 @@ Chaque transition est enregistrée dans `status_history`.
 
 Un bouton unique par trade (icône `pi-angle-double-up`, severity `success`) apparaît dans la colonne actions si le trade n'est pas CLOSED et qu'il reste un objectif à atteindre.
 
+Implémentée dans `frontend/src/utils/nextObjective.js` (fonction pure, testée isolément).
+
 ### Séquence de détection (`getNextObjective`)
-1. Si `be_price` défini ET `be_size` défini ET aucune `partial_exit` avec `exit_type=BE` → objectif = **BE** (action `close` — ouvre CloseTradeDialog pré-rempli)
+1. Si `be_price` défini ET `be_size` défini ET BE pas encore atteint → objectif = **BE** (action `close` — ouvre CloseTradeDialog pré-rempli). « BE atteint » = soit une `partial_exit` avec `exit_type=BE`, soit `be_reached=1` (cas « protéger sans alléger », cf. [65-close-trade-points.md](65-close-trade-points.md))
 2. Si `be_price` défini ET `be_size` **non** défini ET `be_reached=0` → objectif = **BE** (action `mark` — marque le BE atteint sans sortie partielle)
 3. Sinon, parcours de `targets[]` dans l'ordre du tableau, premier dont `id` n'apparaît pas dans `partial_exits[].target_id` → objectif = ce **TP** (action `close`)
 4. Si rien → pas de bouton

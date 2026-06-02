@@ -122,7 +122,8 @@
         "mail_enabled": "Active l'envoi d'emails (reset password, notifications, etc.)",
         "mail_from_address": "Adresse expéditeur des emails sortants",
         "billing_grace_days": "Délai de grâce après échec de paiement Stripe (jours)",
-        "trade_transfer_enabled": "Active la fonctionnalité de transfert d'un trade entre comptes"
+        "trade_transfer_enabled": "Active la fonctionnalité de transfert d'un trade entre comptes",
+        "tradingview_webhooks_enabled": "Active les webhooks TradingView (chaque utilisateur gère ensuite les siens par compte)"
       }
     }
   },
