@@ -16,7 +16,7 @@ const props = defineProps({
   prefill: { type: Object, default: null },
 })
 
-const emit = defineEmits(['update:visible', 'close'])
+const emit = defineEmits(['update:visible', 'close', 'mark-be'])
 
 const form = ref(getDefaultForm())
 
@@ -117,6 +117,13 @@ function handleCloseFull() {
 }
 
 function handleSubmit() {
+  // "Protect but don't lighten": a BE with a zero exit size is not a partial
+  // fill, so route to the dedicated "mark BE reached" action instead of a
+  // close (which the backend rejects with invalid_exit_size).
+  if (form.value.exit_type === ExitType.BE && Number(form.value.exit_size) === 0) {
+    emit('mark-be')
+    return
+  }
   // exit_points is UX-only; backend reads exit_price.
   const { exit_points, ...payload } = form.value
   emit('close', payload)
@@ -161,7 +168,7 @@ function handleClose() {
           <label class="block text-sm font-medium text-gray-700">{{ t('trades.exit_size') }} *</label>
           <Button :label="t('trades.close_full')" size="small" severity="secondary" text @click="handleCloseFull" />
         </div>
-        <InputNumber v-model="form.exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+        <InputNumber v-model="form.exit_size" data-name="exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" locale="en-US" :maxFractionDigits="5" />
       </div>
 
       <div v-if="pnlPreview !== null" class="p-3 rounded text-sm font-medium" :class="Number(pnlPreview) >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">

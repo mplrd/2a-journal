@@ -333,6 +333,20 @@ async function handleClose(data) {
   }
 }
 
+// BE reached without taking the planned partial ("protect but don't lighten"):
+// the close dialog routes here instead of a partial exit.
+async function handleMarkBe() {
+  try {
+    await store.markBeHit(selectedTrade.value.id)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('trades.be_reached'), life: 3000 })
+    showCloseDialog.value = false
+    selectedTrade.value = null
+    closePrefill.value = null
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  }
+}
+
 function handleDelete(trade) {
   confirm.require({
     message: t('trades.confirm_delete'),
@@ -847,6 +861,7 @@ function openActionMenu(event, trade) {
       :prefill="closePrefill"
       :loading="store.loading"
       @close="handleClose"
+      @mark-be="handleMarkBe"
     />
 
     <TradeForm

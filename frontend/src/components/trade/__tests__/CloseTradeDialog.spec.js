@@ -298,4 +298,49 @@ describe('CloseTradeDialog', () => {
       expect(payload.exit_price).toBe(18500)
     })
   })
+
+  // "I protect but I don't lighten": a BE configured with a planned exit size,
+  // but at execution the trader keeps the full position. A zero-size exit is
+  // not a partial fill, so we route to the dedicated "mark BE reached" action
+  // instead of close (which would reject invalid_exit_size on the backend).
+  describe('BE without lightening (exit_size = 0)', () => {
+    it('emits "mark-be" instead of "close" when BE is prefilled with size 0', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE, exit_size: 0 } })
+      await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
+
+      expect(wrapper.emitted('mark-be')).toBeTruthy()
+      expect(wrapper.emitted('close')).toBeFalsy()
+    })
+
+    it('still emits "close" when BE keeps a positive exit size', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE, exit_size: 0.5 } })
+      await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
+
+      expect(wrapper.emitted('close')).toBeTruthy()
+      expect(wrapper.emitted('mark-be')).toBeFalsy()
+      expect(wrapper.emitted('close')[0][0].exit_size).toBe(0.5)
+    })
+
+    it('routes to "mark-be" when the user clears the size to 0 on a BE exit', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE, exit_size: 0.5 } })
+      await flushPromises()
+      await getInput(wrapper, 'exit_size').setValue(0)
+      await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
+
+      expect(wrapper.emitted('mark-be')).toBeTruthy()
+      expect(wrapper.emitted('close')).toBeFalsy()
+    })
+
+    it('does NOT special-case a zero-size non-BE exit (only BE protects)', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.MANUAL, exit_size: 0 } })
+      await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
+
+      expect(wrapper.emitted('close')).toBeTruthy()
+      expect(wrapper.emitted('mark-be')).toBeFalsy()
+    })
+  })
 })
