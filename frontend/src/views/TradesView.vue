@@ -28,6 +28,7 @@ import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
 import { tradesService } from '@/services/trades'
+import { getNextObjective } from '@/utils/nextObjective'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
@@ -243,57 +244,6 @@ async function handleCreate(data) {
   } catch (err) {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   }
-}
-
-function getNextObjective(trade) {
-  const partialExits = trade.partial_exits || []
-
-  // Step 1: BE if be_price defined
-  if (trade.be_price) {
-    const beSize = Number(trade.be_size) || 0
-    if (beSize > 0) {
-      // BE with partial exit: check if already taken
-      const beAlreadyTaken = partialExits.some((pe) => pe.exit_type === ExitType.BE)
-      if (!beAlreadyTaken) {
-        return {
-          label: 'BE',
-          exit_price: Number(trade.be_price),
-          exit_size: beSize,
-          exit_type: ExitType.BE,
-          action: 'close',
-        }
-      }
-    } else if (!Number(trade.be_reached)) {
-      // BE without partial exit: just mark as reached
-      return {
-        label: 'BE',
-        action: 'mark',
-      }
-    }
-  }
-
-  // Step 2: First untaken target
-  let targets = trade.targets
-  if (typeof targets === 'string') {
-    try { targets = JSON.parse(targets) } catch { targets = null }
-  }
-  if (Array.isArray(targets)) {
-    const takenTargetIds = new Set(partialExits.map((pe) => pe.target_id).filter(Boolean))
-    for (const target of targets) {
-      if (!takenTargetIds.has(target.id)) {
-        return {
-          label: target.label || target.id,
-          exit_price: Number(target.price),
-          exit_size: Number(target.size),
-          exit_type: ExitType.TP,
-          target_id: target.id,
-          action: 'close',
-        }
-      }
-    }
-  }
-
-  return null
 }
 
 function openCloseDialog(trade, exitType = null) {
