@@ -123,7 +123,7 @@
         "mail_from_address": "From address for outgoing emails",
         "billing_grace_days": "Grace period after a failed Stripe payment (days)",
         "trade_transfer_enabled": "Enables the trade-transfer feature between accounts",
-        "tradingview_webhooks_enabled": "Enables TradingView webhooks (each user then manages their own per account)"
+        "robots_enabled": "Enables trading robots (TradingView webhooks; each user then manages their own)"
       }
     }
   },

@@ -290,7 +290,7 @@ function openActionMenu(event, account) {
         <template #body="{ data }">
           <div class="flex gap-2">
             <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
-            <Button v-if="features.tradingviewWebhooks" icon="pi pi-bolt" severity="warn" size="small" text v-tooltip.top="t('webhook.tradingview.title')" @click="openWebhooks(data)" />
+            <Button v-if="features.robots" icon="pi pi-bolt" severity="warn" size="small" text v-tooltip.top="t('webhook.tradingview.title')" @click="openWebhooks(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
             <Button icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
@@ -371,7 +371,7 @@ function openActionMenu(event, account) {
       />
     </Dialog>
 
-    <Dialog v-if="features.tradingviewWebhooks" v-model:visible="showWebhooks" :header="t('webhook.tradingview.title')" modal class="w-full max-w-3xl">
+    <Dialog v-if="features.robots" v-model:visible="showWebhooks" :header="t('webhook.tradingview.title')" modal class="w-full max-w-3xl">
       <TradingViewWebhooksPanel
         v-if="webhooksAccount"
         :account="webhooksAccount"

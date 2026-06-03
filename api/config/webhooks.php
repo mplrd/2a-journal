@@ -8,7 +8,9 @@ if (!str_ends_with($base, '/api')) {
 }
 
 return [
-    'tradingview_enabled' => filter_var(getenv('TRADINGVIEW_WEBHOOKS_ENABLED'), FILTER_VALIDATE_BOOLEAN),
+    // The on/off flag lives in PlatformSettingsService ('robots_enabled',
+    // DB > env ROBOTS_ENABLED > false). This config only carries the static
+    // ingest URL + rate limit.
     'tradingview_base_url' => $base . '/webhooks/tradingview',
     // Rate limit for the public ingest endpoint. Anything beyond this rate is
     // likely a misconfigured TradingView template or abuse.

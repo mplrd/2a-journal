@@ -125,7 +125,7 @@ $platformSettingsService = new PlatformSettingsService(new PlatformSettingsRepos
 $router->get('/features', function (App\Core\Request $request) use ($platformSettingsService) {
     return App\Core\Response::success([
         'broker_auto_sync' => (bool) $platformSettingsService->resolve('broker_auto_sync_enabled'),
-        'tradingview_webhooks' => (bool) $platformSettingsService->resolve('tradingview_webhooks_enabled'),
+        'robots' => (bool) $platformSettingsService->resolve('robots_enabled'),
     ]);
 });
 
@@ -400,7 +400,7 @@ $router->get('/broker/connections/{id}/logs', [$brokerSyncController, 'syncLogs'
 // ── TradingView Webhooks ─────────────────────────────────────
 $webhooksConfig = require __DIR__ . '/webhooks.php';
 $tradingViewFeatureFlag = new FeatureFlagMiddleware(
-    (bool) $platformSettingsService->resolve('tradingview_webhooks_enabled'),
+    (bool) $platformSettingsService->resolve('robots_enabled'),
     'webhook.error.feature_disabled'
 );
 $tvWebhookRepo = new TradingViewWebhookRepository($pdo);
