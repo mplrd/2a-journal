@@ -4,6 +4,7 @@ import { accountsService } from '@/services/accounts'
 
 export const useAccountsStore = defineStore('accounts', () => {
   const accounts = ref([])
+  const adjustments = ref([])
   const loaded = ref(false)
   const loading = ref(false)
   const error = ref(null)
@@ -71,8 +72,43 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
   }
 
+  // ── Balance adjustments (ticket #30) ──────────────────────────
+
+  async function fetchAdjustments(id) {
+    error.value = null
+    try {
+      const response = await accountsService.listAdjustments(id)
+      adjustments.value = response.data
+      return response
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
+  async function addAdjustment(id, data) {
+    error.value = null
+    try {
+      return await accountsService.addAdjustment(id, data)
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
+  async function deleteAdjustment(id, adjustmentId) {
+    error.value = null
+    try {
+      return await accountsService.deleteAdjustment(id, adjustmentId)
+    } catch (err) {
+      error.value = err.messageKey || 'error.internal'
+      throw err
+    }
+  }
+
   function $reset() {
     accounts.value = []
+    adjustments.value = []
     loaded.value = false
     loading.value = false
     error.value = null
@@ -80,6 +116,7 @@ export const useAccountsStore = defineStore('accounts', () => {
 
   return {
     accounts,
+    adjustments,
     loaded,
     loading,
     error,
@@ -87,6 +124,9 @@ export const useAccountsStore = defineStore('accounts', () => {
     createAccount,
     updateAccount,
     deleteAccount,
+    fetchAdjustments,
+    addAdjustment,
+    deleteAdjustment,
     $reset,
   }
 })

@@ -58,7 +58,7 @@ class AccountRepository
     {
         $stmt = $this->pdo->prepare(
             'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
-                    (a.initial_capital + COALESCE(pnl.total, 0)) AS current_capital,
+                    (a.initial_capital + COALESCE(pnl.total, 0) + COALESCE(adj.total, 0)) AS current_capital,
                     a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split,
                     a.is_active, a.created_at, a.updated_at
              FROM accounts a
@@ -69,6 +69,11 @@ class AccountRepository
                  WHERE t.status = :closed_status
                  GROUP BY p.account_id
              ) pnl ON pnl.account_id = a.id
+             LEFT JOIN (
+                 SELECT account_id, SUM(amount) AS total
+                 FROM account_balance_adjustments
+                 GROUP BY account_id
+             ) adj ON adj.account_id = a.id
              WHERE a.id = :id AND a.deleted_at IS NULL'
         );
         $stmt->execute([
@@ -90,7 +95,7 @@ class AccountRepository
 
         $stmt = $this->pdo->prepare(
             'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
-                    (a.initial_capital + COALESCE(pnl.total, 0)) AS current_capital,
+                    (a.initial_capital + COALESCE(pnl.total, 0) + COALESCE(adj.total, 0)) AS current_capital,
                     a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split,
                     a.is_active, a.created_at, a.updated_at
              FROM accounts a
@@ -101,6 +106,11 @@ class AccountRepository
                  WHERE t.status = :closed_status
                  GROUP BY p.account_id
              ) pnl ON pnl.account_id = a.id
+             LEFT JOIN (
+                 SELECT account_id, SUM(amount) AS total
+                 FROM account_balance_adjustments
+                 GROUP BY account_id
+             ) adj ON adj.account_id = a.id
              WHERE a.user_id = :user_id AND a.deleted_at IS NULL
              ORDER BY a.created_at DESC
              LIMIT :limit OFFSET :offset'

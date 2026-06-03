@@ -281,6 +281,13 @@
     "currency": "Devise",
     "initial_capital": "Capital initial",
     "balance": "Solde",
+    "adjust_balance": "Corriger le solde",
+    "adjust_balance_hint": "Ajustez le solde pour absorber un écart non tracé par un trade (frais oubliés, solde de départ différent du capital initial). Le capital initial n'est pas modifié.",
+    "real_balance": "Solde réel constaté",
+    "adjustment_amount": "Ajustement",
+    "adjustment_reason": "Motif (optionnel)",
+    "adjustment_reason_placeholder": "Ex : frais non saisis",
+    "adjustment_history": "Historique des corrections",
     "broker": "Courtier",
     "max_drawdown": "Drawdown max",
     "daily_drawdown": "Drawdown journalier",
@@ -305,13 +312,18 @@
       "stage_not_allowed": "La phase n'est pas autorisée pour ce type de compte",
       "invalid_stage": "Phase invalide",
       "invalid_capital": "La valeur doit être positive",
+      "invalid_adjustment": "Le montant de l'ajustement est invalide",
+      "reason_too_long": "Le motif est trop long (255 caractères max)",
+      "adjustment_not_found": "Correction introuvable",
       "not_found": "Compte non trouvé",
       "forbidden": "Accès non autorisé à ce compte"
     },
     "success": {
       "created": "Compte créé avec succès",
       "updated": "Compte modifié avec succès",
-      "deleted": "Compte supprimé avec succès"
+      "deleted": "Compte supprimé avec succès",
+      "adjustment_added": "Solde corrigé avec succès",
+      "adjustment_deleted": "Correction supprimée"
     }
   },
   "positions": {

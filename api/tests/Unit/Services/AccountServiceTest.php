@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountAdjustmentRepository;
 use App\Repositories\AccountRepository;
 use App\Services\AccountService;
 use PHPUnit\Framework\TestCase;
@@ -13,11 +14,13 @@ class AccountServiceTest extends TestCase
 {
     private AccountService $service;
     private AccountRepository $repo;
+    private AccountAdjustmentRepository $adjustmentRepo;
 
     protected function setUp(): void
     {
         $this->repo = $this->createMock(AccountRepository::class);
-        $this->service = new AccountService($this->repo);
+        $this->adjustmentRepo = $this->createMock(AccountAdjustmentRepository::class);
+        $this->service = new AccountService($this->repo, $this->adjustmentRepo);
     }
 
     private function validData(array $overrides = []): array
@@ -263,5 +266,152 @@ class AccountServiceTest extends TestCase
         $this->expectExceptionMessage('error.invalid_id');
 
         $this->service->delete(1, 0);
+    }
+
+    // ── Balance adjustments ──────────────────────────────────────
+
+    public function testAddAdjustmentSuccess(): void
+    {
+        $account = ['id' => 1, 'user_id' => 1, 'name' => 'FTMO'];
+        $created = ['id' => 7, 'account_id' => 1, 'amount' => 18.0, 'reason' => 'Frais'];
+        $this->repo->method('findById')->willReturn($account);
+        $this->adjustmentRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(function ($data) {
+                return (int) $data['account_id'] === 1
+                    && (float) $data['amount'] === 18.0
+                    && $data['reason'] === 'Frais';
+            }))
+            ->willReturn($created);
+
+        $result = $this->service->addAdjustment(1, 1, ['amount' => 18, 'reason' => 'Frais']);
+
+        $this->assertSame($created, $result);
+    }
+
+    public function testAddAdjustmentAcceptsNegativeAmount(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+        $this->adjustmentRepo->method('create')->willReturn(['id' => 1, 'amount' => -50.0]);
+
+        $result = $this->service->addAdjustment(1, 1, ['amount' => -50]);
+
+        $this->assertEquals(-50.0, (float) $result['amount']);
+    }
+
+    public function testAddAdjustmentThrowsWhenAmountMissing(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('accounts.error.invalid_adjustment');
+
+        $this->service->addAdjustment(1, 1, ['reason' => 'x']);
+    }
+
+    public function testAddAdjustmentThrowsWhenAmountNotNumeric(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('accounts.error.invalid_adjustment');
+
+        $this->service->addAdjustment(1, 1, ['amount' => 'abc']);
+    }
+
+    public function testAddAdjustmentThrowsWhenAmountZero(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('accounts.error.invalid_adjustment');
+
+        $this->service->addAdjustment(1, 1, ['amount' => 0]);
+    }
+
+    public function testAddAdjustmentThrowsWhenReasonTooLong(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('accounts.error.reason_too_long');
+
+        $this->service->addAdjustment(1, 1, ['amount' => 10, 'reason' => str_repeat('x', 256)]);
+    }
+
+    public function testAddAdjustmentThrowsForbiddenWhenNotOwner(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 2]);
+
+        $this->expectException(ForbiddenException::class);
+
+        $this->service->addAdjustment(1, 1, ['amount' => 10]);
+    }
+
+    public function testAddAdjustmentThrowsNotFoundWhenAccountMissing(): void
+    {
+        $this->repo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+
+        $this->service->addAdjustment(1, 999, ['amount' => 10]);
+    }
+
+    public function testListAdjustmentsReturnsRepoResultForOwner(): void
+    {
+        $adjustments = [['id' => 1, 'amount' => 10], ['id' => 2, 'amount' => -5]];
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+        $this->adjustmentRepo->method('findByAccountId')->with(1)->willReturn($adjustments);
+
+        $result = $this->service->listAdjustments(1, 1);
+
+        $this->assertSame($adjustments, $result);
+    }
+
+    public function testListAdjustmentsThrowsForbiddenWhenNotOwner(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 2]);
+
+        $this->expectException(ForbiddenException::class);
+
+        $this->service->listAdjustments(1, 1);
+    }
+
+    public function testDeleteAdjustmentSuccess(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+        $this->adjustmentRepo->method('findById')->willReturn(['id' => 7, 'account_id' => 1]);
+        $this->adjustmentRepo->expects($this->once())->method('delete')->with(7);
+
+        $this->service->deleteAdjustment(1, 1, 7);
+    }
+
+    public function testDeleteAdjustmentThrowsNotFoundWhenAdjustmentMissing(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+        $this->adjustmentRepo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+
+        $this->service->deleteAdjustment(1, 1, 999);
+    }
+
+    public function testDeleteAdjustmentThrowsNotFoundWhenAdjustmentBelongsToAnotherAccount(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 1]);
+        $this->adjustmentRepo->method('findById')->willReturn(['id' => 7, 'account_id' => 2]);
+
+        $this->expectException(NotFoundException::class);
+
+        $this->service->deleteAdjustment(1, 1, 7);
+    }
+
+    public function testDeleteAdjustmentThrowsForbiddenWhenNotOwner(): void
+    {
+        $this->repo->method('findById')->willReturn(['id' => 1, 'user_id' => 2]);
+
+        $this->expectException(ForbiddenException::class);
+
+        $this->service->deleteAdjustment(1, 1, 7);
     }
 }

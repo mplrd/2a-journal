@@ -69,6 +69,23 @@ CREATE TABLE IF NOT EXISTS accounts (
         REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Manual balance corrections (ledger). current_capital is derived as
+-- initial_capital + SUM(trades.pnl) + SUM(account_balance_adjustments.amount).
+-- Each row is a signed delta absorbing real-world gaps not tied to a trade
+-- (forgotten fees, starting-balance offset). See migration 027.
+CREATE TABLE IF NOT EXISTS account_balance_adjustments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    account_id INT UNSIGNED NOT NULL,
+    amount DECIMAL(15,2) NOT NULL,
+    reason VARCHAR(255) NULL DEFAULT NULL,
+    adjusted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    KEY idx_aba_account_id (account_id),
+    CONSTRAINT fk_aba_account FOREIGN KEY (account_id)
+        REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================================
 -- 3. SYMBOLS (per-user assets)
 -- ============================================================================

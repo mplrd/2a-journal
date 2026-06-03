@@ -42,6 +42,7 @@ class AccountFlowTest extends TestCase
 
         // Clean tables
         $this->pdo->exec('DELETE FROM rate_limits');
+        $this->pdo->exec('DELETE FROM account_balance_adjustments');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
@@ -69,9 +70,20 @@ class AccountFlowTest extends TestCase
     protected function tearDown(): void
     {
         $this->pdo->exec('DELETE FROM rate_limits');
+        $this->pdo->exec('DELETE FROM account_balance_adjustments');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM refresh_tokens');
         $this->pdo->exec('DELETE FROM users');
+    }
+
+    private function createAccount(float $initialCapital = 10000): int
+    {
+        $response = $this->router->dispatch($this->authRequest('POST', '/accounts', [
+            'name' => 'Adj Account',
+            'account_type' => 'BROKER_DEMO',
+            'initial_capital' => $initialCapital,
+        ]));
+        return (int) $response->getBody()['data']['id'];
     }
 
     private function authRequest(string $method, string $uri, array $body = []): Request
@@ -346,6 +358,98 @@ class AccountFlowTest extends TestCase
         } catch (HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());
             $this->assertSame('FORBIDDEN', $e->getErrorCode());
+        }
+    }
+
+    // ── Balance adjustments ──────────────────────────────────────
+
+    public function testAddAdjustmentUpdatesCurrentCapital(): void
+    {
+        $accountId = $this->createAccount(10000);
+
+        $response = $this->router->dispatch($this->authRequest('POST', "/accounts/{$accountId}/adjustments", [
+            'amount' => 18,
+            'reason' => 'Frais oubliés',
+        ]));
+
+        $this->assertSame(201, $response->getStatusCode());
+        $this->assertTrue($response->getBody()['success']);
+        $this->assertEquals(18, $response->getBody()['data']['amount']);
+
+        // current_capital reflects the adjustment: 10000 + 18
+        $show = $this->router->dispatch($this->authRequest('GET', "/accounts/{$accountId}"));
+        $this->assertEquals(10018, (float) $show->getBody()['data']['current_capital']);
+    }
+
+    public function testAddNegativeAdjustment(): void
+    {
+        $accountId = $this->createAccount(10000);
+
+        $this->router->dispatch($this->authRequest('POST', "/accounts/{$accountId}/adjustments", [
+            'amount' => -250.50,
+        ]));
+
+        $show = $this->router->dispatch($this->authRequest('GET', "/accounts/{$accountId}"));
+        $this->assertEquals(9749.50, (float) $show->getBody()['data']['current_capital']);
+    }
+
+    public function testListAdjustmentsReturnsHistory(): void
+    {
+        $accountId = $this->createAccount(10000);
+        $this->router->dispatch($this->authRequest('POST', "/accounts/{$accountId}/adjustments", ['amount' => 18, 'reason' => 'a']));
+        $this->router->dispatch($this->authRequest('POST', "/accounts/{$accountId}/adjustments", ['amount' => -5, 'reason' => 'b']));
+
+        $response = $this->router->dispatch($this->authRequest('GET', "/accounts/{$accountId}/adjustments"));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(2, $response->getBody()['data']);
+    }
+
+    public function testDeleteAdjustmentRevertsCurrentCapital(): void
+    {
+        $accountId = $this->createAccount(10000);
+        $create = $this->router->dispatch($this->authRequest('POST', "/accounts/{$accountId}/adjustments", ['amount' => 18]));
+        $adjustmentId = (int) $create->getBody()['data']['id'];
+
+        $response = $this->router->dispatch($this->authRequest('DELETE', "/accounts/{$accountId}/adjustments/{$adjustmentId}"));
+        $this->assertSame(200, $response->getStatusCode());
+
+        $show = $this->router->dispatch($this->authRequest('GET', "/accounts/{$accountId}"));
+        $this->assertEquals(10000, (float) $show->getBody()['data']['current_capital']);
+    }
+
+    public function testAddAdjustmentInvalidAmount(): void
+    {
+        $accountId = $this->createAccount(10000);
+
+        try {
+            $this->router->dispatch($this->authRequest('POST', "/accounts/{$accountId}/adjustments", ['amount' => 0]));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('accounts.error.invalid_adjustment', $e->getMessageKey());
+        }
+    }
+
+    public function testCannotAdjustOtherUsersAccount(): void
+    {
+        $accountId = $this->createAccount(10000);
+
+        $otherResponse = $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'intruder@test.com',
+            'password' => 'Test1234',
+        ]));
+        $otherToken = $otherResponse->getBody()['data']['access_token'];
+
+        $request = Request::create('POST', "/accounts/{$accountId}/adjustments", ['amount' => 100], [], [
+            'Authorization' => "Bearer {$otherToken}",
+        ]);
+
+        try {
+            $this->router->dispatch($request);
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
         }
     }
 }

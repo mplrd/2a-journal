@@ -7,15 +7,18 @@ use App\Enums\AccountType;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountAdjustmentRepository;
 use App\Repositories\AccountRepository;
 
 class AccountService
 {
     private AccountRepository $repo;
+    private AccountAdjustmentRepository $adjustmentRepo;
 
-    public function __construct(AccountRepository $repo)
+    public function __construct(AccountRepository $repo, AccountAdjustmentRepository $adjustmentRepo)
     {
         $this->repo = $repo;
+        $this->adjustmentRepo = $adjustmentRepo;
     }
 
     public function list(int $userId, array $params = []): array
@@ -77,6 +80,53 @@ class AccountService
         $this->get($userId, $accountId);
 
         $this->repo->softDelete($accountId);
+    }
+
+    /**
+     * Record a manual balance correction (ticket #30). The amount is a signed
+     * delta folded into current_capital — initial_capital is never touched.
+     * Reuses get() for ownership/not-found enforcement.
+     */
+    public function addAdjustment(int $userId, int $accountId, array $data): array
+    {
+        $this->get($userId, $accountId);
+
+        if (!isset($data['amount']) || !is_numeric($data['amount']) || (float) $data['amount'] === 0.0) {
+            throw new ValidationException('accounts.error.invalid_adjustment', 'amount');
+        }
+
+        $reason = $data['reason'] ?? null;
+        if ($reason !== null && mb_strlen((string) $reason) > 255) {
+            throw new ValidationException('accounts.error.reason_too_long', 'reason');
+        }
+
+        // adjusted_at is server-authoritative: the client cannot backdate or
+        // inject a value (repo defaults to CURRENT_TIMESTAMP when absent).
+        return $this->adjustmentRepo->create([
+            'account_id' => $accountId,
+            'amount' => (float) $data['amount'],
+            'reason' => $reason !== null && trim((string) $reason) !== '' ? (string) $reason : null,
+        ]);
+    }
+
+    public function listAdjustments(int $userId, int $accountId): array
+    {
+        $this->get($userId, $accountId);
+
+        return $this->adjustmentRepo->findByAccountId($accountId);
+    }
+
+    public function deleteAdjustment(int $userId, int $accountId, int $adjustmentId): void
+    {
+        $this->get($userId, $accountId);
+        $this->validateId($adjustmentId);
+
+        $adjustment = $this->adjustmentRepo->findById($adjustmentId);
+        if (!$adjustment || (int) $adjustment['account_id'] !== $accountId) {
+            throw new NotFoundException('accounts.error.adjustment_not_found');
+        }
+
+        $this->adjustmentRepo->delete($adjustmentId);
     }
 
     private function validate(array $data): void
