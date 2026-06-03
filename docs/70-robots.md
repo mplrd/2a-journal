@@ -134,13 +134,13 @@ Renommage **complet**, env_var comprise : la clé de réglage BDD, la clé `/fea
 
 ## Découpage en commits (branche `feat/robots`)
 
-La branche vit séparément, mergée vers develop seulement à un jalon cohérent. Commits atomiques envisagés :
+La branche vit séparément, mergée vers develop seulement à un jalon cohérent. Commits atomiques :
 
-1. `docs(robots)` : cette spec (ce commit).
-2. `feat(robots)` backend : migration (table `robots` + `tradingview_webhooks.robot_id`), enums statut, `RobotRepository`, `RobotService`, réécriture du pipeline d'ingestion, routes `/robots`, retrait `/accounts/{id}/webhooks`. Tests.
-3. `feat(settings)` : renommage du flag `tradingview_webhooks_enabled` → `robots_enabled`.
-4. `feat(robots)` frontend : page « Mes robots », menu, CRUD, retrait du bouton ⚡ + panel par compte. Tests.
-5. `docs(robots)` : mise à jour finale de la doc + doc 66 (renvoi vers 70).
+1. ✅ `docs(robots)` : cette spec.
+2. ✅ `feat(robots)` backend : migration 028 (table `robots` + `tradingview_webhooks.robot_id`, drop des colonnes account/status/compteurs côté webhook), enum `RobotStatus`, reject reason `ROBOT_PAUSED`, `RobotRepository`, `RobotService` (+ controller), réécriture du pipeline `TradingViewWebhookService` (résolution robot + gate statut + compteurs sur le robot), routes `/robots`, suppression de `AccountWebhookService`/`Controller` et de l'enum orphelin `WebhookStatus`. Tests : `RobotServiceTest` (9), `TradingViewWebhookFlowTest` mis à jour (10).
+3. ⬜ `feat(settings)` : renommage du flag `tradingview_webhooks_enabled` → `robots_enabled` (env_var comprise).
+4. ⬜ `feat(robots)` frontend : page « Mes robots », menu, CRUD, retrait du bouton ⚡ + panel par compte. Tests.
+5. ⬜ `docs(robots)` : mise à jour finale de la doc + doc 66 (renvoi vers 70).
 
 ## Limitations / suite (v2)
 

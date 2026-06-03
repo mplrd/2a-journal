@@ -2,7 +2,7 @@
 
 use App\Controllers\AccountAdjustmentController;
 use App\Controllers\AccountController;
-use App\Controllers\AccountWebhookController;
+use App\Controllers\RobotController;
 use App\Controllers\AdminSettingsController;
 use App\Controllers\AdminUserController;
 use App\Controllers\AuthController;
@@ -40,6 +40,7 @@ use App\Repositories\SymbolAccountSettingsRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
+use App\Repositories\RobotRepository;
 use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\ImportBatchRepository;
 use App\Repositories\StatsRepository;
@@ -58,7 +59,7 @@ use App\Repositories\UserRepository;
 use App\Repositories\EmailVerificationTokenRepository;
 use App\Repositories\PasswordResetTokenRepository;
 use App\Services\AccountService;
-use App\Services\AccountWebhookService;
+use App\Services\RobotService;
 use App\Services\AuthService;
 use App\Services\AdminUserService;
 use App\Services\BillingService;
@@ -404,8 +405,10 @@ $tradingViewFeatureFlag = new FeatureFlagMiddleware(
 );
 $tvWebhookRepo = new TradingViewWebhookRepository($pdo);
 $tvEventRepo = new TradingViewAlertEventRepository($pdo);
+$robotRepo = new RobotRepository($pdo);
 $tvWebhookService = new TradingViewWebhookService(
     $tvWebhookRepo,
+    $robotRepo,
     $tvEventRepo,
     $brokerConnectionRepo,
     $orderService,
@@ -416,13 +419,14 @@ $tvWebhookService = new TradingViewWebhookService(
     $bingxConnector,
 );
 $tvWebhookController = new TradingViewWebhookController($tvWebhookService);
-$accountWebhookService = new AccountWebhookService(
+$robotService = new RobotService(
+    $robotRepo,
     $tvWebhookRepo,
     $tvEventRepo,
     $accountRepo,
     $webhooksConfig['tradingview_base_url'],
 );
-$accountWebhookController = new AccountWebhookController($accountWebhookService);
+$robotController = new RobotController($robotService);
 $tvWebhookIngestRateLimit = new RateLimitMiddleware(
     $rateLimitRepo,
     $webhooksConfig['tradingview_rate_limit']['max_attempts'],
@@ -430,11 +434,16 @@ $tvWebhookIngestRateLimit = new RateLimitMiddleware(
     '/webhooks/tradingview'
 );
 
+// Public ingestion endpoint (TradingView posts here).
 $router->post('/webhooks/tradingview/{token}', [$tvWebhookController, 'ingest'], [$tradingViewFeatureFlag, $tvWebhookIngestRateLimit]);
-$router->get('/accounts/{id}/webhooks', [$accountWebhookController, 'index'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->post('/accounts/{id}/webhooks', [$accountWebhookController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->delete('/accounts/{id}/webhooks/{webhookId}', [$accountWebhookController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->get('/accounts/{id}/webhooks/{webhookId}/events', [$accountWebhookController, 'events'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+
+// Robot management (the robot owns the webhook; user-managed, per docs/70).
+$router->get('/robots', [$robotController, 'index'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->post('/robots', [$robotController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->get('/robots/{id}', [$robotController, 'show'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->patch('/robots/{id}/status', [$robotController, 'updateStatus'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->delete('/robots/{id}', [$robotController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->get('/robots/{id}/events', [$robotController, 'events'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

@@ -1,0 +1,184 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\OrderType;
+use App\Enums\RobotStatus;
+use App\Exceptions\ForbiddenException;
+use App\Exceptions\NotFoundException;
+use App\Exceptions\ValidationException;
+use App\Repositories\AccountRepository;
+use App\Repositories\RobotRepository;
+use App\Repositories\TradingViewAlertEventRepository;
+use App\Repositories\TradingViewWebhookRepository;
+
+/**
+ * Business logic for trading robots (docs/70-robots.md). A robot owns one
+ * TradingView webhook and points to one account. v1 has no trading plan: the
+ * robot executes every received signal unless it is paused.
+ */
+class RobotService
+{
+    /** Hard cap of active robots per account. */
+    public const MAX_PER_ACCOUNT = 10;
+
+    public function __construct(
+        private RobotRepository $robotRepo,
+        private TradingViewWebhookRepository $webhookRepo,
+        private TradingViewAlertEventRepository $eventRepo,
+        private AccountRepository $accountRepo,
+        private string $baseWebhookUrl,
+    ) {}
+
+    /** All non-archived robots of the user, across every account. */
+    public function listForUser(int $userId): array
+    {
+        return $this->robotRepo->findAllByUserId($userId);
+    }
+
+    public function getForUser(int $userId, int $robotId): array
+    {
+        return $this->findOwnedRobot($userId, $robotId);
+    }
+
+    /**
+     * Create a robot + its webhook. The URL token and body secret are returned
+     * ONCE — only their SHA-256 hashes are persisted, so neither can be
+     * recovered. Lost credentials → archive + recreate.
+     *
+     * @return array{robot: array, url: string, body_secret: string, template: array}
+     */
+    public function create(int $userId, array $data): array
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '' || mb_strlen($name) > 120) {
+            throw new ValidationException('robot.error.invalid_name', 'name');
+        }
+
+        $accountId = (int) ($data['account_id'] ?? 0);
+        $this->ensureAccountOwned($userId, $accountId);
+
+        if ($this->robotRepo->countByAccountId($accountId) >= self::MAX_PER_ACCOUNT) {
+            throw new ValidationException('robot.error.too_many', 'account_id');
+        }
+
+        $robot = $this->robotRepo->create([
+            'user_id' => $userId,
+            'account_id' => $accountId,
+            'name' => $name,
+        ]);
+
+        $urlToken = bin2hex(random_bytes(24));
+        $bodySecret = bin2hex(random_bytes(24));
+
+        $this->webhookRepo->create([
+            'user_id' => $userId,
+            'robot_id' => (int) $robot['id'],
+            'name' => $name,
+            'url_token_hash' => hash('sha256', $urlToken),
+            'body_secret_hash' => hash('sha256', $bodySecret),
+        ]);
+
+        return [
+            'robot' => $robot,
+            'url' => rtrim($this->baseWebhookUrl, '/') . '/' . $urlToken,
+            'body_secret' => $bodySecret,
+            'template' => $this->buildTemplate($bodySecret),
+        ];
+    }
+
+    /** ACTIVE ↔ PAUSED (and ARCHIVED). Validates the target status. */
+    public function changeStatus(int $userId, int $robotId, ?string $status): array
+    {
+        $robot = $this->findOwnedRobot($userId, $robotId);
+        $newStatus = RobotStatus::tryFrom((string) $status);
+        if ($newStatus === null) {
+            throw new ValidationException('robot.error.invalid_status', 'status');
+        }
+        $this->robotRepo->updateStatus((int) $robot['id'], $newStatus->value);
+
+        return $this->findOwnedRobot($userId, $robotId);
+    }
+
+    /** Soft-delete: ARCHIVED keeps the signal history. */
+    public function archive(int $userId, int $robotId): void
+    {
+        $robot = $this->findOwnedRobot($userId, $robotId);
+        $this->robotRepo->updateStatus((int) $robot['id'], RobotStatus::ARCHIVED->value);
+    }
+
+    public function listEvents(int $userId, int $robotId, int $page = 1, int $perPage = 50): array
+    {
+        $this->findOwnedRobot($userId, $robotId);
+        $webhook = $this->webhookRepo->findByRobotId($robotId);
+        if ($webhook === null) {
+            return ['data' => [], 'meta' => ['page' => 1, 'per_page' => $perPage, 'total' => 0, 'total_pages' => 0]];
+        }
+
+        $page = max(1, $page);
+        $perPage = min(100, max(1, $perPage));
+        $offset = ($page - 1) * $perPage;
+        $webhookId = (int) $webhook['id'];
+
+        $events = $this->eventRepo->findAllByWebhookId($webhookId, $perPage, $offset);
+        $total = $this->eventRepo->countByWebhookId($webhookId);
+
+        return [
+            'data' => $events,
+            'meta' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'total_pages' => (int) ceil($total / $perPage),
+            ],
+        ];
+    }
+
+    private function ensureAccountOwned(int $userId, int $accountId): void
+    {
+        $account = $this->accountRepo->findById($accountId);
+        if (!$account) {
+            throw new NotFoundException('accounts.error.not_found');
+        }
+        if ((int) $account['user_id'] !== $userId) {
+            throw new ForbiddenException('robot.error.forbidden');
+        }
+    }
+
+    private function findOwnedRobot(int $userId, int $robotId): array
+    {
+        $robot = $this->robotRepo->findById($robotId);
+        if (!$robot || $robot['status'] === RobotStatus::ARCHIVED->value) {
+            throw new NotFoundException('robot.error.not_found');
+        }
+        if ((int) $robot['user_id'] !== $userId) {
+            throw new ForbiddenException('robot.error.forbidden');
+        }
+        return $robot;
+    }
+
+    /**
+     * Canonical JSON template the user pastes into the TradingView alert
+     * "Message" field. TradingView substitutes {{...}} placeholders before
+     * sending; the `secret` is a static second factor on top of the URL token.
+     */
+    private function buildTemplate(string $bodySecret): array
+    {
+        return [
+            'secret' => $bodySecret,
+            'alert_id' => '{{ticker}}-{{interval}}-{{timenow}}',
+            'symbol' => '{{ticker}}',
+            'direction' => 'BUY',
+            'order_type' => OrderType::MARKET->value,
+            'entry_price' => '{{close}}',
+            'size' => 1.0,
+            'sl_points' => 50,
+            'targets' => [
+                ['points' => 100, 'size' => 0.5],
+                ['points' => 200, 'size' => 0.5],
+            ],
+            'setup' => ['TradingView'],
+            'notes' => 'TradingView alert {{strategy.order.action}}',
+        ];
+    }
+}

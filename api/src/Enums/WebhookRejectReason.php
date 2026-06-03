@@ -12,4 +12,5 @@ enum WebhookRejectReason: string
     case BROKER_INACTIVE = 'BROKER_INACTIVE';
     case BROKER_ERROR = 'BROKER_ERROR';
     case FEATURE_DISABLED = 'FEATURE_DISABLED';
+    case ROBOT_PAUSED = 'ROBOT_PAUSED';
 }

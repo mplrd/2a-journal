@@ -6,11 +6,12 @@ use App\Enums\BrokerProvider;
 use App\Enums\ConnectionStatus;
 use App\Enums\Direction;
 use App\Enums\OrderType;
+use App\Enums\RobotStatus;
 use App\Enums\WebhookEventStatus;
 use App\Enums\WebhookRejectReason;
-use App\Enums\WebhookStatus;
 use App\Exceptions\BrokerOrderException;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\RobotRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Services\Broker\BrokerLogger;
@@ -21,6 +22,7 @@ class TradingViewWebhookService
 {
     public function __construct(
         private TradingViewWebhookRepository $webhookRepo,
+        private RobotRepository $robotRepo,
         private TradingViewAlertEventRepository $eventRepo,
         private BrokerConnectionRepository $connectionRepo,
         private OrderService $orderService,
@@ -49,16 +51,29 @@ class TradingViewWebhookService
         }
 
         $webhookId = (int) $webhook['id'];
-        $accountId = (int) $webhook['account_id'];
+        $robot = $this->robotRepo->findById((int) $webhook['robot_id']);
 
-        if ($webhook['status'] !== WebhookStatus::ACTIVE->value) {
-            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::WEBHOOK_REVOKED);
+        // Orphan webhook (robot hard-deleted) — treat as an invalid token: we
+        // don't have a target account to act on.
+        if ($robot === null) {
+            $this->logEvent($webhookId, null, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_TOKEN);
             return;
         }
 
+        $robotId = (int) $robot['id'];
+        $accountId = (int) $robot['account_id'];
+
+        // The body secret is checked before the robot status so a paused robot
+        // never reveals (via differing behaviour) whether the secret was right.
         $secret = isset($payload['secret']) && is_string($payload['secret']) ? $payload['secret'] : '';
         if (!hash_equals((string) $webhook['body_secret_hash'], hash('sha256', $secret))) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_SECRET);
+            return;
+        }
+
+        // A paused (or archived) robot logs the signal but places no trade.
+        if ($robot['status'] !== RobotStatus::ACTIVE->value) {
+            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::ROBOT_PAUSED);
             return;
         }
 
@@ -86,20 +101,20 @@ class TradingViewWebhookService
         $validationError = $this->validatePayload($payload);
         if ($validationError !== null) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_PAYLOAD, $validationError, null, $externalAlertId);
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
             return;
         }
 
         $connection = $this->connectionRepo->findByAccountId($accountId);
         if ($connection === null) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::NO_BROKER, null, null, $externalAlertId);
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
             return;
         }
 
         if ($connection['status'] !== ConnectionStatus::ACTIVE->value) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::BROKER_INACTIVE, null, null, $externalAlertId);
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
             return;
         }
 
@@ -147,7 +162,7 @@ class TradingViewWebhookService
                 $orderId,
                 $externalAlertId,
             );
-            $this->webhookRepo->recordTrigger($webhookId, true);
+            $this->robotRepo->recordTrigger($robotId, true);
         } catch (BrokerOrderException $e) {
             $this->logEvent(
                 $webhookId,
@@ -159,7 +174,7 @@ class TradingViewWebhookService
                 $orderId,
                 $externalAlertId,
             );
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
         }
     }
 

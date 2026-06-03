@@ -6,12 +6,13 @@ use App\Core\Database;
 use App\Enums\BrokerProvider;
 use App\Enums\ConnectionStatus;
 use App\Enums\OrderStatus;
+use App\Enums\RobotStatus;
 use App\Enums\WebhookEventStatus;
 use App\Enums\WebhookRejectReason;
-use App\Enums\WebhookStatus;
 use App\Exceptions\BrokerOrderException;
 use App\Repositories\AccountRepository;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\RobotRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
@@ -36,6 +37,7 @@ class TradingViewWebhookFlowTest extends TestCase
 {
     private PDO $pdo;
     private TradingViewWebhookRepository $webhookRepo;
+    private RobotRepository $robotRepo;
     private TradingViewAlertEventRepository $eventRepo;
     private BrokerConnectionRepository $connectionRepo;
     private TradingViewWebhookService $service;
@@ -53,6 +55,7 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->wipeTables();
 
         $this->webhookRepo = new TradingViewWebhookRepository($this->pdo);
+        $this->robotRepo = new RobotRepository($this->pdo);
         $this->eventRepo = new TradingViewAlertEventRepository($this->pdo);
         $this->connectionRepo = new BrokerConnectionRepository($this->pdo);
 
@@ -72,6 +75,7 @@ class TradingViewWebhookFlowTest extends TestCase
 
         $this->service = new TradingViewWebhookService(
             $this->webhookRepo,
+            $this->robotRepo,
             $this->eventRepo,
             $this->connectionRepo,
             $orderService,
@@ -102,15 +106,14 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertNull($events[0]['webhook_id']);
     }
 
-    public function testRevokedWebhookIsRejected(): void
+    public function testPausedRobotIsRejected(): void
     {
-        ['token' => $token, 'secret' => $secret, 'webhook_id' => $webhookId] = $this->seedWebhook();
-        $this->webhookRepo->revoke($webhookId);
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook(RobotStatus::PAUSED);
 
         $this->service->process($token, $this->validPayload($secret));
 
         $events = $this->fetchAllEvents();
-        $this->assertSame(WebhookRejectReason::WEBHOOK_REVOKED->value, $events[0]['reject_reason']);
+        $this->assertSame(WebhookRejectReason::ROBOT_PAUSED->value, $events[0]['reject_reason']);
     }
 
     public function testInvalidSecretIsRejected(): void
@@ -186,7 +189,7 @@ class TradingViewWebhookFlowTest extends TestCase
 
     public function testBrokerErrorMarksEventFailedButLeavesOrderInPlace(): void
     {
-        ['token' => $token, 'secret' => $secret, 'webhook_id' => $webhookId] = $this->seedWebhook();
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
         $this->seedBrokerConnection();
         $this->connector->throwOnNext = new BrokerOrderException('insufficient margin', 'INSUFFICIENT_MARGIN');
 
@@ -198,14 +201,14 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertStringContainsString('INSUFFICIENT_MARGIN', $events[0]['error_message']);
         $this->assertNotNull($events[0]['created_order_id'], 'order is created before broker call; FAILED preserves it');
 
-        $webhook = $this->webhookRepo->findById($webhookId);
-        $this->assertSame(1, (int) $webhook['total_errors']);
-        $this->assertSame(0, (int) $webhook['total_triggered']);
+        $robot = $this->robotRepo->findById($robotId);
+        $this->assertSame(1, (int) $robot['total_errors']);
+        $this->assertSame(0, (int) $robot['total_triggered']);
     }
 
     public function testHappyPathCreatesOrderAndProcessesEvent(): void
     {
-        ['token' => $token, 'secret' => $secret, 'webhook_id' => $webhookId] = $this->seedWebhook();
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
         $this->seedBrokerConnection();
 
         $this->service->process($token, $this->validPayload($secret));
@@ -221,8 +224,8 @@ class TradingViewWebhookFlowTest extends TestCase
         $stmt->execute(['id' => $events[0]['created_order_id']]);
         $this->assertSame(OrderStatus::PENDING->value, $stmt->fetchColumn());
 
-        $webhook = $this->webhookRepo->findById($webhookId);
-        $this->assertSame(1, (int) $webhook['total_triggered']);
+        $robot = $this->robotRepo->findById($robotId);
+        $this->assertSame(1, (int) $robot['total_triggered']);
 
         // Connector received the normalized order shape with BUY/EURUSD.
         $this->assertNotNull($this->connector->lastOrder);
@@ -259,22 +262,28 @@ class TradingViewWebhookFlowTest extends TestCase
         ];
     }
 
-    private function seedWebhook(): array
+    private function seedWebhook(RobotStatus $robotStatus = RobotStatus::ACTIVE): array
     {
+        $robot = $this->robotRepo->create([
+            'user_id' => $this->userId,
+            'account_id' => $this->accountId,
+            'name' => 'Test robot',
+            'status' => $robotStatus->value,
+        ]);
         $token = bin2hex(random_bytes(16));
         $secret = bin2hex(random_bytes(16));
         $webhook = $this->webhookRepo->create([
             'user_id' => $this->userId,
-            'account_id' => $this->accountId,
+            'robot_id' => (int) $robot['id'],
             'name' => 'Test webhook',
             'url_token_hash' => hash('sha256', $token),
             'body_secret_hash' => hash('sha256', $secret),
-            'status' => WebhookStatus::ACTIVE->value,
         ]);
         return [
             'token' => $token,
             'secret' => $secret,
             'webhook_id' => (int) $webhook['id'],
+            'robot_id' => (int) $robot['id'],
         ];
     }
 
@@ -320,6 +329,7 @@ class TradingViewWebhookFlowTest extends TestCase
         foreach ([
             'tradingview_alert_events',
             'tradingview_webhooks',
+            'robots',
             'broker_connections',
             'status_history',
             'partial_exits',
