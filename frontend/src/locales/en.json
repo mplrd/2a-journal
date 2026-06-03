@@ -281,6 +281,13 @@
     "currency": "Currency",
     "initial_capital": "Initial capital",
     "balance": "Balance",
+    "adjust_balance": "Correct balance",
+    "adjust_balance_hint": "Adjust the balance to absorb a gap not tracked by a trade (forgotten fees, a starting balance different from the initial capital). The initial capital is left unchanged.",
+    "real_balance": "Actual balance",
+    "adjustment_amount": "Adjustment",
+    "adjustment_reason": "Reason (optional)",
+    "adjustment_reason_placeholder": "E.g. unrecorded fees",
+    "adjustment_history": "Correction history",
     "broker": "Broker",
     "max_drawdown": "Max drawdown",
     "daily_drawdown": "Daily drawdown",
@@ -305,13 +312,18 @@
       "stage_not_allowed": "Stage is not allowed for this account type",
       "invalid_stage": "Invalid stage",
       "invalid_capital": "Value must be positive",
+      "invalid_adjustment": "The adjustment amount is invalid",
+      "reason_too_long": "The reason is too long (255 characters max)",
+      "adjustment_not_found": "Correction not found",
       "not_found": "Account not found",
       "forbidden": "Unauthorized access to this account"
     },
     "success": {
       "created": "Account created successfully",
       "updated": "Account updated successfully",
-      "deleted": "Account deleted successfully"
+      "deleted": "Account deleted successfully",
+      "adjustment_added": "Balance corrected successfully",
+      "adjustment_deleted": "Correction removed"
     }
   },
   "positions": {

@@ -49,11 +49,20 @@ class AccountRepositoryTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->pdo->exec('DELETE FROM account_balance_adjustments');
         $this->pdo->exec('DELETE FROM partial_exits');
         $this->pdo->exec('DELETE FROM trades');
         $this->pdo->exec('DELETE FROM positions');
         $this->pdo->exec('DELETE FROM accounts');
         $this->pdo->exec('DELETE FROM users');
+    }
+
+    private function insertAdjustmentOnAccount(int $accountId, float $amount): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO account_balance_adjustments (account_id, amount, reason)
+             VALUES (:aid, :amount, NULL)"
+        )->execute(['aid' => $accountId, 'amount' => $amount]);
     }
 
     private function insertClosedTradeOnAccount(int $accountId, float $pnl): void
@@ -268,5 +277,52 @@ class AccountRepositoryTest extends TestCase
 
         $row = $this->repo->findById($accountId);
         $this->assertEquals(10150, (float) $row['current_capital']);
+    }
+
+    // ── current_capital includes manual balance adjustments ──────
+
+    public function testCurrentCapitalIncludesAdjustments(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertAdjustmentOnAccount($accountId, 18);
+        $this->insertAdjustmentOnAccount($accountId, -50);
+
+        // 10000 + 0 pnl + (18 - 50) = 9968
+        $row = $this->repo->findById($accountId);
+        $this->assertEquals(9968, (float) $row['current_capital']);
+
+        $list = $this->repo->findAllByUserId($this->userId);
+        $this->assertEquals(9968, (float) $list['items'][0]['current_capital']);
+    }
+
+    public function testCurrentCapitalSumsTradesAndAdjustments(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 200);
+        $this->insertAdjustmentOnAccount($accountId, 18);
+
+        // 10000 + 200 + 18 = 10218
+        $row = $this->repo->findById($accountId);
+        $this->assertEquals(10218, (float) $row['current_capital']);
+    }
+
+    public function testAdjustmentsAreScopedPerAccount(): void
+    {
+        $a1 = $this->repo->create($this->validData(['name' => 'A1', 'initial_capital' => 10000]));
+        $a2 = $this->repo->create($this->validData(['name' => 'A2', 'initial_capital' => 20000]));
+
+        $this->insertAdjustmentOnAccount((int) $a1['id'], 100);
+        $this->insertAdjustmentOnAccount((int) $a2['id'], -300);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+        $byName = [];
+        foreach ($result['items'] as $row) $byName[$row['name']] = (float) $row['current_capital'];
+
+        $this->assertEquals(10100, $byName['A1']);
+        $this->assertEquals(19700, $byName['A2']);
     }
 }

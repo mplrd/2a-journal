@@ -1,5 +1,6 @@
 <?php
 
+use App\Controllers\AccountAdjustmentController;
 use App\Controllers\AccountController;
 use App\Controllers\AccountWebhookController;
 use App\Controllers\AdminSettingsController;
@@ -25,6 +26,7 @@ use App\Middlewares\FeatureFlagMiddleware;
 use App\Middlewares\RateLimitMiddleware;
 use App\Middlewares\RequireActiveSubscriptionMiddleware;
 use App\Middlewares\RequireAdminMiddleware;
+use App\Repositories\AccountAdjustmentRepository;
 use App\Repositories\AccountRepository;
 use App\Repositories\PlatformSettingsRepository;
 use App\Repositories\SubscriptionRepository;
@@ -259,9 +261,11 @@ $partialExitRepo = new PartialExitRepository($pdo);
 
 // ── Accounts ────────────────────────────────────────────────────
 // $accountRepo already instantiated in the Symbols section above.
-$accountService = new AccountService($accountRepo);
+$accountAdjustmentRepo = new AccountAdjustmentRepository($pdo);
+$accountService = new AccountService($accountRepo, $accountAdjustmentRepo);
 $drawdownService = new DrawdownService($accountRepo, $tradeRepo, $userRepo, $emailService);
 $accountController = new AccountController($accountService, $drawdownService);
+$accountAdjustmentController = new AccountAdjustmentController($accountService);
 
 $router->get('/accounts', [$accountController, 'index'], [$authMiddleware, $requireSubscription]);
 $router->post('/accounts', [$accountController, 'store'], [$authMiddleware, $requireSubscription]);
@@ -269,6 +273,9 @@ $router->get('/accounts/dd-status', [$accountController, 'ddStatus'], [$authMidd
 $router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware, $requireSubscription]);
 $router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware, $requireSubscription]);
+$router->get('/accounts/{id}/adjustments', [$accountAdjustmentController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/accounts/{id}/adjustments', [$accountAdjustmentController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->delete('/accounts/{id}/adjustments/{adjustmentId}', [$accountAdjustmentController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
 // ── Positions ──────────────────────────────────────────────────
 // $positionRepo already instantiated above (Setups section).
