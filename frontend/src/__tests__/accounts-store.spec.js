@@ -11,6 +11,9 @@ vi.mock('@/services/accounts', () => ({
     create: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
+    listAdjustments: vi.fn(),
+    addAdjustment: vi.fn(),
+    deleteAdjustment: vi.fn(),
   },
 }))
 
@@ -140,5 +143,44 @@ describe('accounts store', () => {
     await promise
 
     expect(store.loading).toBe(false)
+  })
+
+  // ── Balance adjustments ──────────────────────────────────────
+
+  it('fetchAdjustments loads the history into the store', async () => {
+    const adjustments = [{ id: 1, amount: 18 }, { id: 2, amount: -5 }]
+    accountsService.listAdjustments.mockResolvedValue({ success: true, data: adjustments })
+
+    const result = await store.fetchAdjustments(1)
+
+    expect(accountsService.listAdjustments).toHaveBeenCalledWith(1)
+    expect(store.adjustments).toEqual(adjustments)
+    expect(result.data).toEqual(adjustments)
+  })
+
+  it('addAdjustment posts the correction', async () => {
+    accountsService.addAdjustment.mockResolvedValue({ success: true, data: { id: 9, amount: 18 } })
+
+    const result = await store.addAdjustment(1, { amount: 18, reason: 'Frais' })
+
+    expect(accountsService.addAdjustment).toHaveBeenCalledWith(1, { amount: 18, reason: 'Frais' })
+    expect(result.data.amount).toBe(18)
+  })
+
+  it('deleteAdjustment removes the correction', async () => {
+    accountsService.deleteAdjustment.mockResolvedValue({ success: true })
+
+    await store.deleteAdjustment(1, 9)
+
+    expect(accountsService.deleteAdjustment).toHaveBeenCalledWith(1, 9)
+  })
+
+  it('addAdjustment surfaces the error messageKey', async () => {
+    const error = new Error('bad')
+    error.messageKey = 'accounts.error.invalid_adjustment'
+    accountsService.addAdjustment.mockRejectedValue(error)
+
+    await expect(store.addAdjustment(1, { amount: 0 })).rejects.toThrow()
+    expect(store.error).toBe('accounts.error.invalid_adjustment')
   })
 })

@@ -13,6 +13,7 @@ import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import Menu from 'primevue/menu'
 import AccountForm from '@/components/account/AccountForm.vue'
+import AdjustBalanceDialog from '@/components/account/AdjustBalanceDialog.vue'
 import ImportDialog from '@/components/import/ImportDialog.vue'
 import BrokerConnectionPanel from '@/components/broker/BrokerConnectionPanel.vue'
 import TradingViewWebhooksPanel from '@/components/webhook/TradingViewWebhooksPanel.vue'
@@ -41,6 +42,42 @@ const showBrokerSync = ref(false)
 const brokerSyncAccount = ref(null)
 const showWebhooks = ref(false)
 const webhooksAccount = ref(null)
+const showAdjust = ref(false)
+const adjustAccount = ref(null)
+
+async function openAdjust(account) {
+  adjustAccount.value = account
+  store.adjustments = []
+  showAdjust.value = true
+  try {
+    await store.fetchAdjustments(account.id)
+  } catch {
+    // error surfaced via the store
+  }
+}
+
+async function handleAdjustSubmit({ amount, reason }) {
+  try {
+    await store.addAdjustment(adjustAccount.value.id, { amount, reason })
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.adjustment_added'), life: 3000 })
+    await Promise.all([store.fetchAdjustments(adjustAccount.value.id), store.fetchAccounts()])
+    // Refresh the dialog's account reference so the base balance updates.
+    adjustAccount.value = store.accounts.find((a) => a.id === adjustAccount.value.id) || adjustAccount.value
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  }
+}
+
+async function handleDeleteAdjustment(adjustmentId) {
+  try {
+    await store.deleteAdjustment(adjustAccount.value.id, adjustmentId)
+    toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.adjustment_deleted'), life: 3000 })
+    await Promise.all([store.fetchAdjustments(adjustAccount.value.id), store.fetchAccounts()])
+    adjustAccount.value = store.accounts.find((a) => a.id === adjustAccount.value.id) || adjustAccount.value
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  }
+}
 
 function openImport(account) {
   importAccount.value = account
@@ -168,6 +205,11 @@ const actionMenuItems = computed(() => {
       command: () => openEdit(menuAccount.value),
     },
     {
+      label: t('accounts.adjust_balance'),
+      icon: 'pi pi-sliders-h',
+      command: () => openAdjust(menuAccount.value),
+    },
+    {
       label: t('common.delete'),
       icon: 'pi pi-trash',
       class: 'text-danger',
@@ -250,6 +292,7 @@ function openActionMenu(event, account) {
             <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
             <Button v-if="features.tradingviewWebhooks" icon="pi pi-bolt" severity="warn" size="small" text v-tooltip.top="t('webhook.tradingview.title')" @click="openWebhooks(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
+            <Button icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
@@ -304,6 +347,15 @@ function openActionMenu(event, account) {
       :account="editingAccount"
       :loading="store.loading"
       @save="handleSave"
+    />
+
+    <AdjustBalanceDialog
+      v-model:visible="showAdjust"
+      :account="adjustAccount"
+      :adjustments="store.adjustments"
+      :loading="store.loading"
+      @submit="handleAdjustSubmit"
+      @delete-adjustment="handleDeleteAdjustment"
     />
 
     <ImportDialog
