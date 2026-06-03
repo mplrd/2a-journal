@@ -353,7 +353,10 @@ async function handleSymbolCreate(data) {
           :price-label="t('positions.be_price')"
         />
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.be_size') }}</label>
+          <label class="flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('positions.be_size') }}
+            <i class="pi pi-info-circle text-gray-400 cursor-help" v-tooltip.top="t('positions.be_size_hint')" />
+          </label>
           <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
         </div>
       </div>

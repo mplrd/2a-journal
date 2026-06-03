@@ -9,7 +9,19 @@ Introduire la notion de **robot de trading** comme entité de premier ordre dans
 - **expose un webhook** : c'est lui qui reçoit le signal d'un indicateur (TradingView aujourd'hui) ;
 - est **lié à un compte** : c'est sur ce compte qu'il pourra passer des trades ;
 - peut être **activé ou mis en pause** : un robot en pause reçoit toujours les signaux (tracés) mais ne passe aucun trade ;
-- (v2) appliquera des **règles de filtrage internes** pour laisser passer ou rejeter un signal avant de le router vers le compte.
+- (v2) **suivra un « plan de trading »** : le robot reçoit N signaux via le webhook et ne prend que ceux **applicables au cadre du plan**. Le plan est le cadre de décision, le robot est l'exécutant.
+
+### Vision cible (le robot, le plan, le compte)
+
+```
+Plan de trading   →  définit le cadre (ce qui est « applicable »)
+Robot             →  suit UN plan + pointe UN compte cible
+                  →  reçoit N signaux via son webhook
+                  →  ne prend que ceux applicables au plan
+                  →  exécute le trade sur le compte
+```
+
+**En v1 (cette spec), le plan n'existe pas encore** : le robot exécute **tout** signal reçu (modulo son statut actif/pause). Le « plan de trading » sera une entité ajoutée plus tard, qui viendra se brancher comme couche de décision entre « signal reçu » et « trade passé » — sans remettre en cause l'entité robot posée ici.
 
 Cette brique remplace l'accès actuel « par compte » (bouton ⚡ sur la grille des comptes) par une **page dédiée « Mes robots »** dans le menu principal.
 
@@ -32,10 +44,10 @@ La feature webhooks est **livrée mais jamais activée** (flag OFF en test comme
 | Robot ↔ compte | 1 robot → 1 compte | (éventuel multi-comptes) |
 | Canal d'entrée | webhook TradingView | autres sources possibles |
 | Activation | ACTIVE / PAUSED | idem |
-| **Filtrage des signaux** | **aucun** (le robot route tel quel) | **règles** (horaires, direction, symbole, limites de risque…) |
-| Page « Mes robots » | oui (CRUD, historique, pause) | enrichie (config des règles) |
+| **Plan de trading** | **aucun** (le robot exécute tout signal reçu) | **entité `trading_plans`** : le robot suit un plan, ne prend que les signaux applicables |
+| Page « Mes robots » | oui (CRUD, historique, pause) | enrichie (association robot ↔ plan) |
 
-La v1 pose **l'entité robot et la page**, sans intelligence de filtrage. Le filtrage est explicitement repoussé en v2 — mais le modèle de données est conçu pour l'accueillir sans nouvelle migration lourde.
+La v1 pose **l'entité robot et la page**, sans plan. Le « plan de trading » est explicitement repoussé en v2 — mais le modèle est conçu pour l'accueillir (le robot référencera un `plan_id` nullable) sans refonte.
 
 ## Modèle de données
 
@@ -48,7 +60,7 @@ CREATE TABLE robots (
     account_id INT UNSIGNED NOT NULL,        -- compte cible (1 robot → 1 compte en v1)
     name VARCHAR(120) NOT NULL,
     status ENUM('ACTIVE','PAUSED','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
-    -- v2 : colonne(s) ou table dédiée pour les règles de filtrage
+    -- v2 : plan_id BIGINT UNSIGNED NULL → FK vers trading_plans (le robot suit un plan)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_robot_user (user_id),
@@ -85,7 +97,7 @@ Le pipeline d'ingestion (aujourd'hui dans `TradingViewWebhookService::process()`
 
 - robot `PAUSED` → event tracé `REJECTED/ROBOT_PAUSED`, aucun trade.
 - robot `ACTIVE` → on continue le pipeline existant (broker connection, `OrderService::createFromWebhook`, `placeOrder`).
-- (v2) robot `ACTIVE` → application des règles de filtrage avant le routage.
+- (v2) robot `ACTIVE` **avec un plan** → le signal est confronté au plan ; non applicable → event `REJECTED/OUT_OF_PLAN`, aucun trade ; applicable → routage normal.
 
 CRUD robot (`RobotService` + `RobotController`), routes sous `/robots` (et plus `/accounts/{id}/webhooks`) :
 
@@ -108,7 +120,9 @@ Le flag `tradingview_webhooks_enabled` (doc 66, géré via `PlatformSettingsServ
 - le `FeatureFlagMiddleware` de l'ingestion + du CRUD robots ;
 - l'affichage de l'entrée de menu « Mes robots ».
 
-> Le renommage gère le fallback : l'`env_var` reste `TRADINGVIEW_WEBHOOKS_ENABLED` (déjà posé sur Railway) pour ne pas casser l'activation existante, seul la clé de réglage BDD et la clé `/features` changent. À confirmer en implémentation.
+Renommage **complet**, env_var comprise : la clé de réglage BDD, la clé `/features`, **et** l'`env_var` passent de `TRADINGVIEW_WEBHOOKS_ENABLED` → `ROBOTS_ENABLED`.
+
+> ⚠️ **Action ops requise** : après déploiement, re-poser la variable `ROBOTS_ENABLED` sur les environnements Railway (test + prod). L'ancienne `TRADINGVIEW_WEBHOOKS_ENABLED` n'est plus lue → sans la nouvelle variable (et sans toggle BDD), le flag retombe à `false` (feature OFF). C'est sans danger (OFF = caché), mais à ne pas oublier pour réactiver en test.
 
 ## Frontend
 
@@ -130,7 +144,7 @@ La branche vit séparément, mergée vers develop seulement à un jalon cohéren
 
 ## Limitations / suite (v2)
 
-- **Filtrage des signaux** : le cœur de la valeur ajoutée, repoussé en v2 (règles : horaires, direction, symbole, limites de risque du compte…).
+- **Plan de trading** : le cœur de la valeur ajoutée, repoussé en v2. Entité `trading_plans` qui définit le cadre ; le robot référence un `plan_id` et ne prend que les signaux applicables. La v1 exécute tout signal reçu.
 - **Multi-comptes** : 1 robot → 1 compte en v1.
 - **Sources non-TradingView** : le robot est conçu pour pouvoir accueillir d'autres canaux d'entrée, mais v1 = webhook TV uniquement.
 - Reprise des limitations broker de la doc 66 (sandbox non testés, etc.) : inchangées, le robot ne fait que router vers le même `placeOrder`.
