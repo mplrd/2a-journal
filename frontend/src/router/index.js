@@ -92,6 +92,12 @@ const router = createRouter({
           meta: { titleKey: 'performance.title' },
         },
         {
+          path: 'robots',
+          name: 'robots',
+          component: () => import('@/views/RobotsView.vue'),
+          meta: { titleKey: 'robot.title' },
+        },
+        {
           path: 'account',
           name: 'account',
           component: () => import('@/views/AccountView.vue'),
