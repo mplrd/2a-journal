@@ -1,6 +1,6 @@
 # 70 - Robots de trading
 
-> **Statut** : spec en cours de validation. Aucune implémentation tant que ce document n'est pas validé.
+> **Statut** : v1 livrée (entité robot + page « Mes robots » + flag `robots_enabled`). Le « plan de trading » (filtrage des signaux) reste en v2.
 
 ## Objectif
 
