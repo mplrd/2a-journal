@@ -167,4 +167,47 @@ class RobotServiceTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->service->create($this->userId, ['name' => 'overflow', 'account_id' => $this->accountId]);
     }
+
+    public function testGetDetailMasksUrlAndSecret(): void
+    {
+        $robot = $this->service->create($this->userId, ['name' => 'A', 'account_id' => $this->accountId])['robot'];
+
+        $detail = $this->service->getDetailForUser($this->userId, (int) $robot['id']);
+
+        $this->assertSame((int) $robot['id'], (int) $detail['robot']['id']);
+        $this->assertTrue($detail['webhook']['exists']);
+        $this->assertStringContainsString('•', $detail['webhook']['url_masked']);
+        $this->assertStringContainsString('•', $detail['webhook']['secret_masked']);
+        $this->assertStringContainsString('•', $detail['webhook']['template']['secret']);
+    }
+
+    public function testRegenerateIssuesFreshCredentialsAndInvalidatesOld(): void
+    {
+        $created = $this->service->create($this->userId, ['name' => 'A', 'account_id' => $this->accountId]);
+        $robotId = (int) $created['robot']['id'];
+        $oldHash = $this->webhookRepo->findByRobotId($robotId)['url_token_hash'];
+
+        $regen = $this->service->regenerate($this->userId, $robotId);
+
+        // New one-shot credentials, different from the originals.
+        $this->assertNotSame($created['url'], $regen['url']);
+        $this->assertNotSame($created['body_secret'], $regen['body_secret']);
+        $this->assertSame($regen['body_secret'], $regen['template']['secret']);
+
+        // Exactly one webhook remains; its token hash matches the new URL's token
+        // and differs from the old one (old credentials invalidated).
+        $current = $this->webhookRepo->findByRobotId($robotId);
+        $this->assertNotNull($current);
+        $this->assertNotSame($oldHash, $current['url_token_hash']);
+        $parts = explode('/', $regen['url']);
+        $this->assertSame(hash('sha256', end($parts)), $current['url_token_hash']);
+    }
+
+    public function testRegenerateRejectsAnotherUsersRobot(): void
+    {
+        $robot = $this->service->create($this->userId, ['name' => 'A', 'account_id' => $this->accountId])['robot'];
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->regenerate($this->otherUserId, (int) $robot['id']);
+    }
 }

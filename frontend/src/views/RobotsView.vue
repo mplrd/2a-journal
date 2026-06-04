@@ -29,6 +29,13 @@ const creating = ref(false)
 
 const showCreated = ref(false)
 const createdResult = ref(null)
+// Re-used by both create and regenerate (the one-shot credentials modal).
+const createdModalTitle = ref('')
+
+const showDetail = ref(false)
+const detail = ref(null)
+const detailLoading = ref(false)
+const regenerating = ref(false)
 
 const showEvents = ref(false)
 const eventsRobot = ref(null)
@@ -75,6 +82,7 @@ async function createRobot() {
   try {
     const resp = await robotsService.create({ name: newName.value.trim(), accountId: newAccountId.value })
     createdResult.value = resp.data
+    createdModalTitle.value = t('robot.created.title')
     showCreate.value = false
     showCreated.value = true
     toast.add({ severity: 'success', summary: t('robot.success.created'), life: 3000 })
@@ -83,6 +91,50 @@ async function createRobot() {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
   } finally {
     creating.value = false
+  }
+}
+
+async function openDetail(robot) {
+  showDetail.value = true
+  detailLoading.value = true
+  detail.value = null
+  try {
+    const resp = await robotsService.get(robot.id)
+    detail.value = resp.data
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
+    showDetail.value = false
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function askRegenerate() {
+  confirm.require({
+    message: t('robot.regenerate_confirm'),
+    header: detail.value?.robot?.name,
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: t('common.cancel'), severity: 'secondary', outlined: true },
+    acceptProps: { label: t('robot.actions.regenerate'), severity: 'warn' },
+    accept: regenerate,
+  })
+}
+
+async function regenerate() {
+  const robotId = detail.value?.robot?.id
+  if (!robotId) return
+  regenerating.value = true
+  try {
+    const resp = await robotsService.regenerate(robotId)
+    createdResult.value = resp.data
+    createdModalTitle.value = t('robot.created.title_regenerated')
+    showDetail.value = false
+    showCreated.value = true
+    toast.add({ severity: 'success', summary: t('robot.success.regenerated'), life: 3000 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
+  } finally {
+    regenerating.value = false
   }
 }
 
@@ -213,6 +265,14 @@ onMounted(async () => {
         <template #body="{ data }">
           <div class="flex gap-1">
             <Button
+              icon="pi pi-cog"
+              size="small"
+              text
+              v-tooltip.top="t('robot.actions.details')"
+              data-testid="robot-details"
+              @click="openDetail(data)"
+            />
+            <Button
               icon="pi pi-list"
               size="small"
               text
@@ -269,8 +329,37 @@ onMounted(async () => {
       </template>
     </Dialog>
 
-    <!-- One-shot credentials modal -->
-    <Dialog v-model:visible="showCreated" :header="t('robot.created.title')" modal class="w-full max-w-2xl" data-testid="robot-created-modal">
+    <!-- Read-only detail (masked) + regenerate -->
+    <Dialog v-model:visible="showDetail" :header="detail?.robot?.name ?? t('robot.detail.title')" modal class="w-full max-w-2xl" data-testid="robot-detail-modal">
+      <div v-if="detailLoading" class="text-sm text-gray-500">…</div>
+      <div v-else-if="detail" class="space-y-3">
+        <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('robot.detail.intro') }}</p>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div><span class="text-gray-500">{{ t('robot.field.account') }}:</span> {{ detail.robot.account_name }}</div>
+          <div><span class="text-gray-500">{{ t('robot.field.status') }}:</span> {{ t(`robot.status.${detail.robot.status}`) }}</div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">{{ t('robot.created.url_label') }}</label>
+          <InputText :model-value="detail.webhook.url_masked" readonly class="w-full font-mono text-xs" data-testid="robot-detail-url" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">{{ t('robot.created.secret_label') }}</label>
+          <InputText :model-value="detail.webhook.secret_masked" readonly class="w-full font-mono text-xs" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">{{ t('robot.created.template_label') }}</label>
+          <Textarea :model-value="templateString(detail.webhook.template)" readonly rows="12" class="w-full font-mono text-xs" />
+        </div>
+        <p class="text-xs text-gray-400">{{ t('robot.detail.masked_note') }}</p>
+      </div>
+      <template #footer>
+        <Button :label="t('common.close')" severity="secondary" @click="showDetail = false" />
+        <Button :label="t('robot.actions.regenerate')" icon="pi pi-refresh" severity="warn" :loading="regenerating" data-testid="robot-regenerate" @click="askRegenerate" />
+      </template>
+    </Dialog>
+
+    <!-- One-shot credentials modal (create + regenerate) -->
+    <Dialog v-model:visible="showCreated" :header="createdModalTitle" modal class="w-full max-w-2xl" data-testid="robot-created-modal">
       <div v-if="createdResult" class="space-y-3">
         <p class="text-sm text-orange-600 dark:text-orange-400">{{ t('robot.created.warning') }}</p>
         <div>

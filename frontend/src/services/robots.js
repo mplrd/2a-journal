@@ -5,8 +5,16 @@ export const robotsService = {
     return api.get('/robots')
   },
 
+  async get(robotId) {
+    return api.get(`/robots/${robotId}`)
+  },
+
   async create({ name, accountId }) {
     return api.post('/robots', { name, account_id: accountId })
+  },
+
+  async regenerate(robotId) {
+    return api.post(`/robots/${robotId}/regenerate`)
   },
 
   async setStatus(robotId, status) {

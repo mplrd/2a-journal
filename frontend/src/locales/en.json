@@ -1036,6 +1036,7 @@
     "account_placeholder": "Target account",
     "never": "Never",
     "archive_confirm": "Archive this robot? Its webhook will stop working. History is kept.",
+    "regenerate_confirm": "Regenerate the URL and secret? The old URL stops working immediately — you'll need to paste the new one into TradingView.",
     "triggered_count": "{count} triggered",
     "errors_count": "{count} error(s)",
     "field": {
@@ -1051,19 +1052,28 @@
       "ARCHIVED": "Archived"
     },
     "actions": {
+      "details": "Details / credentials",
       "events": "Signal history",
       "pause": "Pause",
       "resume": "Resume",
-      "archive": "Archive"
+      "archive": "Archive",
+      "regenerate": "Regenerate credentials"
     },
     "success": {
       "created": "Robot created",
       "paused": "Robot paused",
       "resumed": "Robot resumed",
-      "archived": "Robot archived"
+      "archived": "Robot archived",
+      "regenerated": "Credentials regenerated"
+    },
+    "detail": {
+      "title": "Robot details",
+      "intro": "Robot configuration and webhook credentials (secret masked).",
+      "masked_note": "For security, the URL and secret are never shown again. Use \"Regenerate\" to get new credentials."
     },
     "created": {
       "title": "Robot created — copy these details",
+      "title_regenerated": "New credentials — copy them",
       "warning": "These values are shown only once. Copy them now.",
       "url_label": "Webhook URL (paste into the TradingView alert)",
       "secret_label": "Secret (included in the alert message)",

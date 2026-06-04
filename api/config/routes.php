@@ -442,6 +442,7 @@ $router->get('/robots', [$robotController, 'index'], [$authMiddleware, $requireS
 $router->post('/robots', [$robotController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->get('/robots/{id}', [$robotController, 'show'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->patch('/robots/{id}/status', [$robotController, 'updateStatus'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->post('/robots/{id}/regenerate', [$robotController, 'regenerate'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->delete('/robots/{id}', [$robotController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->get('/robots/{id}/events', [$robotController, 'events'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 

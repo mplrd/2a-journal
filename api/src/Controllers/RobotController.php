@@ -21,7 +21,14 @@ class RobotController extends Controller
     {
         $userId = (int) $request->getAttribute('user_id');
         $robotId = (int) $request->getRouteParam('id');
-        return $this->jsonSuccess($this->service->getForUser($userId, $robotId));
+        return $this->jsonSuccess($this->service->getDetailForUser($userId, $robotId));
+    }
+
+    public function regenerate(Request $request): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $robotId = (int) $request->getRouteParam('id');
+        return $this->jsonSuccess($this->service->regenerate($userId, $robotId), null, 201);
     }
 
     public function store(Request $request): Response

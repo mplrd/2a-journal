@@ -15,10 +15,22 @@ describe('robots service', () => {
     expect(api.get).toHaveBeenCalledWith('/robots')
   })
 
+  it('get fetches a single robot detail', async () => {
+    api.get.mockResolvedValue({ success: true, data: { robot: {}, webhook: {} } })
+    await robotsService.get(4)
+    expect(api.get).toHaveBeenCalledWith('/robots/4')
+  })
+
   it('create posts name + account_id', async () => {
     api.post.mockResolvedValue({ success: true, data: { robot: { id: 1 } } })
     await robotsService.create({ name: 'My bot', accountId: 7 })
     expect(api.post).toHaveBeenCalledWith('/robots', { name: 'My bot', account_id: 7 })
+  })
+
+  it('regenerate posts to the regenerate endpoint', async () => {
+    api.post.mockResolvedValue({ success: true, data: { url: 'x' } })
+    await robotsService.regenerate(4)
+    expect(api.post).toHaveBeenCalledWith('/robots/4/regenerate')
   })
 
   it('setStatus patches the status endpoint', async () => {

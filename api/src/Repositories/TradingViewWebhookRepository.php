@@ -53,4 +53,11 @@ class TradingViewWebhookRepository
         $row = $stmt->fetch();
         return $row ?: null;
     }
+
+    /** Drop a robot's webhook(s) — used when regenerating credentials. */
+    public function deleteByRobotId(int $robotId): void
+    {
+        $this->pdo->prepare("DELETE FROM tradingview_webhooks WHERE robot_id = :robot_id")
+            ->execute(['robot_id' => $robotId]);
+    }
 }
