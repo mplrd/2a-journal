@@ -412,6 +412,8 @@ $tvWebhookService = new TradingViewWebhookService(
     $tvEventRepo,
     $brokerConnectionRepo,
     $orderService,
+    $orderRepo,
+    $historyRepo,
     $cryptoService,
     $ctraderConnector,
     $metaApiConnector,

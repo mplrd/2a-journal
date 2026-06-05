@@ -611,10 +611,57 @@ class BingxConnector implements ConnectorInterface
     }
 
     /**
-     * Issue a signed POST/DELETE to BingX. Body params are signed the same
+     * Amend the SL and/or TP of a live order on BingX (PUT on the order
+     * endpoint). Expects absolute prices, not points: at modify time we have no
+     * entry reference to convert points, and a modify is about setting concrete
+     * levels. The caller (robot pipeline) passes `sl_price`/`tp_price`.
+     *
+     * @param array{broker_order_id:string, symbol?:?string, sl_price?:?float, tp_price?:?float} $modification
+     */
+    public function modifyOrder(array $credentials, array $modification): array
+    {
+        $orderId = (string) ($modification['broker_order_id'] ?? '');
+        $symbol = $modification['symbol'] ?? null;
+        if ($orderId === '' || !$symbol) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'BingX modifyOrder requires broker_order_id and symbol',
+                'UNSUPPORTED_ORDER',
+            );
+        }
+
+        $params = ['symbol' => $symbol, 'orderId' => $orderId];
+        if (!empty($modification['sl_price'])) {
+            $params['stopLoss'] = json_encode([
+                'type' => 'STOP_MARKET',
+                'stopPrice' => (float) $modification['sl_price'],
+                'workingType' => 'MARK_PRICE',
+            ]);
+        }
+        if (!empty($modification['tp_price'])) {
+            $params['takeProfit'] = json_encode([
+                'type' => 'TAKE_PROFIT_MARKET',
+                'stopPrice' => (float) $modification['tp_price'],
+                'workingType' => 'MARK_PRICE',
+            ]);
+        }
+        if (!isset($params['stopLoss']) && !isset($params['takeProfit'])) {
+            throw new \App\Exceptions\BrokerOrderException(
+                'BingX modifyOrder needs at least sl_price or tp_price',
+                'UNSUPPORTED_ORDER',
+            );
+        }
+
+        $data = $this->httpPostSigned('/openApi/swap/v2/trade/order', $params, $credentials, 'PUT');
+        $orderData = (is_array($data) && isset($data['order']) && is_array($data['order'])) ? $data['order'] : (array) $data;
+
+        return ['status' => $orderData['status'] ?? null, 'raw' => $orderData];
+    }
+
+    /**
+     * Issue a signed POST/DELETE/PUT to BingX. Body params are signed the same
      * way as GET (canonical key=value& string, ksorted, raw values) but
      * delivered as a query string so the signature stays consistent across
-     * all four verbs.
+     * all verbs.
      */
     private function httpPostSigned(string $path, array $params, array $credentials, string $method = 'POST'): mixed
     {

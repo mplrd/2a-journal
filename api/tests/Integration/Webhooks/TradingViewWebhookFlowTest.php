@@ -38,6 +38,7 @@ class TradingViewWebhookFlowTest extends TestCase
     private PDO $pdo;
     private TradingViewWebhookRepository $webhookRepo;
     private RobotRepository $robotRepo;
+    private OrderRepository $orderRepo;
     private TradingViewAlertEventRepository $eventRepo;
     private BrokerConnectionRepository $connectionRepo;
     private TradingViewWebhookService $service;
@@ -60,6 +61,7 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->connectionRepo = new BrokerConnectionRepository($this->pdo);
 
         $orderRepo = new OrderRepository($this->pdo);
+        $this->orderRepo = $orderRepo;
         $positionRepo = new PositionRepository($this->pdo);
         $accountRepo = new AccountRepository($this->pdo);
         $historyRepo = new StatusHistoryRepository($this->pdo);
@@ -79,6 +81,8 @@ class TradingViewWebhookFlowTest extends TestCase
             $this->eventRepo,
             $this->connectionRepo,
             $orderService,
+            $orderRepo,
+            $historyRepo,
             $this->crypto,
             $this->connector,
             $this->connector,
@@ -245,6 +249,124 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertSame('***', $raw['secret'], 'secret must be redacted before persistence');
     }
 
+    // ── Order management actions (OPEN / MODIFY / CLOSE / CANCEL) ──
+
+    public function testOpenPersistsClientOrderIdAndBrokerOrderId(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $payload = $this->validPayload($secret);
+        $payload['client_order_id'] = 'COID-123';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $orderId = (int) $events[0]['created_order_id'];
+        $order = $this->orderRepo->findById($orderId);
+        $this->assertSame('COID-123', $order['client_order_id']);
+        $this->assertStringStartsWith('fake-', (string) $order['broker_order_id']);
+    }
+
+    public function testModifyResolvesByClientOrderIdAndCallsConnector(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-MOD';
+        $this->service->process($token, $open);
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'MODIFY',
+            'client_order_id' => 'COID-MOD',
+            'symbol' => 'EURUSD',
+            'sl_price' => 1.0950,
+        ]);
+
+        $events = $this->fetchAllEvents();
+        $last = end($events);
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, $last['status']);
+        $this->assertSame('MODIFY', $last['error_message']); // action tag stored in error_message
+        $this->assertSame(1.0950, (float) $this->connector->lastModification['sl_price']);
+    }
+
+    public function testModifyUnknownClientOrderIdIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'MODIFY',
+            'client_order_id' => 'does-not-exist',
+            'sl_price' => 1.0950,
+        ]);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::ORDER_NOT_FOUND->value, end($events)['reject_reason']);
+    }
+
+    public function testCancelMarksOrderCancelledLocally(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-CXL';
+        $this->service->process($token, $open);
+        $orderId = (int) $this->fetchAllEvents()[0]['created_order_id'];
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'CANCEL',
+            'client_order_id' => 'COID-CXL',
+        ]);
+
+        $this->assertNotNull($this->connector->lastCancelOrderId);
+        $this->assertSame('CANCELLED', $this->orderRepo->findById($orderId)['status']);
+    }
+
+    public function testCloseCallsConnectorAndCancelsLocalOrder(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-CLS';
+        $this->service->process($token, $open);
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'CLOSE',
+            'client_order_id' => 'COID-CLS',
+        ]);
+
+        $this->assertNotNull($this->connector->lastClosePositionId);
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testUnknownActionIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'TELEPORT',
+            'client_order_id' => 'x',
+        ]);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::UNSUPPORTED_ACTION->value, end($events)['reject_reason']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function validPayload(string $secret): array
@@ -379,6 +501,7 @@ class FakeConnector implements ConnectorInterface
     public ?array $lastOrder = null;
     public ?string $lastCancelOrderId = null;
     public ?string $lastClosePositionId = null;
+    public ?array $lastModification = null;
 
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
     {
@@ -440,5 +563,16 @@ class FakeConnector implements ConnectorInterface
     {
         $this->lastClosePositionId = $externalPositionId;
         return ['status' => 'CLOSED', 'raw' => []];
+    }
+
+    public function modifyOrder(array $credentials, array $modification): array
+    {
+        $this->lastModification = $modification;
+        if ($this->throwOnNext) {
+            $throw = $this->throwOnNext;
+            $this->throwOnNext = null;
+            throw $throw;
+        }
+        return ['status' => 'MODIFIED', 'raw' => []];
     }
 }

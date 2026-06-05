@@ -1011,7 +1011,9 @@
         "BROKER_INACTIVE": "Broker inactive",
         "BROKER_ERROR": "Broker error",
         "FEATURE_DISABLED": "Feature disabled",
-        "ROBOT_PAUSED": "Robot paused"
+        "ROBOT_PAUSED": "Robot paused",
+        "ORDER_NOT_FOUND": "Order not found",
+        "UNSUPPORTED_ACTION": "Unsupported action"
       }
     },
     "error": {
