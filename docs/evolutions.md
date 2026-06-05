@@ -381,4 +381,19 @@ Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-
 
 ---
 
+## Carnet de notes — pistes différées (hors périmètre v1)
+
+**Contexte** : livraison du module carnet de notes (`docs/73-carnet-notes.md`, migration `030_notebook.sql`). v1 = CRUD notes + catégories perso + multi-images + épingle dashboard. Pistes laissées de côté volontairement :
+
+- **Recherche plein-texte** sur le contenu des notes (titre + corps), utile dès qu'un utilisateur accumule beaucoup de notes.
+- **Réorganisation / drag&drop du dashboard** : aujourd'hui le widget « Notes épinglées » est en bas, position fixe.
+- **Partage** d'une note (lien public en lecture seule, comme les positions partagées).
+- **Rappels / échéances** sur une note (date d'échéance + notification).
+- **Suppression physique des fichiers image** à la suppression d'une note : aujourd'hui la note est soft-deleted, donc les fichiers de `api/storage/uploads/notes/` restent (accessibles au seul propriétaire via endpoint authentifié). Prévoir un nettoyage (cron ou hard-delete cascade) si le volume devient un sujet.
+
+**Repéré le** : 2026-06-05.
+**Priorité** : basse — la v1 couvre le besoin exprimé. À reprioriser selon les retours d'usage.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

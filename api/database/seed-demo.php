@@ -504,5 +504,37 @@ foreach ([$accountId, $accountId2, $accountId3] as $aid) {
 }
 
 echo "Created {$tradeCount} closed + {$openCount} open + {$securedCount} secured trades, {$orderCount} orders\n";
+
+// ── 7. Create notebook categories + notes ───────────────────
+$noteCategories = ['Money Management', 'Setup de trading', 'Gestion de position', 'Psychologie'];
+$catIds = [];
+foreach ($noteCategories as $label) {
+    $pdo->prepare("INSERT INTO note_categories (user_id, label) VALUES (:uid, :label)")
+        ->execute(['uid' => $userId, 'label' => $label]);
+    $catIds[$label] = (int) $pdo->lastInsertId();
+}
+
+// [title, content, category, note_date, is_pinned]
+$notes = [
+    ['Trades de nuit', "Spread de 4 pts vs 1 + 2 pts / position : éviter le scalp serré en session asiatique.", 'Gestion de position', '2026-06-01', 1],
+    ['Journée flux', "Si journée flux, attendre la reprise de la MM7 en UT15 avant d'entrer.", 'Setup de trading', '2026-06-02', 1],
+    ['Renforcement', "Ne pas renforcer plus d'une fois quand je ne suis pas protégé.", 'Money Management', '2026-06-03', 0],
+    ['Sommeil', "Ne pas trader lorsque j'ai mal dormi : taux d'erreur trop élevé.", 'Psychologie', '2026-05-28', 0],
+    ['BB 15 après flux', "Après un fort flux, les BB 15 ont tendance à faire barrage aux prix.", null, '2026-05-30', 0],
+];
+foreach ($notes as [$title, $content, $cat, $date, $pinned]) {
+    $pdo->prepare("INSERT INTO notes (user_id, category_id, title, content, note_date, is_pinned)
+                   VALUES (:uid, :cat, :title, :content, :date, :pinned)")
+        ->execute([
+            'uid' => $userId,
+            'cat' => $cat ? $catIds[$cat] : null,
+            'title' => $title,
+            'content' => $content,
+            'date' => $date,
+            'pinned' => $pinned,
+        ]);
+}
+echo "Created " . count($noteCategories) . " note categories + " . count($notes) . " notes\n";
+
 echo "\nDemo account ready!\n";
 echo "Login: {$email} / {$password}\n";

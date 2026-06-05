@@ -8,10 +8,9 @@ import EmailVerificationBanner from '@/components/auth/EmailVerificationBanner.v
 import DdAlertBanner from '@/components/dashboard/DdAlertBanner.vue'
 import KpiCards from '@/components/dashboard/KpiCards.vue'
 import CumulativePnlChart from '@/components/dashboard/CumulativePnlChart.vue'
-import WinLossChart from '@/components/dashboard/WinLossChart.vue'
-import PnlBySymbolChart from '@/components/dashboard/PnlBySymbolChart.vue'
 import RecentTrades from '@/components/dashboard/RecentTrades.vue'
 import PnlCalendar from '@/components/dashboard/PnlCalendar.vue'
+import PinnedNotesCard from '@/components/dashboard/PinnedNotesCard.vue'
 
 const { t } = useI18n()
 const statsStore = useStatsStore()
@@ -61,14 +60,16 @@ async function applyFilters() {
         <i class="pi pi-spin pi-spinner text-3xl text-gray-400"></i>
       </div>
 
-      <KpiCards :overview="statsStore.overview" class="mb-6" />
-
+      <!-- Row 1: compact overview tile (KPIs + win/loss) and a wide cumulative P&L -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <CumulativePnlChart :data="statsStore.charts?.cumulative_pnl" />
-        <WinLossChart :data="statsStore.charts?.win_loss" />
-        <PnlBySymbolChart :data="statsStore.charts?.pnl_by_symbol" />
+        <KpiCards :overview="statsStore.overview" :winLoss="statsStore.charts?.win_loss" />
+        <CumulativePnlChart class="lg:col-span-2" :data="statsStore.charts?.cumulative_pnl" />
       </div>
 
+      <!-- Row 2: pinned notebook reminders (self-hides when nothing is pinned) -->
+      <PinnedNotesCard class="mb-6" />
+
+      <!-- Row 3: recent trades + P&L calendar -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2">
           <RecentTrades :trades="statsStore.recentTrades" :openTrades="statsStore.openTrades" />

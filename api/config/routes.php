@@ -87,6 +87,13 @@ use App\Services\SsoService;
 use App\Services\StatsService;
 use App\Services\SupportTicketService;
 use App\Services\FileUploadService;
+use App\Controllers\NoteController;
+use App\Controllers\NoteCategoryController;
+use App\Repositories\NoteRepository;
+use App\Repositories\NoteAttachmentRepository;
+use App\Repositories\NoteCategoryRepository;
+use App\Services\NoteService;
+use App\Services\NoteCategoryService;
 use App\Services\SymbolService;
 use App\Services\TradeService;
 use App\Services\TradingViewWebhookService;
@@ -242,6 +249,34 @@ $router->get('/setups', [$setupController, 'index'], [$authMiddleware, $requireS
 $router->post('/setups', [$setupController, 'store'], [$authMiddleware, $requireSubscription]);
 $router->put('/setups/{id}', [$setupController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/setups/{id}', [$setupController, 'destroy'], [$authMiddleware, $requireSubscription]);
+
+// ── Notebook (carnet de notes) ─────────────────────────────────
+// Personal notes with user-defined categories and image attachments. Images are
+// stored OUTSIDE the web root and streamed through an authenticated endpoint
+// (same FileUploadService as the support module).
+$noteCategoryRepo = new NoteCategoryRepository($pdo);
+$noteRepo = new NoteRepository($pdo);
+$noteAttachmentRepo = new NoteAttachmentRepository($pdo);
+$noteUploadService = new FileUploadService(dirname(__DIR__) . '/storage/uploads');
+
+$noteCategoryService = new NoteCategoryService($noteCategoryRepo, $noteRepo);
+$noteService = new NoteService($noteRepo, $noteAttachmentRepo, $noteUploadService, $noteCategoryRepo);
+$noteCategoryController = new NoteCategoryController($noteCategoryService);
+$noteController = new NoteController($noteService);
+
+$router->get('/note-categories', [$noteCategoryController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/note-categories', [$noteCategoryController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->put('/note-categories/{id}', [$noteCategoryController, 'update'], [$authMiddleware, $requireSubscription]);
+$router->delete('/note-categories/{id}', [$noteCategoryController, 'destroy'], [$authMiddleware, $requireSubscription]);
+
+$router->get('/notes', [$noteController, 'index'], [$authMiddleware, $requireSubscription]);
+$router->post('/notes', [$noteController, 'store'], [$authMiddleware, $requireSubscription]);
+$router->get('/notes/{id}', [$noteController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->put('/notes/{id}', [$noteController, 'update'], [$authMiddleware, $requireSubscription]);
+$router->delete('/notes/{id}', [$noteController, 'destroy'], [$authMiddleware, $requireSubscription]);
+$router->post('/notes/{id}/attachments', [$noteController, 'addAttachments'], [$authMiddleware, $requireSubscription]);
+$router->delete('/notes/{id}/attachments/{attId}', [$noteController, 'destroyAttachment'], [$authMiddleware, $requireSubscription]);
+$router->get('/notes/{id}/attachments/{attId}', [$noteController, 'downloadAttachment'], [$authMiddleware, $requireSubscription]);
 
 // ── Custom Fields ──────────────────────────────────────────────
 $customFieldRepo = new CustomFieldDefinitionRepository($pdo);
