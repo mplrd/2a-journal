@@ -1061,6 +1061,12 @@
       "archive": "Archive",
       "regenerate": "Regenerate credentials"
     },
+    "action": {
+      "OPEN": "Open",
+      "MODIFY": "Modify (SL/TP)",
+      "CLOSE": "Close",
+      "CANCEL": "Cancel"
+    },
     "success": {
       "created": "Robot created",
       "paused": "Robot paused",
@@ -1080,6 +1086,8 @@
       "url_label": "Webhook URL (paste into the TradingView alert)",
       "secret_label": "Secret (included in the alert message)",
       "template_label": "Ready-to-paste JSON message",
+      "templates_label": "JSON messages per action (one per TradingView alert)",
+      "templates_hint": "Create one TradingView alert per action. Paste the matching block into the \"Message\" field. The indicator fills the {{...}} values; keep the same client_order_id between open and management.",
       "copied": "Copied",
       "close": "I've copied, close"
     },

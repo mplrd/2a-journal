@@ -156,8 +156,8 @@ Renommage **complet**, env_var comprise : la clé de réglage BDD, la clé `/fea
 
 - **Nouvelle entrée de menu « Mes robots »** (visible si `features.robots === true`).
 - **`RobotsView`** : liste de tous les robots de l'utilisateur (nom, compte cible, statut, dernier signal, compteurs), bouton « Créer un robot ».
-- **Création** : formulaire (nom + sélection du compte cible) → modale one-shot avec URL webhook + secret + template JSON (inchangé sur le fond, cf. doc 66).
-- **Détail robot** : historique des signaux reçus (events), bouton pause/reprise, archivage.
+- **Création** : formulaire (nom + sélection du compte cible) → modale one-shot avec URL webhook + secret + **les 4 messages JSON à coller** (un par action : OPEN / MODIFY / CLOSE / CANCEL), chacun copiable. C'est le robot qui fournit ces templates ; l'utilisateur crée une alerte TradingView par action et colle le bloc correspondant. Chaque template porte le `client_order_id` de corrélation et des placeholders `{{...}}` que l'indicateur remplit.
+- **Détail robot** : identifiants masqués + bouton « Régénérer » + les 4 templates (secret masqué), historique des signaux reçus (events), pause/reprise, archivage.
 - **Retrait du bouton ⚡** sur `AccountsView` (et du `TradingViewWebhooksPanel` par compte) : tout passe par la page Robots.
 
 ## Découpage en commits (branche `feat/robots`)

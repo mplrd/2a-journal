@@ -1061,6 +1061,12 @@
       "archive": "Archiver",
       "regenerate": "Régénérer les identifiants"
     },
+    "action": {
+      "OPEN": "Ouverture",
+      "MODIFY": "Modification (SL/TP)",
+      "CLOSE": "Fermeture",
+      "CANCEL": "Annulation"
+    },
     "success": {
       "created": "Robot créé",
       "paused": "Robot mis en pause",
@@ -1080,6 +1086,8 @@
       "url_label": "URL du webhook (à coller dans l'alerte TradingView)",
       "secret_label": "Secret (inclus dans le message de l'alerte)",
       "template_label": "Message JSON prêt à coller",
+      "templates_label": "Messages JSON par action (un par alerte TradingView)",
+      "templates_hint": "Crée une alerte TradingView par action. Colle le bloc correspondant dans le champ « Message ». L'indicateur remplit les valeurs {{...}} ; garde le même client_order_id entre l'ouverture et la gestion.",
       "copied": "Copié",
       "close": "J'ai copié, fermer"
     },

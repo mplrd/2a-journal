@@ -91,7 +91,13 @@ class RobotServiceTest extends TestCase
         $this->assertSame(RobotStatus::ACTIVE->value, $result['robot']['status']);
         $this->assertStringContainsString('/webhooks/tradingview/', $result['url']);
         $this->assertNotEmpty($result['body_secret']);
-        $this->assertSame($result['body_secret'], $result['template']['secret']);
+        // One template per action; OPEN carries the body secret + the action tag.
+        $this->assertSame($result['body_secret'], $result['templates']['OPEN']['secret']);
+        $this->assertSame('OPEN', $result['templates']['OPEN']['action']);
+        $this->assertArrayHasKey('MODIFY', $result['templates']);
+        $this->assertArrayHasKey('CLOSE', $result['templates']);
+        $this->assertArrayHasKey('CANCEL', $result['templates']);
+        $this->assertSame($result['templates']['OPEN']['client_order_id'], $result['templates']['MODIFY']['client_order_id']);
 
         // A webhook row was created for the robot, storing only hashes.
         $webhook = $this->webhookRepo->findByRobotId((int) $result['robot']['id']);
@@ -178,7 +184,7 @@ class RobotServiceTest extends TestCase
         $this->assertTrue($detail['webhook']['exists']);
         $this->assertStringContainsString('•', $detail['webhook']['url_masked']);
         $this->assertStringContainsString('•', $detail['webhook']['secret_masked']);
-        $this->assertStringContainsString('•', $detail['webhook']['template']['secret']);
+        $this->assertStringContainsString('•', $detail['webhook']['templates']['OPEN']['secret']);
     }
 
     public function testRegenerateIssuesFreshCredentialsAndInvalidatesOld(): void
@@ -192,7 +198,7 @@ class RobotServiceTest extends TestCase
         // New one-shot credentials, different from the originals.
         $this->assertNotSame($created['url'], $regen['url']);
         $this->assertNotSame($created['body_secret'], $regen['body_secret']);
-        $this->assertSame($regen['body_secret'], $regen['template']['secret']);
+        $this->assertSame($regen['body_secret'], $regen['templates']['OPEN']['secret']);
 
         // Exactly one webhook remains; its token hash matches the new URL's token
         // and differs from the old one (old credentials invalidated).

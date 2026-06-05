@@ -201,6 +201,16 @@ function templateString(template) {
   return JSON.stringify(template, null, 2)
 }
 
+// Ordered [{ action, json }] from a { OPEN, MODIFY, CLOSE, CANCEL } map, so the
+// UI can show one ready-to-paste block per TradingView alert.
+const TEMPLATE_ORDER = ['OPEN', 'MODIFY', 'CLOSE', 'CANCEL']
+function templateList(templates) {
+  if (!templates) return []
+  return TEMPLATE_ORDER
+    .filter((a) => templates[a])
+    .map((a) => ({ action: a, json: templateString(templates[a]) }))
+}
+
 async function copy(text, key) {
   try {
     await navigator.clipboard.writeText(text)
@@ -347,8 +357,11 @@ onMounted(async () => {
           <InputText :model-value="detail.webhook.secret_masked" readonly class="w-full font-mono text-xs" />
         </div>
         <div>
-          <label class="block text-xs font-medium mb-1">{{ t('robot.created.template_label') }}</label>
-          <Textarea :model-value="templateString(detail.webhook.template)" readonly rows="12" class="w-full font-mono text-xs" />
+          <label class="block text-xs font-medium mb-1">{{ t('robot.created.templates_label') }}</label>
+          <div v-for="tpl in templateList(detail.webhook.templates)" :key="tpl.action" class="mb-2">
+            <div class="text-xs font-semibold text-gray-500">{{ t(`robot.action.${tpl.action}`) }}</div>
+            <Textarea :model-value="tpl.json" readonly rows="6" class="w-full font-mono text-xs" />
+          </div>
         </div>
         <p class="text-xs text-gray-400">{{ t('robot.detail.masked_note') }}</p>
       </div>
@@ -377,10 +390,14 @@ onMounted(async () => {
           </div>
         </div>
         <div>
-          <label class="block text-xs font-medium mb-1">{{ t('robot.created.template_label') }}</label>
-          <div class="flex gap-2">
-            <Textarea :model-value="templateString(createdResult.template)" readonly rows="14" class="flex-1 font-mono text-xs" data-testid="robot-template" />
-            <Button icon="pi pi-copy" text @click="copy(templateString(createdResult.template), 'robot.created.copied')" />
+          <label class="block text-xs font-medium mb-1">{{ t('robot.created.templates_label') }}</label>
+          <p class="text-xs text-gray-400 mb-2">{{ t('robot.created.templates_hint') }}</p>
+          <div v-for="tpl in templateList(createdResult.templates)" :key="tpl.action" class="mb-2" :data-testid="`robot-template-${tpl.action}`">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-gray-500">{{ t(`robot.action.${tpl.action}`) }}</span>
+              <Button icon="pi pi-copy" text size="small" :label="t('robot.created.copied')" @click="copy(tpl.json, 'robot.created.copied')" />
+            </div>
+            <Textarea :model-value="tpl.json" readonly rows="6" class="w-full font-mono text-xs" />
           </div>
         </div>
       </div>
