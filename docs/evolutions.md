@@ -321,6 +321,15 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 
 ## Support (tickets)
 
+### Email auteur absent du payload détail admin
+
+**Contexte** : `GET /admin/support/tickets` (liste) expose `user_email` via un JOIN, mais `GET /admin/support/tickets/{id}` (détail, `assembleDetail()`) renvoie la ligne brute du ticket — sans l'email du demandeur (seulement `user_id`). Le `support-cli show <id>` affiche donc `author=—`.
+
+**À faire** : enrichir `assembleDetail()` (ou le repo) avec `user_email` pour cohérence liste/détail.
+
+**Repéré le** : 2026-06-05 (mise en place support-cli, doc 74).
+**Priorité** : basse (cosmétique ; la liste porte déjà l'email).
+
 ### Nettoyage physique des pièces jointes
 
 **Contexte** : les PJ des tickets sont stockées sur disque dans `api/storage/uploads/tickets/`. Les lignes `support_ticket_attachments` sont supprimées en cascade (FK `ON DELETE CASCADE`) si un ticket ou un user est hard-deleted, mais **les fichiers sur disque ne sont pas supprimés** (orphelins). En flux normal ce n'est pas critique (la suppression de compte est un soft-delete, les tickets restent), mais à prévoir si on ajoute une purge RGPD / un hard-delete de tickets.
