@@ -217,9 +217,22 @@ class RobotService
     }
 
     /**
-     * Canonical JSON template the user pastes into the TradingView alert
-     * "Message" field. TradingView substitutes {{...}} placeholders before
-     * sending; the `secret` is a static second factor on top of the URL token.
+     * Example JSON the user adapts in their TradingView alert "Message" field.
+     *
+     * This is a PATTERN, not a fixed payload: every trading value is a
+     * TradingView placeholder ({{...}}) that the user's indicator fills in at
+     * fire time — the app never invents levels. The ONLY literal is `secret`
+     * (the static second factor on top of the URL token).
+     *
+     * `targets` is a free-length list (0..N): a serious Pine indicator builds
+     * the array itself via alert()/str.format and emits as many take-profit
+     * legs as it uses — the two shown here are just an illustration of the
+     * { points, size } shape the backend expects.
+     *
+     * The placeholder names below ({{plot_"..."}}, {{strategy.*}}) are examples;
+     * which one carries which value is up to the indicator. Required fields the
+     * indicator MUST resolve: symbol, direction (BUY/SELL), entry_price, size,
+     * sl_points. Optional: order_type, targets, be_points, be_size, setup, notes.
      */
     private function buildTemplate(string $bodySecret): array
     {
@@ -227,17 +240,17 @@ class RobotService
             'secret' => $bodySecret,
             'alert_id' => '{{ticker}}-{{interval}}-{{timenow}}',
             'symbol' => '{{ticker}}',
-            'direction' => 'BUY',
+            'direction' => '{{strategy.order.action}}',
             'order_type' => OrderType::MARKET->value,
             'entry_price' => '{{close}}',
-            'size' => 1.0,
-            'sl_points' => 50,
+            'size' => '{{strategy.order.contracts}}',
+            'sl_points' => '{{plot_"SL points"}}',
             'targets' => [
-                ['points' => 100, 'size' => 0.5],
-                ['points' => 200, 'size' => 0.5],
+                ['points' => '{{plot_"TP1 points"}}', 'size' => '{{plot_"TP1 size"}}'],
+                ['points' => '{{plot_"TP2 points"}}', 'size' => '{{plot_"TP2 size"}}'],
             ],
-            'setup' => ['TradingView'],
-            'notes' => 'TradingView alert {{strategy.order.action}}',
+            'setup' => ['{{strategy.order.id}}'],
+            'notes' => '{{strategy.order.alert_message}}',
         ];
     }
 }
