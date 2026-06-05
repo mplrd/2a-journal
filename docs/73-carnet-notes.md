@@ -86,7 +86,7 @@ Réutilisation directe de `FileUploadService` (déjà éprouvé par le support) 
 |---|---|
 | Service | `services/notebook.js` (`notesService`, `noteCategoriesService`) |
 | Store Pinia | `stores/notebook.js` (catégories + notes, `pinnedNotes`) |
-| Onglet | `views/NotebookView.vue` (filtre par catégorie en chips, grille de notes) |
+| Onglet | `views/NotebookView.vue` (grille de notes ; pas de titre interne — le header global suffit ; filtres par catégorie en chips et boutons d'action « Gérer les catégories » / « Ajouter une note » sur **une même ligne**) |
 | Dialogue note | `components/notebook/NoteDialog.vue` (création/édition, upload multi-images) |
 | Carte note | `components/notebook/NoteCard.vue` (épingle / éditer / supprimer) |
 | Gestion catégories | `components/notebook/CategoryManagerDialog.vue` (CRUD inline, depuis l'onglet) |
@@ -95,7 +95,17 @@ Réutilisation directe de `FileUploadService` (déjà éprouvé par le support) 
 
 Navigation : nouvel onglet « Carnet » (`pi pi-book`) dans `AppLayout.vue` + route `notebook` (`router/index.js`). i18n : `nav.notebook` + blocs `notebook.*` (UI) et `notes.*` / `note_categories.*` (clés d'erreur renvoyées par l'API), en `fr.json` et `en.json`.
 
-Dashboard : `PinnedNotesCard` récupère les notes épinglées (`GET /notes?pinned=1`) et les affiche en lecture seule (l'édition reste dans l'onglet Carnet).
+### Dashboard — notes épinglées + réorganisation des tuiles
+
+`PinnedNotesCard` récupère les notes épinglées (`GET /notes?pinned=1`) et les affiche en lecture seule (l'édition reste dans l'onglet Carnet) ; le widget **se masque tout seul** quand rien n'est épinglé.
+
+L'intégration des notes a été l'occasion de réorganiser le tableau de bord (`DashboardView.vue`) en trois lignes :
+
+- **Ligne 1** — deux tuiles : à gauche une **tuile overview** (`KpiCards.vue`) qui regroupe P&L total (héro) + taux de réussite empilés à gauche, le **doughnut win/loss** centré à droite, et les métriques secondaires (Profit Factor / R:R moyen / Total trades) en footer ; à droite le **P&L cumulé élargi** (`lg:col-span-2`).
+- **Ligne 2** — la bande des notes épinglées (`PinnedNotesCard`).
+- **Ligne 3** — trades récents (en cours / récents) + calendrier P&L journalier (inchangée).
+
+Le graphe **« P&L par symbole » a été retiré du dashboard** (il reste disponible dans la vue Performance). La répartition win/loss n'a plus de tuile dédiée sur le dashboard : elle vit désormais dans la tuile overview.
 
 ## Tests
 
@@ -104,4 +114,4 @@ Dashboard : `PinnedNotesCard` récupère les notes épinglées (`GET /notes?pinn
 
 ## Limitations connues / évolutions possibles
 
-Voir `docs/evolutions.md` : recherche plein-texte, réorganisation du dashboard, partage, rappels/échéances, suppression physique des fichiers à la suppression d'une note (aujourd'hui soft delete → les fichiers restent, accessibles au seul propriétaire).
+Voir `docs/evolutions.md` : recherche plein-texte, partage, rappels/échéances, suppression physique des fichiers à la suppression d'une note (aujourd'hui soft delete → les fichiers restent, accessibles au seul propriétaire).

@@ -81,7 +81,7 @@ async function onFilesSelected(event) {
   clientError.value = null
   for (const original of Array.from(event.target.files || [])) {
     if (!ACCEPTED_TYPES.includes(original.type)) {
-      clientError.value = t('notes.error.attachment_not_found')
+      clientError.value = t('upload.error.invalid_type')
       continue
     }
     if (totalImages.value >= MAX_FILES) {
