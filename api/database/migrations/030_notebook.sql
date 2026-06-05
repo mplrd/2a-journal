@@ -1,6 +1,6 @@
 -- Migration 030 — Notebook (carnet de notes)
 --
--- Adds the personal notebook module (docs/14-carnet-notes.md): a free-form space
+-- Adds the personal notebook module (docs/73-carnet-notes.md): a free-form space
 -- where a user keeps trading notes (REX, points of attention, setup screenshots)
 -- organised under their OWN categories. 2A never analyses these notes — they are
 -- purely a user-facing memory aid.
