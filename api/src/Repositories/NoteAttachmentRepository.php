@@ -55,10 +55,16 @@ class NoteAttachmentRepository
         return $stmt->fetch() ?: null;
     }
 
+    // Columns surfaced to the client (note display). `stored_path` is deliberately
+    // excluded — it is an internal storage path the frontend never uses (images are
+    // fetched by attachment id through the authenticated stream), so it stays
+    // server-side only (findById / findByIdForUser).
+    private const PUBLIC_COLUMNS = 'id, note_id, original_name, mime_type, size_bytes, created_at';
+
     public function findByNoteId(int $noteId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM note_attachments WHERE note_id = :note_id ORDER BY id ASC'
+            'SELECT ' . self::PUBLIC_COLUMNS . ' FROM note_attachments WHERE note_id = :note_id ORDER BY id ASC'
         );
         $stmt->execute(['note_id' => $noteId]);
 
@@ -78,7 +84,7 @@ class NoteAttachmentRepository
 
         $placeholders = implode(',', array_fill(0, count($noteIds), '?'));
         $stmt = $this->pdo->prepare(
-            "SELECT * FROM note_attachments WHERE note_id IN ($placeholders) ORDER BY id ASC"
+            'SELECT ' . self::PUBLIC_COLUMNS . " FROM note_attachments WHERE note_id IN ($placeholders) ORDER BY id ASC"
         );
         $stmt->execute(array_map('intval', $noteIds));
 
