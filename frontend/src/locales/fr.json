@@ -45,6 +45,7 @@
     "symbols": "Mes actifs",
     "stats": "Statistiques",
     "performance": "Performance",
+    "notebook": "Carnet",
     "robots": "Robots",
     "import": "Import",
     "logout": "Déconnexion",
@@ -1112,6 +1113,92 @@
       "invalid_name": "Le nom est requis (max. 120 caractères).",
       "invalid_status": "Statut invalide.",
       "too_many": "Limite de robots atteinte pour ce compte."
+    }
+  },
+  "notebook": {
+    "title": "Carnet de notes",
+    "subtitle": "Vos notes de trading : REX, points d'attention, rappels personnels.",
+    "add_note": "Nouvelle note",
+    "empty": "Aucune note pour le moment. Créez votre première note.",
+    "empty_filtered": "Aucune note dans cette catégorie.",
+    "all_categories": "Toutes",
+    "uncategorized": "Autre",
+    "pinned_badge": "Épinglée",
+    "pin": "Épingler",
+    "unpin": "Désépingler",
+    "edit": "Modifier",
+    "manage_categories": "Gérer les catégories",
+    "image_count": "{count} image | {count} image | {count} images",
+    "form": {
+      "new_title": "Nouvelle note",
+      "edit_title": "Modifier la note",
+      "title_label": "Titre (optionnel)",
+      "title_placeholder": "Ex : Trades de nuit",
+      "content_label": "Note",
+      "content_placeholder": "Écrivez votre note…",
+      "date_label": "Date",
+      "category_label": "Catégorie",
+      "category_placeholder": "Autre (aucune catégorie)",
+      "attachments_label": "Images",
+      "add_images": "Ajouter des images",
+      "pin_label": "Afficher sur le tableau de bord",
+      "save": "Enregistrer"
+    },
+    "confirm_delete_title": "Supprimer la note",
+    "confirm_delete": "Supprimer cette note ? Cette action est irréversible.",
+    "confirm_remove_image": "Retirer cette image ?",
+    "success": {
+      "created": "Note créée",
+      "updated": "Note mise à jour",
+      "deleted": "Note supprimée"
+    },
+    "categories": {
+      "title": "Catégories",
+      "add": "Ajouter une catégorie",
+      "placeholder": "Nom de la catégorie",
+      "empty": "Aucune catégorie. Créez-en une pour ranger vos notes.",
+      "confirm_delete_title": "Supprimer la catégorie",
+      "confirm_delete": "Supprimer « {label} » ? Les notes associées passeront en « Autre ».",
+      "success": {
+        "created": "Catégorie créée",
+        "updated": "Catégorie mise à jour",
+        "deleted": "Catégorie supprimée"
+      }
+    },
+    "dashboard": {
+      "title": "Notes épinglées",
+      "empty": "Aucune note épinglée",
+      "see_all": "Voir le carnet"
+    }
+  },
+  "notes": {
+    "error": {
+      "content_required": "La note ne peut pas être vide",
+      "content_too_long": "La note est trop longue",
+      "title_too_long": "Le titre est trop long",
+      "date_required": "La date est obligatoire",
+      "invalid_date": "Date invalide",
+      "invalid_category": "Catégorie invalide",
+      "too_many_attachments": "Trop d'images jointes",
+      "not_found": "Note introuvable",
+      "forbidden": "Accès refusé",
+      "attachment_not_found": "Image introuvable"
+    },
+    "success": {
+      "deleted": "Note supprimée",
+      "attachment_deleted": "Image supprimée"
+    }
+  },
+  "note_categories": {
+    "error": {
+      "field_required": "Le nom est obligatoire",
+      "label_too_long": "Le nom est trop long",
+      "duplicate_label": "Cette catégorie existe déjà",
+      "not_found": "Catégorie introuvable",
+      "forbidden": "Accès refusé"
+    },
+    "success": {
+      "deleted": "Catégorie supprimée"
     }
   },
   "support": {

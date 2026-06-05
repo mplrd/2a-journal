@@ -111,6 +111,7 @@ const navLinks = computed(() => [
   { to: '/positions', name: 'positions', label: t('nav.positions'), icon: 'pi pi-chart-line' },
   { to: '/orders', name: 'orders', label: t('nav.orders'), icon: 'pi pi-list' },
   { to: '/trades', name: 'trades', label: t('nav.trades'), icon: 'pi pi-arrow-right-arrow-left' },
+  { to: '/notebook', name: 'notebook', label: t('nav.notebook'), icon: 'pi pi-book' },
   { to: '/performance', name: 'performance', label: t('nav.performance'), icon: 'pi pi-chart-bar' },
 ])
 

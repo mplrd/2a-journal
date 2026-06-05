@@ -45,6 +45,7 @@
     "symbols": "My Assets",
     "stats": "Statistics",
     "performance": "Performance",
+    "notebook": "Notebook",
     "robots": "Robots",
     "import": "Import",
     "logout": "Logout",
@@ -1112,6 +1113,92 @@
       "invalid_name": "Name is required (max. 120 characters).",
       "invalid_status": "Invalid status.",
       "too_many": "Robot limit reached for this account."
+    }
+  },
+  "notebook": {
+    "title": "Notebook",
+    "subtitle": "Your trading notes: lessons learned, watch-outs, personal reminders.",
+    "add_note": "New note",
+    "empty": "No notes yet. Create your first note.",
+    "empty_filtered": "No notes in this category.",
+    "all_categories": "All",
+    "uncategorized": "Other",
+    "pinned_badge": "Pinned",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "edit": "Edit",
+    "manage_categories": "Manage categories",
+    "image_count": "{count} image | {count} image | {count} images",
+    "form": {
+      "new_title": "New note",
+      "edit_title": "Edit note",
+      "title_label": "Title (optional)",
+      "title_placeholder": "E.g. Night trades",
+      "content_label": "Note",
+      "content_placeholder": "Write your note…",
+      "date_label": "Date",
+      "category_label": "Category",
+      "category_placeholder": "Other (no category)",
+      "attachments_label": "Images",
+      "add_images": "Add images",
+      "pin_label": "Show on dashboard",
+      "save": "Save"
+    },
+    "confirm_delete_title": "Delete note",
+    "confirm_delete": "Delete this note? This action cannot be undone.",
+    "confirm_remove_image": "Remove this image?",
+    "success": {
+      "created": "Note created",
+      "updated": "Note updated",
+      "deleted": "Note deleted"
+    },
+    "categories": {
+      "title": "Categories",
+      "add": "Add a category",
+      "placeholder": "Category name",
+      "empty": "No categories. Create one to organise your notes.",
+      "confirm_delete_title": "Delete category",
+      "confirm_delete": "Delete “{label}”? Its notes will move to “Other”.",
+      "success": {
+        "created": "Category created",
+        "updated": "Category updated",
+        "deleted": "Category deleted"
+      }
+    },
+    "dashboard": {
+      "title": "Pinned notes",
+      "empty": "No pinned notes",
+      "see_all": "Open notebook"
+    }
+  },
+  "notes": {
+    "error": {
+      "content_required": "The note cannot be empty",
+      "content_too_long": "The note is too long",
+      "title_too_long": "The title is too long",
+      "date_required": "Date is required",
+      "invalid_date": "Invalid date",
+      "invalid_category": "Invalid category",
+      "too_many_attachments": "Too many images attached",
+      "not_found": "Note not found",
+      "forbidden": "Access denied",
+      "attachment_not_found": "Image not found"
+    },
+    "success": {
+      "deleted": "Note deleted",
+      "attachment_deleted": "Image deleted"
+    }
+  },
+  "note_categories": {
+    "error": {
+      "field_required": "Name is required",
+      "label_too_long": "Name is too long",
+      "duplicate_label": "This category already exists",
+      "not_found": "Category not found",
+      "forbidden": "Access denied"
+    },
+    "success": {
+      "deleted": "Category deleted"
     }
   },
   "support": {
