@@ -15,6 +15,7 @@
 # Claude Code local settings
 .claude/settings.local.json
 .claude/CLAUDE.local.md
+.claude/hooks/
 
 # Build
 /frontend/dist/
