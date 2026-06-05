@@ -690,6 +690,45 @@ class BingxConnectorTest extends TestCase
         $this->assertStringContainsString('/closePosition', $this->capturedRequests[0]->getUri()->getPath());
     }
 
+    public function testModifyOrderAmendsSlTpViaPut(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['order' => ['orderId' => 7, 'status' => 'NEW']]),
+        ]);
+
+        $result = $connector->modifyOrder(['api_key' => 'k', 'api_secret' => 's'], [
+            'broker_order_id' => '7',
+            'symbol' => 'BTC-USDT',
+            'sl_price' => 60000.0,
+            'tp_price' => 70000.0,
+        ]);
+
+        $this->assertSame('NEW', $result['status']);
+        $req = $this->capturedRequests[0];
+        $this->assertSame('PUT', $req->getMethod());
+        $this->assertStringContainsString('/trade/order', $req->getUri()->getPath());
+        $query = $req->getUri()->getQuery();
+        $this->assertStringContainsString('orderId=7', $query);
+        $this->assertStringContainsString('stopLoss', $query);
+        $this->assertStringContainsString('takeProfit', $query);
+    }
+
+    public function testModifyOrderRequiresOrderIdAndSymbol(): void
+    {
+        $connector = $this->createConnector([]);
+        $this->expectException(\App\Exceptions\BrokerOrderException::class);
+        $connector->modifyOrder(['api_key' => 'k', 'api_secret' => 's'], ['sl_price' => 1.0]);
+    }
+
+    public function testModifyOrderNeedsAtLeastOneLevel(): void
+    {
+        $connector = $this->createConnector([]);
+        $this->expectException(\App\Exceptions\BrokerOrderException::class);
+        $connector->modifyOrder(['api_key' => 'k', 'api_secret' => 's'], [
+            'broker_order_id' => '7', 'symbol' => 'BTC-USDT',
+        ]);
+    }
+
     public function testPartialCloseExplicitlyUnsupported(): void
     {
         $connector = $this->createConnector([]);

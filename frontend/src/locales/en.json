@@ -23,6 +23,7 @@
     "no_options": "No available options",
     "error": "Error",
     "success": "Success",
+    "actions": "Actions",
     "from": "From",
     "to": "To",
     "range": {
@@ -44,6 +45,7 @@
     "symbols": "My Assets",
     "stats": "Statistics",
     "performance": "Performance",
+    "robots": "Robots",
     "import": "Import",
     "logout": "Logout",
     "language": "Language",
@@ -1008,7 +1010,10 @@
         "NO_BROKER": "No broker connected",
         "BROKER_INACTIVE": "Broker inactive",
         "BROKER_ERROR": "Broker error",
-        "FEATURE_DISABLED": "Feature disabled"
+        "FEATURE_DISABLED": "Feature disabled",
+        "ROBOT_PAUSED": "Robot paused",
+        "ORDER_NOT_FOUND": "Order not found",
+        "UNSUPPORTED_ACTION": "Unsupported action"
       }
     },
     "error": {
@@ -1021,6 +1026,92 @@
     "success": {
       "created": "Webhook created",
       "revoked": "Webhook revoked"
+    }
+  },
+  "robot": {
+    "title": "Robots",
+    "subtitle": "Your robots receive signals from your indicators and place orders on the linked account.",
+    "new": "New robot",
+    "create": "Create robot",
+    "empty": "You have no robots yet.",
+    "name_placeholder": "Your robot's name",
+    "account_placeholder": "Target account",
+    "never": "Never",
+    "archive_confirm": "Archive this robot? Its webhook will stop working. History is kept.",
+    "regenerate_confirm": "Regenerate the URL and secret? The old URL stops working immediately — you'll need to paste the new one into TradingView.",
+    "triggered_count": "{count} triggered",
+    "errors_count": "{count} error(s)",
+    "field": {
+      "name": "Name",
+      "account": "Account",
+      "status": "Status",
+      "last_triggered": "Last signal",
+      "counters": "Activity"
+    },
+    "status": {
+      "ACTIVE": "Active",
+      "PAUSED": "Paused",
+      "ARCHIVED": "Archived"
+    },
+    "actions": {
+      "details": "Details / credentials",
+      "events": "Signal history",
+      "pause": "Pause",
+      "resume": "Resume",
+      "archive": "Archive",
+      "regenerate": "Regenerate credentials"
+    },
+    "action": {
+      "OPEN": "Open",
+      "MODIFY": "Modify (SL/TP)",
+      "CLOSE": "Close",
+      "CANCEL": "Cancel"
+    },
+    "success": {
+      "created": "Robot created",
+      "paused": "Robot paused",
+      "resumed": "Robot resumed",
+      "archived": "Robot archived",
+      "regenerated": "Credentials regenerated"
+    },
+    "detail": {
+      "title": "Robot details",
+      "intro": "Robot configuration and webhook credentials (secret masked).",
+      "masked_note": "For security, the URL and secret are never shown again. Use \"Regenerate\" to get new credentials."
+    },
+    "created": {
+      "title": "Robot created — copy these details",
+      "title_regenerated": "New credentials — copy them",
+      "warning": "These values are shown only once. Copy them now.",
+      "url_label": "Webhook URL (paste into the TradingView alert)",
+      "secret_label": "Secret (included in the alert message)",
+      "template_label": "Ready-to-paste JSON message",
+      "templates_label": "JSON messages per action (one per TradingView alert)",
+      "templates_hint": "Create one TradingView alert per action. Paste the matching block into the \"Message\" field. The indicator fills the {{...}} values; keep the same client_order_id between open and management.",
+      "copied": "Copied",
+      "close": "I've copied, close"
+    },
+    "events": {
+      "title": "Signal history",
+      "empty": "No signal received yet.",
+      "received_at": "Received at",
+      "status": "Status",
+      "reason": "Reason",
+      "order": "Order",
+      "view_payload": "View payload",
+      "status_received": "Received",
+      "status_processed": "Processed",
+      "status_rejected": "Rejected",
+      "status_failed": "Failed",
+      "status_duplicate": "Duplicate"
+    },
+    "error": {
+      "feature_disabled": "Robots are disabled on this server.",
+      "forbidden": "Access denied to this robot.",
+      "not_found": "Robot not found.",
+      "invalid_name": "Name is required (max. 120 characters).",
+      "invalid_status": "Invalid status.",
+      "too_many": "Robot limit reached for this account."
     }
   },
   "support": {

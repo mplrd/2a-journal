@@ -109,24 +109,24 @@ class AdminSettingsFlowTest extends TestCase
         $this->assertContains('mail_enabled', $keys);
         $this->assertContains('mail_from_address', $keys);
         $this->assertContains('billing_grace_days', $keys);
-        $this->assertContains('tradingview_webhooks_enabled', $keys);
+        $this->assertContains('robots_enabled', $keys);
     }
 
-    public function testTogglingTradingViewFlagInDbDrivesFeaturesEndpoint(): void
+    public function testTogglingRobotsFlagInDbDrivesFeaturesEndpoint(): void
     {
         // Off by default (no DB row, env cleared in this suite's bootstrap path).
-        putenv('TRADINGVIEW_WEBHOOKS_ENABLED');
+        putenv('ROBOTS_ENABLED');
         $before = $this->router->dispatch(Request::create('GET', '/features'))->getBody()['data'];
-        $this->assertFalse($before['tradingview_webhooks']);
+        $this->assertFalse($before['robots']);
 
         // Admin enables it from the BO → persisted in DB.
         $this->router->dispatch(
-            $this->adminRequest('PUT', '/admin/settings/tradingview_webhooks_enabled', ['value' => true])
+            $this->adminRequest('PUT', '/admin/settings/robots_enabled', ['value' => true])
         );
 
         // Public /features now reflects the DB override, no redeploy needed.
         $after = $this->router->dispatch(Request::create('GET', '/features'))->getBody()['data'];
-        $this->assertTrue($after['tradingview_webhooks']);
+        $this->assertTrue($after['robots']);
     }
 
     public function testUpdateRequiresAdminRole(): void

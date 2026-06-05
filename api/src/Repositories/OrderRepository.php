@@ -33,6 +33,7 @@ class OrderRepository
     {
         $stmt = $this->pdo->prepare(
             'SELECT o.id, o.position_id, o.created_at AS order_created_at, o.expires_at, o.status,
+                    o.client_order_id, o.broker_order_id,
                     p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
                     p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
                     p.position_type, p.created_at, p.updated_at
@@ -127,6 +128,46 @@ class OrderRepository
         $stmt->execute(['id' => $id]);
 
         return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Persist the robot correlation keys after an OPEN signal places the order:
+     * client_order_id (indicator-supplied, stable across the lifecycle) and
+     * broker_order_id (returned by the broker, used to target amend/cancel/close).
+     */
+    public function setBrokerCorrelation(int $id, ?string $clientOrderId, ?string $brokerOrderId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE orders SET client_order_id = :coid, broker_order_id = :boid WHERE id = :id'
+        );
+        $stmt->execute(['coid' => $clientOrderId, 'boid' => $brokerOrderId, 'id' => $id]);
+    }
+
+    /**
+     * Resolve a follow-up signal (MODIFY/CLOSE/CANCEL) back to the order opened
+     * for the same client_order_id, scoped to the account for ownership. Only
+     * non-terminal orders (PENDING/EXECUTED) are eligible; most recent first.
+     */
+    public function findLiveByClientOrderId(int $accountId, string $clientOrderId): ?array
+    {
+        $sql = 'SELECT o.*
+                FROM orders o
+                INNER JOIN positions p ON p.id = o.position_id
+                WHERE p.account_id = :account_id
+                  AND o.client_order_id = :coid
+                  AND o.status IN (:pending, :executed)
+                ORDER BY o.id DESC
+                LIMIT 1';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            'account_id' => $accountId,
+            'coid' => $clientOrderId,
+            'pending' => OrderStatus::PENDING->value,
+            'executed' => OrderStatus::EXECUTED->value,
+        ]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
     }
 
     /**

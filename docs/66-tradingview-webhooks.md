@@ -1,5 +1,7 @@
 # 66 - Webhooks TradingView → exécution broker
 
+> **Mise à jour (doc 70, 2026-06) :** le webhook n'appartient plus au compte mais à un **robot** (entité de premier ordre qui pointe un compte, s'active/se met en pause, et — v2 — suivra un plan de trading). Le CRUD `/accounts/{id}/webhooks` et le bouton ⚡ par compte décrits ci-dessous sont **remplacés** par `/robots` et la page « Mes robots ». Le flag est renommé `tradingview_webhooks_enabled` → `robots_enabled` (env `ROBOTS_ENABLED`). La plomberie d'ingestion, l'auth token+secret, la dédup et l'exécution broker décrites ici restent valides. Voir `docs/70-robots.md`.
+
 ## Objectif
 
 Permettre à un utilisateur de coller une URL dans le champ « Webhook URL » d'une alerte TradingView pour qu'à chaque déclenchement, le journal enregistre l'ordre et déclenche son placement automatique sur le broker lié au compte cible.

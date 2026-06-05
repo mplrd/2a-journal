@@ -16,7 +16,6 @@ import AccountForm from '@/components/account/AccountForm.vue'
 import AdjustBalanceDialog from '@/components/account/AdjustBalanceDialog.vue'
 import ImportDialog from '@/components/import/ImportDialog.vue'
 import BrokerConnectionPanel from '@/components/broker/BrokerConnectionPanel.vue'
-import TradingViewWebhooksPanel from '@/components/webhook/TradingViewWebhooksPanel.vue'
 import { AccountType, AccountStage } from '@/constants/enums'
 import { useOnboarding } from '@/composables/useOnboarding'
 import FloatingActionButton from '@/components/common/FloatingActionButton.vue'
@@ -40,8 +39,6 @@ const showImport = ref(false)
 const importAccount = ref(null)
 const showBrokerSync = ref(false)
 const brokerSyncAccount = ref(null)
-const showWebhooks = ref(false)
-const webhooksAccount = ref(null)
 const showAdjust = ref(false)
 const adjustAccount = ref(null)
 
@@ -87,11 +84,6 @@ function openImport(account) {
 function openBrokerSync(account) {
   brokerSyncAccount.value = account
   showBrokerSync.value = true
-}
-
-function openWebhooks(account) {
-  webhooksAccount.value = account
-  showWebhooks.value = true
 }
 
 onMounted(() => {
@@ -290,7 +282,6 @@ function openActionMenu(event, account) {
         <template #body="{ data }">
           <div class="flex gap-2">
             <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
-            <Button v-if="features.tradingviewWebhooks" icon="pi pi-bolt" severity="warn" size="small" text v-tooltip.top="t('webhook.tradingview.title')" @click="openWebhooks(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
             <Button icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
@@ -368,13 +359,6 @@ function openActionMenu(event, account) {
         v-if="brokerSyncAccount"
         :account="brokerSyncAccount"
         @synced="store.fetchAccounts()"
-      />
-    </Dialog>
-
-    <Dialog v-if="features.tradingviewWebhooks" v-model:visible="showWebhooks" :header="t('webhook.tradingview.title')" modal class="w-full max-w-3xl">
-      <TradingViewWebhooksPanel
-        v-if="webhooksAccount"
-        :account="webhooksAccount"
       />
     </Dialog>
 

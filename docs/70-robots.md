@@ -1,6 +1,6 @@
 # 70 - Robots de trading
 
-> **Statut** : spec en cours de validation. Aucune implémentation tant que ce document n'est pas validé.
+> **Statut** : v1 livrée (entité robot + page « Mes robots » + flag `robots_enabled`). Le « plan de trading » (filtrage des signaux) reste en v2.
 
 ## Objectif
 
@@ -39,13 +39,14 @@ La feature webhooks est **livrée mais jamais activée** (flag OFF en test comme
 
 ## Périmètre v1 (ce document) vs v2
 
-| | v1 (cette spec) | v2 (plus tard) |
+| | v1 (livrée) | À compléter |
 |---|---|---|
 | Robot ↔ compte | 1 robot → 1 compte | (éventuel multi-comptes) |
 | Canal d'entrée | webhook TradingView | autres sources possibles |
 | Activation | ACTIVE / PAUSED | idem |
+| **Gestion d'ordre** | **OPEN seul** (`placeOrder`) | **MODIFY / CLOSE / CANCEL** (cf. § Gestion d'ordre) |
 | **Plan de trading** | **aucun** (le robot exécute tout signal reçu) | **entité `trading_plans`** : le robot suit un plan, ne prend que les signaux applicables |
-| Page « Mes robots » | oui (CRUD, historique, pause) | enrichie (association robot ↔ plan) |
+| Page « Mes robots » | oui (CRUD, historique, pause) | enrichie (gestion d'ordre + association robot ↔ plan) |
 
 La v1 pose **l'entité robot et la page**, sans plan. Le « plan de trading » est explicitement repoussé en v2 — mais le modèle est conçu pour l'accueillir (le robot référencera un `plan_id` nullable) sans refonte.
 
@@ -96,8 +97,35 @@ Reste la table d'audit/dédup des signaux entrants. `webhook_id` continue de poi
 Le pipeline d'ingestion (aujourd'hui dans `TradingViewWebhookService::process()`) gagne une étape : après résolution du webhook → on remonte au **robot** → on vérifie son `status`.
 
 - robot `PAUSED` → event tracé `REJECTED/ROBOT_PAUSED`, aucun trade.
-- robot `ACTIVE` → on continue le pipeline existant (broker connection, `OrderService::createFromWebhook`, `placeOrder`).
+- robot `ACTIVE` → on continue le pipeline (broker connection puis l'action demandée, cf. ci-dessous).
 - (v2) robot `ACTIVE` **avec un plan** → le signal est confronté au plan ; non applicable → event `REJECTED/OUT_OF_PLAN`, aucun trade ; applicable → routage normal.
+
+### Gestion d'ordre : ouvrir / modifier / fermer / annuler (livré)
+
+Le robot est un **relais de gestion d'ordre**, pas seulement d'ouverture. Principe directeur : **on impose NOTRE structure de payload, mais chaque champ doit rester remplissable par un indicateur TradingView** (message JSON statique + placeholders `{{...}}`, une action par message).
+
+Le payload porte un champ **`action`** (défaut `OPEN` → rétrocompat) :
+
+| `action` | Sens | Champs requis (hors secret) | Connecteur |
+|---|---|---|---|
+| `OPEN` (défaut) | Ouvrir un ordre | symbol, direction, entry_price, size, sl_points (+ targets…) | `placeOrder` ✅ |
+| `MODIFY` | Déplacer SL/TP d'un ordre/position vivant | `client_order_id` + au moins un de : `sl_price`, `tp_price` | `modifyOrder` (BingX ✅, 3 autres `NOT_IMPLEMENTED`) |
+| `CLOSE` | Fermer une position (size optionnel = partiel) | `client_order_id` | `closePosition` ✅ |
+| `CANCEL` | Annuler un ordre pending | `client_order_id` | `cancelOrder` ✅ |
+
+> **MODIFY utilise des prix absolus** (`sl_price`/`tp_price`), pas des points : au moment d'amender on n'a pas de référence d'entrée pour convertir des points, et une modif consiste à poser des niveaux concrets. L'indicateur envoie les prix.
+
+**Corrélation signal → ordre (`client_order_id` partagé).** À l'`OPEN`, l'indicateur fournit un identifiant stable (ex. `{{ticker}}-{{strategy.order.id}}`) ; on le persiste (`orders.client_order_id`, migration 029) avec l'id broker (`orders.broker_order_id`). Sur `MODIFY`/`CLOSE`/`CANCEL`, l'indicateur réémet le **même** `client_order_id` → on retrouve l'ordre vivant (PENDING/EXECUTED) scopé au compte. Non trouvé → event `REJECTED/ORDER_NOT_FOUND`.
+
+**Implémenté :**
+- Enum `WebhookAction` + validation par action ; `extractClientOrderId` distinct d'`alert_id` (dédup).
+- Pipeline `process()` : `match(action)` → `handleOpen/handleModify/handleClose/handleCancel` ; nouveaux `reject_reason` `ORDER_NOT_FOUND` / `UNSUPPORTED_ACTION`.
+- `OrderRepository::setBrokerCorrelation` (persist à l'OPEN) + `findLiveByClientOrderId` (résolution scopée compte, statut non terminal).
+- CLOSE/CANCEL reflètent l'état local (`orders` → CANCELLED + `status_history` trigger WEBHOOK).
+- `modifyOrder` réel **BingX** (PUT amend SL/TP) ; cTrader/MetaApi/Ouinex throw `NOT_IMPLEMENTED` (à implémenter quand le broker sera ciblé).
+- Tests : `TradingViewWebhookFlowTest` (OPEN corrélation, MODIFY, ORDER_NOT_FOUND, CLOSE, CANCEL, action inconnue), `BingxConnectorTest` (modify PUT + gardes), `ConnectorOrderMethodsTest` (NOT_IMPLEMENTED sur les 3 autres).
+
+> ⚠️ Réserve héritée doc 66 : **aucun connecteur validé en sandbox réelle** — `placeOrder` et désormais `modifyOrder`/`close`/`cancel` suivent les specs publiques, jamais exercés contre un vrai broker. Validation sandbox broker par broker = prérequis avant activation prod. Partial close BingX limité (exige un ordre opposé reduceOnly).
 
 CRUD robot (`RobotService` + `RobotController`), routes sous `/robots` (et plus `/accounts/{id}/webhooks`) :
 
@@ -128,23 +156,24 @@ Renommage **complet**, env_var comprise : la clé de réglage BDD, la clé `/fea
 
 - **Nouvelle entrée de menu « Mes robots »** (visible si `features.robots === true`).
 - **`RobotsView`** : liste de tous les robots de l'utilisateur (nom, compte cible, statut, dernier signal, compteurs), bouton « Créer un robot ».
-- **Création** : formulaire (nom + sélection du compte cible) → modale one-shot avec URL webhook + secret + template JSON (inchangé sur le fond, cf. doc 66).
-- **Détail robot** : historique des signaux reçus (events), bouton pause/reprise, archivage.
+- **Création** : formulaire (nom + sélection du compte cible) → modale one-shot avec URL webhook + secret + **les 4 messages JSON à coller** (un par action : OPEN / MODIFY / CLOSE / CANCEL), chacun copiable. C'est le robot qui fournit ces templates ; l'utilisateur crée une alerte TradingView par action et colle le bloc correspondant. Chaque template porte le `client_order_id` de corrélation et des placeholders `{{...}}` que l'indicateur remplit.
+- **Détail robot** : identifiants masqués + bouton « Régénérer » + les 4 templates (secret masqué), historique des signaux reçus (events), pause/reprise, archivage.
 - **Retrait du bouton ⚡** sur `AccountsView` (et du `TradingViewWebhooksPanel` par compte) : tout passe par la page Robots.
 
 ## Découpage en commits (branche `feat/robots`)
 
-La branche vit séparément, mergée vers develop seulement à un jalon cohérent. Commits atomiques envisagés :
+La branche vit séparément, mergée vers develop seulement à un jalon cohérent. Commits atomiques :
 
-1. `docs(robots)` : cette spec (ce commit).
-2. `feat(robots)` backend : migration (table `robots` + `tradingview_webhooks.robot_id`), enums statut, `RobotRepository`, `RobotService`, réécriture du pipeline d'ingestion, routes `/robots`, retrait `/accounts/{id}/webhooks`. Tests.
-3. `feat(settings)` : renommage du flag `tradingview_webhooks_enabled` → `robots_enabled`.
-4. `feat(robots)` frontend : page « Mes robots », menu, CRUD, retrait du bouton ⚡ + panel par compte. Tests.
-5. `docs(robots)` : mise à jour finale de la doc + doc 66 (renvoi vers 70).
+1. ✅ `docs(robots)` : cette spec.
+2. ✅ `feat(robots)` backend : migration 028 (table `robots` + `tradingview_webhooks.robot_id`, drop des colonnes account/status/compteurs côté webhook), enum `RobotStatus`, reject reason `ROBOT_PAUSED`, `RobotRepository`, `RobotService` (+ controller), réécriture du pipeline `TradingViewWebhookService` (résolution robot + gate statut + compteurs sur le robot), routes `/robots`, suppression de `AccountWebhookService`/`Controller` et de l'enum orphelin `WebhookStatus`. Tests : `RobotServiceTest` (9), `TradingViewWebhookFlowTest` mis à jour (10).
+3. ⬜ `feat(settings)` : renommage du flag `tradingview_webhooks_enabled` → `robots_enabled` (env_var comprise).
+4. ⬜ `feat(robots)` frontend : page « Mes robots », menu, CRUD, retrait du bouton ⚡ + panel par compte. Tests.
+5. ⬜ `docs(robots)` : mise à jour finale de la doc + doc 66 (renvoi vers 70).
 
-## Limitations / suite (v2)
+## À compléter / suite
 
-- **Plan de trading** : le cœur de la valeur ajoutée, repoussé en v2. Entité `trading_plans` qui définit le cadre ; le robot référence un `plan_id` et ne prend que les signaux applicables. La v1 exécute tout signal reçu.
+- **Gestion d'ordre complète** : MODIFY / CLOSE / CANCEL en plus d'OPEN (cf. § Gestion d'ordre). C'est la prochaine complétion du robot — décision retenue : champ `action` + corrélation par `client_order_id` partagé, livré d'un bloc.
+- **Plan de trading** : le cœur de la valeur ajoutée, repoussé plus tard. Entité `trading_plans` qui définit le cadre ; le robot référence un `plan_id` et ne prend que les signaux applicables. La v1 exécute tout signal reçu.
 - **Multi-comptes** : 1 robot → 1 compte en v1.
 - **Sources non-TradingView** : le robot est conçu pour pouvoir accueillir d'autres canaux d'entrée, mais v1 = webhook TV uniquement.
-- Reprise des limitations broker de la doc 66 (sandbox non testés, etc.) : inchangées, le robot ne fait que router vers le même `placeOrder`.
+- **Validation sandbox broker** (héritée doc 66) : aucun connecteur exercé contre un broker réel. Bloque l'activation prod, et la gestion d'ordre (modify/close/cancel) élargit la surface à valider.

@@ -613,4 +613,13 @@ class OuinexConnector implements ConnectorInterface
         }
         GQL;
     }
+
+    /** Order modification not implemented for Ouinex yet (docs/70 v1: BingX only). */
+    public function modifyOrder(array $credentials, array $modification): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'modifyOrder not implemented for Ouinex',
+            'NOT_IMPLEMENTED',
+        );
+    }
 }

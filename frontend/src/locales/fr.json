@@ -23,6 +23,7 @@
     "no_options": "Aucune option disponible",
     "error": "Erreur",
     "success": "Succès",
+    "actions": "Actions",
     "from": "Du",
     "to": "Au",
     "range": {
@@ -44,6 +45,7 @@
     "symbols": "Mes actifs",
     "stats": "Statistiques",
     "performance": "Performance",
+    "robots": "Robots",
     "import": "Import",
     "logout": "Déconnexion",
     "language": "Langue",
@@ -1008,7 +1010,10 @@
         "NO_BROKER": "Aucun broker connecté",
         "BROKER_INACTIVE": "Broker inactif",
         "BROKER_ERROR": "Erreur broker",
-        "FEATURE_DISABLED": "Fonctionnalité désactivée"
+        "FEATURE_DISABLED": "Fonctionnalité désactivée",
+        "ROBOT_PAUSED": "Robot en pause",
+        "ORDER_NOT_FOUND": "Ordre introuvable",
+        "UNSUPPORTED_ACTION": "Action non supportée"
       }
     },
     "error": {
@@ -1021,6 +1026,92 @@
     "success": {
       "created": "Webhook créé",
       "revoked": "Webhook révoqué"
+    }
+  },
+  "robot": {
+    "title": "Robots",
+    "subtitle": "Vos robots reçoivent les signaux de vos indicateurs et passent les ordres sur le compte associé.",
+    "new": "Nouveau robot",
+    "create": "Créer le robot",
+    "empty": "Vous n'avez aucun robot pour le moment.",
+    "name_placeholder": "Nom de votre robot",
+    "account_placeholder": "Compte cible",
+    "never": "Jamais",
+    "archive_confirm": "Archiver ce robot ? Son webhook cessera de fonctionner. L'historique est conservé.",
+    "regenerate_confirm": "Régénérer l'URL et le secret ? L'ancienne URL cessera immédiatement de fonctionner — il faudra recoller la nouvelle dans TradingView.",
+    "triggered_count": "{count} déclenché(s)",
+    "errors_count": "{count} erreur(s)",
+    "field": {
+      "name": "Nom",
+      "account": "Compte",
+      "status": "Statut",
+      "last_triggered": "Dernier signal",
+      "counters": "Activité"
+    },
+    "status": {
+      "ACTIVE": "Actif",
+      "PAUSED": "En pause",
+      "ARCHIVED": "Archivé"
+    },
+    "actions": {
+      "details": "Détails / identifiants",
+      "events": "Historique des signaux",
+      "pause": "Mettre en pause",
+      "resume": "Réactiver",
+      "archive": "Archiver",
+      "regenerate": "Régénérer les identifiants"
+    },
+    "action": {
+      "OPEN": "Ouverture",
+      "MODIFY": "Modification (SL/TP)",
+      "CLOSE": "Fermeture",
+      "CANCEL": "Annulation"
+    },
+    "success": {
+      "created": "Robot créé",
+      "paused": "Robot mis en pause",
+      "resumed": "Robot réactivé",
+      "archived": "Robot archivé",
+      "regenerated": "Identifiants régénérés"
+    },
+    "detail": {
+      "title": "Détails du robot",
+      "intro": "Configuration du robot et identifiants du webhook (secret masqué).",
+      "masked_note": "Pour des raisons de sécurité, l'URL et le secret ne sont jamais réaffichés. Utilisez « Régénérer » pour obtenir de nouveaux identifiants."
+    },
+    "created": {
+      "title": "Robot créé — copiez ces informations",
+      "title_regenerated": "Nouveaux identifiants — copiez-les",
+      "warning": "Ces valeurs ne seront affichées qu'une seule fois. Copiez-les maintenant.",
+      "url_label": "URL du webhook (à coller dans l'alerte TradingView)",
+      "secret_label": "Secret (inclus dans le message de l'alerte)",
+      "template_label": "Message JSON prêt à coller",
+      "templates_label": "Messages JSON par action (un par alerte TradingView)",
+      "templates_hint": "Crée une alerte TradingView par action. Colle le bloc correspondant dans le champ « Message ». L'indicateur remplit les valeurs {{...}} ; garde le même client_order_id entre l'ouverture et la gestion.",
+      "copied": "Copié",
+      "close": "J'ai copié, fermer"
+    },
+    "events": {
+      "title": "Historique des signaux",
+      "empty": "Aucun signal reçu pour le moment.",
+      "received_at": "Reçu le",
+      "status": "Statut",
+      "reason": "Raison",
+      "order": "Ordre",
+      "view_payload": "Voir le payload",
+      "status_received": "Reçu",
+      "status_processed": "Traité",
+      "status_rejected": "Rejeté",
+      "status_failed": "Échec",
+      "status_duplicate": "Doublon"
+    },
+    "error": {
+      "feature_disabled": "Les robots sont désactivés sur ce serveur.",
+      "forbidden": "Accès refusé à ce robot.",
+      "not_found": "Robot introuvable.",
+      "invalid_name": "Le nom est requis (max. 120 caractères).",
+      "invalid_status": "Statut invalide.",
+      "too_many": "Limite de robots atteinte pour ce compte."
     }
   },
   "support": {

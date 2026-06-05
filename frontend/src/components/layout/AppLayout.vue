@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useFeaturesStore } from '@/stores/features'
 import { authService } from '@/services/auth'
 import { useTheme } from '@/composables/useTheme'
 import { useOnboarding } from '@/composables/useOnboarding'
@@ -19,6 +20,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const featuresStore = useFeaturesStore()
 const toast = useToast()
 const { initTheme, toggleTheme, getCurrentTheme } = useTheme()
 const { isRouteAllowed } = useOnboarding()
@@ -102,6 +104,10 @@ function isActiveLink(linkTo) {
 const navLinks = computed(() => [
   { to: '/', name: 'dashboard', label: t('nav.dashboard'), icon: 'pi pi-home' },
   { to: '/accounts', name: 'accounts', label: t('nav.accounts'), icon: 'pi pi-wallet' },
+  // Robots: right after Accounts; only shown when the platform flag is on.
+  ...(featuresStore.robots
+    ? [{ to: '/robots', name: 'robots', label: t('nav.robots'), icon: 'pi pi-android' }]
+    : []),
   { to: '/positions', name: 'positions', label: t('nav.positions'), icon: 'pi pi-chart-line' },
   { to: '/orders', name: 'orders', label: t('nav.orders'), icon: 'pi pi-list' },
   { to: '/trades', name: 'trades', label: t('nav.trades'), icon: 'pi pi-arrow-right-arrow-left' },
