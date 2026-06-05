@@ -6,12 +6,13 @@ use App\Core\Database;
 use App\Enums\BrokerProvider;
 use App\Enums\ConnectionStatus;
 use App\Enums\OrderStatus;
+use App\Enums\RobotStatus;
 use App\Enums\WebhookEventStatus;
 use App\Enums\WebhookRejectReason;
-use App\Enums\WebhookStatus;
 use App\Exceptions\BrokerOrderException;
 use App\Repositories\AccountRepository;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\RobotRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
@@ -36,6 +37,8 @@ class TradingViewWebhookFlowTest extends TestCase
 {
     private PDO $pdo;
     private TradingViewWebhookRepository $webhookRepo;
+    private RobotRepository $robotRepo;
+    private OrderRepository $orderRepo;
     private TradingViewAlertEventRepository $eventRepo;
     private BrokerConnectionRepository $connectionRepo;
     private TradingViewWebhookService $service;
@@ -53,10 +56,12 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->wipeTables();
 
         $this->webhookRepo = new TradingViewWebhookRepository($this->pdo);
+        $this->robotRepo = new RobotRepository($this->pdo);
         $this->eventRepo = new TradingViewAlertEventRepository($this->pdo);
         $this->connectionRepo = new BrokerConnectionRepository($this->pdo);
 
         $orderRepo = new OrderRepository($this->pdo);
+        $this->orderRepo = $orderRepo;
         $positionRepo = new PositionRepository($this->pdo);
         $accountRepo = new AccountRepository($this->pdo);
         $historyRepo = new StatusHistoryRepository($this->pdo);
@@ -72,9 +77,12 @@ class TradingViewWebhookFlowTest extends TestCase
 
         $this->service = new TradingViewWebhookService(
             $this->webhookRepo,
+            $this->robotRepo,
             $this->eventRepo,
             $this->connectionRepo,
             $orderService,
+            $orderRepo,
+            $historyRepo,
             $this->crypto,
             $this->connector,
             $this->connector,
@@ -102,15 +110,14 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertNull($events[0]['webhook_id']);
     }
 
-    public function testRevokedWebhookIsRejected(): void
+    public function testPausedRobotIsRejected(): void
     {
-        ['token' => $token, 'secret' => $secret, 'webhook_id' => $webhookId] = $this->seedWebhook();
-        $this->webhookRepo->revoke($webhookId);
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook(RobotStatus::PAUSED);
 
         $this->service->process($token, $this->validPayload($secret));
 
         $events = $this->fetchAllEvents();
-        $this->assertSame(WebhookRejectReason::WEBHOOK_REVOKED->value, $events[0]['reject_reason']);
+        $this->assertSame(WebhookRejectReason::ROBOT_PAUSED->value, $events[0]['reject_reason']);
     }
 
     public function testInvalidSecretIsRejected(): void
@@ -186,7 +193,7 @@ class TradingViewWebhookFlowTest extends TestCase
 
     public function testBrokerErrorMarksEventFailedButLeavesOrderInPlace(): void
     {
-        ['token' => $token, 'secret' => $secret, 'webhook_id' => $webhookId] = $this->seedWebhook();
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
         $this->seedBrokerConnection();
         $this->connector->throwOnNext = new BrokerOrderException('insufficient margin', 'INSUFFICIENT_MARGIN');
 
@@ -198,14 +205,14 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertStringContainsString('INSUFFICIENT_MARGIN', $events[0]['error_message']);
         $this->assertNotNull($events[0]['created_order_id'], 'order is created before broker call; FAILED preserves it');
 
-        $webhook = $this->webhookRepo->findById($webhookId);
-        $this->assertSame(1, (int) $webhook['total_errors']);
-        $this->assertSame(0, (int) $webhook['total_triggered']);
+        $robot = $this->robotRepo->findById($robotId);
+        $this->assertSame(1, (int) $robot['total_errors']);
+        $this->assertSame(0, (int) $robot['total_triggered']);
     }
 
     public function testHappyPathCreatesOrderAndProcessesEvent(): void
     {
-        ['token' => $token, 'secret' => $secret, 'webhook_id' => $webhookId] = $this->seedWebhook();
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
         $this->seedBrokerConnection();
 
         $this->service->process($token, $this->validPayload($secret));
@@ -221,8 +228,8 @@ class TradingViewWebhookFlowTest extends TestCase
         $stmt->execute(['id' => $events[0]['created_order_id']]);
         $this->assertSame(OrderStatus::PENDING->value, $stmt->fetchColumn());
 
-        $webhook = $this->webhookRepo->findById($webhookId);
-        $this->assertSame(1, (int) $webhook['total_triggered']);
+        $robot = $this->robotRepo->findById($robotId);
+        $this->assertSame(1, (int) $robot['total_triggered']);
 
         // Connector received the normalized order shape with BUY/EURUSD.
         $this->assertNotNull($this->connector->lastOrder);
@@ -242,6 +249,124 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertSame('***', $raw['secret'], 'secret must be redacted before persistence');
     }
 
+    // ── Order management actions (OPEN / MODIFY / CLOSE / CANCEL) ──
+
+    public function testOpenPersistsClientOrderIdAndBrokerOrderId(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $payload = $this->validPayload($secret);
+        $payload['client_order_id'] = 'COID-123';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $orderId = (int) $events[0]['created_order_id'];
+        $order = $this->orderRepo->findById($orderId);
+        $this->assertSame('COID-123', $order['client_order_id']);
+        $this->assertStringStartsWith('fake-', (string) $order['broker_order_id']);
+    }
+
+    public function testModifyResolvesByClientOrderIdAndCallsConnector(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-MOD';
+        $this->service->process($token, $open);
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'MODIFY',
+            'client_order_id' => 'COID-MOD',
+            'symbol' => 'EURUSD',
+            'sl_price' => 1.0950,
+        ]);
+
+        $events = $this->fetchAllEvents();
+        $last = end($events);
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, $last['status']);
+        $this->assertSame('MODIFY', $last['error_message']); // action tag stored in error_message
+        $this->assertSame(1.0950, (float) $this->connector->lastModification['sl_price']);
+    }
+
+    public function testModifyUnknownClientOrderIdIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'MODIFY',
+            'client_order_id' => 'does-not-exist',
+            'sl_price' => 1.0950,
+        ]);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::ORDER_NOT_FOUND->value, end($events)['reject_reason']);
+    }
+
+    public function testCancelMarksOrderCancelledLocally(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-CXL';
+        $this->service->process($token, $open);
+        $orderId = (int) $this->fetchAllEvents()[0]['created_order_id'];
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'CANCEL',
+            'client_order_id' => 'COID-CXL',
+        ]);
+
+        $this->assertNotNull($this->connector->lastCancelOrderId);
+        $this->assertSame('CANCELLED', $this->orderRepo->findById($orderId)['status']);
+    }
+
+    public function testCloseCallsConnectorAndCancelsLocalOrder(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-CLS';
+        $this->service->process($token, $open);
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'CLOSE',
+            'client_order_id' => 'COID-CLS',
+        ]);
+
+        $this->assertNotNull($this->connector->lastClosePositionId);
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testUnknownActionIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'TELEPORT',
+            'client_order_id' => 'x',
+        ]);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::UNSUPPORTED_ACTION->value, end($events)['reject_reason']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function validPayload(string $secret): array
@@ -259,22 +384,28 @@ class TradingViewWebhookFlowTest extends TestCase
         ];
     }
 
-    private function seedWebhook(): array
+    private function seedWebhook(RobotStatus $robotStatus = RobotStatus::ACTIVE): array
     {
+        $robot = $this->robotRepo->create([
+            'user_id' => $this->userId,
+            'account_id' => $this->accountId,
+            'name' => 'Test robot',
+            'status' => $robotStatus->value,
+        ]);
         $token = bin2hex(random_bytes(16));
         $secret = bin2hex(random_bytes(16));
         $webhook = $this->webhookRepo->create([
             'user_id' => $this->userId,
-            'account_id' => $this->accountId,
+            'robot_id' => (int) $robot['id'],
             'name' => 'Test webhook',
             'url_token_hash' => hash('sha256', $token),
             'body_secret_hash' => hash('sha256', $secret),
-            'status' => WebhookStatus::ACTIVE->value,
         ]);
         return [
             'token' => $token,
             'secret' => $secret,
             'webhook_id' => (int) $webhook['id'],
+            'robot_id' => (int) $robot['id'],
         ];
     }
 
@@ -320,6 +451,7 @@ class TradingViewWebhookFlowTest extends TestCase
         foreach ([
             'tradingview_alert_events',
             'tradingview_webhooks',
+            'robots',
             'broker_connections',
             'status_history',
             'partial_exits',
@@ -369,6 +501,7 @@ class FakeConnector implements ConnectorInterface
     public ?array $lastOrder = null;
     public ?string $lastCancelOrderId = null;
     public ?string $lastClosePositionId = null;
+    public ?array $lastModification = null;
 
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
     {
@@ -430,5 +563,16 @@ class FakeConnector implements ConnectorInterface
     {
         $this->lastClosePositionId = $externalPositionId;
         return ['status' => 'CLOSED', 'raw' => []];
+    }
+
+    public function modifyOrder(array $credentials, array $modification): array
+    {
+        $this->lastModification = $modification;
+        if ($this->throwOnNext) {
+            $throw = $this->throwOnNext;
+            $this->throwOnNext = null;
+            throw $throw;
+        }
+        return ['status' => 'MODIFIED', 'raw' => []];
     }
 }

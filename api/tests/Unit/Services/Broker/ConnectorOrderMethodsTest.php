@@ -40,4 +40,29 @@ class ConnectorOrderMethodsTest extends TestCase
             $this->assertSame('INVALID_CREDENTIALS', $e->getProviderCode());
         }
     }
+
+    /**
+     * modifyOrder is implemented for BingX only (docs/70 v1). The three other
+     * connectors must reject it cleanly with NOT_IMPLEMENTED so the pipeline
+     * marks the event FAILED instead of fataling.
+     */
+    public static function unimplementedModifyProvider(): array
+    {
+        return [
+            'ctrader' => [new CtraderConnector([])],
+            'metaapi' => [new MetaApiConnector(new Client(), 'https://mt-client-api')],
+            'ouinex' => [new OuinexConnector(new Client(), 'https://api.ouinex.test/graphql')],
+        ];
+    }
+
+    /** @dataProvider unimplementedModifyProvider */
+    public function testModifyOrderNotImplementedOnNonBingxConnectors(ConnectorInterface $connector): void
+    {
+        try {
+            $connector->modifyOrder(['api_key' => 'k'], ['broker_order_id' => '1', 'sl_price' => 1.0]);
+            $this->fail('Expected BrokerOrderException');
+        } catch (BrokerOrderException $e) {
+            $this->assertSame('NOT_IMPLEMENTED', $e->getProviderCode());
+        }
+    }
 }

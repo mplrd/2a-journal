@@ -92,6 +92,18 @@ const router = createRouter({
           meta: { titleKey: 'performance.title' },
         },
         {
+          path: 'notebook',
+          name: 'notebook',
+          component: () => import('@/views/NotebookView.vue'),
+          meta: { titleKey: 'notebook.title' },
+        },
+        {
+          path: 'robots',
+          name: 'robots',
+          component: () => import('@/views/RobotsView.vue'),
+          meta: { titleKey: 'robot.title' },
+        },
+        {
           path: 'account',
           name: 'account',
           component: () => import('@/views/AccountView.vue'),

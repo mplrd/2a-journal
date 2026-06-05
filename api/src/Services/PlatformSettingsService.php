@@ -71,10 +71,10 @@ class PlatformSettingsService
                 'description' => 'admin.settings.desc.trade_transfer_enabled',
                 'is_public' => true,
             ],
-            'tradingview_webhooks_enabled' => [
+            'robots_enabled' => [
                 'type' => SettingType::BOOL->value,
-                'env_var' => 'TRADINGVIEW_WEBHOOKS_ENABLED',
-                'description' => 'admin.settings.desc.tradingview_webhooks_enabled',
+                'env_var' => 'ROBOTS_ENABLED',
+                'description' => 'admin.settings.desc.robots_enabled',
             ],
         ];
     }

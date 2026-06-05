@@ -5,12 +5,19 @@ namespace App\Services;
 use App\Enums\BrokerProvider;
 use App\Enums\ConnectionStatus;
 use App\Enums\Direction;
+use App\Enums\EntityType;
+use App\Enums\OrderStatus;
 use App\Enums\OrderType;
+use App\Enums\TriggerType;
+use App\Enums\RobotStatus;
+use App\Enums\WebhookAction;
 use App\Enums\WebhookEventStatus;
 use App\Enums\WebhookRejectReason;
-use App\Enums\WebhookStatus;
 use App\Exceptions\BrokerOrderException;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\OrderRepository;
+use App\Repositories\RobotRepository;
+use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Services\Broker\BrokerLogger;
@@ -21,9 +28,12 @@ class TradingViewWebhookService
 {
     public function __construct(
         private TradingViewWebhookRepository $webhookRepo,
+        private RobotRepository $robotRepo,
         private TradingViewAlertEventRepository $eventRepo,
         private BrokerConnectionRepository $connectionRepo,
         private OrderService $orderService,
+        private OrderRepository $orderRepo,
+        private StatusHistoryRepository $historyRepo,
         private CredentialEncryptionService $crypto,
         private ConnectorInterface $ctraderConnector,
         private ConnectorInterface $metaApiConnector,
@@ -49,16 +59,29 @@ class TradingViewWebhookService
         }
 
         $webhookId = (int) $webhook['id'];
-        $accountId = (int) $webhook['account_id'];
+        $robot = $this->robotRepo->findById((int) $webhook['robot_id']);
 
-        if ($webhook['status'] !== WebhookStatus::ACTIVE->value) {
-            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::WEBHOOK_REVOKED);
+        // Orphan webhook (robot hard-deleted) — treat as an invalid token: we
+        // don't have a target account to act on.
+        if ($robot === null) {
+            $this->logEvent($webhookId, null, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_TOKEN);
             return;
         }
 
+        $robotId = (int) $robot['id'];
+        $accountId = (int) $robot['account_id'];
+
+        // The body secret is checked before the robot status so a paused robot
+        // never reveals (via differing behaviour) whether the secret was right.
         $secret = isset($payload['secret']) && is_string($payload['secret']) ? $payload['secret'] : '';
         if (!hash_equals((string) $webhook['body_secret_hash'], hash('sha256', $secret))) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_SECRET);
+            return;
+        }
+
+        // A paused (or archived) robot logs the signal but places no trade.
+        if ($robot['status'] !== RobotStatus::ACTIVE->value) {
+            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::ROBOT_PAUSED);
             return;
         }
 
@@ -83,27 +106,58 @@ class TradingViewWebhookService
             return;
         }
 
-        $validationError = $this->validatePayload($payload);
+        $action = $this->extractAction($payload);
+        if ($action === null) {
+            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::UNSUPPORTED_ACTION, 'unknown action', null, $externalAlertId);
+            $this->robotRepo->recordTrigger($robotId, false);
+            return;
+        }
+
+        $validationError = $this->validatePayload($payload, $action);
         if ($validationError !== null) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_PAYLOAD, $validationError, null, $externalAlertId);
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
             return;
         }
 
         $connection = $this->connectionRepo->findByAccountId($accountId);
         if ($connection === null) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::NO_BROKER, null, null, $externalAlertId);
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
             return;
         }
 
         if ($connection['status'] !== ConnectionStatus::ACTIVE->value) {
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::BROKER_INACTIVE, null, null, $externalAlertId);
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->robotRepo->recordTrigger($robotId, false);
             return;
         }
 
-        $order = $this->orderService->createFromWebhook((int) $webhook['user_id'], [
+        // Context shared by every action handler.
+        $ctx = [
+            'webhook_id' => $webhookId,
+            'robot_id' => $robotId,
+            'account_id' => $accountId,
+            'user_id' => (int) $webhook['user_id'],
+            'connection' => $connection,
+            'payload' => $payload,
+            'alert_id' => $externalAlertId,
+        ];
+
+        match ($action) {
+            WebhookAction::OPEN => $this->handleOpen($ctx),
+            WebhookAction::MODIFY => $this->handleModify($ctx),
+            WebhookAction::CLOSE => $this->handleClose($ctx),
+            WebhookAction::CANCEL => $this->handleCancel($ctx),
+        };
+    }
+
+    private function handleOpen(array $ctx): void
+    {
+        [$webhookId, $robotId, $accountId, $payload, $alertId] =
+            [$ctx['webhook_id'], $ctx['robot_id'], $ctx['account_id'], $ctx['payload'], $ctx['alert_id']];
+
+        $order = $this->orderService->createFromWebhook($ctx['user_id'], [
             'account_id' => $accountId,
             'direction' => $payload['direction'],
             'symbol' => $payload['symbol'],
@@ -116,17 +170,11 @@ class TradingViewWebhookService
             'targets' => $payload['targets'] ?? null,
             'notes' => $payload['notes'] ?? null,
         ]);
-
         $orderId = (int) $order['id'];
+        $clientOrderId = $this->extractClientOrderId($payload);
 
         try {
-            $credentials = $this->crypto->decrypt(
-                $connection['credentials_encrypted'],
-                $connection['credentials_iv']
-            );
-
-            $connector = $this->getConnector($connection['provider']);
-            $brokerResult = $connector->placeOrder($credentials, [
+            $brokerResult = $this->connectorFor($ctx)->placeOrder($this->credentials($ctx), [
                 'symbol' => $payload['symbol'],
                 'direction' => $payload['direction'],
                 'order_type' => $payload['order_type'] ?? OrderType::MARKET->value,
@@ -134,46 +182,194 @@ class TradingViewWebhookService
                 'entry_price' => isset($payload['entry_price']) ? (float) $payload['entry_price'] : null,
                 'sl_price' => isset($order['sl_price']) ? (float) $order['sl_price'] : null,
                 'tp_prices' => $this->extractTpPrices($order['targets'] ?? null),
-                'client_order_id' => $externalAlertId,
+                'client_order_id' => $clientOrderId ?? $alertId,
             ]);
 
-            $this->logEvent(
-                $webhookId,
-                $accountId,
-                $payload,
-                WebhookEventStatus::PROCESSED,
-                null,
-                null,
+            // Persist correlation so MODIFY/CLOSE/CANCEL can find this order.
+            $this->orderRepo->setBrokerCorrelation(
                 $orderId,
-                $externalAlertId,
+                $clientOrderId,
+                isset($brokerResult['external_order_id']) ? (string) $brokerResult['external_order_id'] : null,
             );
-            $this->webhookRepo->recordTrigger($webhookId, true);
+
+            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::PROCESSED, null, null, $orderId, $alertId);
+            $this->robotRepo->recordTrigger($robotId, true);
         } catch (BrokerOrderException $e) {
-            $this->logEvent(
-                $webhookId,
-                $accountId,
-                $payload,
-                WebhookEventStatus::FAILED,
-                WebhookRejectReason::BROKER_ERROR,
-                sprintf('[%s] %s', $e->getProviderCode(), $e->getMessage()),
-                $orderId,
-                $externalAlertId,
-            );
-            $this->webhookRepo->recordTrigger($webhookId, false);
+            $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::FAILED, WebhookRejectReason::BROKER_ERROR, $this->brokerErr($e), $orderId, $alertId);
+            $this->robotRepo->recordTrigger($robotId, false);
         }
+    }
+
+    private function handleModify(array $ctx): void
+    {
+        $order = $this->resolveOrder($ctx);
+        if ($order === null) {
+            return; // resolveOrder already logged ORDER_NOT_FOUND
+        }
+        $payload = $ctx['payload'];
+
+        try {
+            $this->connectorFor($ctx)->modifyOrder($this->credentials($ctx), [
+                'broker_order_id' => (string) ($order['broker_order_id'] ?? ''),
+                'symbol' => $payload['symbol'] ?? null,
+                'sl_price' => isset($payload['sl_price']) ? (float) $payload['sl_price'] : null,
+                'tp_price' => isset($payload['tp_price']) ? (float) $payload['tp_price'] : null,
+            ]);
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::PROCESSED, null, 'MODIFY', (int) $order['id'], $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], true);
+        } catch (BrokerOrderException $e) {
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::FAILED, WebhookRejectReason::BROKER_ERROR, $this->brokerErr($e), (int) $order['id'], $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], false);
+        }
+    }
+
+    private function handleClose(array $ctx): void
+    {
+        $order = $this->resolveOrder($ctx);
+        if ($order === null) {
+            return;
+        }
+        $payload = $ctx['payload'];
+        $sizeOverride = isset($payload['size']) && (float) $payload['size'] > 0 ? (float) $payload['size'] : null;
+
+        try {
+            $this->connectorFor($ctx)->closePosition(
+                $this->credentials($ctx),
+                (string) ($order['broker_order_id'] ?? ''),
+                $sizeOverride,
+            );
+            $this->markOrderCancelled((int) $order['id'], (string) $order['status']);
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::PROCESSED, null, 'CLOSE', (int) $order['id'], $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], true);
+        } catch (BrokerOrderException $e) {
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::FAILED, WebhookRejectReason::BROKER_ERROR, $this->brokerErr($e), (int) $order['id'], $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], false);
+        }
+    }
+
+    private function handleCancel(array $ctx): void
+    {
+        $order = $this->resolveOrder($ctx);
+        if ($order === null) {
+            return;
+        }
+        $payload = $ctx['payload'];
+
+        try {
+            $this->connectorFor($ctx)->cancelOrder($this->credentials($ctx), (string) ($order['broker_order_id'] ?? ''));
+            $this->markOrderCancelled((int) $order['id'], (string) $order['status']);
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::PROCESSED, null, 'CANCEL', (int) $order['id'], $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], true);
+        } catch (BrokerOrderException $e) {
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::FAILED, WebhookRejectReason::BROKER_ERROR, $this->brokerErr($e), (int) $order['id'], $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], false);
+        }
+    }
+
+    /** Resolve a follow-up signal to its live order, or log ORDER_NOT_FOUND. */
+    private function resolveOrder(array $ctx): ?array
+    {
+        $clientOrderId = $this->extractClientOrderId($ctx['payload']);
+        $order = $clientOrderId !== null
+            ? $this->orderRepo->findLiveByClientOrderId($ctx['account_id'], $clientOrderId)
+            : null;
+        if ($order === null) {
+            $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $ctx['payload'], WebhookEventStatus::REJECTED, WebhookRejectReason::ORDER_NOT_FOUND, "no live order for client_order_id={$clientOrderId}", null, $ctx['alert_id']);
+            $this->robotRepo->recordTrigger($ctx['robot_id'], false);
+        }
+        return $order;
+    }
+
+    private function credentials(array $ctx): array
+    {
+        return $this->crypto->decrypt(
+            $ctx['connection']['credentials_encrypted'],
+            $ctx['connection']['credentials_iv'],
+        );
+    }
+
+    private function connectorFor(array $ctx): ConnectorInterface
+    {
+        return $this->getConnector($ctx['connection']['provider']);
+    }
+
+    private function brokerErr(BrokerOrderException $e): string
+    {
+        return sprintf('[%s] %s', $e->getProviderCode(), $e->getMessage());
+    }
+
+    /** Reflect a broker-side close/cancel in the local order + status history. */
+    private function markOrderCancelled(int $orderId, string $previousStatus): void
+    {
+        $this->orderRepo->updateStatus($orderId, OrderStatus::CANCELLED->value);
+        $this->historyRepo->create([
+            'entity_type' => EntityType::ORDER->value,
+            'entity_id' => $orderId,
+            'previous_status' => $previousStatus,
+            'new_status' => OrderStatus::CANCELLED->value,
+            'user_id' => null,
+            'trigger_type' => TriggerType::WEBHOOK->value,
+        ]);
     }
 
     private function extractAlertId(array $payload): ?string
     {
-        if (!isset($payload['alert_id'])) {
+        return $this->extractKey($payload, 'alert_id');
+    }
+
+    /**
+     * Stable correlation key the indicator supplies at OPEN and re-emits on
+     * MODIFY/CLOSE/CANCEL. Distinct from alert_id (which is unique per signal,
+     * used for dedup) — client_order_id is stable across an order's lifecycle.
+     */
+    private function extractClientOrderId(array $payload): ?string
+    {
+        return $this->extractKey($payload, 'client_order_id');
+    }
+
+    private function extractKey(array $payload, string $field): ?string
+    {
+        if (!isset($payload[$field]) || !is_scalar($payload[$field])) {
             return null;
         }
-        $value = is_scalar($payload['alert_id']) ? (string) $payload['alert_id'] : '';
-        $value = trim($value);
+        $value = trim((string) $payload[$field]);
         return $value !== '' ? mb_substr($value, 0, 120) : null;
     }
 
-    private function validatePayload(array $payload): ?string
+    /** Resolve the requested action; defaults to OPEN, null if unknown value. */
+    private function extractAction(array $payload): ?WebhookAction
+    {
+        if (!isset($payload['action']) || $payload['action'] === '') {
+            return WebhookAction::OPEN;
+        }
+        return WebhookAction::tryFrom(strtoupper((string) $payload['action']));
+    }
+
+    /** Validate by action. OPEN needs the full order; the rest need correlation. */
+    private function validatePayload(array $payload, WebhookAction $action): ?string
+    {
+        if ($action === WebhookAction::OPEN) {
+            return $this->validateOpenPayload($payload);
+        }
+
+        // MODIFY / CLOSE / CANCEL all need a client_order_id to resolve the order.
+        if ($this->extractClientOrderId($payload) === null) {
+            return 'missing required field: client_order_id';
+        }
+        if ($action === WebhookAction::MODIFY) {
+            // MODIFY works with absolute prices (no entry reference to convert
+            // points at amend time): the indicator sends sl_price and/or tp_price.
+            $hasSl = isset($payload['sl_price']) && (float) $payload['sl_price'] > 0;
+            $hasTp = isset($payload['tp_price']) && (float) $payload['tp_price'] > 0;
+            if (!$hasSl && !$hasTp) {
+                return 'MODIFY requires at least one of: sl_price, tp_price';
+            }
+        }
+
+        return null;
+    }
+
+    private function validateOpenPayload(array $payload): ?string
     {
         foreach (['symbol', 'direction', 'entry_price', 'size', 'sl_points'] as $required) {
             if (!isset($payload[$required]) || $payload[$required] === '') {

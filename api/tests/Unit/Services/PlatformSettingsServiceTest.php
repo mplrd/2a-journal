@@ -18,7 +18,7 @@ class PlatformSettingsServiceTest extends TestCase
         putenv('BROKER_AUTO_SYNC_ENABLED');
         putenv('BROKER_SYNC_INTERVAL_MINUTES');
         putenv('BROKER_SYNC_MAX_FAILURES');
-        putenv('TRADINGVIEW_WEBHOOKS_ENABLED');
+        putenv('ROBOTS_ENABLED');
     }
 
     protected function tearDown(): void
@@ -26,7 +26,7 @@ class PlatformSettingsServiceTest extends TestCase
         putenv('BROKER_AUTO_SYNC_ENABLED');
         putenv('BROKER_SYNC_INTERVAL_MINUTES');
         putenv('BROKER_SYNC_MAX_FAILURES');
-        putenv('TRADINGVIEW_WEBHOOKS_ENABLED');
+        putenv('ROBOTS_ENABLED');
     }
 
     public function testResolveReturnsNullWhenBothSourcesAbsent(): void
@@ -159,45 +159,45 @@ class PlatformSettingsServiceTest extends TestCase
         $service->update('broker_sync_interval_minutes', '20', 42);
     }
 
-    // ── TradingView webhooks flag (rapatrié des env vars vers les settings) ──
+    // ── Robots flag (rapatrié des env vars vers les settings, renommé v70) ──
 
-    public function testTradingViewWebhooksKnownAndDbOverridesEnv(): void
+    public function testRobotsFlagKnownAndDbOverridesEnv(): void
     {
         $this->repo->method('get')->willReturn([
             'setting_value' => 'true',
             'value_type' => 'BOOL',
         ]);
-        putenv('TRADINGVIEW_WEBHOOKS_ENABLED=false');
+        putenv('ROBOTS_ENABLED=false');
 
         $service = new PlatformSettingsService($this->repo);
-        $this->assertTrue($service->resolve('tradingview_webhooks_enabled'));
+        $this->assertTrue($service->resolve('robots_enabled'));
     }
 
-    public function testTradingViewWebhooksFallsBackToLegacyEnvVar(): void
+    public function testRobotsFlagFallsBackToEnvVar(): void
     {
         $this->repo->method('get')->willReturn(null);
-        putenv('TRADINGVIEW_WEBHOOKS_ENABLED=true');
+        putenv('ROBOTS_ENABLED=true');
 
         $service = new PlatformSettingsService($this->repo);
-        $this->assertTrue($service->resolve('tradingview_webhooks_enabled'));
+        $this->assertTrue($service->resolve('robots_enabled'));
     }
 
-    public function testTradingViewWebhooksDefaultsOffWhenNoSource(): void
+    public function testRobotsFlagDefaultsOffWhenNoSource(): void
     {
         $this->repo->method('get')->willReturn(null);
 
         $service = new PlatformSettingsService($this->repo);
         // No DB, no env → null; the /features endpoint casts null to false (off).
-        $this->assertNull($service->resolve('tradingview_webhooks_enabled'));
+        $this->assertNull($service->resolve('robots_enabled'));
     }
 
-    public function testTradingViewWebhooksAppearsInAdminList(): void
+    public function testRobotsFlagAppearsInAdminList(): void
     {
         $this->repo->method('list')->willReturn([]);
 
         $service = new PlatformSettingsService($this->repo);
         $keys = array_column($service->list(), 'key');
 
-        $this->assertContains('tradingview_webhooks_enabled', $keys);
+        $this->assertContains('robots_enabled', $keys);
     }
 }

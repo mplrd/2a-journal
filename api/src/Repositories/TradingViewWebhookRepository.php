@@ -2,9 +2,13 @@
 
 namespace App\Repositories;
 
-use App\Enums\WebhookStatus;
 use PDO;
 
+/**
+ * The TradingView webhook is now a pure auth channel owned by a robot
+ * (docs/70-robots.md): it carries the URL token + body secret hashes and the
+ * owning robot_id. Status, counters and the target account live on the robot.
+ */
 class TradingViewWebhookRepository
 {
     public function __construct(private PDO $pdo) {}
@@ -12,16 +16,15 @@ class TradingViewWebhookRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO tradingview_webhooks (user_id, account_id, name, url_token_hash, body_secret_hash, status)
-             VALUES (:user_id, :account_id, :name, :url_token_hash, :body_secret_hash, :status)"
+            "INSERT INTO tradingview_webhooks (user_id, robot_id, name, url_token_hash, body_secret_hash)
+             VALUES (:user_id, :robot_id, :name, :url_token_hash, :body_secret_hash)"
         );
         $stmt->execute([
             'user_id' => $data['user_id'],
-            'account_id' => $data['account_id'],
+            'robot_id' => $data['robot_id'],
             'name' => $data['name'],
             'url_token_hash' => $data['url_token_hash'],
             'body_secret_hash' => $data['body_secret_hash'],
-            'status' => $data['status'] ?? WebhookStatus::ACTIVE->value,
         ]);
 
         return $this->findById((int) $this->pdo->lastInsertId());
@@ -43,30 +46,18 @@ class TradingViewWebhookRepository
         return $row ?: null;
     }
 
-    public function findAllByAccountId(int $accountId): array
+    public function findByRobotId(int $robotId): ?array
     {
-        $stmt = $this->pdo->prepare(
-            "SELECT id, user_id, account_id, name, status, last_triggered_at, total_triggered, total_errors, created_at, updated_at
-             FROM tradingview_webhooks
-             WHERE account_id = :account_id
-             ORDER BY created_at DESC"
-        );
-        $stmt->execute(['account_id' => $accountId]);
-        return $stmt->fetchAll();
+        $stmt = $this->pdo->prepare("SELECT * FROM tradingview_webhooks WHERE robot_id = :robot_id LIMIT 1");
+        $stmt->execute(['robot_id' => $robotId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
     }
 
-    public function revoke(int $id): void
+    /** Drop a robot's webhook(s) — used when regenerating credentials. */
+    public function deleteByRobotId(int $robotId): void
     {
-        $this->pdo->prepare(
-            "UPDATE tradingview_webhooks SET status = :status WHERE id = :id"
-        )->execute(['status' => WebhookStatus::REVOKED->value, 'id' => $id]);
-    }
-
-    public function recordTrigger(int $id, bool $success): void
-    {
-        $sql = $success
-            ? "UPDATE tradingview_webhooks SET total_triggered = total_triggered + 1, last_triggered_at = CURRENT_TIMESTAMP WHERE id = :id"
-            : "UPDATE tradingview_webhooks SET total_errors = total_errors + 1, last_triggered_at = CURRENT_TIMESTAMP WHERE id = :id";
-        $this->pdo->prepare($sql)->execute(['id' => $id]);
+        $this->pdo->prepare("DELETE FROM tradingview_webhooks WHERE robot_id = :robot_id")
+            ->execute(['robot_id' => $robotId]);
     }
 }

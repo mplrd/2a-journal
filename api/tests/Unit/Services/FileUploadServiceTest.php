@@ -83,12 +83,18 @@ class FileUploadServiceTest extends TestCase
     {
         $service = new FileUploadService($this->baseDir);
 
-        $a = $service->store($this->makeUpload($this->pngBytes(), 'a.png'), 'tickets', self::IMAGE_TYPES, 2_000_000, 'attachment');
-        $b = $service->store($this->makeUpload($this->pngBytes(), 'a.png'), 'tickets', self::IMAGE_TYPES, 2_000_000, 'attachment');
+        // Distinctive original name so the "doesn't leak the original name" check
+        // can't match by coincidence on the random hex (a short name like "a.png"
+        // is a substring of e.g. "...efba.png" ~1/16 of the time → flaky).
+        $original = 'my-secret-screenshot.png';
+        $a = $service->store($this->makeUpload($this->pngBytes(), $original), 'tickets', self::IMAGE_TYPES, 2_000_000, 'attachment');
+        $b = $service->store($this->makeUpload($this->pngBytes(), $original), 'tickets', self::IMAGE_TYPES, 2_000_000, 'attachment');
 
         // Same original name, but stored paths must differ (no collision / no enumeration)
         $this->assertNotSame($a['stored_path'], $b['stored_path']);
-        $this->assertStringNotContainsString('a.png', $a['stored_path']);
+        // Stored name is random hex, never derived from the original name.
+        $this->assertStringNotContainsString('my-secret-screenshot', $a['stored_path']);
+        $this->assertMatchesRegularExpression('#^tickets/[0-9a-f]{32}\.png$#', $a['stored_path']);
     }
 
     public function testStoreRejectsMissingFile(): void

@@ -249,4 +249,13 @@ class MetaApiConnector implements ConnectorInterface
             ),
         };
     }
+
+    /** Order modification not implemented for MetaApi yet (docs/70 v1: BingX only). */
+    public function modifyOrder(array $credentials, array $modification): array
+    {
+        throw new \App\Exceptions\BrokerOrderException(
+            'modifyOrder not implemented for MetaApi',
+            'NOT_IMPLEMENTED',
+        );
+    }
 }

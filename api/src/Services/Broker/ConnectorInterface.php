@@ -123,4 +123,19 @@ interface ConnectorInterface
      * @return array{status: string|null, raw: array}
      */
     public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array;
+
+    /**
+     * Modify a live order/position's SL and/or TP on the broker.
+     *
+     * @param array $credentials Decrypted credentials
+     * @param array $modification Normalized spec:
+     * - broker_order_id (string) — broker's order/position id to amend
+     * - symbol (string|null) — instrument (some brokers require it)
+     * - sl_points (float|null) — new stop-loss distance in points (null = leave)
+     * - targets (array|null) — new take-profit legs [{points,size},…] (null = leave)
+     * @return array{status: string|null, raw: array}
+     * @throws \App\Exceptions\BrokerOrderException with code NOT_IMPLEMENTED on
+     *         connectors that do not support modify yet.
+     */
+    public function modifyOrder(array $credentials, array $modification): array;
 }
