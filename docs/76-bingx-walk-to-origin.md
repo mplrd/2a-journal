@@ -61,7 +61,21 @@ Le fix est validé en mocks uniquement. La validation contre le vrai compte Bing
    ```
 3. Déclencher une sync (UI ou tick cron) et vérifier que récupérés/importés > 0 et que l'historique apparaît dans `/trades` + charts de perf.
 
+## Complément 1 : rate-limit BingX (code 100410)
+
+Constat sur le test env (lecture directe des `sync_logs`) : le walk « jusqu'à l'origine » génère beaucoup de requêtes (income + allOrders × symbols × fenêtres) → BingX répond **`code 100410` msg « rate limited »** et l'ancienne version **propageait l'erreur → toute la sync échouait**.
+
+Correctifs dans `httpGetSigned()` :
+- **Retry avec backoff exponentiel** sur `100410` (base 500 ms × 2^n, `RATE_LIMIT_MAX_RETRIES = 4`), au lieu de jeter. Chaque tentative est **re-signée** (nouveau timestamp → nouvelle signature). Base de backoff injectable au constructeur (`rateLimitBackoffMs`, mise à 0 dans les tests).
+- **`codeHint(100410)` corrigé** : disait à tort « IP whitelist on the BingX key blocks this host » → dit maintenant « rate limited / throttling ». C'est ce label faux qui avait fait suspecter un problème d'IP inexistant.
+
+## Complément 2 : solde jamais persisté (`broker_balance` NULL)
+
+Constat base test : `accounts.broker_balance = NULL` sur les comptes BingX → `fetchBalance()` renvoyait toujours `null`. Cause : `/openApi/swap/v3/user/balance` renvoie `data` sous forme de **LISTE** de balances par asset (`[{asset:'USDT', equity, balance, ...}]`), alors que le parser ne lisait que la forme `data.balance.equity`.
+
+`fetchBalance()` réécrit autour de `extractEquity()`, tolérant des 3 formes : liste v3 (on prend la ligne **USDT**), wrapper `{balance:{...}}` v2, objet nu. Tests dédiés ajoutés.
+
 ## Reste à vérifier hors de ce fix
 
-- **Solde du compte** (`/user/balance` v3) : chemin indépendant du walk. S'il remonte toujours vide après ce fix, c'est une question de **forme de réponse** à diagnostiquer séparément (voir `evolutions.md`).
-- **Rétention réelle BingX** sur `/user/income` et `/allOrders` : si BingX renvoie une **erreur** (et non une réponse vide) au-delà d'un certain horizon, le walk pourrait la propager. À confirmer en conditions réelles ; la règle « N empties consécutifs » s'arrête normalement avant d'atteindre cet horizon.
+- **Validation live test env** : après deploy, reset curseur puis sync ; vérifier `deals_fetched > 0`, `broker_balance` renseigné, et absence de `FAILED 100410` persistant (si le rate-limit dépasse les retries malgré le backoff, il faudra ajouter une cadence proactive entre requêtes et/ou restreindre le walk allOrders à la fenêtre d'activité de chaque symbol vue via income).
+- **Rétention réelle BingX** sur `/user/income` et `/allOrders` : si BingX renvoie une **erreur** (et non une réponse vide) au-delà d'un certain horizon, le walk pourrait la propager. À confirmer en conditions réelles.

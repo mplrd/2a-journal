@@ -56,6 +56,21 @@ class BingxConnector implements ConnectorInterface
      */
     private const FIRST_SYNC_MAX_LOOKBACK_SECONDS = 5 * 365 * 24 * 3600;
 
+    /**
+     * BingX business code for rate limiting (returned with HTTP 200, msg
+     * "rate limited"). The "walk to origin" first sync fires many requests,
+     * so we MUST back off and retry on this instead of failing the whole
+     * sync. NB: despite the legacy codeHint text, 100410 is throttling, not
+     * an IP-whitelist rejection.
+     */
+    private const RATE_LIMITED_CODE = 100410;
+
+    /** Max retries on a 100410 before giving up, per individual request. */
+    private const RATE_LIMIT_MAX_RETRIES = 4;
+
+    /** Default exponential-backoff base (ms) for the 100410 retry. */
+    private const DEFAULT_RATE_LIMIT_BACKOFF_MS = 500;
+
     private Client $httpClient;
     private string $baseUrl;
     private DealNormalizer $normalizer;
@@ -63,6 +78,9 @@ class BingxConnector implements ConnectorInterface
 
     /** @see self::DEFAULT_MAX_EMPTY_CHUNKS */
     private int $maxEmptyChunks;
+
+    /** Backoff base in ms for the 100410 retry; 0 disables sleeping (tests). */
+    private int $rateLimitBackoffMs;
 
     /**
      * Symbols persisted across syncs (from broker_connections.symbols_seen).
@@ -90,8 +108,12 @@ class BingxConnector implements ConnectorInterface
     private ?string $cachedSymbolsCursorKey = null;
     private ?array $cachedLiveSnapshot = null;
 
-    public function __construct(Client $httpClient, string $baseUrl, ?int $maxEmptyChunks = null)
-    {
+    public function __construct(
+        Client $httpClient,
+        string $baseUrl,
+        ?int $maxEmptyChunks = null,
+        ?int $rateLimitBackoffMs = null
+    ) {
         $this->httpClient = $httpClient;
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->normalizer = new DealNormalizer();
@@ -99,6 +121,9 @@ class BingxConnector implements ConnectorInterface
         $this->maxEmptyChunks = ($maxEmptyChunks !== null && $maxEmptyChunks >= 1)
             ? $maxEmptyChunks
             : self::DEFAULT_MAX_EMPTY_CHUNKS;
+        $this->rateLimitBackoffMs = ($rateLimitBackoffMs !== null && $rateLimitBackoffMs >= 0)
+            ? $rateLimitBackoffMs
+            : self::DEFAULT_RATE_LIMIT_BACKOFF_MS;
     }
 
     /**
@@ -474,16 +499,64 @@ class BingxConnector implements ConnectorInterface
             return null;
         }
 
-        // BingX swap v3 response shape (best-effort, alias-tolerant):
-        //   data.balance.equity  → preferred (balance + unrealized PnL)
-        //   data.balance.balance → fallback (just available + frozen)
-        //   data.equity / data.balance → some accounts/versions
-        $inner = is_array($data) ? ($data['balance'] ?? $data) : [];
-        $equity = $inner['equity'] ?? $inner['balance'] ?? null;
-        if ($equity === null) {
+        return $this->extractEquity($data);
+    }
+
+    /**
+     * Pull account equity out of whatever shape BingX hands back on
+     * /user/balance. Tolerant across the variants seen in the wild — the
+     * previous parser only handled the `{balance:{...}}` wrapper and returned
+     * null for the v3 LIST shape, which is why broker_balance never persisted:
+     *   - v3 list:     data: [{asset:'USDT', equity, balance, ...}, ...]
+     *   - v2 wrapper:  data: {balance: {equity, balance, ...}}
+     *   - bare object: data: {equity, balance, ...}
+     * Prefers USDT on the list shape (USDT-M perp), else the first row with a
+     * usable figure. Returns null when nothing parseable is found.
+     */
+    private function extractEquity(mixed $data): ?float
+    {
+        if (!is_array($data)) {
             return null;
         }
-        return (float) $equity;
+
+        if (array_is_list($data)) {
+            $fallback = null;
+            foreach ($data as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $value = $this->equityFromRow($row);
+                if ($value === null) {
+                    continue;
+                }
+                if (strtoupper((string) ($row['asset'] ?? '')) === 'USDT') {
+                    return $value;
+                }
+                $fallback ??= $value;
+            }
+            return $fallback;
+        }
+
+        if (isset($data['balance']) && is_array($data['balance'])) {
+            return $this->equityFromRow($data['balance']);
+        }
+
+        return $this->equityFromRow($data);
+    }
+
+    /**
+     * Best-effort equity for one balance row: prefer `equity` (wallet +
+     * unrealized PnL), fall back to the plain `balance`. Numeric-string
+     * tolerant; returns null if neither field carries a number.
+     */
+    private function equityFromRow(array $row): ?float
+    {
+        foreach (['equity', 'balance'] as $key) {
+            if (isset($row[$key]) && is_numeric($row[$key])) {
+                return (float) $row[$key];
+            }
+        }
+        return null;
     }
 
     public function placeOrder(array $credentials, array $order): array
@@ -732,30 +805,50 @@ class BingxConnector implements ConnectorInterface
         // canonical we signed diverge from what BingX rebuilt → generic
         // 100001 signature mismatch. Sort BEFORE both signing and the HTTP
         // call so the URL order and the signed canonical are byte-identical.
-        $timestampMs = (int) (microtime(true) * 1000);
-        $params['recvWindow'] = (string) 5000;
-        $params['timestamp'] = (string) $timestampMs;
-        ksort($params);
-        $canonical = $this->canonical($params);
-        $signature = hash_hmac('sha256', $canonical, $apiSecret);
-        $params['signature'] = $signature;
+        $attempt = 0;
+        while (true) {
+            // Rebuild the signed params from the ORIGINAL set on each attempt:
+            // a retry needs a fresh timestamp, hence a fresh signature. Reusing
+            // a mutated $params (already carrying signature/timestamp) would
+            // fold the stale signature into the canonical and fail signing.
+            $signed = $params;
+            $timestampMs = (int) (microtime(true) * 1000);
+            $signed['recvWindow'] = (string) 5000;
+            $signed['timestamp'] = (string) $timestampMs;
+            ksort($signed);
+            $canonical = $this->canonical($signed);
+            $signature = hash_hmac('sha256', $canonical, $apiSecret);
+            $signed['signature'] = $signature;
 
-        try {
-            $response = $this->httpClient->get($this->baseUrl . $path, [
-                'query' => $params,
-                'headers' => [
-                    'X-BX-APIKEY' => $apiKey,
-                    'Accept' => 'application/json',
-                ],
-            ]);
-        } catch (GuzzleException $e) {
-            $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()], $signature, strlen($apiSecret), null);
-            throw new \RuntimeException("BingX HTTP error: {$e->getMessage()}", 0, $e);
-        }
+            try {
+                $response = $this->httpClient->get($this->baseUrl . $path, [
+                    'query' => $signed,
+                    'headers' => [
+                        'X-BX-APIKEY' => $apiKey,
+                        'Accept' => 'application/json',
+                    ],
+                ]);
+            } catch (GuzzleException $e) {
+                $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()], $signature, strlen($apiSecret), null);
+                throw new \RuntimeException("BingX HTTP error: {$e->getMessage()}", 0, $e);
+            }
 
-        $decoded = json_decode($response->getBody()->getContents(), true) ?: [];
-        $code = (int) ($decoded['code'] ?? 0);
-        if ($code !== 0) {
+            $decoded = json_decode($response->getBody()->getContents(), true) ?: [];
+            $code = (int) ($decoded['code'] ?? 0);
+            if ($code === 0) {
+                return $decoded['data'] ?? null;
+            }
+
+            // 100410 = rate limited. The "walk to origin" first sync fires many
+            // requests; back off and retry instead of failing the whole sync.
+            if ($code === self::RATE_LIMITED_CODE && $attempt < self::RATE_LIMIT_MAX_RETRIES) {
+                $attempt++;
+                if ($this->rateLimitBackoffMs > 0) {
+                    usleep($this->rateLimitBackoffMs * 1000 * (1 << ($attempt - 1)));
+                }
+                continue;
+            }
+
             $msg = $decoded['msg'] ?? 'unknown';
             $this->logFailure(
                 $path,
@@ -770,8 +863,6 @@ class BingxConnector implements ConnectorInterface
             );
             throw new \RuntimeException("BingX API error (code {$code}): {$msg} [" . $this->codeHint($code) . "]");
         }
-
-        return $decoded['data'] ?? null;
     }
 
     private function logFailure(
@@ -809,7 +900,7 @@ class BingxConnector implements ConnectorInterface
         return match ($code) {
             100001 => 'signing or clock — check server logs for the canonical string and clock_skew_seconds',
             100403 => 'API key lacks permission for this endpoint (enable Perpetual Futures on the key)',
-            100410 => 'IP whitelist on the BingX key blocks this host',
+            100410 => 'rate limited by BingX — history walk throttled; connector backs off and retries before giving up',
             100413 => 'invalid API key',
             default => "unknown — search BingX docs for code {$code}",
         };
