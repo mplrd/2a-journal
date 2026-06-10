@@ -15,7 +15,7 @@ class BingxConnectorTest extends TestCase
     /** @var array<int, \Psr\Http\Message\RequestInterface> */
     private array $capturedRequests = [];
 
-    private function createConnector(array $responses): BingxConnector
+    private function createConnector(array $responses, int $maxEmptyChunks = 1): BingxConnector
     {
         $this->capturedRequests = [];
         $this->mock = new MockHandler($responses);
@@ -28,7 +28,11 @@ class BingxConnectorTest extends TestCase
         });
         $client = new Client(['handler' => $handler]);
 
-        return new BingxConnector($client, 'https://fake-bingx.test');
+        // Default maxEmptyChunks=1 reproduces the legacy "stop at the first
+        // empty window" cadence, so the bulk of the suite keeps its tight
+        // [data → one empty] mock sequences. Tests that specifically exercise
+        // walking PAST empty windows pass a higher value explicitly.
+        return new BingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks);
     }
 
     private function bxResponse(array $data): Response
@@ -582,6 +586,55 @@ class BingxConnectorTest extends TestCase
         $externalIds = array_column($result['deals'], 'external_id');
         $this->assertContains('bingx_position_btc-open', $externalIds);
         $this->assertContains('bingx_position_eth-open', $externalIds);
+    }
+
+    public function testFetchDealsWalksPastEmptyWindowsToReachOlderHistory(): void
+    {
+        // Regression for the "stop at the first empty 7-day window" bug: an
+        // account that has been QUIET for the last week (no recent income, no
+        // open positions) but whose real trading history sits a couple of
+        // windows back. The legacy walk broke on the very first empty income
+        // chunk and discovered nothing → SUCCESS with 0 everything on a full
+        // account. With empty-window tolerance (maxEmptyChunks=2 here) the
+        // walk steps past the gap, finds ETH-USDT in an older income window,
+        // then reconstructs its closed cycle from /allOrders.
+        $connector = $this->createConnector([
+            // 1) /user/positions → flat right now
+            $this->bxResponse([]),
+            // 2) /user/income walk — FIRST window empty (the quiet week)…
+            $this->emptyIncomeChunk(),
+            // 3) …older window carries ETH-USDT activity (must be reached)
+            $this->incomeChunk([
+                ['symbol' => 'ETH-USDT', 'incomeType' => 'REALIZED_PNL', 'income' => '50', 'time' => 1716000000000],
+            ]),
+            // 4-5) two consecutive empty windows → stop income walk (maxEmpty=2)
+            $this->emptyIncomeChunk(),
+            $this->emptyIncomeChunk(),
+            // 6) /allOrders ETH-USDT → the closed cycle (open + full close)
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'eth-open', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => false, 'side' => 'SELL',
+                    'executedQty' => '1', 'avgPrice' => '4000', 'updateTime' => 1716000000000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'eth-close', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => true, 'side' => 'BUY',
+                    'executedQty' => '1', 'avgPrice' => '3950', 'profit' => '50',
+                    'updateTime' => 1716000600000,
+                ]),
+            ]),
+            // 7-8) two consecutive empty windows → stop fills walk
+            $this->emptyChunk(),
+            $this->emptyChunk(),
+        ], maxEmptyChunks: 2);
+
+        $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertCount(1, $result['deals']);
+        $this->assertSame('bingx_position_eth-open', $result['deals'][0]['external_id']);
+        $this->assertSame('ETH-USDT', $result['deals'][0]['symbol']);
+        $this->assertSame('SELL', $result['deals'][0]['direction']);
     }
 
     public function testPlaceMarketBuyMapsToPositionSideLongAndExtractsOrderId(): void
