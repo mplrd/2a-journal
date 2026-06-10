@@ -38,10 +38,31 @@ class BingxConnector implements ConnectorInterface
      */
     private const CHUNK_WINDOW_SECONDS = 7 * 24 * 3600;
 
+    /**
+     * First-sync stop rule: how many CONSECUTIVE empty 7-day windows we
+     * tolerate before concluding we've walked back past the account's origin
+     * (or BingX's retention horizon) and stopping. This is the fix for the
+     * "stop at the first empty window" bug: a single quiet week — or any gap
+     * shorter than this many weeks — no longer halts the whole history walk.
+     * A trading dormancy LONGER than (this × 7 days) would still truncate
+     * older history, so it's tuned generously and overridable per connection.
+     */
+    private const DEFAULT_MAX_EMPTY_CHUNKS = 12; // ~84 days of continuous silence
+
+    /**
+     * Absolute safety floor for a first sync: never walk windows older than
+     * this, even if BingX keeps dribbling sparse non-empty chunks. Pure
+     * runaway backstop — the consecutive-empty rule is the normal stop.
+     */
+    private const FIRST_SYNC_MAX_LOOKBACK_SECONDS = 5 * 365 * 24 * 3600;
+
     private Client $httpClient;
     private string $baseUrl;
     private DealNormalizer $normalizer;
     private BingxFillReconstructor $reconstructor;
+
+    /** @see self::DEFAULT_MAX_EMPTY_CHUNKS */
+    private int $maxEmptyChunks;
 
     /**
      * Symbols persisted across syncs (from broker_connections.symbols_seen).
@@ -69,12 +90,15 @@ class BingxConnector implements ConnectorInterface
     private ?string $cachedSymbolsCursorKey = null;
     private ?array $cachedLiveSnapshot = null;
 
-    public function __construct(Client $httpClient, string $baseUrl)
+    public function __construct(Client $httpClient, string $baseUrl, ?int $maxEmptyChunks = null)
     {
         $this->httpClient = $httpClient;
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->normalizer = new DealNormalizer();
         $this->reconstructor = new BingxFillReconstructor();
+        $this->maxEmptyChunks = ($maxEmptyChunks !== null && $maxEmptyChunks >= 1)
+            ? $maxEmptyChunks
+            : self::DEFAULT_MAX_EMPTY_CHUNKS;
     }
 
     /**
@@ -201,50 +225,31 @@ class BingxConnector implements ConnectorInterface
 
         foreach ($symbols as $symbol) {
             $hasFillsOnSymbol = false;
-            $chunkEnd = $now;
-            while (true) {
-                $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
-                if ($cursorMs !== null) {
-                    $chunkStart = max($cursorMs + 1, $chunkStart);
-                }
-                if ($chunkStart >= $chunkEnd) {
-                    break;
-                }
+            $this->walkChunks(
+                '/openApi/swap/v2/trade/allOrders',
+                ['symbol' => $symbol, 'limit' => (string) self::PAGE_SIZE],
+                $credentials,
+                $cursorMs,
+                $now,
+                function (mixed $data) use (&$allFills, &$rawCount, &$latestFillTime, &$hasFillsOnSymbol): int {
+                    $list = $data['orders'] ?? (is_array($data) ? $data : []);
+                    $rawCount += count($list);
 
-                $data = $this->httpGetSigned(
-                    '/openApi/swap/v2/trade/allOrders',
-                    [
-                        'symbol' => $symbol,
-                        'startTime' => (string) $chunkStart,
-                        'endTime' => (string) $chunkEnd,
-                        'limit' => (string) self::PAGE_SIZE,
-                    ],
-                    $credentials,
-                );
-
-                $list = $data['orders'] ?? (is_array($data) ? $data : []);
-                $rawCount += count($list);
-
-                if (empty($list) && $cursorMs === null) {
-                    break;
-                }
-
-                $chunkFillCount = 0;
-                foreach ($list as $raw) {
-                    $fill = $this->normalizer->normalizeBingxFill($raw);
-                    if ($fill === null) {
-                        continue;
+                    foreach ($list as $raw) {
+                        $fill = $this->normalizer->normalizeBingxFill($raw);
+                        if ($fill === null) {
+                            continue;
+                        }
+                        $hasFillsOnSymbol = true;
+                        $allFills[] = $fill;
+                        if ($fill['time'] > 0 && ($latestFillTime === null || $fill['time'] > $latestFillTime)) {
+                            $latestFillTime = $fill['time'];
+                        }
                     }
-                    $chunkFillCount++;
-                    $hasFillsOnSymbol = true;
-                    $allFills[] = $fill;
-                    if ($fill['time'] > 0 && ($latestFillTime === null || $fill['time'] > $latestFillTime)) {
-                        $latestFillTime = $fill['time'];
-                    }
-                }
 
-                $chunkEnd = $chunkStart - 1;
-            }
+                    return count($list);
+                },
+            );
             if ($hasFillsOnSymbol) {
                 $seenSymbols[] = $symbol;
             }
@@ -420,43 +425,26 @@ class BingxConnector implements ConnectorInterface
         $rawCount = 0;
 
         foreach ($symbols as $symbol) {
-            $chunkEnd = $now;
-            while (true) {
-                $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
-                if ($cursorMs !== null) {
-                    $chunkStart = max($cursorMs + 1, $chunkStart);
-                }
-                if ($chunkStart >= $chunkEnd) {
-                    break;
-                }
+            $this->walkChunks(
+                '/openApi/swap/v2/trade/allOrders',
+                ['symbol' => $symbol, 'limit' => (string) self::PAGE_SIZE],
+                $credentials,
+                $cursorMs,
+                $now,
+                function (mixed $data) use (&$orders, &$rawCount): int {
+                    $list = $data['orders'] ?? (is_array($data) ? $data : []);
+                    $rawCount += count($list);
 
-                $data = $this->httpGetSigned(
-                    '/openApi/swap/v2/trade/allOrders',
-                    [
-                        'symbol' => $symbol,
-                        'startTime' => (string) $chunkStart,
-                        'endTime' => (string) $chunkEnd,
-                        'limit' => (string) self::PAGE_SIZE,
-                    ],
-                    $credentials,
-                );
-
-                $list = $data['orders'] ?? (is_array($data) ? $data : []);
-                $rawCount += count($list);
-
-                if (empty($list) && $cursorMs === null) {
-                    break;
-                }
-
-                foreach ($list as $raw) {
-                    $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
-                    if ($normalized !== null) {
-                        $orders[] = $normalized;
+                    foreach ($list as $raw) {
+                        $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
+                        if ($normalized !== null) {
+                            $orders[] = $normalized;
+                        }
                     }
-                }
 
-                $chunkEnd = $chunkStart - 1;
-            }
+                    return count($list);
+                },
+            );
         }
 
         return ['orders' => $orders, 'raw_count' => $rawCount];
@@ -900,6 +888,65 @@ class BingxConnector implements ConnectorInterface
     }
 
     /**
+     * Walk a BingX history endpoint backwards in CHUNK_WINDOW_SECONDS windows,
+     * newest-first, invoking $handle() on each chunk's decoded `data` payload.
+     *
+     * Stop rules:
+     *  - Incremental sync ($cursorMs !== null): walk down to the cursor, never
+     *    past it. Empty windows do NOT stop the walk — a 7-day slice can be
+     *    empty while activity sits closer to the cursor.
+     *  - First sync ($cursorMs === null): walk back TOLERATING empty windows
+     *    until $maxEmptyChunks CONSECUTIVE empties (origin / retention horizon
+     *    reached), bounded by FIRST_SYNC_MAX_LOOKBACK_SECONDS as a backstop.
+     *    This replaces the old "stop at the first empty window" rule, which
+     *    made a single quiet recent week hide the entire account history.
+     *
+     * $handle receives the raw decoded payload and returns the number of raw
+     * items it saw (0 = empty window, drives the consecutive-empty counter).
+     *
+     * @param array<string,string> $baseParams Endpoint params besides the time
+     *        window (e.g. `symbol`, `limit`). startTime/endTime are added here.
+     * @param callable(mixed):int $handle
+     */
+    private function walkChunks(
+        string $path,
+        array $baseParams,
+        array $credentials,
+        ?int $cursorMs,
+        int $now,
+        callable $handle
+    ): void {
+        $floorMs = $cursorMs ?? ($now - self::FIRST_SYNC_MAX_LOOKBACK_SECONDS * 1000);
+        $chunkEnd = $now;
+        $consecutiveEmpty = 0;
+
+        while ($chunkEnd > $floorMs) {
+            $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
+            $chunkStart = max($floorMs + 1, $chunkStart);
+            if ($chunkStart >= $chunkEnd) {
+                break;
+            }
+
+            $data = $this->httpGetSigned($path, $baseParams + [
+                'startTime' => (string) $chunkStart,
+                'endTime' => (string) $chunkEnd,
+            ], $credentials);
+
+            $count = $handle($data);
+
+            if ($count === 0) {
+                if ($cursorMs === null && ++$consecutiveEmpty >= $this->maxEmptyChunks) {
+                    break;
+                }
+            } else {
+                $consecutiveEmpty = 0;
+            }
+
+            $chunkEnd = $chunkStart - 1;
+        }
+    }
+
+    /**
      * Discover all symbols the user has ever had trading activity on, by
      * walking /openApi/swap/v2/user/income (P&L, commission, funding fee
      * records). Called WITHOUT a `symbol` param, BingX returns income
@@ -916,45 +963,27 @@ class BingxConnector implements ConnectorInterface
     private function discoverSymbolsFromIncome(array $credentials, ?int $cursorMs, int $now): array
     {
         $found = [];
-        $chunkEnd = $now;
 
-        while (true) {
-            $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
-            if ($cursorMs !== null) {
-                $chunkStart = max($cursorMs + 1, $chunkStart);
-            }
-            if ($chunkStart >= $chunkEnd) {
-                break;
-            }
-
-            $data = $this->httpGetSigned(
-                '/openApi/swap/v2/user/income',
-                [
-                    'startTime' => (string) $chunkStart,
-                    'endTime' => (string) $chunkEnd,
-                    'limit' => '1000',
-                ],
-                $credentials,
-            );
-
-            // Response shape: array of income records (no wrapping under
-            // "incomes" or similar at the time of writing). Tolerate both
-            // for safety.
-            $list = is_array($data) ? $data : ($data['incomes'] ?? []);
-
-            if (empty($list) && $cursorMs === null) {
-                break;
-            }
-
-            foreach ($list as $row) {
-                $symbol = $row['symbol'] ?? '';
-                if ($symbol !== '') {
-                    $found[$symbol] = true;
+        $this->walkChunks(
+            '/openApi/swap/v2/user/income',
+            ['limit' => '1000'],
+            $credentials,
+            $cursorMs,
+            $now,
+            function (mixed $data) use (&$found): int {
+                // Response shape: array of income records (no wrapping under
+                // "incomes" or similar at the time of writing). Tolerate both
+                // for safety.
+                $list = is_array($data) ? $data : ($data['incomes'] ?? []);
+                foreach ($list as $row) {
+                    $symbol = $row['symbol'] ?? '';
+                    if ($symbol !== '') {
+                        $found[$symbol] = true;
+                    }
                 }
-            }
-
-            $chunkEnd = $chunkStart - 1;
-        }
+                return count($list);
+            },
+        );
 
         $out = array_keys($found);
         sort($out);
