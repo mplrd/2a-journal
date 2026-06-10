@@ -6,8 +6,10 @@ import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
 import PricePointsInput from '@/components/common/PricePointsInput.vue'
 import { ExitType, Direction } from '@/constants/enums'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 const { t } = useI18n()
+const { numberLocale } = useNumberLocale()
 
 const props = defineProps({
   visible: Boolean,
@@ -168,7 +170,7 @@ function handleClose() {
           <label class="block text-sm font-medium text-gray-700">{{ t('trades.exit_size') }} *</label>
           <Button :label="t('trades.close_full')" size="small" severity="secondary" text @click="handleCloseFull" />
         </div>
-        <InputNumber v-model="form.exit_size" data-name="exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+        <InputNumber v-model="form.exit_size" data-name="exit_size" class="w-full" :min="0" :max="Number(trade.remaining_size)" mode="decimal" :locale="numberLocale" :maxFractionDigits="5" />
       </div>
 
       <div v-if="pnlPreview !== null" class="p-3 rounded text-sm font-medium" :class="Number(pnlPreview) >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">

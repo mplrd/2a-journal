@@ -7,8 +7,10 @@ import { useToast } from 'primevue/usetoast'
 import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 const { t, locale } = useI18n()
+const { numberLocale } = useNumberLocale()
 const authStore = useAuthStore()
 const { applyTheme } = useTheme()
 const toast = useToast()
@@ -161,7 +163,7 @@ async function handleSave() {
             :max="5"
             :maxFractionDigits="4"
             mode="decimal"
-            locale="en-US"
+            :locale="numberLocale"
             data-testid="input-be-threshold"
             class="w-full"
           />
@@ -176,7 +178,7 @@ async function handleSave() {
             :max="50"
             :maxFractionDigits="2"
             mode="decimal"
-            locale="en-US"
+            :locale="numberLocale"
             data-testid="input-dd-alert-threshold"
             class="w-full"
           />

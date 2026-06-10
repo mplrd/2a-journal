@@ -16,8 +16,10 @@ import { useToast } from 'primevue/usetoast'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import PricePointsInput from '@/components/common/PricePointsInput.vue'
 import { useSharePreview } from '@/composables/useSharePreview'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 const { t } = useI18n()
+const { numberLocale } = useNumberLocale()
 const symbolsStore = useSymbolsStore()
 const toast = useToast()
 
@@ -307,11 +309,11 @@ async function handleSymbolCreate(data) {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.entry_price') }} *</label>
-          <InputNumber v-model="form.entry_price" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+          <InputNumber v-model="form.entry_price" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="5" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.size') }} *</label>
-          <InputNumber v-model="form.size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+          <InputNumber v-model="form.size" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="5" />
         </div>
       </div>
 
@@ -357,7 +359,7 @@ async function handleSymbolCreate(data) {
             {{ t('positions.be_size') }}
             <i class="pi pi-info-circle text-gray-400 cursor-help" v-tooltip.top="t('positions.be_size_hint')" />
           </label>
-          <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" />
+          <InputNumber v-model="form.be_size" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="5" />
         </div>
       </div>
 
@@ -379,7 +381,7 @@ async function handleSymbolCreate(data) {
             :points-placeholder="t('positions.target_points')"
             :price-placeholder="t('positions.target_price')"
           />
-          <InputNumber v-model="target.size" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="5" :placeholder="t('positions.target_size')" />
+          <InputNumber v-model="target.size" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="5" :placeholder="t('positions.target_size')" />
           <Button icon="pi pi-times" severity="danger" size="small" text @click="removeTarget(index)" />
         </div>
       </div>
@@ -423,7 +425,7 @@ async function handleSymbolCreate(data) {
               v-model="form.custom_fields[def.id]"
               class="w-full"
               mode="decimal"
-              locale="en-US"
+              :locale="numberLocale"
               :maxFractionDigits="5"
             />
 
