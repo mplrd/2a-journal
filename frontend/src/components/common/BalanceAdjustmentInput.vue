@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import InputNumber from 'primevue/inputnumber'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 // Paired "real balance" ⇄ "adjustment" input, same idea as PricePointsInput.
 // The model is the signed delta (`amount`); the target balance is derived from
@@ -11,9 +12,10 @@ const props = defineProps({
   base: { type: Number, default: 0 },
   targetLabel: { type: String, default: '' },
   amountLabel: { type: String, default: '' },
-  locale: { type: String, default: 'en-US' },
   disabled: { type: Boolean, default: false },
 })
+
+const { numberLocale } = useNumberLocale()
 
 const amount = defineModel('amount', { default: null })
 const target = ref(null)
@@ -55,7 +57,7 @@ watch(
         class="w-full"
         :min="0"
         mode="decimal"
-        :locale="locale"
+        :locale="numberLocale"
         :maxFractionDigits="2"
         :disabled="disabled"
         @update:modelValue="setTarget"
@@ -72,7 +74,7 @@ watch(
         class="w-full"
         :min="base != null ? -Number(base) : 0"
         mode="decimal"
-        :locale="locale"
+        :locale="numberLocale"
         :maxFractionDigits="2"
         :disabled="disabled"
         @update:modelValue="setAmount"

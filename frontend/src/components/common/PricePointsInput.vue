@@ -2,6 +2,7 @@
 import { computed, watch } from 'vue'
 import InputNumber from 'primevue/inputnumber'
 import { Direction } from '@/constants/enums'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 // Paired price ⇄ points input. The two fields stay in sync: editing one
 // recomputes the other from the trade's entry price + direction. Extracted from
@@ -34,9 +35,10 @@ const props = defineProps({
   priceFirst: { type: Boolean, default: false },
   pointsFractionDigits: { type: Number, default: 2 },
   priceFractionDigits: { type: Number, default: 5 },
-  locale: { type: String, default: 'en-US' },
   disabled: { type: Boolean, default: false },
 })
+
+const { numberLocale } = useNumberLocale()
 
 const points = defineModel('points', { default: null })
 const price = defineModel('price', { default: null })
@@ -110,7 +112,7 @@ watch(
         class="w-full"
         :min="pointsMin"
         mode="decimal"
-        :locale="locale"
+        :locale="numberLocale"
         :maxFractionDigits="pointsFractionDigits"
         :placeholder="pointsPlaceholder"
         :disabled="disabled"
@@ -128,7 +130,7 @@ watch(
         class="w-full"
         :min="0"
         mode="decimal"
-        :locale="locale"
+        :locale="numberLocale"
         :maxFractionDigits="priceFractionDigits"
         :placeholder="pricePlaceholder"
         :disabled="disabled"

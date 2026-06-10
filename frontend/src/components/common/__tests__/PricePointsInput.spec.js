@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
 import PricePointsInput from '../PricePointsInput.vue'
+
+// PricePointsInput now derives its InputNumber locale from the active i18n
+// locale (useNumberLocale), so the component needs an i18n instance to mount.
+const i18n = createI18n({ legacy: false, locale: 'fr', fallbackLocale: 'en', messages: { fr: {}, en: {} } })
 
 // Minimal InputNumber stub: renders a native input, exposes data-name and
 // data-min, emits update:modelValue (null on empty string).
@@ -22,6 +27,7 @@ function createWrapper(props = {}) {
       ...props,
     },
     global: {
+      plugins: [i18n],
       stubs: { InputNumber: InputNumberStub },
     },
   })
