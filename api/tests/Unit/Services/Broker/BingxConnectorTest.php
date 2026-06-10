@@ -32,7 +32,8 @@ class BingxConnectorTest extends TestCase
         // empty window" cadence, so the bulk of the suite keeps its tight
         // [data → one empty] mock sequences. Tests that specifically exercise
         // walking PAST empty windows pass a higher value explicitly.
-        return new BingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks);
+        // rateLimitBackoffMs=0 → retries on 100410 happen with no real sleep.
+        return new BingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks, 0);
     }
 
     private function bxResponse(array $data): Response
@@ -110,8 +111,10 @@ class BingxConnectorTest extends TestCase
     public function testTestConnectionReturnsFalseOnBingxBusinessError(): void
     {
         // BingX returns 200 OK with a non-zero `code` for business errors.
+        // Use 100413 (invalid key) — a NON-retryable code — so this exercises
+        // the straight failure path, not the 100410 rate-limit retry loop.
         $connector = $this->createConnector([
-            $this->bxError(100410, 'invalid_api_key'),
+            $this->bxError(100413, 'invalid_api_key'),
         ]);
 
         $this->assertFalse($connector->testConnection([
@@ -635,6 +638,67 @@ class BingxConnectorTest extends TestCase
         $this->assertSame('bingx_position_eth-open', $result['deals'][0]['external_id']);
         $this->assertSame('ETH-USDT', $result['deals'][0]['symbol']);
         $this->assertSame('SELL', $result['deals'][0]['direction']);
+    }
+
+    // ── fetchBalance (shape tolerance) ─────────────────────────────
+
+    public function testFetchBalanceParsesV3ListShapePreferringUsdt(): void
+    {
+        // Real /user/balance v3 hands back a LIST of per-asset rows. The old
+        // parser only read data.balance.equity → returned null → broker_balance
+        // stayed NULL forever. Now we pick the USDT row's equity.
+        $connector = $this->createConnector([
+            $this->bxResponse([
+                ['asset' => 'BTC', 'equity' => '0.5', 'balance' => '0.5'],
+                ['asset' => 'USDT', 'equity' => '2500.75', 'balance' => '2400.00'],
+            ]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(2500.75, $balance, 0.0001);
+    }
+
+    public function testFetchBalanceParsesWrapperObjectShape(): void
+    {
+        // Legacy v2 wrapper shape: data.balance is a single object.
+        $connector = $this->createConnector([
+            $this->bxResponse(['balance' => ['equity' => '999.9', 'balance' => '900']]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(999.9, $balance, 0.0001);
+    }
+
+    public function testFetchBalanceReturnsNullWhenShapeUnparseable(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['something' => 'unexpected']),
+        ]);
+
+        $this->assertNull($connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']));
+    }
+
+    public function testSignedRequestRetriesOnRateLimitThenSucceeds(): void
+    {
+        // 100410 = rate limited. The connector must back off and retry rather
+        // than fail; the heavy "walk to origin" first sync depends on this.
+        $connector = $this->createConnector([
+            $this->bxError(100410, 'rate limited'),
+            $this->bxResponse([
+                ['asset' => 'USDT', 'equity' => '1234.5', 'balance' => '1200'],
+            ]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(1234.5, $balance, 0.0001);
+        // Two outbound requests: the throttled attempt + the retry. Each is
+        // independently signed (fresh timestamp + signature).
+        $this->assertCount(2, $this->capturedRequests);
+        parse_str($this->capturedRequests[1]->getUri()->getQuery(), $retryQuery);
+        $this->assertArrayHasKey('signature', $retryQuery);
     }
 
     public function testPlaceMarketBuyMapsToPositionSideLongAndExtractsOrderId(): void
