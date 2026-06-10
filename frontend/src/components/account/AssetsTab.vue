@@ -11,8 +11,10 @@ import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import { SymbolType } from '@/constants/enums'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 const { t } = useI18n()
+const { numberLocale } = useNumberLocale()
 const toast = useToast()
 const symbolsStore = useSymbolsStore()
 const accountsStore = useAccountsStore()
@@ -230,7 +232,7 @@ async function persistCell(sid, aid) {
                 :min="0"
                 :maxFractionDigits="5"
                 mode="decimal"
-                locale="en-US"
+                :locale="numberLocale"
                 :disabled="isSaving(symbol.id, account.id)"
                 :data-testid="`input-${symbol.id}-${account.id}`"
                 class="w-full max-w-[120px]"

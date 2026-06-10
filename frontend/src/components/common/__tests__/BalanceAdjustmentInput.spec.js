@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
 import BalanceAdjustmentInput from '../BalanceAdjustmentInput.vue'
+
+// The component derives its InputNumber locale from the active i18n locale
+// (useNumberLocale), so an i18n instance is required to mount it.
+const i18n = createI18n({ legacy: false, locale: 'fr', fallbackLocale: 'en', messages: { fr: {}, en: {} } })
 
 function createWrapper(props = {}) {
   return mount(BalanceAdjustmentInput, {
     props: { base: 10000, amount: null, ...props },
     global: {
+      plugins: [i18n],
       stubs: {
         InputNumber: {
           template:

@@ -8,8 +8,10 @@ import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import { AccountType, AccountStage } from '@/constants/enums'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 const { t } = useI18n()
+const { numberLocale } = useNumberLocale()
 
 const props = defineProps({
   visible: Boolean,
@@ -131,7 +133,7 @@ function handleClose() {
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.initial_capital') }}</label>
-          <InputNumber v-model="form.initial_capital" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" />
+          <InputNumber v-model="form.initial_capital" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="2" />
         </div>
       </div>
 
@@ -156,22 +158,22 @@ function handleClose() {
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.max_drawdown') }}</label>
-            <InputNumber v-model="form.max_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-max-drawdown" />
+            <InputNumber v-model="form.max_drawdown" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="2" data-testid="account-max-drawdown" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.daily_drawdown') }}</label>
-            <InputNumber v-model="form.daily_drawdown" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-daily-drawdown" />
+            <InputNumber v-model="form.daily_drawdown" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="2" data-testid="account-daily-drawdown" />
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.profit_target') }}</label>
-            <InputNumber v-model="form.profit_target" class="w-full" :min="0" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-profit-target" />
+            <InputNumber v-model="form.profit_target" class="w-full" :min="0" mode="decimal" :locale="numberLocale" :maxFractionDigits="2" data-testid="account-profit-target" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.profit_split') }}</label>
-            <InputNumber v-model="form.profit_split" class="w-full" :min="0" :max="100" mode="decimal" locale="en-US" :maxFractionDigits="2" data-testid="account-profit-split" />
+            <InputNumber v-model="form.profit_split" class="w-full" :min="0" :max="100" mode="decimal" :locale="numberLocale" :maxFractionDigits="2" data-testid="account-profit-split" />
           </div>
         </div>
       </template>
