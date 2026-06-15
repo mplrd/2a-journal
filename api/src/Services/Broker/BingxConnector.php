@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Exceptions\BrokerRateLimitException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 
@@ -71,6 +72,25 @@ class BingxConnector implements ConnectorInterface
     /** Default exponential-backoff base (ms) for the 100410 retry. */
     private const DEFAULT_RATE_LIMIT_BACKOFF_MS = 500;
 
+    /**
+     * Longest we wait IN-PROCESS for a 100410 ban to lift before giving up and
+     * deferring to the next sync. BingX bans an over-frequent endpoint for a
+     * window it reports in the error ("unblocked after <epoch ms>"); observed
+     * windows are ~5 min. Waiting that out inside a single sync would straddle
+     * the next cron tick, so anything past this cap fails fast (the next run
+     * resumes once the ban has elapsed). Short bans within the cap are waited
+     * out so an in-progress history walk doesn't lose ground.
+     */
+    private const RATE_LIMIT_MAX_WAIT_MS = 120_000; // 2 min
+
+    /**
+     * Default gap (ms) inserted between EVERY outbound request so a heavy
+     * "walk to origin" first sync stays under BingX's per-endpoint frequency
+     * limit instead of tripping a ban. The scheduler runs from a CLI cron, so
+     * a slower-but-reliable sync is the right trade. 0 disables pacing (tests).
+     */
+    private const DEFAULT_REQUEST_PACING_MS = 300;
+
     private Client $httpClient;
     private string $baseUrl;
     private DealNormalizer $normalizer;
@@ -81,6 +101,15 @@ class BingxConnector implements ConnectorInterface
 
     /** Backoff base in ms for the 100410 retry; 0 disables sleeping (tests). */
     private int $rateLimitBackoffMs;
+
+    /** Proactive gap (ms) between outbound requests; 0 disables. @see self::DEFAULT_REQUEST_PACING_MS */
+    private int $requestPacingMs;
+
+    /**
+     * Requests issued since the last resetSyncCache(). Drives pacing: the first
+     * request of a sync run fires immediately, every later one is paced.
+     */
+    private int $requestsSent = 0;
 
     /**
      * Symbols persisted across syncs (from broker_connections.symbols_seen).
@@ -112,7 +141,8 @@ class BingxConnector implements ConnectorInterface
         Client $httpClient,
         string $baseUrl,
         ?int $maxEmptyChunks = null,
-        ?int $rateLimitBackoffMs = null
+        ?int $rateLimitBackoffMs = null,
+        ?int $requestPacingMs = null
     ) {
         $this->httpClient = $httpClient;
         $this->baseUrl = rtrim($baseUrl, '/');
@@ -124,6 +154,9 @@ class BingxConnector implements ConnectorInterface
         $this->rateLimitBackoffMs = ($rateLimitBackoffMs !== null && $rateLimitBackoffMs >= 0)
             ? $rateLimitBackoffMs
             : self::DEFAULT_RATE_LIMIT_BACKOFF_MS;
+        $this->requestPacingMs = ($requestPacingMs !== null && $requestPacingMs >= 0)
+            ? $requestPacingMs
+            : self::DEFAULT_REQUEST_PACING_MS;
     }
 
     /**
@@ -151,6 +184,7 @@ class BingxConnector implements ConnectorInterface
         $this->cachedSymbols = null;
         $this->cachedSymbolsCursorKey = null;
         $this->cachedLiveSnapshot = null;
+        $this->requestsSent = 0;
     }
 
     /**
@@ -807,12 +841,22 @@ class BingxConnector implements ConnectorInterface
         // call so the URL order and the signed canonical are byte-identical.
         $attempt = 0;
         while (true) {
+            // Piste 1 — proactive pacing. Keep a steady gap between EVERY
+            // outbound request so a heavy "walk to origin" sync never trips
+            // BingX's per-endpoint frequency limit in the first place. The very
+            // first request of a run goes out immediately; retries count too,
+            // since they hit the same rate budget.
+            if ($this->requestsSent > 0 && $this->requestPacingMs > 0) {
+                $this->sleepMs($this->requestPacingMs);
+            }
+            $this->requestsSent++;
+
             // Rebuild the signed params from the ORIGINAL set on each attempt:
             // a retry needs a fresh timestamp, hence a fresh signature. Reusing
             // a mutated $params (already carrying signature/timestamp) would
             // fold the stale signature into the canonical and fail signing.
             $signed = $params;
-            $timestampMs = (int) (microtime(true) * 1000);
+            $timestampMs = $this->nowMs();
             $signed['recvWindow'] = (string) 5000;
             $signed['timestamp'] = (string) $timestampMs;
             ksort($signed);
@@ -839,14 +883,53 @@ class BingxConnector implements ConnectorInterface
                 return $decoded['data'] ?? null;
             }
 
-            // 100410 = rate limited. The "walk to origin" first sync fires many
-            // requests; back off and retry instead of failing the whole sync.
-            if ($code === self::RATE_LIMITED_CODE && $attempt < self::RATE_LIMIT_MAX_RETRIES) {
-                $attempt++;
-                if ($this->rateLimitBackoffMs > 0) {
-                    usleep($this->rateLimitBackoffMs * 1000 * (1 << ($attempt - 1)));
+            // 100410 = rate limited despite pacing (e.g. a heavy first sync on a
+            // multi-symbol account). Piste 2 — read the unblock timestamp BingX
+            // appends to the message and decide: wait out a SHORT ban in-process
+            // so the walk keeps its progress, or fail fast on a LONG ban so the
+            // scheduler defers to the next cron run (which resumes once it lifts).
+            if ($code === self::RATE_LIMITED_CODE) {
+                $msg = (string) ($decoded['msg'] ?? '');
+                $unblockAtMs = $this->parseUnblockMs($msg);
+
+                if ($unblockAtMs !== null) {
+                    $waitMs = $unblockAtMs - $this->nowMs();
+                    if ($waitMs <= self::RATE_LIMIT_MAX_WAIT_MS && $attempt < self::RATE_LIMIT_MAX_RETRIES) {
+                        if ($waitMs > 0) {
+                            $this->sleepMs($waitMs);
+                        }
+                        $attempt++;
+                        continue;
+                    }
+                    // Ban outlasts our cap (or retries spent) → defer.
+                    $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded, $signature, strlen($apiSecret), (string) $response->getBody());
+                    throw new BrokerRateLimitException(
+                        sprintf(
+                            'BingX rate limit on %s — endpoint unblocked at %s (in %ds); deferring to next sync',
+                            $path,
+                            gmdate('Y-m-d\TH:i:s\Z', intdiv($unblockAtMs, 1000)),
+                            max(0, intdiv($waitMs, 1000)),
+                        ),
+                        $unblockAtMs,
+                        $path,
+                    );
                 }
-                continue;
+
+                // No parseable unblock timestamp — fall back to a bounded
+                // exponential backoff, then defer rather than loop forever.
+                if ($attempt < self::RATE_LIMIT_MAX_RETRIES) {
+                    $attempt++;
+                    if ($this->rateLimitBackoffMs > 0) {
+                        $this->sleepMs($this->rateLimitBackoffMs * (1 << ($attempt - 1)));
+                    }
+                    continue;
+                }
+                $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded, $signature, strlen($apiSecret), (string) $response->getBody());
+                throw new BrokerRateLimitException(
+                    "BingX rate limit on {$path} — retries exhausted; deferring to next sync",
+                    null,
+                    $path,
+                );
             }
 
             $msg = $decoded['msg'] ?? 'unknown';
@@ -863,6 +946,37 @@ class BingxConnector implements ConnectorInterface
             );
             throw new \RuntimeException("BingX API error (code {$code}): {$msg} [" . $this->codeHint($code) . "]");
         }
+    }
+
+    /**
+     * Sleep seam. Single choke point for every in-connector delay (pacing and
+     * rate-limit waits) so tests can subclass and record durations instead of
+     * burning wall-clock. Takes milliseconds.
+     */
+    protected function sleepMs(int $ms): void
+    {
+        if ($ms > 0) {
+            usleep($ms * 1000);
+        }
+    }
+
+    /** Current epoch ms. Seam so tests can pin "now" if needed. */
+    protected function nowMs(): int
+    {
+        return (int) (microtime(true) * 1000);
+    }
+
+    /**
+     * Extract the epoch-ms unblock timestamp BingX appends to a 100410 message
+     * ("...will be unblocked after 1781512502872"). Returns null when absent so
+     * the caller can fall back to a bounded backoff.
+     */
+    private function parseUnblockMs(string $msg): ?int
+    {
+        if (preg_match('/unblocked after\s+(\d{10,})/i', $msg, $m)) {
+            return (int) $m[1];
+        }
+        return null;
     }
 
     private function logFailure(
@@ -900,7 +1014,7 @@ class BingxConnector implements ConnectorInterface
         return match ($code) {
             100001 => 'signing or clock — check server logs for the canonical string and clock_skew_seconds',
             100403 => 'API key lacks permission for this endpoint (enable Perpetual Futures on the key)',
-            100410 => 'rate limited by BingX — history walk throttled; connector backs off and retries before giving up',
+            100410 => 'rate limited by BingX — connector paces requests and waits out short bans; a longer frequency ban defers to the next sync',
             100413 => 'invalid API key',
             default => "unknown — search BingX docs for code {$code}",
         };

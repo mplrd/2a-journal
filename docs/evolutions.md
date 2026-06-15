@@ -405,4 +405,17 @@ Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-
 
 ---
 
+## BingX rate-limit — pistes différées (suite du fix pacing)
+
+**Contexte** : fix pacing proactif + report sur ban de fréquence `100410` (`docs/77-bingx-rate-limit-pacing.md`). Le pacing (300 ms) + report typé `BrokerRateLimitException` doivent suffire ; pistes laissées de côté tant que la validation test env ne montre pas le contraire :
+
+- **Pacing configurable** : `DEFAULT_REQUEST_PACING_MS = 300` est une constante en dur. L'exposer via `platform_settings` permettrait d'ajuster la cadence sans redéploiement si BingX trippe encore.
+- **Piste 3 — réduction de volume** : restreindre le walk `/allOrders` aux seules fenêtres où chaque symbol a eu de l'activité (timestamps des records `/user/income`) au lieu de balayer tous les chunks de 7 j jusqu'à l'origine. Réduit fortement le nombre de requêtes sur un compte multi-symbols. À implémenter seulement si pacing + report sont insuffisants.
+- **Statut UI dédié au report** : un report rate-limit laisse `last_sync_status = FAILED` (avec message « deferring to next sync »). Un statut distinct (ex. `SyncStatus::PARTIAL` ou un nouveau `RATE_LIMITED`) distinguerait côté UI « throttlé, va reprendre tout seul » de « connexion cassée ». Implique un ajustement enum + colonne (additif).
+
+**Repéré le** : 2026-06-15.
+**Priorité** : moyenne (pacing configurable + piste 3 si la validation test env remonte encore des trips) / basse (statut UI, cosmétique).
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

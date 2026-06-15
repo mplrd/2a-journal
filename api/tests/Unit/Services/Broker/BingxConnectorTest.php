@@ -15,7 +15,32 @@ class BingxConnectorTest extends TestCase
     /** @var array<int, \Psr\Http\Message\RequestInterface> */
     private array $capturedRequests = [];
 
-    private function createConnector(array $responses, int $maxEmptyChunks = 1): BingxConnector
+    private function createConnector(array $responses, int $maxEmptyChunks = 1, int $pacingMs = 0): BingxConnector
+    {
+        $client = $this->buildClient($responses);
+
+        // Default maxEmptyChunks=1 reproduces the legacy "stop at the first
+        // empty window" cadence, so the bulk of the suite keeps its tight
+        // [data → one empty] mock sequences. Tests that specifically exercise
+        // walking PAST empty windows pass a higher value explicitly.
+        // rateLimitBackoffMs=0 → retries on 100410 happen with no real sleep.
+        // pacingMs defaults to 0 so the suite never inserts real inter-request
+        // delays; pacing-specific tests use createRecordingConnector().
+        return new BingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks, 0, $pacingMs);
+    }
+
+    /**
+     * Connector variant that records every sleepMs() call instead of really
+     * sleeping, so pacing and rate-limit-wait timing can be asserted without
+     * burning wall-clock. Exposes $recordedSleeps (ms per call).
+     */
+    private function createRecordingConnector(array $responses, int $pacingMs = 0, int $maxEmptyChunks = 1): RecordingBingxConnector
+    {
+        $client = $this->buildClient($responses);
+        return new RecordingBingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks, 0, $pacingMs);
+    }
+
+    private function buildClient(array $responses): Client
     {
         $this->capturedRequests = [];
         $this->mock = new MockHandler($responses);
@@ -26,14 +51,7 @@ class BingxConnectorTest extends TestCase
                 return $next($request, $options);
             };
         });
-        $client = new Client(['handler' => $handler]);
-
-        // Default maxEmptyChunks=1 reproduces the legacy "stop at the first
-        // empty window" cadence, so the bulk of the suite keeps its tight
-        // [data → one empty] mock sequences. Tests that specifically exercise
-        // walking PAST empty windows pass a higher value explicitly.
-        // rateLimitBackoffMs=0 → retries on 100410 happen with no real sleep.
-        return new BingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks, 0);
+        return new Client(['handler' => $handler]);
     }
 
     private function bxResponse(array $data): Response
@@ -856,5 +874,111 @@ class BingxConnectorTest extends TestCase
         } catch (\App\Exceptions\BrokerOrderException $e) {
             $this->assertSame('PARTIAL_CLOSE_UNSUPPORTED', $e->getProviderCode());
         }
+    }
+
+    // ── Rate-limit pacing & deferral (100410) ──────────────────────
+
+    public function testProactivePacingDelaysSubsequentRequestsNotTheFirst(): void
+    {
+        // Piste 1: a steady gap between EVERY outbound request keeps a heavy
+        // walk under BingX's per-endpoint frequency limit. The first request
+        // of a run fires immediately; each later one is paced.
+        $connector = $this->createRecordingConnector([
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '100']]),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '200']]),
+        ], pacingMs: 300);
+
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertSame([300], $connector->recordedSleeps);
+        $this->assertCount(2, $this->capturedRequests);
+    }
+
+    public function testResetSyncCacheRestartsPacingSoFirstRequestIsImmediate(): void
+    {
+        // BrokerSyncService calls resetSyncCache() at the start of each sync;
+        // the pacing counter must restart so the first request isn't penalised.
+        $connector = $this->createRecordingConnector([
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '100']]),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '200']]),
+        ], pacingMs: 300);
+
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+        $connector->resetSyncCache();
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertSame([], $connector->recordedSleeps);
+    }
+
+    public function testRateLimitWithinCapWaitsUntilUnblockThenRetries(): void
+    {
+        // Piste 2: a SHORT ban (unblock within the cap) is waited out in-process
+        // so the walk continues without losing progress.
+        $unblockAt = (int) (microtime(true) * 1000) + 1500; // 1.5s ahead
+        $connector = $this->createRecordingConnector([
+            $this->bxError(100410, "frequency limit ... will be unblocked after {$unblockAt}"),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '500']]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(500.0, $balance, 0.0001);
+        $this->assertCount(2, $this->capturedRequests);
+        // Exactly one wait, bounded by the gap to the unblock timestamp.
+        $this->assertCount(1, $connector->recordedSleeps);
+        $this->assertGreaterThan(0, $connector->recordedSleeps[0]);
+        $this->assertLessThanOrEqual(1500, $connector->recordedSleeps[0]);
+    }
+
+    public function testRateLimitBeyondCapThrowsRateLimitExceptionImmediately(): void
+    {
+        // A long ban (unblock 5 min out, past the cap) must NOT retry in-process.
+        // It fails fast with the unblock timestamp so the scheduler can defer to
+        // the next cron run.
+        $unblockAt = (int) (microtime(true) * 1000) + 300_000; // 5 min ahead
+        $connector = $this->createConnector([
+            $this->bxError(100410, "frequency limit rule is currently in the disabled period and will be unblocked after {$unblockAt}"),
+        ]);
+
+        try {
+            $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
+            $this->fail('Expected BrokerRateLimitException');
+        } catch (\App\Exceptions\BrokerRateLimitException $e) {
+            $this->assertSame($unblockAt, $e->getUnblockAtMs());
+            // No retry — failed fast on the very first request.
+            $this->assertCount(1, $this->capturedRequests);
+        }
+    }
+
+    public function testRateLimitWithoutTimestampFallsBackToBoundedRetries(): void
+    {
+        // Defensive: if BingX ever drops the "unblocked after <ms>" suffix we
+        // can't compute a wait, so fall back to a bounded exponential backoff
+        // and ultimately defer rather than loop forever.
+        $connector = $this->createRecordingConnector([
+            $this->bxError(100410, 'rate limited'),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '42']]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(42.0, $balance, 0.0001);
+        $this->assertCount(2, $this->capturedRequests);
+    }
+}
+
+/**
+ * Test double: records sleepMs() durations instead of sleeping, so pacing and
+ * rate-limit-wait timing are assertable without real wall-clock delay.
+ */
+class RecordingBingxConnector extends BingxConnector
+{
+    /** @var int[] */
+    public array $recordedSleeps = [];
+
+    protected function sleepMs(int $ms): void
+    {
+        $this->recordedSleeps[] = $ms;
     }
 }
