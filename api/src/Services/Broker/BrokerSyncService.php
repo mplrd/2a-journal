@@ -169,7 +169,13 @@ class BrokerSyncService
             try {
                 $balance = $connector->fetchBalance($credentials);
                 if ($balance !== null && $this->accountRepo !== null) {
-                    $this->accountRepo->updateBrokerBalance((int) $connection['account_id'], $balance);
+                    // Persist the currency the balance is denominated in (when
+                    // the connector reports it) so the UI can flag a mismatch
+                    // with the account's own currency.
+                    $currency = method_exists($connector, 'getBalanceCurrency')
+                        ? $connector->getBalanceCurrency()
+                        : null;
+                    $this->accountRepo->updateBrokerBalance((int) $connection['account_id'], $balance, $currency);
                 }
             } catch (\Throwable $e) {
                 // Logged via BrokerLogger? Keep silent here — the sync logs

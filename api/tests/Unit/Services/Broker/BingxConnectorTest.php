@@ -966,6 +966,31 @@ class BingxConnectorTest extends TestCase
         $this->assertEqualsWithDelta(42.0, $balance, 0.0001);
         $this->assertCount(2, $this->capturedRequests);
     }
+
+    // ── Balance currency (for account-currency mismatch detection) ──
+
+    public function testGetBalanceCurrencyIsNullBeforeAnyFetch(): void
+    {
+        $connector = $this->createConnector([]);
+        $this->assertNull($connector->getBalanceCurrency());
+    }
+
+    public function testFetchBalanceReportsUsdtAsBalanceCurrency(): void
+    {
+        // USDT-M perp: even when another asset row comes first, the USDT row is
+        // the one we read, so the reported currency must be USDT.
+        $connector = $this->createConnector([
+            $this->bxResponse([
+                ['asset' => 'USDC', 'equity' => '5'],
+                ['asset' => 'USDT', 'equity' => '100.0', 'balance' => '100.0'],
+            ]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(100.0, $balance, 0.0001);
+        $this->assertSame('USDT', $connector->getBalanceCurrency());
+    }
 }
 
 /**

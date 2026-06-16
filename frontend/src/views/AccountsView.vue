@@ -184,30 +184,66 @@ function balanceVariation(account) {
   return `${sign}${pct.toFixed(2)}%`
 }
 
+// When a broker connection has synced a balance, the displayed "Solde" is the
+// broker-reported figure (it overrides the computed one server-side). Flag it
+// so the user knows the number is the live broker balance, not the journal's
+// own initial-capital + PnL computation.
+function isBrokerSynced(account) {
+  return account.broker_balance !== null && account.broker_balance !== undefined
+}
+
+function brokerSyncedTooltip(account) {
+  const raw = account.broker_balance_synced_at
+  const when = raw ? new Date(String(raw).replace(' ', 'T')).toLocaleString() : ''
+  return t('accounts.broker_synced_at', { date: when })
+}
+
+// The broker balance is in the broker's settlement currency (USDT for BingX),
+// which may differ from the account's own currency. We don't convert — we flag
+// it so the displayed figure isn't silently misread as the account currency.
+function hasCurrencyMismatch(account) {
+  if (!isBrokerSynced(account)) return false
+  const acc = account.currency
+  const broker = account.broker_balance_currency
+  return !!acc && !!broker && String(acc).toUpperCase() !== String(broker).toUpperCase()
+}
+
+function currencyMismatchTooltip(account) {
+  return t('accounts.broker_currency_mismatch', {
+    account: account.currency,
+    broker: account.broker_balance_currency,
+  })
+}
+
 // Single shared popup menu hosting "edit / delete" — keeps the visible
 // per-tile action row short.
 const actionMenu = ref(null)
 const menuAccount = ref(null)
 const actionMenuItems = computed(() => {
   if (!menuAccount.value) return []
-  return [
+  const items = [
     {
       label: t('common.edit'),
       icon: 'pi pi-pencil',
       command: () => openEdit(menuAccount.value),
     },
-    {
+  ]
+  // A broker-synced account's balance is driven by the broker, so a manual
+  // adjustment has no effect (the synced value overrides it). Hide the action.
+  if (!isBrokerSynced(menuAccount.value)) {
+    items.push({
       label: t('accounts.adjust_balance'),
       icon: 'pi pi-sliders-h',
       command: () => openAdjust(menuAccount.value),
-    },
-    {
-      label: t('common.delete'),
-      icon: 'pi pi-trash',
-      class: 'text-danger',
-      command: () => handleDelete(menuAccount.value),
-    },
-  ]
+    })
+  }
+  items.push({
+    label: t('common.delete'),
+    icon: 'pi pi-trash',
+    class: 'text-danger',
+    command: () => handleDelete(menuAccount.value),
+  })
+  return items
 })
 function openActionMenu(event, account) {
   menuAccount.value = account
@@ -271,6 +307,8 @@ function openActionMenu(event, account) {
         <template #body="{ data }">
           <span :class="balanceClass(data)">
             {{ Number(data.current_capital).toLocaleString() }}
+            <i v-if="isBrokerSynced(data)" class="pi pi-sync text-xs text-gray-400 ml-1" v-tooltip.top="brokerSyncedTooltip(data)" />
+            <i v-if="hasCurrencyMismatch(data)" class="pi pi-exclamation-triangle text-xs text-amber-500 ml-1" v-tooltip.top="currencyMismatchTooltip(data)" />
             <span v-if="balanceVariation(data) !== null" class="text-xs ml-1">
               ({{ balanceVariation(data) }})
             </span>
@@ -283,7 +321,7 @@ function openActionMenu(event, account) {
           <div class="flex gap-2">
             <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
-            <Button icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
+            <Button v-if="!isBrokerSynced(data)" icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
@@ -325,6 +363,8 @@ function openActionMenu(event, account) {
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.balance') }}</div>
               <div :class="balanceClass(item)" class="font-mono tabular-nums">
                 {{ Number(item.current_capital).toLocaleString() }}
+                <i v-if="isBrokerSynced(item)" class="pi pi-sync text-xs text-gray-400 ml-1" v-tooltip.top="brokerSyncedTooltip(item)" />
+                <i v-if="hasCurrencyMismatch(item)" class="pi pi-exclamation-triangle text-xs text-amber-500 ml-1" v-tooltip.top="currencyMismatchTooltip(item)" />
                 <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
               </div>
             </div>

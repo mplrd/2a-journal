@@ -112,6 +112,13 @@ class BingxConnector implements ConnectorInterface
     private int $requestsSent = 0;
 
     /**
+     * Asset code of the balance row picked by the last fetchBalance() (e.g.
+     * 'USDT'). Lets the caller persist the currency the balance is denominated
+     * in, so a mismatch with the journal account's currency can be flagged.
+     */
+    private ?string $lastBalanceCurrency = null;
+
+    /**
      * Symbols persisted across syncs (from broker_connections.symbols_seen).
      * Set by the caller before fetch* methods so the connector can walk
      * fills for symbols the user has fully closed since the last sync.
@@ -527,6 +534,7 @@ class BingxConnector implements ConnectorInterface
 
     public function fetchBalance(array $credentials): ?float
     {
+        $this->lastBalanceCurrency = null;
         try {
             $data = $this->httpGetSigned('/openApi/swap/v3/user/balance', [], $credentials);
         } catch (\Throwable) {
@@ -534,6 +542,15 @@ class BingxConnector implements ConnectorInterface
         }
 
         return $this->extractEquity($data);
+    }
+
+    /**
+     * Currency (asset code) the last fetchBalance() figure is denominated in,
+     * or null if no balance has been read. USDT for the USDT-M perp wallet.
+     */
+    public function getBalanceCurrency(): ?string
+    {
+        return $this->lastBalanceCurrency;
     }
 
     /**
@@ -555,6 +572,7 @@ class BingxConnector implements ConnectorInterface
 
         if (array_is_list($data)) {
             $fallback = null;
+            $fallbackCurrency = null;
             foreach ($data as $row) {
                 if (!is_array($row)) {
                     continue;
@@ -564,18 +582,32 @@ class BingxConnector implements ConnectorInterface
                     continue;
                 }
                 if (strtoupper((string) ($row['asset'] ?? '')) === 'USDT') {
+                    $this->lastBalanceCurrency = 'USDT';
                     return $value;
                 }
-                $fallback ??= $value;
+                if ($fallback === null) {
+                    $fallback = $value;
+                    $fallbackCurrency = $this->currencyFromRow($row);
+                }
             }
+            $this->lastBalanceCurrency = $fallbackCurrency;
             return $fallback;
         }
 
         if (isset($data['balance']) && is_array($data['balance'])) {
+            $this->lastBalanceCurrency = $this->currencyFromRow($data['balance']);
             return $this->equityFromRow($data['balance']);
         }
 
+        $this->lastBalanceCurrency = $this->currencyFromRow($data);
         return $this->equityFromRow($data);
+    }
+
+    /** Normalised asset code of a balance row, or null when absent. */
+    private function currencyFromRow(array $row): ?string
+    {
+        $asset = strtoupper(trim((string) ($row['asset'] ?? '')));
+        return $asset !== '' ? $asset : null;
     }
 
     /**
