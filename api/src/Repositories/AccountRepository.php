@@ -46,12 +46,15 @@ class AccountRepository
      * don't expose balance (returns null) — the previous value stays, the
      * sync timestamp stays, and the UI can display "stale since ...".
      */
-    public function updateBrokerBalance(int $accountId, float $balance): void
+    public function updateBrokerBalance(int $accountId, float $balance, ?string $currency = null): void
     {
         $this->pdo->prepare(
-            'UPDATE accounts SET broker_balance = :balance, broker_balance_synced_at = CURRENT_TIMESTAMP
+            'UPDATE accounts
+                SET broker_balance = :balance,
+                    broker_balance_currency = :currency,
+                    broker_balance_synced_at = CURRENT_TIMESTAMP
              WHERE id = :id'
-        )->execute(['balance' => $balance, 'id' => $accountId]);
+        )->execute(['balance' => $balance, 'currency' => $currency, 'id' => $accountId]);
     }
 
     public function findById(int $id): ?array
@@ -59,7 +62,7 @@ class AccountRepository
         $stmt = $this->pdo->prepare(
             'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
                     COALESCE(a.broker_balance, a.initial_capital + COALESCE(pnl.total, 0) + COALESCE(adj.total, 0)) AS current_capital,
-                    a.broker_balance, a.broker_balance_synced_at,
+                    a.broker_balance, a.broker_balance_currency, a.broker_balance_synced_at,
                     a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split,
                     a.is_active, a.created_at, a.updated_at
              FROM accounts a
@@ -97,7 +100,7 @@ class AccountRepository
         $stmt = $this->pdo->prepare(
             'SELECT a.id, a.user_id, a.name, a.account_type, a.stage, a.broker, a.currency, a.initial_capital,
                     COALESCE(a.broker_balance, a.initial_capital + COALESCE(pnl.total, 0) + COALESCE(adj.total, 0)) AS current_capital,
-                    a.broker_balance, a.broker_balance_synced_at,
+                    a.broker_balance, a.broker_balance_currency, a.broker_balance_synced_at,
                     a.max_drawdown, a.daily_drawdown, a.profit_target, a.profit_split,
                     a.is_active, a.created_at, a.updated_at
              FROM accounts a

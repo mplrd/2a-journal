@@ -386,4 +386,31 @@ class AccountRepositoryTest extends TestCase
         $list = $this->repo->findAllByUserId($this->userId);
         $this->assertEquals(100.00, (float) $list['items'][0]['broker_balance']);
     }
+
+    public function testUpdateBrokerBalancePersistsCurrencyAndPayloadExposesIt(): void
+    {
+        // The synced balance currency lets the UI flag a mismatch with the
+        // account's own currency (no FX conversion, just a warning).
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000, 'currency' => 'EUR']));
+        $accountId = (int) $created['id'];
+
+        $this->repo->updateBrokerBalance($accountId, 100.00, 'USDT');
+
+        $row = $this->repo->findById($accountId);
+        $this->assertEquals('USDT', $row['broker_balance_currency']);
+
+        $list = $this->repo->findAllByUserId($this->userId);
+        $this->assertEquals('USDT', $list['items'][0]['broker_balance_currency']);
+    }
+
+    public function testUpdateBrokerBalanceWithoutCurrencyLeavesItNull(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $accountId = (int) $created['id'];
+
+        $this->repo->updateBrokerBalance($accountId, 50.0);
+
+        $row = $this->repo->findById($accountId);
+        $this->assertNull($row['broker_balance_currency']);
+    }
 }

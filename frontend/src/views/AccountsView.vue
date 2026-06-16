@@ -198,6 +198,23 @@ function brokerSyncedTooltip(account) {
   return t('accounts.broker_synced_at', { date: when })
 }
 
+// The broker balance is in the broker's settlement currency (USDT for BingX),
+// which may differ from the account's own currency. We don't convert — we flag
+// it so the displayed figure isn't silently misread as the account currency.
+function hasCurrencyMismatch(account) {
+  if (!isBrokerSynced(account)) return false
+  const acc = account.currency
+  const broker = account.broker_balance_currency
+  return !!acc && !!broker && String(acc).toUpperCase() !== String(broker).toUpperCase()
+}
+
+function currencyMismatchTooltip(account) {
+  return t('accounts.broker_currency_mismatch', {
+    account: account.currency,
+    broker: account.broker_balance_currency,
+  })
+}
+
 // Single shared popup menu hosting "edit / delete" — keeps the visible
 // per-tile action row short.
 const actionMenu = ref(null)
@@ -291,6 +308,7 @@ function openActionMenu(event, account) {
           <span :class="balanceClass(data)">
             {{ Number(data.current_capital).toLocaleString() }}
             <i v-if="isBrokerSynced(data)" class="pi pi-sync text-xs text-gray-400 ml-1" v-tooltip.top="brokerSyncedTooltip(data)" />
+            <i v-if="hasCurrencyMismatch(data)" class="pi pi-exclamation-triangle text-xs text-amber-500 ml-1" v-tooltip.top="currencyMismatchTooltip(data)" />
             <span v-if="balanceVariation(data) !== null" class="text-xs ml-1">
               ({{ balanceVariation(data) }})
             </span>
@@ -346,6 +364,7 @@ function openActionMenu(event, account) {
               <div :class="balanceClass(item)" class="font-mono tabular-nums">
                 {{ Number(item.current_capital).toLocaleString() }}
                 <i v-if="isBrokerSynced(item)" class="pi pi-sync text-xs text-gray-400 ml-1" v-tooltip.top="brokerSyncedTooltip(item)" />
+                <i v-if="hasCurrencyMismatch(item)" class="pi pi-exclamation-triangle text-xs text-amber-500 ml-1" v-tooltip.top="currencyMismatchTooltip(item)" />
                 <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
               </div>
             </div>

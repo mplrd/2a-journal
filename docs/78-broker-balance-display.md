@@ -53,5 +53,14 @@ i18n : `accounts.broker_synced_at` ajoutée dans `fr.json` et `en.json`.
 
 ## Limites connues / à suivre
 
-- **Pas de conversion de devise.** `broker_balance` est dans la devise de règlement du broker (USDT pour BingX USDT-M), mais s'affiche tel quel dans le « Solde », à côté de la colonne `currency` du compte. **Pour un compte broker, régler la devise du compte sur USDT** (le champ est éditable). Une vraie conversion FX selon `account.currency` est hors périmètre.
+- **Pas de conversion de devise** (signalement seulement). `broker_balance` est dans la devise de règlement du broker (USDT pour BingX USDT-M). On ne convertit pas vers `account.currency` — à la place, **un mismatch est signalé** (cf. complément ci-dessous). **Pour un compte broker, régler la devise du compte sur USDT** reste recommandé (champ éditable). Une vraie conversion FX est hors périmètre.
+
+## Complément : devise du solde courtier + alerte de mismatch (point 1)
+
+`broker_balance` était une valeur nue, sans devise → impossible de détecter proprement un écart avec `accounts.currency`. Ajouts :
+
+- **Migration 031** : colonne additive `accounts.broker_balance_currency VARCHAR(10) NULL`.
+- **Connector** : `BingxConnector::getBalanceCurrency()` renvoie l'asset de la ligne de solde retenue (`USDT` pour la ligne USDT-M ; `extractEquity` trace la devise via `currencyFromRow`). Exposé au `BrokerSyncService` via le pattern `method_exists` (comme `setKnownSymbols`/`getSeenSymbols`), pas de changement de `ConnectorInterface`.
+- **Persistance** : `AccountRepository::updateBrokerBalance($id, $balance, ?$currency)` écrit aussi `broker_balance_currency` ; les 2 SELECT le renvoient.
+- **Front** : icône ⚠️ `pi-exclamation-triangle` à côté du solde quand `account.currency` ≠ `broker_balance_currency` (helper `hasCurrencyMismatch`), tooltip i18n `accounts.broker_currency_mismatch`. Aucune conversion — simple alerte.
 - **Ajustements manuels neutralisés** sur un compte synchronisé : `COALESCE` prenant `broker_balance` en premier, un ajustement n'affecte plus le solde affiché tant que le broker fournit une valeur. Cohérent avec « broker = source de vérité ». → L'action **« Corriger le solde » est désormais masquée** pour les comptes synchronisés (`isBrokerSynced` : `broker_balance !== null`), en grille desktop et dans le menu d'actions mobile.
