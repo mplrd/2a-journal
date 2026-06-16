@@ -204,24 +204,29 @@ const actionMenu = ref(null)
 const menuAccount = ref(null)
 const actionMenuItems = computed(() => {
   if (!menuAccount.value) return []
-  return [
+  const items = [
     {
       label: t('common.edit'),
       icon: 'pi pi-pencil',
       command: () => openEdit(menuAccount.value),
     },
-    {
+  ]
+  // A broker-synced account's balance is driven by the broker, so a manual
+  // adjustment has no effect (the synced value overrides it). Hide the action.
+  if (!isBrokerSynced(menuAccount.value)) {
+    items.push({
       label: t('accounts.adjust_balance'),
       icon: 'pi pi-sliders-h',
       command: () => openAdjust(menuAccount.value),
-    },
-    {
-      label: t('common.delete'),
-      icon: 'pi pi-trash',
-      class: 'text-danger',
-      command: () => handleDelete(menuAccount.value),
-    },
-  ]
+    })
+  }
+  items.push({
+    label: t('common.delete'),
+    icon: 'pi pi-trash',
+    class: 'text-danger',
+    command: () => handleDelete(menuAccount.value),
+  })
+  return items
 })
 function openActionMenu(event, account) {
   menuAccount.value = account
@@ -298,7 +303,7 @@ function openActionMenu(event, account) {
           <div class="flex gap-2">
             <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
-            <Button icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
+            <Button v-if="!isBrokerSynced(data)" icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
           </div>
