@@ -284,6 +284,7 @@
     "currency": "Currency",
     "initial_capital": "Initial capital",
     "balance": "Balance",
+    "broker_synced_at": "Balance synced from broker on {date}",
     "adjust_balance": "Correct balance",
     "adjust_balance_hint": "Adjust the balance to absorb a gap not tracked by a trade (forgotten fees, a starting balance different from the initial capital). The initial capital is left unchanged.",
     "real_balance": "Actual balance",

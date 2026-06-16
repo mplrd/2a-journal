@@ -284,6 +284,7 @@
     "currency": "Devise",
     "initial_capital": "Capital initial",
     "balance": "Solde",
+    "broker_synced_at": "Solde synchronisé depuis le courtier le {date}",
     "adjust_balance": "Corriger le solde",
     "adjust_balance_hint": "Ajustez le solde pour absorber un écart non tracé par un trade (frais oubliés, solde de départ différent du capital initial). Le capital initial n'est pas modifié.",
     "real_balance": "Solde réel constaté",

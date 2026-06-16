@@ -184,6 +184,20 @@ function balanceVariation(account) {
   return `${sign}${pct.toFixed(2)}%`
 }
 
+// When a broker connection has synced a balance, the displayed "Solde" is the
+// broker-reported figure (it overrides the computed one server-side). Flag it
+// so the user knows the number is the live broker balance, not the journal's
+// own initial-capital + PnL computation.
+function isBrokerSynced(account) {
+  return account.broker_balance !== null && account.broker_balance !== undefined
+}
+
+function brokerSyncedTooltip(account) {
+  const raw = account.broker_balance_synced_at
+  const when = raw ? new Date(String(raw).replace(' ', 'T')).toLocaleString() : ''
+  return t('accounts.broker_synced_at', { date: when })
+}
+
 // Single shared popup menu hosting "edit / delete" — keeps the visible
 // per-tile action row short.
 const actionMenu = ref(null)
@@ -271,6 +285,7 @@ function openActionMenu(event, account) {
         <template #body="{ data }">
           <span :class="balanceClass(data)">
             {{ Number(data.current_capital).toLocaleString() }}
+            <i v-if="isBrokerSynced(data)" class="pi pi-sync text-xs text-gray-400 ml-1" v-tooltip.top="brokerSyncedTooltip(data)" />
             <span v-if="balanceVariation(data) !== null" class="text-xs ml-1">
               ({{ balanceVariation(data) }})
             </span>
@@ -325,6 +340,7 @@ function openActionMenu(event, account) {
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('accounts.balance') }}</div>
               <div :class="balanceClass(item)" class="font-mono tabular-nums">
                 {{ Number(item.current_capital).toLocaleString() }}
+                <i v-if="isBrokerSynced(item)" class="pi pi-sync text-xs text-gray-400 ml-1" v-tooltip.top="brokerSyncedTooltip(item)" />
                 <span v-if="balanceVariation(item) !== null" class="text-xs ml-1">({{ balanceVariation(item) }})</span>
               </div>
             </div>
