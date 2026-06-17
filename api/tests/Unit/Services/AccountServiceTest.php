@@ -117,11 +117,28 @@ class AccountServiceTest extends TestCase
 
     // ── Validation: currency ─────────────────────────────────────
 
-    public function testCreateThrowsWhenCurrencyNotThreeChars(): void
+    public function testCreateThrowsWhenCurrencyTooShort(): void
     {
         $this->expectException(ValidationException::class);
 
         $this->service->create(1, $this->validData(['currency' => 'US']));
+    }
+
+    public function testCreateThrowsWhenCurrencyTooLong(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        $this->service->create(1, $this->validData(['currency' => 'BITCOIN'])); // 7 chars
+    }
+
+    public function testCreateAcceptsStablecoinCurrency(): void
+    {
+        // USDT/USDC (4-char crypto settlement currencies) must be accepted so a
+        // broker account can match its broker balance currency (no alert).
+        $this->repo->expects($this->once())->method('create')
+            ->willReturn(['id' => 1, 'currency' => 'USDT']);
+
+        $this->service->create(1, $this->validData(['currency' => 'USDT']));
     }
 
     // ── Validation: initial_capital ──────────────────────────────

@@ -459,9 +459,10 @@ class AuthService
             }
         }
 
-        // Validate currency
+        // Validate currency — 3-letter fiat ISO codes plus crypto settlement
+        // currencies (USDT, USDC…) up to 5 chars.
         if (isset($filtered['default_currency'])) {
-            if (!preg_match('/^[A-Z]{3}$/', $filtered['default_currency'])) {
+            if (!preg_match('/^[A-Z]{3,5}$/', $filtered['default_currency'])) {
                 throw new ValidationException('auth.error.invalid_currency', 'default_currency');
             }
         }

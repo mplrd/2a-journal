@@ -63,4 +63,14 @@ i18n : `accounts.broker_synced_at` ajoutée dans `fr.json` et `en.json`.
 - **Connector** : `BingxConnector::getBalanceCurrency()` renvoie l'asset de la ligne de solde retenue (`USDT` pour la ligne USDT-M ; `extractEquity` trace la devise via `currencyFromRow`). Exposé au `BrokerSyncService` via le pattern `method_exists` (comme `setKnownSymbols`/`getSeenSymbols`), pas de changement de `ConnectorInterface`.
 - **Persistance** : `AccountRepository::updateBrokerBalance($id, $balance, ?$currency)` écrit aussi `broker_balance_currency` ; les 2 SELECT le renvoient.
 - **Front** : icône ⚠️ `pi-exclamation-triangle` à côté du solde quand `account.currency` ≠ `broker_balance_currency` (helper `hasCurrencyMismatch`), tooltip i18n `accounts.broker_currency_mismatch`. Aucune conversion — simple alerte.
+
+## Complément : devises stablecoin sélectionnables (USDT/USDC)
+
+Conséquence directe de l'alerte ci-dessus : pour la **lever**, l'utilisateur doit pouvoir régler la devise de son compte sur **USDT**. Or la devise était verrouillée à 3 caractères partout (validation `strlen === 3` / regex `^[A-Z]{3}$`, colonnes `VARCHAR(3)`, `<InputText :maxlength="3">`, et un `<Select>` de préférences sans stablecoins) → impossible de saisir « USDT » (4 lettres).
+
+- **Migration 032** : `users.default_currency` et `accounts.currency` élargies en `VARCHAR(10)` (`symbols.currency` laissée telle quelle).
+- **Validation** : `AccountService` et `AuthService` passent de « exactement 3 » à `^[A-Z]{3,5}$` (fiat ISO 3 lettres + stablecoins 4-5).
+- **Front** : liste partagée `frontend/src/constants/currencies.js` (`CURRENCIES`, fiat majors + USDT/USDC). `PreferencesTab` (devise par défaut user) et `AccountForm` (devise du compte, ex-`InputText` → `Select`) la consomment.
+
+Après ça : régler le compte BingX sur **USDT** fait correspondre `account.currency` et `broker_balance_currency` → plus d'alerte ⚠️.
 - **Ajustements manuels neutralisés** sur un compte synchronisé : `COALESCE` prenant `broker_balance` en premier, un ajustement n'affecte plus le solde affiché tant que le broker fournit une valeur. Cohérent avec « broker = source de vérité ». → L'action **« Corriger le solde » est désormais masquée** pour les comptes synchronisés (`isBrokerSynced` : `broker_balance !== null`), en grille desktop et dans le menu d'actions mobile.

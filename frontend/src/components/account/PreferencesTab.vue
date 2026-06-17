@@ -8,6 +8,7 @@ import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import { useNumberLocale } from '@/composables/useNumberLocale'
+import { CURRENCIES } from '@/constants/currencies'
 
 const { t, locale } = useI18n()
 const { numberLocale } = useNumberLocale()
@@ -26,7 +27,7 @@ const form = ref({
 })
 
 const timezones = Intl.supportedValuesOf('timeZone')
-const currencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD']
+const currencies = CURRENCIES
 
 const themeOptions = [
   { value: 'light', label: t('account.theme_light') },
