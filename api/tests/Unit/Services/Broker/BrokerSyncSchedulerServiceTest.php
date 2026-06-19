@@ -7,6 +7,7 @@ use App\Enums\ConnectionStatus;
 use App\Repositories\BrokerConnectionRepository;
 use App\Services\Broker\BrokerSyncSchedulerService;
 use App\Services\Broker\BrokerSyncService;
+use App\Exceptions\BrokerRateLimitException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -156,6 +157,37 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $this->assertSame(0, $result['success']);
         $this->assertSame(1, $result['failed']);
         $this->assertSame(1, $result['deactivated']);
+    }
+
+    // ── Rate-limit deferral is NOT a failure ───────────────────
+
+    public function testRateLimitExceptionDefersWithoutTrippingBreaker(): void
+    {
+        $scheduler = $this->makeScheduler();
+
+        // Already at the failure threshold: a NORMAL exception here would
+        // deactivate. A rate-limit deferral must not — the next cron resumes
+        // once BingX's frequency ban lifts.
+        $connRl = $this->connectionRow(9, 30, 2);
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$connRl]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+
+        $this->syncService->method('sync')->willThrowException(
+            new BrokerRateLimitException('throttled', 1781512502872, '/openApi/swap/v2/trade/allOrders')
+        );
+
+        $this->connectionRepo->expects($this->never())->method('incrementFailures');
+        $this->connectionRepo->expects($this->never())->method('markError');
+        $this->connectionRepo->expects($this->never())->method('resetFailures');
+
+        $result = $scheduler->runDueConnections();
+
+        $this->assertSame(1, $result['processed']);
+        $this->assertSame(0, $result['success']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(0, $result['deactivated']);
+        $this->assertSame(1, $result['deferred']);
     }
 
     // ── Empty: nothing due ──────────────────────────────────────

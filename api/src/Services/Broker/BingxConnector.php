@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Exceptions\BrokerRateLimitException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 
@@ -38,10 +39,84 @@ class BingxConnector implements ConnectorInterface
      */
     private const CHUNK_WINDOW_SECONDS = 7 * 24 * 3600;
 
+    /**
+     * First-sync stop rule: how many CONSECUTIVE empty 7-day windows we
+     * tolerate before concluding we've walked back past the account's origin
+     * (or BingX's retention horizon) and stopping. This is the fix for the
+     * "stop at the first empty window" bug: a single quiet week — or any gap
+     * shorter than this many weeks — no longer halts the whole history walk.
+     * A trading dormancy LONGER than (this × 7 days) would still truncate
+     * older history, so it's tuned generously and overridable per connection.
+     */
+    private const DEFAULT_MAX_EMPTY_CHUNKS = 12; // ~84 days of continuous silence
+
+    /**
+     * Absolute safety floor for a first sync: never walk windows older than
+     * this, even if BingX keeps dribbling sparse non-empty chunks. Pure
+     * runaway backstop — the consecutive-empty rule is the normal stop.
+     */
+    private const FIRST_SYNC_MAX_LOOKBACK_SECONDS = 5 * 365 * 24 * 3600;
+
+    /**
+     * BingX business code for rate limiting (returned with HTTP 200, msg
+     * "rate limited"). The "walk to origin" first sync fires many requests,
+     * so we MUST back off and retry on this instead of failing the whole
+     * sync. NB: despite the legacy codeHint text, 100410 is throttling, not
+     * an IP-whitelist rejection.
+     */
+    private const RATE_LIMITED_CODE = 100410;
+
+    /** Max retries on a 100410 before giving up, per individual request. */
+    private const RATE_LIMIT_MAX_RETRIES = 4;
+
+    /** Default exponential-backoff base (ms) for the 100410 retry. */
+    private const DEFAULT_RATE_LIMIT_BACKOFF_MS = 500;
+
+    /**
+     * Longest we wait IN-PROCESS for a 100410 ban to lift before giving up and
+     * deferring to the next sync. BingX bans an over-frequent endpoint for a
+     * window it reports in the error ("unblocked after <epoch ms>"); observed
+     * windows are ~5 min. Waiting that out inside a single sync would straddle
+     * the next cron tick, so anything past this cap fails fast (the next run
+     * resumes once the ban has elapsed). Short bans within the cap are waited
+     * out so an in-progress history walk doesn't lose ground.
+     */
+    private const RATE_LIMIT_MAX_WAIT_MS = 120_000; // 2 min
+
+    /**
+     * Default gap (ms) inserted between EVERY outbound request so a heavy
+     * "walk to origin" first sync stays under BingX's per-endpoint frequency
+     * limit instead of tripping a ban. The scheduler runs from a CLI cron, so
+     * a slower-but-reliable sync is the right trade. 0 disables pacing (tests).
+     */
+    private const DEFAULT_REQUEST_PACING_MS = 300;
+
     private Client $httpClient;
     private string $baseUrl;
     private DealNormalizer $normalizer;
     private BingxFillReconstructor $reconstructor;
+
+    /** @see self::DEFAULT_MAX_EMPTY_CHUNKS */
+    private int $maxEmptyChunks;
+
+    /** Backoff base in ms for the 100410 retry; 0 disables sleeping (tests). */
+    private int $rateLimitBackoffMs;
+
+    /** Proactive gap (ms) between outbound requests; 0 disables. @see self::DEFAULT_REQUEST_PACING_MS */
+    private int $requestPacingMs;
+
+    /**
+     * Requests issued since the last resetSyncCache(). Drives pacing: the first
+     * request of a sync run fires immediately, every later one is paced.
+     */
+    private int $requestsSent = 0;
+
+    /**
+     * Asset code of the balance row picked by the last fetchBalance() (e.g.
+     * 'USDT'). Lets the caller persist the currency the balance is denominated
+     * in, so a mismatch with the journal account's currency can be flagged.
+     */
+    private ?string $lastBalanceCurrency = null;
 
     /**
      * Symbols persisted across syncs (from broker_connections.symbols_seen).
@@ -69,12 +144,26 @@ class BingxConnector implements ConnectorInterface
     private ?string $cachedSymbolsCursorKey = null;
     private ?array $cachedLiveSnapshot = null;
 
-    public function __construct(Client $httpClient, string $baseUrl)
-    {
+    public function __construct(
+        Client $httpClient,
+        string $baseUrl,
+        ?int $maxEmptyChunks = null,
+        ?int $rateLimitBackoffMs = null,
+        ?int $requestPacingMs = null
+    ) {
         $this->httpClient = $httpClient;
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->normalizer = new DealNormalizer();
         $this->reconstructor = new BingxFillReconstructor();
+        $this->maxEmptyChunks = ($maxEmptyChunks !== null && $maxEmptyChunks >= 1)
+            ? $maxEmptyChunks
+            : self::DEFAULT_MAX_EMPTY_CHUNKS;
+        $this->rateLimitBackoffMs = ($rateLimitBackoffMs !== null && $rateLimitBackoffMs >= 0)
+            ? $rateLimitBackoffMs
+            : self::DEFAULT_RATE_LIMIT_BACKOFF_MS;
+        $this->requestPacingMs = ($requestPacingMs !== null && $requestPacingMs >= 0)
+            ? $requestPacingMs
+            : self::DEFAULT_REQUEST_PACING_MS;
     }
 
     /**
@@ -102,6 +191,7 @@ class BingxConnector implements ConnectorInterface
         $this->cachedSymbols = null;
         $this->cachedSymbolsCursorKey = null;
         $this->cachedLiveSnapshot = null;
+        $this->requestsSent = 0;
     }
 
     /**
@@ -201,50 +291,31 @@ class BingxConnector implements ConnectorInterface
 
         foreach ($symbols as $symbol) {
             $hasFillsOnSymbol = false;
-            $chunkEnd = $now;
-            while (true) {
-                $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
-                if ($cursorMs !== null) {
-                    $chunkStart = max($cursorMs + 1, $chunkStart);
-                }
-                if ($chunkStart >= $chunkEnd) {
-                    break;
-                }
+            $this->walkChunks(
+                '/openApi/swap/v2/trade/allOrders',
+                ['symbol' => $symbol, 'limit' => (string) self::PAGE_SIZE],
+                $credentials,
+                $cursorMs,
+                $now,
+                function (mixed $data) use (&$allFills, &$rawCount, &$latestFillTime, &$hasFillsOnSymbol): int {
+                    $list = $data['orders'] ?? (is_array($data) ? $data : []);
+                    $rawCount += count($list);
 
-                $data = $this->httpGetSigned(
-                    '/openApi/swap/v2/trade/allOrders',
-                    [
-                        'symbol' => $symbol,
-                        'startTime' => (string) $chunkStart,
-                        'endTime' => (string) $chunkEnd,
-                        'limit' => (string) self::PAGE_SIZE,
-                    ],
-                    $credentials,
-                );
-
-                $list = $data['orders'] ?? (is_array($data) ? $data : []);
-                $rawCount += count($list);
-
-                if (empty($list) && $cursorMs === null) {
-                    break;
-                }
-
-                $chunkFillCount = 0;
-                foreach ($list as $raw) {
-                    $fill = $this->normalizer->normalizeBingxFill($raw);
-                    if ($fill === null) {
-                        continue;
+                    foreach ($list as $raw) {
+                        $fill = $this->normalizer->normalizeBingxFill($raw);
+                        if ($fill === null) {
+                            continue;
+                        }
+                        $hasFillsOnSymbol = true;
+                        $allFills[] = $fill;
+                        if ($fill['time'] > 0 && ($latestFillTime === null || $fill['time'] > $latestFillTime)) {
+                            $latestFillTime = $fill['time'];
+                        }
                     }
-                    $chunkFillCount++;
-                    $hasFillsOnSymbol = true;
-                    $allFills[] = $fill;
-                    if ($fill['time'] > 0 && ($latestFillTime === null || $fill['time'] > $latestFillTime)) {
-                        $latestFillTime = $fill['time'];
-                    }
-                }
 
-                $chunkEnd = $chunkStart - 1;
-            }
+                    return count($list);
+                },
+            );
             if ($hasFillsOnSymbol) {
                 $seenSymbols[] = $symbol;
             }
@@ -420,43 +491,26 @@ class BingxConnector implements ConnectorInterface
         $rawCount = 0;
 
         foreach ($symbols as $symbol) {
-            $chunkEnd = $now;
-            while (true) {
-                $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
-                if ($cursorMs !== null) {
-                    $chunkStart = max($cursorMs + 1, $chunkStart);
-                }
-                if ($chunkStart >= $chunkEnd) {
-                    break;
-                }
+            $this->walkChunks(
+                '/openApi/swap/v2/trade/allOrders',
+                ['symbol' => $symbol, 'limit' => (string) self::PAGE_SIZE],
+                $credentials,
+                $cursorMs,
+                $now,
+                function (mixed $data) use (&$orders, &$rawCount): int {
+                    $list = $data['orders'] ?? (is_array($data) ? $data : []);
+                    $rawCount += count($list);
 
-                $data = $this->httpGetSigned(
-                    '/openApi/swap/v2/trade/allOrders',
-                    [
-                        'symbol' => $symbol,
-                        'startTime' => (string) $chunkStart,
-                        'endTime' => (string) $chunkEnd,
-                        'limit' => (string) self::PAGE_SIZE,
-                    ],
-                    $credentials,
-                );
-
-                $list = $data['orders'] ?? (is_array($data) ? $data : []);
-                $rawCount += count($list);
-
-                if (empty($list) && $cursorMs === null) {
-                    break;
-                }
-
-                foreach ($list as $raw) {
-                    $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
-                    if ($normalized !== null) {
-                        $orders[] = $normalized;
+                    foreach ($list as $raw) {
+                        $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
+                        if ($normalized !== null) {
+                            $orders[] = $normalized;
+                        }
                     }
-                }
 
-                $chunkEnd = $chunkStart - 1;
-            }
+                    return count($list);
+                },
+            );
         }
 
         return ['orders' => $orders, 'raw_count' => $rawCount];
@@ -480,22 +534,95 @@ class BingxConnector implements ConnectorInterface
 
     public function fetchBalance(array $credentials): ?float
     {
+        $this->lastBalanceCurrency = null;
         try {
             $data = $this->httpGetSigned('/openApi/swap/v3/user/balance', [], $credentials);
         } catch (\Throwable) {
             return null;
         }
 
-        // BingX swap v3 response shape (best-effort, alias-tolerant):
-        //   data.balance.equity  → preferred (balance + unrealized PnL)
-        //   data.balance.balance → fallback (just available + frozen)
-        //   data.equity / data.balance → some accounts/versions
-        $inner = is_array($data) ? ($data['balance'] ?? $data) : [];
-        $equity = $inner['equity'] ?? $inner['balance'] ?? null;
-        if ($equity === null) {
+        return $this->extractEquity($data);
+    }
+
+    /**
+     * Currency (asset code) the last fetchBalance() figure is denominated in,
+     * or null if no balance has been read. USDT for the USDT-M perp wallet.
+     */
+    public function getBalanceCurrency(): ?string
+    {
+        return $this->lastBalanceCurrency;
+    }
+
+    /**
+     * Pull account equity out of whatever shape BingX hands back on
+     * /user/balance. Tolerant across the variants seen in the wild — the
+     * previous parser only handled the `{balance:{...}}` wrapper and returned
+     * null for the v3 LIST shape, which is why broker_balance never persisted:
+     *   - v3 list:     data: [{asset:'USDT', equity, balance, ...}, ...]
+     *   - v2 wrapper:  data: {balance: {equity, balance, ...}}
+     *   - bare object: data: {equity, balance, ...}
+     * Prefers USDT on the list shape (USDT-M perp), else the first row with a
+     * usable figure. Returns null when nothing parseable is found.
+     */
+    private function extractEquity(mixed $data): ?float
+    {
+        if (!is_array($data)) {
             return null;
         }
-        return (float) $equity;
+
+        if (array_is_list($data)) {
+            $fallback = null;
+            $fallbackCurrency = null;
+            foreach ($data as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $value = $this->equityFromRow($row);
+                if ($value === null) {
+                    continue;
+                }
+                if (strtoupper((string) ($row['asset'] ?? '')) === 'USDT') {
+                    $this->lastBalanceCurrency = 'USDT';
+                    return $value;
+                }
+                if ($fallback === null) {
+                    $fallback = $value;
+                    $fallbackCurrency = $this->currencyFromRow($row);
+                }
+            }
+            $this->lastBalanceCurrency = $fallbackCurrency;
+            return $fallback;
+        }
+
+        if (isset($data['balance']) && is_array($data['balance'])) {
+            $this->lastBalanceCurrency = $this->currencyFromRow($data['balance']);
+            return $this->equityFromRow($data['balance']);
+        }
+
+        $this->lastBalanceCurrency = $this->currencyFromRow($data);
+        return $this->equityFromRow($data);
+    }
+
+    /** Normalised asset code of a balance row, or null when absent. */
+    private function currencyFromRow(array $row): ?string
+    {
+        $asset = strtoupper(trim((string) ($row['asset'] ?? '')));
+        return $asset !== '' ? $asset : null;
+    }
+
+    /**
+     * Best-effort equity for one balance row: prefer `equity` (wallet +
+     * unrealized PnL), fall back to the plain `balance`. Numeric-string
+     * tolerant; returns null if neither field carries a number.
+     */
+    private function equityFromRow(array $row): ?float
+    {
+        foreach (['equity', 'balance'] as $key) {
+            if (isset($row[$key]) && is_numeric($row[$key])) {
+                return (float) $row[$key];
+            }
+        }
+        return null;
     }
 
     public function placeOrder(array $credentials, array $order): array
@@ -744,30 +871,99 @@ class BingxConnector implements ConnectorInterface
         // canonical we signed diverge from what BingX rebuilt → generic
         // 100001 signature mismatch. Sort BEFORE both signing and the HTTP
         // call so the URL order and the signed canonical are byte-identical.
-        $timestampMs = (int) (microtime(true) * 1000);
-        $params['recvWindow'] = (string) 5000;
-        $params['timestamp'] = (string) $timestampMs;
-        ksort($params);
-        $canonical = $this->canonical($params);
-        $signature = hash_hmac('sha256', $canonical, $apiSecret);
-        $params['signature'] = $signature;
+        $attempt = 0;
+        while (true) {
+            // Piste 1 — proactive pacing. Keep a steady gap between EVERY
+            // outbound request so a heavy "walk to origin" sync never trips
+            // BingX's per-endpoint frequency limit in the first place. The very
+            // first request of a run goes out immediately; retries count too,
+            // since they hit the same rate budget.
+            if ($this->requestsSent > 0 && $this->requestPacingMs > 0) {
+                $this->sleepMs($this->requestPacingMs);
+            }
+            $this->requestsSent++;
 
-        try {
-            $response = $this->httpClient->get($this->baseUrl . $path, [
-                'query' => $params,
-                'headers' => [
-                    'X-BX-APIKEY' => $apiKey,
-                    'Accept' => 'application/json',
-                ],
-            ]);
-        } catch (GuzzleException $e) {
-            $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()], $signature, strlen($apiSecret), null);
-            throw new \RuntimeException("BingX HTTP error: {$e->getMessage()}", 0, $e);
-        }
+            // Rebuild the signed params from the ORIGINAL set on each attempt:
+            // a retry needs a fresh timestamp, hence a fresh signature. Reusing
+            // a mutated $params (already carrying signature/timestamp) would
+            // fold the stale signature into the canonical and fail signing.
+            $signed = $params;
+            $timestampMs = $this->nowMs();
+            $signed['recvWindow'] = (string) 5000;
+            $signed['timestamp'] = (string) $timestampMs;
+            ksort($signed);
+            $canonical = $this->canonical($signed);
+            $signature = hash_hmac('sha256', $canonical, $apiSecret);
+            $signed['signature'] = $signature;
 
-        $decoded = json_decode($response->getBody()->getContents(), true) ?: [];
-        $code = (int) ($decoded['code'] ?? 0);
-        if ($code !== 0) {
+            try {
+                $response = $this->httpClient->get($this->baseUrl . $path, [
+                    'query' => $signed,
+                    'headers' => [
+                        'X-BX-APIKEY' => $apiKey,
+                        'Accept' => 'application/json',
+                    ],
+                ]);
+            } catch (GuzzleException $e) {
+                $this->logFailure($path, $canonical, $timestampMs, null, null, ['transport' => $e->getMessage()], $signature, strlen($apiSecret), null);
+                throw new \RuntimeException("BingX HTTP error: {$e->getMessage()}", 0, $e);
+            }
+
+            $decoded = json_decode($response->getBody()->getContents(), true) ?: [];
+            $code = (int) ($decoded['code'] ?? 0);
+            if ($code === 0) {
+                return $decoded['data'] ?? null;
+            }
+
+            // 100410 = rate limited despite pacing (e.g. a heavy first sync on a
+            // multi-symbol account). Piste 2 — read the unblock timestamp BingX
+            // appends to the message and decide: wait out a SHORT ban in-process
+            // so the walk keeps its progress, or fail fast on a LONG ban so the
+            // scheduler defers to the next cron run (which resumes once it lifts).
+            if ($code === self::RATE_LIMITED_CODE) {
+                $msg = (string) ($decoded['msg'] ?? '');
+                $unblockAtMs = $this->parseUnblockMs($msg);
+
+                if ($unblockAtMs !== null) {
+                    $waitMs = $unblockAtMs - $this->nowMs();
+                    if ($waitMs <= self::RATE_LIMIT_MAX_WAIT_MS && $attempt < self::RATE_LIMIT_MAX_RETRIES) {
+                        if ($waitMs > 0) {
+                            $this->sleepMs($waitMs);
+                        }
+                        $attempt++;
+                        continue;
+                    }
+                    // Ban outlasts our cap (or retries spent) → defer.
+                    $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded, $signature, strlen($apiSecret), (string) $response->getBody());
+                    throw new BrokerRateLimitException(
+                        sprintf(
+                            'BingX rate limit on %s — endpoint unblocked at %s (in %ds); deferring to next sync',
+                            $path,
+                            gmdate('Y-m-d\TH:i:s\Z', intdiv($unblockAtMs, 1000)),
+                            max(0, intdiv($waitMs, 1000)),
+                        ),
+                        $unblockAtMs,
+                        $path,
+                    );
+                }
+
+                // No parseable unblock timestamp — fall back to a bounded
+                // exponential backoff, then defer rather than loop forever.
+                if ($attempt < self::RATE_LIMIT_MAX_RETRIES) {
+                    $attempt++;
+                    if ($this->rateLimitBackoffMs > 0) {
+                        $this->sleepMs($this->rateLimitBackoffMs * (1 << ($attempt - 1)));
+                    }
+                    continue;
+                }
+                $this->logFailure($path, $canonical, $timestampMs, $response->getHeaderLine('Date'), $code, $decoded, $signature, strlen($apiSecret), (string) $response->getBody());
+                throw new BrokerRateLimitException(
+                    "BingX rate limit on {$path} — retries exhausted; deferring to next sync",
+                    null,
+                    $path,
+                );
+            }
+
             $msg = $decoded['msg'] ?? 'unknown';
             $this->logFailure(
                 $path,
@@ -782,8 +978,37 @@ class BingxConnector implements ConnectorInterface
             );
             throw new \RuntimeException("BingX API error (code {$code}): {$msg} [" . $this->codeHint($code) . "]");
         }
+    }
 
-        return $decoded['data'] ?? null;
+    /**
+     * Sleep seam. Single choke point for every in-connector delay (pacing and
+     * rate-limit waits) so tests can subclass and record durations instead of
+     * burning wall-clock. Takes milliseconds.
+     */
+    protected function sleepMs(int $ms): void
+    {
+        if ($ms > 0) {
+            usleep($ms * 1000);
+        }
+    }
+
+    /** Current epoch ms. Seam so tests can pin "now" if needed. */
+    protected function nowMs(): int
+    {
+        return (int) (microtime(true) * 1000);
+    }
+
+    /**
+     * Extract the epoch-ms unblock timestamp BingX appends to a 100410 message
+     * ("...will be unblocked after 1781512502872"). Returns null when absent so
+     * the caller can fall back to a bounded backoff.
+     */
+    private function parseUnblockMs(string $msg): ?int
+    {
+        if (preg_match('/unblocked after\s+(\d{10,})/i', $msg, $m)) {
+            return (int) $m[1];
+        }
+        return null;
     }
 
     private function logFailure(
@@ -821,7 +1046,7 @@ class BingxConnector implements ConnectorInterface
         return match ($code) {
             100001 => 'signing or clock — check server logs for the canonical string and clock_skew_seconds',
             100403 => 'API key lacks permission for this endpoint (enable Perpetual Futures on the key)',
-            100410 => 'IP whitelist on the BingX key blocks this host',
+            100410 => 'rate limited by BingX — connector paces requests and waits out short bans; a longer frequency ban defers to the next sync',
             100413 => 'invalid API key',
             default => "unknown — search BingX docs for code {$code}",
         };
@@ -900,6 +1125,65 @@ class BingxConnector implements ConnectorInterface
     }
 
     /**
+     * Walk a BingX history endpoint backwards in CHUNK_WINDOW_SECONDS windows,
+     * newest-first, invoking $handle() on each chunk's decoded `data` payload.
+     *
+     * Stop rules:
+     *  - Incremental sync ($cursorMs !== null): walk down to the cursor, never
+     *    past it. Empty windows do NOT stop the walk — a 7-day slice can be
+     *    empty while activity sits closer to the cursor.
+     *  - First sync ($cursorMs === null): walk back TOLERATING empty windows
+     *    until $maxEmptyChunks CONSECUTIVE empties (origin / retention horizon
+     *    reached), bounded by FIRST_SYNC_MAX_LOOKBACK_SECONDS as a backstop.
+     *    This replaces the old "stop at the first empty window" rule, which
+     *    made a single quiet recent week hide the entire account history.
+     *
+     * $handle receives the raw decoded payload and returns the number of raw
+     * items it saw (0 = empty window, drives the consecutive-empty counter).
+     *
+     * @param array<string,string> $baseParams Endpoint params besides the time
+     *        window (e.g. `symbol`, `limit`). startTime/endTime are added here.
+     * @param callable(mixed):int $handle
+     */
+    private function walkChunks(
+        string $path,
+        array $baseParams,
+        array $credentials,
+        ?int $cursorMs,
+        int $now,
+        callable $handle
+    ): void {
+        $floorMs = $cursorMs ?? ($now - self::FIRST_SYNC_MAX_LOOKBACK_SECONDS * 1000);
+        $chunkEnd = $now;
+        $consecutiveEmpty = 0;
+
+        while ($chunkEnd > $floorMs) {
+            $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
+            $chunkStart = max($floorMs + 1, $chunkStart);
+            if ($chunkStart >= $chunkEnd) {
+                break;
+            }
+
+            $data = $this->httpGetSigned($path, $baseParams + [
+                'startTime' => (string) $chunkStart,
+                'endTime' => (string) $chunkEnd,
+            ], $credentials);
+
+            $count = $handle($data);
+
+            if ($count === 0) {
+                if ($cursorMs === null && ++$consecutiveEmpty >= $this->maxEmptyChunks) {
+                    break;
+                }
+            } else {
+                $consecutiveEmpty = 0;
+            }
+
+            $chunkEnd = $chunkStart - 1;
+        }
+    }
+
+    /**
      * Discover all symbols the user has ever had trading activity on, by
      * walking /openApi/swap/v2/user/income (P&L, commission, funding fee
      * records). Called WITHOUT a `symbol` param, BingX returns income
@@ -916,45 +1200,27 @@ class BingxConnector implements ConnectorInterface
     private function discoverSymbolsFromIncome(array $credentials, ?int $cursorMs, int $now): array
     {
         $found = [];
-        $chunkEnd = $now;
 
-        while (true) {
-            $chunkStart = $chunkEnd - self::CHUNK_WINDOW_SECONDS * 1000 + 1;
-            if ($cursorMs !== null) {
-                $chunkStart = max($cursorMs + 1, $chunkStart);
-            }
-            if ($chunkStart >= $chunkEnd) {
-                break;
-            }
-
-            $data = $this->httpGetSigned(
-                '/openApi/swap/v2/user/income',
-                [
-                    'startTime' => (string) $chunkStart,
-                    'endTime' => (string) $chunkEnd,
-                    'limit' => '1000',
-                ],
-                $credentials,
-            );
-
-            // Response shape: array of income records (no wrapping under
-            // "incomes" or similar at the time of writing). Tolerate both
-            // for safety.
-            $list = is_array($data) ? $data : ($data['incomes'] ?? []);
-
-            if (empty($list) && $cursorMs === null) {
-                break;
-            }
-
-            foreach ($list as $row) {
-                $symbol = $row['symbol'] ?? '';
-                if ($symbol !== '') {
-                    $found[$symbol] = true;
+        $this->walkChunks(
+            '/openApi/swap/v2/user/income',
+            ['limit' => '1000'],
+            $credentials,
+            $cursorMs,
+            $now,
+            function (mixed $data) use (&$found): int {
+                // Response shape: array of income records (no wrapping under
+                // "incomes" or similar at the time of writing). Tolerate both
+                // for safety.
+                $list = is_array($data) ? $data : ($data['incomes'] ?? []);
+                foreach ($list as $row) {
+                    $symbol = $row['symbol'] ?? '';
+                    if ($symbol !== '') {
+                        $found[$symbol] = true;
+                    }
                 }
-            }
-
-            $chunkEnd = $chunkStart - 1;
-        }
+                return count($list);
+            },
+        );
 
         $out = array_keys($found);
         sort($out);

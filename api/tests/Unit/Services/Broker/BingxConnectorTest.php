@@ -15,7 +15,32 @@ class BingxConnectorTest extends TestCase
     /** @var array<int, \Psr\Http\Message\RequestInterface> */
     private array $capturedRequests = [];
 
-    private function createConnector(array $responses): BingxConnector
+    private function createConnector(array $responses, int $maxEmptyChunks = 1, int $pacingMs = 0): BingxConnector
+    {
+        $client = $this->buildClient($responses);
+
+        // Default maxEmptyChunks=1 reproduces the legacy "stop at the first
+        // empty window" cadence, so the bulk of the suite keeps its tight
+        // [data → one empty] mock sequences. Tests that specifically exercise
+        // walking PAST empty windows pass a higher value explicitly.
+        // rateLimitBackoffMs=0 → retries on 100410 happen with no real sleep.
+        // pacingMs defaults to 0 so the suite never inserts real inter-request
+        // delays; pacing-specific tests use createRecordingConnector().
+        return new BingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks, 0, $pacingMs);
+    }
+
+    /**
+     * Connector variant that records every sleepMs() call instead of really
+     * sleeping, so pacing and rate-limit-wait timing can be asserted without
+     * burning wall-clock. Exposes $recordedSleeps (ms per call).
+     */
+    private function createRecordingConnector(array $responses, int $pacingMs = 0, int $maxEmptyChunks = 1): RecordingBingxConnector
+    {
+        $client = $this->buildClient($responses);
+        return new RecordingBingxConnector($client, 'https://fake-bingx.test', $maxEmptyChunks, 0, $pacingMs);
+    }
+
+    private function buildClient(array $responses): Client
     {
         $this->capturedRequests = [];
         $this->mock = new MockHandler($responses);
@@ -26,9 +51,7 @@ class BingxConnectorTest extends TestCase
                 return $next($request, $options);
             };
         });
-        $client = new Client(['handler' => $handler]);
-
-        return new BingxConnector($client, 'https://fake-bingx.test');
+        return new Client(['handler' => $handler]);
     }
 
     private function bxResponse(array $data): Response
@@ -106,8 +129,10 @@ class BingxConnectorTest extends TestCase
     public function testTestConnectionReturnsFalseOnBingxBusinessError(): void
     {
         // BingX returns 200 OK with a non-zero `code` for business errors.
+        // Use 100413 (invalid key) — a NON-retryable code — so this exercises
+        // the straight failure path, not the 100410 rate-limit retry loop.
         $connector = $this->createConnector([
-            $this->bxError(100410, 'invalid_api_key'),
+            $this->bxError(100413, 'invalid_api_key'),
         ]);
 
         $this->assertFalse($connector->testConnection([
@@ -584,6 +609,116 @@ class BingxConnectorTest extends TestCase
         $this->assertContains('bingx_position_eth-open', $externalIds);
     }
 
+    public function testFetchDealsWalksPastEmptyWindowsToReachOlderHistory(): void
+    {
+        // Regression for the "stop at the first empty 7-day window" bug: an
+        // account that has been QUIET for the last week (no recent income, no
+        // open positions) but whose real trading history sits a couple of
+        // windows back. The legacy walk broke on the very first empty income
+        // chunk and discovered nothing → SUCCESS with 0 everything on a full
+        // account. With empty-window tolerance (maxEmptyChunks=2 here) the
+        // walk steps past the gap, finds ETH-USDT in an older income window,
+        // then reconstructs its closed cycle from /allOrders.
+        $connector = $this->createConnector([
+            // 1) /user/positions → flat right now
+            $this->bxResponse([]),
+            // 2) /user/income walk — FIRST window empty (the quiet week)…
+            $this->emptyIncomeChunk(),
+            // 3) …older window carries ETH-USDT activity (must be reached)
+            $this->incomeChunk([
+                ['symbol' => 'ETH-USDT', 'incomeType' => 'REALIZED_PNL', 'income' => '50', 'time' => 1716000000000],
+            ]),
+            // 4-5) two consecutive empty windows → stop income walk (maxEmpty=2)
+            $this->emptyIncomeChunk(),
+            $this->emptyIncomeChunk(),
+            // 6) /allOrders ETH-USDT → the closed cycle (open + full close)
+            $this->fillsChunk([
+                $this->makeFillRaw([
+                    'orderId' => 'eth-open', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => false, 'side' => 'SELL',
+                    'executedQty' => '1', 'avgPrice' => '4000', 'updateTime' => 1716000000000,
+                ]),
+                $this->makeFillRaw([
+                    'orderId' => 'eth-close', 'symbol' => 'ETH-USDT', 'positionSide' => 'SHORT',
+                    'reduceOnly' => true, 'side' => 'BUY',
+                    'executedQty' => '1', 'avgPrice' => '3950', 'profit' => '50',
+                    'updateTime' => 1716000600000,
+                ]),
+            ]),
+            // 7-8) two consecutive empty windows → stop fills walk
+            $this->emptyChunk(),
+            $this->emptyChunk(),
+        ], maxEmptyChunks: 2);
+
+        $result = $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertCount(1, $result['deals']);
+        $this->assertSame('bingx_position_eth-open', $result['deals'][0]['external_id']);
+        $this->assertSame('ETH-USDT', $result['deals'][0]['symbol']);
+        $this->assertSame('SELL', $result['deals'][0]['direction']);
+    }
+
+    // ── fetchBalance (shape tolerance) ─────────────────────────────
+
+    public function testFetchBalanceParsesV3ListShapePreferringUsdt(): void
+    {
+        // Real /user/balance v3 hands back a LIST of per-asset rows. The old
+        // parser only read data.balance.equity → returned null → broker_balance
+        // stayed NULL forever. Now we pick the USDT row's equity.
+        $connector = $this->createConnector([
+            $this->bxResponse([
+                ['asset' => 'BTC', 'equity' => '0.5', 'balance' => '0.5'],
+                ['asset' => 'USDT', 'equity' => '2500.75', 'balance' => '2400.00'],
+            ]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(2500.75, $balance, 0.0001);
+    }
+
+    public function testFetchBalanceParsesWrapperObjectShape(): void
+    {
+        // Legacy v2 wrapper shape: data.balance is a single object.
+        $connector = $this->createConnector([
+            $this->bxResponse(['balance' => ['equity' => '999.9', 'balance' => '900']]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(999.9, $balance, 0.0001);
+    }
+
+    public function testFetchBalanceReturnsNullWhenShapeUnparseable(): void
+    {
+        $connector = $this->createConnector([
+            $this->bxResponse(['something' => 'unexpected']),
+        ]);
+
+        $this->assertNull($connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']));
+    }
+
+    public function testSignedRequestRetriesOnRateLimitThenSucceeds(): void
+    {
+        // 100410 = rate limited. The connector must back off and retry rather
+        // than fail; the heavy "walk to origin" first sync depends on this.
+        $connector = $this->createConnector([
+            $this->bxError(100410, 'rate limited'),
+            $this->bxResponse([
+                ['asset' => 'USDT', 'equity' => '1234.5', 'balance' => '1200'],
+            ]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(1234.5, $balance, 0.0001);
+        // Two outbound requests: the throttled attempt + the retry. Each is
+        // independently signed (fresh timestamp + signature).
+        $this->assertCount(2, $this->capturedRequests);
+        parse_str($this->capturedRequests[1]->getUri()->getQuery(), $retryQuery);
+        $this->assertArrayHasKey('signature', $retryQuery);
+    }
+
     public function testPlaceMarketBuyMapsToPositionSideLongAndExtractsOrderId(): void
     {
         $connector = $this->createConnector([
@@ -739,5 +874,136 @@ class BingxConnectorTest extends TestCase
         } catch (\App\Exceptions\BrokerOrderException $e) {
             $this->assertSame('PARTIAL_CLOSE_UNSUPPORTED', $e->getProviderCode());
         }
+    }
+
+    // ── Rate-limit pacing & deferral (100410) ──────────────────────
+
+    public function testProactivePacingDelaysSubsequentRequestsNotTheFirst(): void
+    {
+        // Piste 1: a steady gap between EVERY outbound request keeps a heavy
+        // walk under BingX's per-endpoint frequency limit. The first request
+        // of a run fires immediately; each later one is paced.
+        $connector = $this->createRecordingConnector([
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '100']]),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '200']]),
+        ], pacingMs: 300);
+
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertSame([300], $connector->recordedSleeps);
+        $this->assertCount(2, $this->capturedRequests);
+    }
+
+    public function testResetSyncCacheRestartsPacingSoFirstRequestIsImmediate(): void
+    {
+        // BrokerSyncService calls resetSyncCache() at the start of each sync;
+        // the pacing counter must restart so the first request isn't penalised.
+        $connector = $this->createRecordingConnector([
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '100']]),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '200']]),
+        ], pacingMs: 300);
+
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+        $connector->resetSyncCache();
+        $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertSame([], $connector->recordedSleeps);
+    }
+
+    public function testRateLimitWithinCapWaitsUntilUnblockThenRetries(): void
+    {
+        // Piste 2: a SHORT ban (unblock within the cap) is waited out in-process
+        // so the walk continues without losing progress.
+        $unblockAt = (int) (microtime(true) * 1000) + 1500; // 1.5s ahead
+        $connector = $this->createRecordingConnector([
+            $this->bxError(100410, "frequency limit ... will be unblocked after {$unblockAt}"),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '500']]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(500.0, $balance, 0.0001);
+        $this->assertCount(2, $this->capturedRequests);
+        // Exactly one wait, bounded by the gap to the unblock timestamp.
+        $this->assertCount(1, $connector->recordedSleeps);
+        $this->assertGreaterThan(0, $connector->recordedSleeps[0]);
+        $this->assertLessThanOrEqual(1500, $connector->recordedSleeps[0]);
+    }
+
+    public function testRateLimitBeyondCapThrowsRateLimitExceptionImmediately(): void
+    {
+        // A long ban (unblock 5 min out, past the cap) must NOT retry in-process.
+        // It fails fast with the unblock timestamp so the scheduler can defer to
+        // the next cron run.
+        $unblockAt = (int) (microtime(true) * 1000) + 300_000; // 5 min ahead
+        $connector = $this->createConnector([
+            $this->bxError(100410, "frequency limit rule is currently in the disabled period and will be unblocked after {$unblockAt}"),
+        ]);
+
+        try {
+            $connector->fetchDeals(['api_key' => 'k', 'api_secret' => 's']);
+            $this->fail('Expected BrokerRateLimitException');
+        } catch (\App\Exceptions\BrokerRateLimitException $e) {
+            $this->assertSame($unblockAt, $e->getUnblockAtMs());
+            // No retry — failed fast on the very first request.
+            $this->assertCount(1, $this->capturedRequests);
+        }
+    }
+
+    public function testRateLimitWithoutTimestampFallsBackToBoundedRetries(): void
+    {
+        // Defensive: if BingX ever drops the "unblocked after <ms>" suffix we
+        // can't compute a wait, so fall back to a bounded exponential backoff
+        // and ultimately defer rather than loop forever.
+        $connector = $this->createRecordingConnector([
+            $this->bxError(100410, 'rate limited'),
+            $this->bxResponse([['asset' => 'USDT', 'equity' => '42']]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(42.0, $balance, 0.0001);
+        $this->assertCount(2, $this->capturedRequests);
+    }
+
+    // ── Balance currency (for account-currency mismatch detection) ──
+
+    public function testGetBalanceCurrencyIsNullBeforeAnyFetch(): void
+    {
+        $connector = $this->createConnector([]);
+        $this->assertNull($connector->getBalanceCurrency());
+    }
+
+    public function testFetchBalanceReportsUsdtAsBalanceCurrency(): void
+    {
+        // USDT-M perp: even when another asset row comes first, the USDT row is
+        // the one we read, so the reported currency must be USDT.
+        $connector = $this->createConnector([
+            $this->bxResponse([
+                ['asset' => 'USDC', 'equity' => '5'],
+                ['asset' => 'USDT', 'equity' => '100.0', 'balance' => '100.0'],
+            ]),
+        ]);
+
+        $balance = $connector->fetchBalance(['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertEqualsWithDelta(100.0, $balance, 0.0001);
+        $this->assertSame('USDT', $connector->getBalanceCurrency());
+    }
+}
+
+/**
+ * Test double: records sleepMs() durations instead of sleeping, so pacing and
+ * rate-limit-wait timing are assertable without real wall-clock delay.
+ */
+class RecordingBingxConnector extends BingxConnector
+{
+    /** @var int[] */
+    public array $recordedSleeps = [];
+
+    protected function sleepMs(int $ms): void
+    {
+        $this->recordedSleeps[] = $ms;
     }
 }

@@ -8,10 +8,12 @@ import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import { AccountType, AccountStage } from '@/constants/enums'
+import { CURRENCIES } from '@/constants/currencies'
 import { useNumberLocale } from '@/composables/useNumberLocale'
 
 const { t } = useI18n()
 const { numberLocale } = useNumberLocale()
+const currencies = CURRENCIES
 
 const props = defineProps({
   visible: Boolean,
@@ -129,7 +131,7 @@ function handleClose() {
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.currency') }}</label>
-          <InputText v-model="form.currency" class="w-full" :maxlength="3" />
+          <Select v-model="form.currency" :options="currencies" class="w-full" data-testid="select-account-currency" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('accounts.initial_capital') }}</label>

@@ -325,4 +325,92 @@ class AccountRepositoryTest extends TestCase
         $this->assertEquals(10100, $byName['A1']);
         $this->assertEquals(19700, $byName['A2']);
     }
+
+    // ── broker-synced balance overrides the computed current_capital ──
+
+    public function testBrokerBalanceOverridesComputedCurrentCapitalInList(): void
+    {
+        // A broker-linked account's real balance is the broker-reported one.
+        // Once synced, it takes precedence over initial_capital + PnL + adj.
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 250); // computed would be 10250
+        $this->repo->updateBrokerBalance($accountId, 287.50);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        $this->assertEquals(287.50, (float) $result['items'][0]['current_capital']);
+    }
+
+    public function testBrokerBalanceOverridesComputedCurrentCapitalInFindById(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 150);
+        $this->repo->updateBrokerBalance($accountId, 99.99);
+
+        $row = $this->repo->findById($accountId);
+
+        $this->assertEquals(99.99, (float) $row['current_capital']);
+    }
+
+    public function testCurrentCapitalFallsBackToComputedWhenBrokerBalanceNull(): void
+    {
+        // No broker sync → broker_balance stays NULL → computed value as before.
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 300);
+
+        $row = $this->repo->findById($accountId);
+
+        $this->assertEquals(10300, (float) $row['current_capital']);
+    }
+
+    public function testPayloadExposesBrokerBalanceAndSyncedAt(): void
+    {
+        // The UI needs the raw synced figure + timestamp to label the source.
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000]));
+        $accountId = (int) $created['id'];
+
+        $this->repo->updateBrokerBalance($accountId, 100.00);
+
+        $row = $this->repo->findById($accountId);
+        $this->assertArrayHasKey('broker_balance', $row);
+        $this->assertArrayHasKey('broker_balance_synced_at', $row);
+        $this->assertEquals(100.00, (float) $row['broker_balance']);
+        $this->assertNotNull($row['broker_balance_synced_at']);
+
+        $list = $this->repo->findAllByUserId($this->userId);
+        $this->assertEquals(100.00, (float) $list['items'][0]['broker_balance']);
+    }
+
+    public function testUpdateBrokerBalancePersistsCurrencyAndPayloadExposesIt(): void
+    {
+        // The synced balance currency lets the UI flag a mismatch with the
+        // account's own currency (no FX conversion, just a warning).
+        $created = $this->repo->create($this->validData(['initial_capital' => 10000, 'currency' => 'EUR']));
+        $accountId = (int) $created['id'];
+
+        $this->repo->updateBrokerBalance($accountId, 100.00, 'USDT');
+
+        $row = $this->repo->findById($accountId);
+        $this->assertEquals('USDT', $row['broker_balance_currency']);
+
+        $list = $this->repo->findAllByUserId($this->userId);
+        $this->assertEquals('USDT', $list['items'][0]['broker_balance_currency']);
+    }
+
+    public function testUpdateBrokerBalanceWithoutCurrencyLeavesItNull(): void
+    {
+        $created = $this->repo->create($this->validData());
+        $accountId = (int) $created['id'];
+
+        $this->repo->updateBrokerBalance($accountId, 50.0);
+
+        $row = $this->repo->findById($accountId);
+        $this->assertNull($row['broker_balance_currency']);
+    }
 }

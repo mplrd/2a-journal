@@ -25,7 +25,10 @@ Ce refactor reconstruit l'activité côté connector à partir des **fills bruts
 [3] union [1] ∪ [2] → ensemble à scanner sur /allOrders
 [4] pour chaque symbol, chunk-walk allOrders (7 jours par requête, cap BingX) :
       - depuis now jusqu'au curseur (sync incrémental)
-      - depuis now jusqu'au 1er chunk vide (1ère sync, walk complet de l'historique)
+      - depuis now en remontant jusqu'à l'origine du compte (1ère sync) :
+        on tolère les fenêtres vides et on s'arrête après N fenêtres vides
+        CONSÉCUTIVES (cf. doc 76 — corrige l'ancien « stop au 1er chunk vide »
+        qui masquait tout l'historique d'un compte calme sur 7 jours)
 [5] normalizeBingxFill sur chaque ligne (filtre FILLED/PARTIALLY_FILLED)
 [6] BingxFillReconstructor : grouper par (symbol, positionSide) + reconstruction
       - reduce_only=false → ouverture ou scaling-in (entry weighted-avg recalculé)

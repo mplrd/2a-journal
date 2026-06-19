@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Exceptions\BrokerRateLimitException;
 use App\Repositories\BrokerConnectionRepository;
 use Throwable;
 
@@ -25,7 +26,7 @@ class BrokerSyncSchedulerService
     /**
      * Sync all due connections. Returns a run summary for logging.
      *
-     * @return array{skipped: bool, total_active: int, processed: int, success: int, failed: int, deactivated: int, interval_minutes: int}
+     * @return array{skipped: bool, total_active: int, processed: int, success: int, failed: int, deferred: int, deactivated: int, interval_minutes: int}
      */
     public function runDueConnections(): array
     {
@@ -38,6 +39,7 @@ class BrokerSyncSchedulerService
                 'processed' => 0,
                 'success' => 0,
                 'failed' => 0,
+                'deferred' => 0,
                 'deactivated' => 0,
                 'interval_minutes' => $intervalMinutes,
             ];
@@ -48,6 +50,7 @@ class BrokerSyncSchedulerService
 
         $success = 0;
         $failed = 0;
+        $deferred = 0;
         $deactivated = 0;
         $maxFailures = $this->config['max_consecutive_failures'];
 
@@ -60,6 +63,14 @@ class BrokerSyncSchedulerService
                 $this->syncService->sync($id, $userId);
                 $this->connectionRepo->resetFailures($id);
                 $success++;
+            } catch (BrokerRateLimitException $e) {
+                // A broker frequency ban is NOT a connection failure: the
+                // connector paces requests to avoid it, and the next cron run
+                // resumes once the ban lifts. Do NOT touch the failure counter
+                // or trip the breaker — that would deactivate a perfectly
+                // healthy connection just for being throttled. Leave the
+                // failure streak as-is (a real prior failure stays pending).
+                $deferred++;
             } catch (Throwable $e) {
                 $this->connectionRepo->incrementFailures($id);
                 $failed++;
@@ -77,6 +88,7 @@ class BrokerSyncSchedulerService
             'processed' => count($connections),
             'success' => $success,
             'failed' => $failed,
+            'deferred' => $deferred,
             'deactivated' => $deactivated,
             'interval_minutes' => $intervalMinutes,
         ];

@@ -822,7 +822,7 @@ class AuthFlowTest extends TestCase
         $accessToken = $response->getBody()['data']['access_token'];
 
         $request = Request::create('PATCH', '/auth/profile', [
-            'default_currency' => 'ABCD',
+            'default_currency' => 'TOOLONG',
         ], [], [
             'Authorization' => "Bearer $accessToken",
         ]);

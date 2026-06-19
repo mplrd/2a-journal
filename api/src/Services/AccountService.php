@@ -161,7 +161,9 @@ class AccountService
             }
         }
 
-        if (isset($data['currency']) && strlen($data['currency']) !== 3) {
+        // 3-letter fiat ISO codes (EUR, USD…) plus crypto settlement currencies
+        // (USDT, USDC…) so a broker account can match its broker balance.
+        if (isset($data['currency']) && !preg_match('/^[A-Z]{3,5}$/', (string) $data['currency'])) {
             throw new ValidationException('accounts.error.field_required', 'currency');
         }
 
