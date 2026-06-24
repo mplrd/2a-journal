@@ -881,6 +881,102 @@ class TradeServiceTest extends TestCase
         $this->service->markBeReached(1, 1);
     }
 
+    // ── Update: editing size re-syncs remaining_size ────────────
+    // Bug #31: changing a trade's size after creation left remaining_size
+    // frozen on the original size, so the "remaining to manage" math (and the
+    // aggregated position SUM(remaining_size)) kept using the stale value.
+
+    public function testUpdateSizeResyncsRemainingSizeWhenNoExitsYet(): void
+    {
+        // Trade created at 1 contract, no partial exit yet (remaining == size).
+        // Edit size 1 → 0.04 ⇒ remaining_size must follow to 0.04.
+        $this->tradeRepo->method('findById')->willReturn(
+            $this->fakeTrade(['size' => '1.0000', 'remaining_size' => '1.0000'])
+        );
+        $this->partialExitRepo->method('findByTradeId')->willReturn([]);
+
+        $captured = null;
+        $this->tradeRepo->method('update')->willReturnCallback(function ($id, $data) use (&$captured) {
+            if (array_key_exists('remaining_size', $data)) {
+                $captured = $data['remaining_size'];
+            }
+            return $this->fakeTrade();
+        });
+
+        $this->service->update(1, 1, ['size' => 0.04]);
+
+        $this->assertEqualsWithDelta(0.04, (float) $captured, 0.00001);
+    }
+
+    public function testUpdateSizeResyncsRemainingSizeAccountingForPriorExits(): void
+    {
+        // Size 2, one unit already exited (remaining 1 → 1 unit already out).
+        // Edit size 2 → 3 ⇒ remaining = 3 - 1 = 2.
+        $this->tradeRepo->method('findById')->willReturn(
+            $this->fakeTrade(['size' => '2.0000', 'remaining_size' => '1.0000'])
+        );
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['id' => 1, 'exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+        ]);
+
+        $captured = null;
+        $this->tradeRepo->method('update')->willReturnCallback(function ($id, $data) use (&$captured) {
+            if (array_key_exists('remaining_size', $data)) {
+                $captured = $data['remaining_size'];
+            }
+            return $this->fakeTrade();
+        });
+
+        $this->service->update(1, 1, ['size' => 3]);
+
+        $this->assertEqualsWithDelta(2.0, (float) $captured, 0.00001);
+    }
+
+    public function testUpdateSizeBelowAlreadyExitedClampsRemainingToZero(): void
+    {
+        // Size 2, 1 already exited. Edit size down to 0.5 (< already-exited 1)
+        // ⇒ remaining clamped to 0, never negative.
+        $this->tradeRepo->method('findById')->willReturn(
+            $this->fakeTrade(['size' => '2.0000', 'remaining_size' => '1.0000'])
+        );
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['id' => 1, 'exit_price' => '18600.00000', 'size' => '1.0000', 'pnl' => '100.00'],
+        ]);
+
+        $captured = null;
+        $this->tradeRepo->method('update')->willReturnCallback(function ($id, $data) use (&$captured) {
+            if (array_key_exists('remaining_size', $data)) {
+                $captured = $data['remaining_size'];
+            }
+            return $this->fakeTrade();
+        });
+
+        $this->service->update(1, 1, ['size' => 0.5]);
+
+        $this->assertEqualsWithDelta(0.0, (float) $captured, 0.00001);
+    }
+
+    public function testUpdateWithoutSizeChangeLeavesRemainingUntouched(): void
+    {
+        // Editing an unrelated field (notes) must NOT emit a remaining_size patch.
+        $this->tradeRepo->method('findById')->willReturn(
+            $this->fakeTrade(['size' => '1.0000', 'remaining_size' => '0.6000'])
+        );
+        $this->partialExitRepo->method('findByTradeId')->willReturn([]);
+
+        $sawRemaining = false;
+        $this->tradeRepo->method('update')->willReturnCallback(function ($id, $data) use (&$sawRemaining) {
+            if (array_key_exists('remaining_size', $data)) {
+                $sawRemaining = true;
+            }
+            return $this->fakeTrade();
+        });
+
+        $this->service->update(1, 1, ['notes' => 'just a note']);
+
+        $this->assertFalse($sawRemaining, 'remaining_size must not be touched when size is unchanged');
+    }
+
     // ── Delete ──────────────────────────────────────────────────
 
     public function testDeleteSuccess(): void

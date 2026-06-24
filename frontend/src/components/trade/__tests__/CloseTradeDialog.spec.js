@@ -207,6 +207,58 @@ describe('CloseTradeDialog', () => {
     })
   })
 
+  // Ticket #23: when the trader configured a break-even on the trade (a BE
+  // moved off entry to cover fees, plus a planned exit size), clicking "BE"
+  // must propose THOSE values, not the raw entry price. Falls back to entry
+  // when no BE was configured.
+  describe('BE prefill from the trade configured break-even (#23)', () => {
+    it('BUY: prefills exit_price = entry + be_points and points = be_points', async () => {
+      const wrapper = createWrapper({
+        trade: { ...buyTrade, be_points: 8 },
+        prefill: { exit_type: ExitType.BE },
+      })
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18508)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(8)
+    })
+
+    it('SELL: prefills exit_price = entry - be_points and points = be_points', async () => {
+      const wrapper = createWrapper({
+        trade: { ...sellTrade, be_points: 8 },
+        prefill: { exit_type: ExitType.BE },
+      })
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18492)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(8)
+    })
+
+    it('prefills exit_size from the configured be_size', async () => {
+      const wrapper = createWrapper({
+        trade: { ...buyTrade, be_points: 8, be_size: 0.04, remaining_size: 1 },
+        prefill: { exit_type: ExitType.BE },
+      })
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_size').element.value)).toBe(0.04)
+    })
+
+    it('falls back to entry (points 0) when no BE is configured on the trade', async () => {
+      const wrapper = createWrapper({ trade: buyTrade, prefill: { exit_type: ExitType.BE } })
+      await flushPromises()
+      expect(Number(getInput(wrapper, 'exit_price').element.value)).toBe(18500)
+      expect(Number(getInput(wrapper, 'exit_points').element.value)).toBe(0)
+    })
+
+    it('emits the configured BE price on submit', async () => {
+      const wrapper = createWrapper({
+        trade: { ...buyTrade, be_points: 8 },
+        prefill: { exit_type: ExitType.BE },
+      })
+      await flushPromises()
+      await findConfirmButton(wrapper).trigger('click')
+      expect(wrapper.emitted('close')[0][0].exit_price).toBe(18508)
+    })
+  })
+
   describe('SL prefill from trade.sl_points', () => {
     it('BUY: prefills exit_price = entry - sl_points and points = sl_points', () => {
       const wrapper = createWrapper({
