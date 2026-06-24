@@ -581,6 +581,47 @@ class TradeFlowTest extends TestCase
         $this->assertSame('Updated entry after re-analysis', $body['data']['notes']);
     }
 
+    public function testUpdateSizeResyncsRemainingSize(): void
+    {
+        // Bug #31: a size typo corrected after creation must update remaining_size.
+        $trade = $this->createTrade(['size' => 2]);
+        $this->assertEquals(2.0, (float) $trade['remaining_size']);
+
+        $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", ['size' => 0.04])
+        );
+
+        $body = $this->router->dispatch(
+            $this->authRequest('GET', "/trades/{$trade['id']}")
+        )->getBody()['data'];
+
+        $this->assertEquals(0.04, (float) $body['size']);
+        $this->assertEquals(0.04, (float) $body['remaining_size']);
+    }
+
+    public function testUpdateSizeKeepsAlreadyExitedQuantity(): void
+    {
+        // Size 2, one unit already taken (remaining 1). Bumping size to 3 must
+        // leave the exited unit accounted for: remaining = 3 - 1 = 2.
+        $trade = $this->createTrade(['size' => 2]);
+        $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/close", [
+                'exit_price' => 18600, 'exit_size' => 1, 'exit_type' => 'TP',
+            ])
+        );
+
+        $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", ['size' => 3])
+        );
+
+        $body = $this->router->dispatch(
+            $this->authRequest('GET', "/trades/{$trade['id']}")
+        )->getBody()['data'];
+
+        $this->assertEquals(3.0, (float) $body['size']);
+        $this->assertEquals(2.0, (float) $body['remaining_size']);
+    }
+
     public function testUpdateTradeClosedAtRequiresClosedStatus(): void
     {
         $trade = $this->createTrade();

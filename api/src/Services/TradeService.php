@@ -586,6 +586,18 @@ class TradeService
                 $tradeUpdates[$field] = $data[$field];
             }
         }
+
+        // Editing the size must re-sync remaining_size, otherwise the remaining
+        // quantity (and the aggregated SUM(remaining_size) on the position) keeps
+        // pointing at the original size. Preserve whatever has already been exited:
+        // remaining = newSize - alreadyExited, never negative.
+        if (array_key_exists('size', $data)) {
+            $oldSize = (float) $trade['size'];
+            $oldRemaining = (float) $trade['remaining_size'];
+            $alreadyExited = max(0.0, $oldSize - $oldRemaining);
+            $newSize = (float) $data['size'];
+            $tradeUpdates['remaining_size'] = max(0.0, $newSize - $alreadyExited);
+        }
         if (!empty($tradeUpdates)) {
             $this->tradeRepo->update($tradeId, $tradeUpdates);
         }
