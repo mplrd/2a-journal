@@ -88,7 +88,21 @@ function buildInitialForm(trade, prefill) {
   }
 
   if (exitType === ExitType.BE) {
-    return { ...base, exit_price: entry, exit_points: 0 }
+    // Propose the break-even the trader configured on the trade (a BE moved off
+    // entry to cover fees, with its planned exit size) rather than the raw entry
+    // price. Fall back to entry (points 0) when no BE was set up. (#23)
+    const bePoints = trade.be_points != null ? Number(trade.be_points) : null
+    const hasBe = bePoints != null && bePoints > 0
+    const bePrice = hasBe
+      ? (trade.direction === Direction.BUY ? entry + bePoints : entry - bePoints)
+      : entry
+    const beSize = trade.be_size != null ? Number(trade.be_size) : null
+    return {
+      ...base,
+      exit_price: bePrice,
+      exit_points: hasBe ? bePoints : 0,
+      exit_size: prefill?.exit_size ?? (beSize != null ? beSize : remaining),
+    }
   }
 
   if (exitType === ExitType.SL && trade.sl_points != null) {
