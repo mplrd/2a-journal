@@ -1,13 +1,15 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import App from '../App.vue'
 
 function mountApp(pinia) {
+  const i18n = createI18n({ legacy: false, locale: 'fr', fallbackLocale: 'en', messages: { fr: {}, en: {} } })
   return mount(App, {
     global: {
-      plugins: [pinia],
+      plugins: [pinia, i18n],
       stubs: { RouterView: true, Toast: true, ConfirmDialog: true },
     },
   })

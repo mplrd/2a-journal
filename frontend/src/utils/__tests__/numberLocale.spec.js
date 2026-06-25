@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toNumberLocale } from '../numberLocale'
+import { toNumberLocale, decimalSeparatorForLocale } from '../numberLocale'
 
 // Maps the app i18n locale ('fr' | 'en') to the BCP-47 locale string fed to
 // PrimeVue InputNumber. In a 'fr*' locale PrimeVue accepts both ',' and '.' as
@@ -32,5 +32,25 @@ describe('toNumberLocale', () => {
 
   it.each([null, undefined, ''])('falls back to en-US for %p', (value) => {
     expect(toNumberLocale(value)).toBe('en-US')
+  })
+})
+
+// Derives the decimal separator of a locale (used to remap the numpad decimal
+// key — see numpadDecimal.js). Locale-agnostic: read from Intl, never hard-coded.
+describe('decimalSeparatorForLocale', () => {
+  it("returns ',' for French", () => {
+    expect(decimalSeparatorForLocale('fr-FR')).toBe(',')
+  })
+
+  it("returns '.' for US English", () => {
+    expect(decimalSeparatorForLocale('en-US')).toBe('.')
+  })
+
+  it("derives the separator for any BCP-47 locale (de-DE → ',')", () => {
+    expect(decimalSeparatorForLocale('de-DE')).toBe(',')
+  })
+
+  it.each([null, undefined, '@@bogus@@'])("falls back to '.' for %p", (value) => {
+    expect(decimalSeparatorForLocale(value)).toBe('.')
   })
 })
