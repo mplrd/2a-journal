@@ -10,3 +10,17 @@ export function toNumberLocale(i18nLocale) {
   }
   return 'en-US'
 }
+
+// The decimal separator of a locale (e.g. ',' for fr-FR, '.' for en-US), read
+// from Intl rather than hard-coded so it follows whatever locale is active.
+// Used by the numpad-decimal remap (see numpadDecimal.js). Falls back to '.'
+// when the locale is missing or invalid.
+export function decimalSeparatorForLocale(locale) {
+  if (typeof locale !== 'string' || locale === '') return '.'
+  try {
+    const part = new Intl.NumberFormat(locale).formatToParts(1.1).find((p) => p.type === 'decimal')
+    return part ? part.value : '.'
+  } catch {
+    return '.'
+  }
+}
