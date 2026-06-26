@@ -31,5 +31,15 @@ const chartData = computed(() => {
     type="doughnut"
     :data="chartData"
     :options="doughnutChartOptions"
-  />
+  >
+    <template #header-actions>
+      <i
+        data-testid="win-loss-be-help"
+        class="pi pi-info-circle text-gray-400 cursor-help"
+        role="img"
+        :aria-label="t('dashboard.win_loss_be_help')"
+        v-tooltip.top="t('dashboard.win_loss_be_help')"
+      />
+    </template>
+  </ChartCard>
 </template>
