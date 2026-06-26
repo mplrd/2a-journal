@@ -192,7 +192,16 @@ async function persistCell(sid, aid) {
               class="p-2 text-center font-semibold text-gray-700 dark:text-gray-300 border-l border-gray-200 dark:border-gray-700"
               data-testid="header-group-point-value"
             >
-              {{ t('symbols.point_value') }}
+              <span class="inline-flex items-center gap-1">
+                {{ t('symbols.point_value') }}
+                <i
+                  data-testid="point-value-help"
+                  class="pi pi-info-circle text-gray-400 cursor-help font-normal"
+                  role="img"
+                  :aria-label="t('symbols.point_value_help')"
+                  v-tooltip.top="t('symbols.point_value_help')"
+                />
+              </span>
             </th>
             <th
               rowspan="2"
