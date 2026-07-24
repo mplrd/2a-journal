@@ -418,4 +418,44 @@ Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-
 
 ---
 
+## Plans de trading — pistes différées (hors périmètre v1)
+
+**Contexte** : livraison des plans de trading (`docs/83-trading-plans.md`, migration `033_trading_plans.sql`, branche `feat/trading-plans`). Pistes laissées de côté volontairement :
+
+- **Fenêtres chevauchant minuit** : v1 impose `start < end` sur le même jour (documenté doc 83) ; une session 22:00→02:00 demande deux fenêtres. Supporter le wrap (`start > end` = chevauche minuit) si le besoin remonte.
+- **Liste de timezones complète** : `PlansView.vue` propose une liste IANA curée (`BASE_TZ`, 9 zones + celle du plan). `Intl.supportedValuesOf('timeZone')` donnerait la liste exhaustive avec filtre.
+
+**Repéré le** : 2026-07-24.
+**Priorité** : basse — la v1 couvre le besoin exprimé.
+
+---
+
+## Dépendances — advisories connues (audits composer + npm)
+
+**Contexte** : relevé pendant l'audit sécurité de `feat/trading-plans` (2026-07-24), rien d'introduit par la feature.
+
+- **Backend (`php composer.phar audit`)** : `firebase/php-jwt` < 7 (low, CVE-2025-45769 « weak encryption ») + 7 advisories **medium** sur `guzzlehttp/guzzle` (cookies, Referer, proxy downgrade…). Guzzle ne sert qu'aux connecteurs broker sortants (surface limitée), mais à bumper.
+- **Frontend (`npm audit`)** : 6 advisories (4 high) toutes dans la **toolchain de build** (vite, rollup, postcss, esbuild, picomatch, yaml) — dev-server/build uniquement, rien dans le bundle livré. `npm audit fix` les couvre.
+
+**À faire** : branche chore dédiée — bump `firebase/php-jwt` v7 (vérifier l'API `encode/decode`), `guzzlehttp/guzzle` dernière 7.x, `npm audit fix` ; re-passer les deux suites complètes.
+
+**Repéré le** : 2026-07-24.
+**Priorité** : moyenne (guzzle/php-jwt) / basse (toolchain front, non exposée en prod).
+
+---
+
+## Tests frontend — pollution inter-suites + flaky en run complet
+
+**Contexte** : relevé le 2026-07-24 en re-passant la suite Vitest complète (`feat/trading-plans` — non lié à la feature, les fichiers en cause ne sont pas touchés par la branche).
+
+- **10 « Unhandled Rejection » `api.get is not a function`** dans `src/services/customFields.js:5`, uniquement en run complet (chaque spec passée isolément est propre) : une suite mocke partiellement `@/services/api` et un `customFieldsService.list()` asynchrone d'un composant monté ailleurs résout après coup sur le mock incomplet. Les 422 tests passent mais Vitest sort en exit 1.
+- **Flaky** : `share-dialog.spec.js > does not render content when not visible` timeout 5 s par intermittence (passe en isolation et sur d'autres runs complets).
+
+**À faire** : identifier la/les suites au mock `api` partiel (chercher `vi.mock('@/services/api'` sans `get`), compléter le mock ou mocker `customFieldsService` directement ; stabiliser le test ShareDialog (attente explicite plutôt que timeout implicite).
+
+**Repéré le** : 2026-07-24.
+**Priorité** : moyenne — masque de vraies erreurs (exit 1 permanent du run complet) et fait échouer toute CI stricte.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

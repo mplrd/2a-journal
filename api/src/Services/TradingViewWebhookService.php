@@ -18,11 +18,13 @@ use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\OrderRepository;
 use App\Repositories\RobotRepository;
 use App\Repositories\StatusHistoryRepository;
+use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Services\Broker\BrokerLogger;
 use App\Services\Broker\ConnectorInterface;
 use App\Services\Broker\CredentialEncryptionService;
+use DateTimeImmutable;
 
 class TradingViewWebhookService
 {
@@ -39,6 +41,9 @@ class TradingViewWebhookService
         private ConnectorInterface $metaApiConnector,
         private ConnectorInterface $ouinexConnector,
         private ConnectorInterface $bingxConnector,
+        private TradingPlanRepository $planRepo,
+        private PlanEvaluator $planEvaluator,
+        private SignalRiskCalculator $riskCalculator,
     ) {}
 
     /**
@@ -118,6 +123,18 @@ class TradingViewWebhookService
             $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::INVALID_PAYLOAD, $validationError, null, $externalAlertId);
             $this->robotRepo->recordTrigger($robotId, false);
             return;
+        }
+
+        // Trading-plan gate — OPEN only. MODIFY/CLOSE/CANCEL manage an order the
+        // robot already opened, so they always bypass the plan (never trap a
+        // live position). A robot with no plan executes every signal.
+        if ($action === WebhookAction::OPEN) {
+            $planReason = $this->planRejectionReason($robotId, $accountId, (int) $webhook['user_id'], $payload);
+            if ($planReason !== null) {
+                $this->logEvent($webhookId, $accountId, $payload, WebhookEventStatus::REJECTED, WebhookRejectReason::OUT_OF_PLAN, $planReason, null, $externalAlertId);
+                $this->robotRepo->recordTrigger($robotId, false);
+                return;
+            }
         }
 
         $connection = $this->connectionRepo->findByAccountId($accountId);
@@ -264,6 +281,41 @@ class TradingViewWebhookService
             $this->logEvent($ctx['webhook_id'], $ctx['account_id'], $payload, WebhookEventStatus::FAILED, WebhookRejectReason::BROKER_ERROR, $this->brokerErr($e), (int) $order['id'], $ctx['alert_id']);
             $this->robotRepo->recordTrigger($ctx['robot_id'], false);
         }
+    }
+
+    /**
+     * Confront an OPEN signal with the robot's active plans (docs/83).
+     * Returns null when the robot has no plan (no filter) or the signal is
+     * applicable to AT LEAST ONE plan (OR); otherwise the reason from the
+     * first plan it failed — surfaced to the audit event as error_message.
+     */
+    private function planRejectionReason(int $robotId, int $accountId, int $userId, array $payload): ?string
+    {
+        $plans = $this->planRepo->findAssembledActivePlansForRobot($robotId);
+        if ($plans === []) {
+            return null;
+        }
+
+        $direction = (string) $payload['direction'];
+        $entryPrice = (float) $payload['entry_price'];
+        $riskPercent = $this->riskCalculator->computePercent(
+            $userId,
+            $accountId,
+            (string) $payload['symbol'],
+            (float) $payload['size'],
+            (float) $payload['sl_points'],
+        );
+        $now = new DateTimeImmutable('now');
+
+        $firstReason = null;
+        foreach ($plans as $plan) {
+            $reason = $this->planEvaluator->evaluate($plan, $direction, $entryPrice, $riskPercent, $now);
+            if ($reason === null) {
+                return null; // applicable to this plan → accept (OR across plans)
+            }
+            $firstReason ??= $reason;
+        }
+        return $firstReason;
     }
 
     /** Resolve a follow-up signal to its live order, or log ORDER_NOT_FOUND. */

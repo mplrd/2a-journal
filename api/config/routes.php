@@ -18,6 +18,7 @@ use App\Controllers\StatsController;
 use App\Controllers\SupportTicketController;
 use App\Controllers\AdminSupportTicketController;
 use App\Controllers\TradeController;
+use App\Controllers\TradingPlanController;
 use App\Controllers\TradingViewWebhookController;
 use App\Core\Database;
 use App\Core\Router;
@@ -53,6 +54,7 @@ use App\Repositories\RefreshTokenRepository;
 use App\Repositories\SsoCodeRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Repositories\UserRepository;
@@ -95,7 +97,10 @@ use App\Repositories\NoteCategoryRepository;
 use App\Services\NoteService;
 use App\Services\NoteCategoryService;
 use App\Services\SymbolService;
+use App\Services\PlanEvaluator;
+use App\Services\SignalRiskCalculator;
 use App\Services\TradeService;
+use App\Services\TradingPlanService;
 use App\Services\TradingViewWebhookService;
 
 /** @var Router $router */
@@ -441,6 +446,9 @@ $tradingViewFeatureFlag = new FeatureFlagMiddleware(
 $tvWebhookRepo = new TradingViewWebhookRepository($pdo);
 $tvEventRepo = new TradingViewAlertEventRepository($pdo);
 $robotRepo = new RobotRepository($pdo);
+$planRepo = new TradingPlanRepository($pdo);
+$planEvaluator = new PlanEvaluator();
+$signalRiskCalculator = new SignalRiskCalculator($symbolRepo, $symbolSettingsRepo, $accountRepo);
 $tvWebhookService = new TradingViewWebhookService(
     $tvWebhookRepo,
     $robotRepo,
@@ -454,6 +462,9 @@ $tvWebhookService = new TradingViewWebhookService(
     $metaApiConnector,
     $ouinexConnector,
     $bingxConnector,
+    $planRepo,
+    $planEvaluator,
+    $signalRiskCalculator,
 );
 $tvWebhookController = new TradingViewWebhookController($tvWebhookService);
 $robotService = new RobotService(
@@ -461,9 +472,12 @@ $robotService = new RobotService(
     $tvWebhookRepo,
     $tvEventRepo,
     $accountRepo,
+    $planRepo,
     $webhooksConfig['tradingview_base_url'],
 );
 $robotController = new RobotController($robotService);
+$planService = new TradingPlanService($planRepo);
+$planController = new TradingPlanController($planService);
 $tvWebhookIngestRateLimit = new RateLimitMiddleware(
     $rateLimitRepo,
     $webhooksConfig['tradingview_rate_limit']['max_attempts'],
@@ -479,9 +493,17 @@ $router->get('/robots', [$robotController, 'index'], [$authMiddleware, $requireS
 $router->post('/robots', [$robotController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->get('/robots/{id}', [$robotController, 'show'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->patch('/robots/{id}/status', [$robotController, 'updateStatus'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->patch('/robots/{id}', [$robotController, 'update'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->post('/robots/{id}/regenerate', [$robotController, 'regenerate'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->delete('/robots/{id}', [$robotController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->get('/robots/{id}/events', [$robotController, 'events'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+
+// Trading plans (the decision frame a robot follows; docs/83). Same flag.
+$router->get('/plans', [$planController, 'index'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->post('/plans', [$planController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->get('/plans/{id}', [$planController, 'show'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->put('/plans/{id}', [$planController, 'update'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+$router->delete('/plans/{id}', [$planController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

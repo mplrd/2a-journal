@@ -8,10 +8,12 @@ import Column from 'primevue/column'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import Textarea from 'primevue/textarea'
 import { robotsService } from '@/services/robots'
+import { plansService } from '@/services/plans'
 import { useAccountsStore } from '@/stores/accounts'
 
 const { t, locale } = useI18n()
@@ -22,10 +24,16 @@ const accountsStore = useAccountsStore()
 const robots = ref([])
 const loading = ref(false)
 
+const planOptions = ref([])
+
 const showCreate = ref(false)
 const newName = ref('')
 const newAccountId = ref(null)
+const newPlanIds = ref([])
 const creating = ref(false)
+
+const editPlanIds = ref([])
+const savingPlans = ref(false)
 
 const showCreated = ref(false)
 const createdResult = ref(null)
@@ -73,14 +81,39 @@ async function load() {
 function openCreate() {
   newName.value = ''
   newAccountId.value = null
+  newPlanIds.value = []
   showCreate.value = true
+}
+
+async function loadPlans() {
+  try {
+    const resp = await plansService.list()
+    planOptions.value = (resp.data ?? []).map((p) => ({ label: p.name, value: p.id }))
+  } catch {
+    planOptions.value = []
+  }
+}
+
+async function savePlans() {
+  const robotId = detail.value?.robot?.id
+  if (!robotId) return
+  savingPlans.value = true
+  try {
+    await robotsService.update(robotId, { planIds: editPlanIds.value })
+    toast.add({ severity: 'success', summary: t('robot.success.plans_updated'), life: 2500 })
+    await load()
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
+  } finally {
+    savingPlans.value = false
+  }
 }
 
 async function createRobot() {
   if (!canCreate.value) return
   creating.value = true
   try {
-    const resp = await robotsService.create({ name: newName.value.trim(), accountId: newAccountId.value })
+    const resp = await robotsService.create({ name: newName.value.trim(), accountId: newAccountId.value, planIds: newPlanIds.value })
     createdResult.value = resp.data
     createdModalTitle.value = t('robot.created.title')
     showCreate.value = false
@@ -101,6 +134,7 @@ async function openDetail(robot) {
   try {
     const resp = await robotsService.get(robot.id)
     detail.value = resp.data
+    editPlanIds.value = [...(resp.data?.robot?.plan_ids ?? [])]
   } catch (err) {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
     showDetail.value = false
@@ -222,7 +256,7 @@ async function copy(text, key) {
 
 onMounted(async () => {
   if (!accountsStore.loaded) await accountsStore.fetchAccounts()
-  await load()
+  await Promise.all([load(), loadPlans()])
 })
 </script>
 
@@ -255,6 +289,14 @@ onMounted(async () => {
         <template #body="{ data }"><span class="font-medium">{{ data.name }}</span></template>
       </Column>
       <Column field="account_name" :header="t('robot.field.account')" />
+      <Column :header="t('robot.field.plans')">
+        <template #body="{ data }">
+          <div class="flex flex-wrap gap-1">
+            <Tag v-for="p in data.plans" :key="p.id" :value="p.name" severity="info" />
+            <span v-if="!data.plans || data.plans.length === 0" class="text-xs text-gray-400">—</span>
+          </div>
+        </template>
+      </Column>
       <Column field="status" :header="t('robot.field.status')">
         <template #body="{ data }">
           <Tag :value="t(`robot.status.${data.status}`)" :severity="ROBOT_STATUS_SEVERITY[data.status]" />
@@ -332,6 +374,19 @@ onMounted(async () => {
             data-testid="robot-account-select"
           />
         </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">{{ t('robot.field.plans') }}</label>
+          <MultiSelect
+            v-model="newPlanIds"
+            :options="planOptions"
+            option-label="label"
+            option-value="value"
+            class="w-full"
+            display="chip"
+            :placeholder="t('robot.plans_placeholder')"
+            data-testid="robot-plans-select"
+          />
+        </div>
       </div>
       <template #footer>
         <Button :label="t('common.cancel')" severity="secondary" @click="showCreate = false" />
@@ -347,6 +402,22 @@ onMounted(async () => {
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div><span class="text-gray-500">{{ t('robot.field.account') }}:</span> {{ detail.robot.account_name }}</div>
           <div><span class="text-gray-500">{{ t('robot.field.status') }}:</span> {{ t(`robot.status.${detail.robot.status}`) }}</div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1">{{ t('robot.field.plans') }}</label>
+          <div class="flex gap-2">
+            <MultiSelect
+              v-model="editPlanIds"
+              :options="planOptions"
+              option-label="label"
+              option-value="value"
+              class="flex-1"
+              display="chip"
+              :placeholder="t('robot.plans_placeholder')"
+              data-testid="robot-detail-plans"
+            />
+            <Button icon="pi pi-save" :label="t('common.save')" :loading="savingPlans" data-testid="robot-save-plans" @click="savePlans" />
+          </div>
         </div>
         <div>
           <label class="block text-xs font-medium mb-1">{{ t('robot.created.url_label') }}</label>

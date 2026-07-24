@@ -24,6 +24,8 @@
     "error": "Erreur",
     "success": "Succès",
     "actions": "Actions",
+    "buy": "Achat",
+    "sell": "Vente",
     "from": "Du",
     "to": "Au",
     "range": {
@@ -47,6 +49,7 @@
     "performance": "Performance",
     "notebook": "Carnet",
     "robots": "Robots",
+    "plans": "Plans",
     "import": "Import",
     "logout": "Déconnexion",
     "language": "Langue",
@@ -1018,7 +1021,8 @@
         "FEATURE_DISABLED": "Fonctionnalité désactivée",
         "ROBOT_PAUSED": "Robot en pause",
         "ORDER_NOT_FOUND": "Ordre introuvable",
-        "UNSUPPORTED_ACTION": "Action non supportée"
+        "UNSUPPORTED_ACTION": "Action non supportée",
+        "OUT_OF_PLAN": "Hors du plan"
       }
     },
     "error": {
@@ -1041,6 +1045,7 @@
     "empty": "Vous n'avez aucun robot pour le moment.",
     "name_placeholder": "Nom de votre robot",
     "account_placeholder": "Compte cible",
+    "plans_placeholder": "Plans à appliquer (optionnel)",
     "never": "Jamais",
     "archive_confirm": "Archiver ce robot ? Son webhook cessera de fonctionner. L'historique est conservé.",
     "regenerate_confirm": "Régénérer l'URL et le secret ? L'ancienne URL cessera immédiatement de fonctionner — il faudra recoller la nouvelle dans TradingView.",
@@ -1051,7 +1056,8 @@
       "account": "Compte",
       "status": "Statut",
       "last_triggered": "Dernier signal",
-      "counters": "Activité"
+      "counters": "Activité",
+      "plans": "Plans"
     },
     "status": {
       "ACTIVE": "Actif",
@@ -1077,7 +1083,8 @@
       "paused": "Robot mis en pause",
       "resumed": "Robot réactivé",
       "archived": "Robot archivé",
-      "regenerated": "Identifiants régénérés"
+      "regenerated": "Identifiants régénérés",
+      "plans_updated": "Plans du robot mis à jour"
     },
     "detail": {
       "title": "Détails du robot",
@@ -1116,7 +1123,69 @@
       "not_found": "Robot introuvable.",
       "invalid_name": "Le nom est requis (max. 120 caractères).",
       "invalid_status": "Statut invalide.",
-      "too_many": "Limite de robots atteinte pour ce compte."
+      "too_many": "Limite de robots atteinte pour ce compte.",
+      "invalid_plans": "Un ou plusieurs plans sélectionnés sont invalides."
+    }
+  },
+  "plan": {
+    "title": "Plans",
+    "subtitle": "Un plan définit le cadre dans lequel un robot a le droit d'entrer : sens, zones de prix, sessions horaires, risque max. Un robot ne prend que les signaux applicables à au moins un de ses plans.",
+    "new": "Nouveau plan",
+    "edit": "Modifier le plan",
+    "empty": "Vous n'avez aucun plan pour le moment.",
+    "name_placeholder": "Ex. DAX intraday",
+    "archive_confirm": "Archiver ce plan ? Il ne sera plus proposé aux robots. L'historique est conservé.",
+    "used_by": "{count} robot(s)",
+    "zones_hint": "Pour chaque sens, le signal doit tomber dans au moins une zone. Sans zone pour un sens, aucune contrainte de prix sur ce sens.",
+    "zone_low": "Borne basse",
+    "zone_high": "Borne haute",
+    "add_zone": "Ajouter une zone",
+    "add_window": "Ajouter une plage",
+    "max_risk_placeholder": "ex. 1",
+    "max_risk_hint": "Rejette le signal si son risque (taille × points SL × valeur du point ÷ capital) dépasse ce pourcentage. Ignoré si la valeur du point n'est pas configurée pour le symbole.",
+    "field": {
+      "name": "Nom",
+      "direction": "Sens autorisé",
+      "zones": "Zones de prix",
+      "windows": "Plages horaires (sessions)",
+      "timezone": "Fuseau horaire",
+      "max_risk": "Risque max par trade",
+      "filters": "Filtres",
+      "usage": "Utilisation"
+    },
+    "direction": {
+      "both": "Les deux"
+    },
+    "tag": {
+      "zones": "{count} zone(s)",
+      "windows": "{count} plage(s)",
+      "risk": "≤ {pct} %",
+      "none": "Aucun filtre"
+    },
+    "actions": {
+      "archive": "Archiver"
+    },
+    "success": {
+      "created": "Plan créé",
+      "updated": "Plan mis à jour",
+      "archived": "Plan archivé"
+    },
+    "error": {
+      "invalid_name": "Le nom est requis (max. 120 caractères).",
+      "too_many": "Limite de plans atteinte.",
+      "invalid_direction": "Sens invalide.",
+      "invalid_timezone": "Fuseau horaire invalide.",
+      "invalid_risk": "Le risque max doit être supérieur à 0.",
+      "invalid_zone": "Zone invalide (sens et bornes > 0 requis).",
+      "too_many_zones": "Trop de zones définies.",
+      "invalid_window": "Plage horaire invalide.",
+      "timezone_required": "Un fuseau horaire est requis pour les plages horaires.",
+      "too_many_windows": "Trop de plages horaires définies.",
+      "invalid_window_days": "Sélectionnez au moins un jour.",
+      "invalid_window_time": "Heures invalides (le début doit précéder la fin).",
+      "in_use": "Ce plan est utilisé par un robot actif. Détachez-le d'abord.",
+      "not_found": "Plan introuvable.",
+      "forbidden": "Accès refusé à ce plan."
     }
   },
   "notebook": {

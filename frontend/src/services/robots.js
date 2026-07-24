@@ -9,8 +9,15 @@ export const robotsService = {
     return api.get(`/robots/${robotId}`)
   },
 
-  async create({ name, accountId }) {
-    return api.post('/robots', { name, account_id: accountId })
+  async create({ name, accountId, planIds = [] }) {
+    return api.post('/robots', { name, account_id: accountId, plan_ids: planIds })
+  },
+
+  async update(robotId, { name, planIds }) {
+    const payload = {}
+    if (name !== undefined) payload.name = name
+    if (planIds !== undefined) payload.plan_ids = planIds
+    return api.patch(`/robots/${robotId}`, payload)
   },
 
   async regenerate(robotId) {

@@ -104,9 +104,12 @@ function isActiveLink(linkTo) {
 const navLinks = computed(() => [
   { to: '/', name: 'dashboard', label: t('nav.dashboard'), icon: 'pi pi-home' },
   { to: '/accounts', name: 'accounts', label: t('nav.accounts'), icon: 'pi pi-wallet' },
-  // Robots: right after Accounts; only shown when the platform flag is on.
+  // Robots + Plans: right after Accounts; only shown when the platform flag is on.
   ...(featuresStore.robots
-    ? [{ to: '/robots', name: 'robots', label: t('nav.robots'), icon: 'pi pi-android' }]
+    ? [
+        { to: '/robots', name: 'robots', label: t('nav.robots'), icon: 'pi pi-android' },
+        { to: '/plans', name: 'plans', label: t('nav.plans'), icon: 'pi pi-compass' },
+      ]
     : []),
   { to: '/positions', name: 'positions', label: t('nav.positions'), icon: 'pi pi-chart-line' },
   { to: '/orders', name: 'orders', label: t('nav.orders'), icon: 'pi pi-list' },

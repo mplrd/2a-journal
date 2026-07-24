@@ -24,6 +24,8 @@
     "error": "Error",
     "success": "Success",
     "actions": "Actions",
+    "buy": "Buy",
+    "sell": "Sell",
     "from": "From",
     "to": "To",
     "range": {
@@ -47,6 +49,7 @@
     "performance": "Performance",
     "notebook": "Notebook",
     "robots": "Robots",
+    "plans": "Plans",
     "import": "Import",
     "logout": "Logout",
     "language": "Language",
@@ -1018,7 +1021,8 @@
         "FEATURE_DISABLED": "Feature disabled",
         "ROBOT_PAUSED": "Robot paused",
         "ORDER_NOT_FOUND": "Order not found",
-        "UNSUPPORTED_ACTION": "Unsupported action"
+        "UNSUPPORTED_ACTION": "Unsupported action",
+        "OUT_OF_PLAN": "Out of plan"
       }
     },
     "error": {
@@ -1041,6 +1045,7 @@
     "empty": "You have no robots yet.",
     "name_placeholder": "Your robot's name",
     "account_placeholder": "Target account",
+    "plans_placeholder": "Plans to apply (optional)",
     "never": "Never",
     "archive_confirm": "Archive this robot? Its webhook will stop working. History is kept.",
     "regenerate_confirm": "Regenerate the URL and secret? The old URL stops working immediately — you'll need to paste the new one into TradingView.",
@@ -1051,7 +1056,8 @@
       "account": "Account",
       "status": "Status",
       "last_triggered": "Last signal",
-      "counters": "Activity"
+      "counters": "Activity",
+      "plans": "Plans"
     },
     "status": {
       "ACTIVE": "Active",
@@ -1077,7 +1083,8 @@
       "paused": "Robot paused",
       "resumed": "Robot resumed",
       "archived": "Robot archived",
-      "regenerated": "Credentials regenerated"
+      "regenerated": "Credentials regenerated",
+      "plans_updated": "Robot plans updated"
     },
     "detail": {
       "title": "Robot details",
@@ -1116,7 +1123,69 @@
       "not_found": "Robot not found.",
       "invalid_name": "Name is required (max. 120 characters).",
       "invalid_status": "Invalid status.",
-      "too_many": "Robot limit reached for this account."
+      "too_many": "Robot limit reached for this account.",
+      "invalid_plans": "One or more selected plans are invalid."
+    }
+  },
+  "plan": {
+    "title": "Plans",
+    "subtitle": "A plan defines the frame within which a robot may enter: direction, price zones, session windows, max risk. A robot only takes signals applicable to at least one of its plans.",
+    "new": "New plan",
+    "edit": "Edit plan",
+    "empty": "You have no plans yet.",
+    "name_placeholder": "e.g. DAX intraday",
+    "archive_confirm": "Archive this plan? It will no longer be offered to robots. History is kept.",
+    "used_by": "{count} robot(s)",
+    "zones_hint": "For each direction, the signal must fall inside at least one zone. With no zone for a direction, there is no price constraint on that direction.",
+    "zone_low": "Low bound",
+    "zone_high": "High bound",
+    "add_zone": "Add a zone",
+    "add_window": "Add a window",
+    "max_risk_placeholder": "e.g. 1",
+    "max_risk_hint": "Rejects the signal when its risk (size × SL points × point value ÷ capital) exceeds this percentage. Ignored when the symbol's point value isn't configured.",
+    "field": {
+      "name": "Name",
+      "direction": "Allowed direction",
+      "zones": "Price zones",
+      "windows": "Time windows (sessions)",
+      "timezone": "Timezone",
+      "max_risk": "Max risk per trade",
+      "filters": "Filters",
+      "usage": "Usage"
+    },
+    "direction": {
+      "both": "Both"
+    },
+    "tag": {
+      "zones": "{count} zone(s)",
+      "windows": "{count} window(s)",
+      "risk": "≤ {pct}%",
+      "none": "No filter"
+    },
+    "actions": {
+      "archive": "Archive"
+    },
+    "success": {
+      "created": "Plan created",
+      "updated": "Plan updated",
+      "archived": "Plan archived"
+    },
+    "error": {
+      "invalid_name": "Name is required (max. 120 characters).",
+      "too_many": "Plan limit reached.",
+      "invalid_direction": "Invalid direction.",
+      "invalid_timezone": "Invalid timezone.",
+      "invalid_risk": "Max risk must be greater than 0.",
+      "invalid_zone": "Invalid zone (direction and bounds > 0 required).",
+      "too_many_zones": "Too many zones defined.",
+      "invalid_window": "Invalid time window.",
+      "timezone_required": "A timezone is required for time windows.",
+      "too_many_windows": "Too many time windows defined.",
+      "invalid_window_days": "Select at least one day.",
+      "invalid_window_time": "Invalid times (start must be before end).",
+      "in_use": "This plan is used by an active robot. Detach it first.",
+      "not_found": "Plan not found.",
+      "forbidden": "Access denied to this plan."
     }
   },
   "notebook": {

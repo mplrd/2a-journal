@@ -15,4 +15,5 @@ enum WebhookRejectReason: string
     case ROBOT_PAUSED = 'ROBOT_PAUSED';
     case ORDER_NOT_FOUND = 'ORDER_NOT_FOUND';
     case UNSUPPORTED_ACTION = 'UNSUPPORTED_ACTION';
+    case OUT_OF_PLAN = 'OUT_OF_PLAN';
 }
