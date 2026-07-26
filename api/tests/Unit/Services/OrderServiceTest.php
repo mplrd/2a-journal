@@ -10,7 +10,10 @@ use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\TradingPlanRepository;
 use App\Services\OrderService;
+use App\Services\PlanEvaluator;
+use App\Services\SignalRiskCalculator;
 use PHPUnit\Framework\TestCase;
 
 class OrderServiceTest extends TestCase
@@ -103,6 +106,115 @@ class OrderServiceTest extends TestCase
 
         $this->assertSame('NASDAQ', $result['symbol']);
         $this->assertSame('PENDING', $result['status']);
+    }
+
+    // ── Create: plan adherence (docs/83) ────────────────────────
+    // The order carries the verdict on its position; the trade inherits it on
+    // execute (same position row), so testing order creation covers both.
+
+    private function serviceWithPlan(TradingPlanRepository $planRepo, ?SignalRiskCalculator $riskCalc = null): OrderService
+    {
+        return new OrderService(
+            $this->orderRepo,
+            $this->positionRepo,
+            $this->accountRepo,
+            $this->historyRepo,
+            $this->tradeRepo,
+            null,
+            $planRepo,
+            new PlanEvaluator(),
+            $riskCalc,
+        );
+    }
+
+    private function assembledPlan(array $overrides = []): array
+    {
+        return array_merge([
+            'id' => 5,
+            'user_id' => 1,
+            'allowed_direction' => null,
+            'timezone' => null,
+            'max_risk_percent' => null,
+            'zones' => [],
+            'windows' => [],
+        ], $overrides);
+    }
+
+    public function testCreateWithPlanInZoneStoresInPlan(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->orderRepo->method('create')->willReturn($this->fakeOrder());
+        $captured = null;
+        $this->positionRepo->method('create')->willReturnCallback(function ($data) use (&$captured) {
+            $captured = $data;
+            return ['id' => 10, 'user_id' => 1];
+        });
+
+        $planRepo = $this->createMock(TradingPlanRepository::class);
+        $planRepo->method('isOwnedAndActive')->willReturn(true);
+        $planRepo->method('findByIdAssembled')->willReturn($this->assembledPlan([
+            'zones' => [['direction' => 'BUY', 'low_price' => '18000', 'high_price' => '19000']],
+        ]));
+        $riskCalc = $this->createMock(SignalRiskCalculator::class);
+        $riskCalc->method('computePercent')->willReturn(null);
+
+        $this->serviceWithPlan($planRepo, $riskCalc)->create(1, $this->validCreateData(['plan_id' => 5]));
+
+        $this->assertSame(5, $captured['plan_id']);
+        $this->assertSame('IN_PLAN', $captured['plan_adherence']);
+        $this->assertNull($captured['plan_adherence_reason']);
+    }
+
+    public function testCreateWithPlanOutOfZoneStoresOutOfPlan(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->orderRepo->method('create')->willReturn($this->fakeOrder());
+        $captured = null;
+        $this->positionRepo->method('create')->willReturnCallback(function ($data) use (&$captured) {
+            $captured = $data;
+            return ['id' => 10, 'user_id' => 1];
+        });
+
+        $planRepo = $this->createMock(TradingPlanRepository::class);
+        $planRepo->method('isOwnedAndActive')->willReturn(true);
+        $planRepo->method('findByIdAssembled')->willReturn($this->assembledPlan([
+            'zones' => [['direction' => 'BUY', 'low_price' => '19000', 'high_price' => '20000']],
+        ]));
+        $riskCalc = $this->createMock(SignalRiskCalculator::class);
+        $riskCalc->method('computePercent')->willReturn(null);
+
+        $this->serviceWithPlan($planRepo, $riskCalc)->create(1, $this->validCreateData(['plan_id' => 5]));
+
+        $this->assertSame('OUT_OF_PLAN', $captured['plan_adherence']);
+        $this->assertNotNull($captured['plan_adherence_reason']);
+    }
+
+    public function testCreateWithUnknownPlanThrows(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+
+        $planRepo = $this->createMock(TradingPlanRepository::class);
+        $planRepo->method('isOwnedAndActive')->willReturn(false);
+
+        $this->expectException(ValidationException::class);
+        $this->serviceWithPlan($planRepo)->create(1, $this->validCreateData(['plan_id' => 999]));
+    }
+
+    public function testCreateWithoutPlanLeavesAdherenceNull(): void
+    {
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->orderRepo->method('create')->willReturn($this->fakeOrder());
+        $captured = null;
+        $this->positionRepo->method('create')->willReturnCallback(function ($data) use (&$captured) {
+            $captured = $data;
+            return ['id' => 10, 'user_id' => 1];
+        });
+
+        $planRepo = $this->createMock(TradingPlanRepository::class);
+        $this->serviceWithPlan($planRepo)->create(1, $this->validCreateData());
+
+        $this->assertNull($captured['plan_id']);
+        $this->assertNull($captured['plan_adherence']);
     }
 
     public function testCreateCalculatesPricesBuy(): void

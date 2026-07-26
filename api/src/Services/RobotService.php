@@ -9,6 +9,7 @@ use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\RobotRepository;
+use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 
@@ -30,18 +31,22 @@ class RobotService
         private TradingViewWebhookRepository $webhookRepo,
         private TradingViewAlertEventRepository $eventRepo,
         private AccountRepository $accountRepo,
+        private TradingPlanRepository $planRepo,
         private string $baseWebhookUrl,
     ) {}
 
-    /** All non-archived robots of the user, across every account. */
+    /** All non-archived robots of the user, across every account, with plans. */
     public function listForUser(int $userId): array
     {
-        return $this->robotRepo->findAllByUserId($userId);
+        return array_map(
+            fn (array $robot): array => $this->attachPlans($robot),
+            $this->robotRepo->findAllByUserId($userId),
+        );
     }
 
     public function getForUser(int $userId, int $robotId): array
     {
-        return $this->findOwnedRobot($userId, $robotId);
+        return $this->attachPlans($this->findOwnedRobot($userId, $robotId));
     }
 
     /**
@@ -54,7 +59,7 @@ class RobotService
      */
     public function getDetailForUser(int $userId, int $robotId): array
     {
-        $robot = $this->findOwnedRobot($userId, $robotId);
+        $robot = $this->attachPlans($this->findOwnedRobot($userId, $robotId));
         $hasWebhook = $this->webhookRepo->findByRobotId($robotId) !== null;
 
         return [
@@ -89,16 +94,40 @@ class RobotService
             throw new ValidationException('robot.error.too_many', 'account_id');
         }
 
+        $planIds = $this->validatePlanIds($userId, $data['plan_ids'] ?? []);
+
         $robot = $this->robotRepo->create([
             'user_id' => $userId,
             'account_id' => $accountId,
             'name' => $name,
         ]);
+        $this->planRepo->setRobotPlans((int) $robot['id'], $planIds);
 
         return [
-            'robot' => $robot,
+            'robot' => $this->attachPlans($robot),
             ...$this->provisionWebhook($userId, (int) $robot['id'], $name),
         ];
+    }
+
+    /** Update a robot's name and/or its attached plans (many-to-many). */
+    public function update(int $userId, int $robotId, array $data): array
+    {
+        $robot = $this->findOwnedRobot($userId, $robotId);
+
+        if (array_key_exists('name', $data)) {
+            $name = trim((string) $data['name']);
+            if ($name === '' || mb_strlen($name) > 120) {
+                throw new ValidationException('robot.error.invalid_name', 'name');
+            }
+            $this->robotRepo->updateName((int) $robot['id'], $name);
+        }
+
+        if (array_key_exists('plan_ids', $data)) {
+            $planIds = $this->validatePlanIds($userId, $data['plan_ids']);
+            $this->planRepo->setRobotPlans((int) $robot['id'], $planIds);
+        }
+
+        return $this->attachPlans($this->findOwnedRobot($userId, $robotId));
     }
 
     /**
@@ -191,6 +220,35 @@ class RobotService
                 'total_pages' => (int) ceil($total / $perPage),
             ],
         ];
+    }
+
+    /**
+     * Every plan id must be an active plan owned by the user. Returns the
+     * de-duplicated list of ints (empty = the robot follows no plan).
+     */
+    private function validatePlanIds(int $userId, mixed $planIds): array
+    {
+        if (!is_array($planIds)) {
+            throw new ValidationException('robot.error.invalid_plans', 'plan_ids');
+        }
+        $ids = [];
+        foreach ($planIds as $planId) {
+            $planId = (int) $planId;
+            if ($planId <= 0 || !$this->planRepo->isOwnedAndActive($userId, $planId)) {
+                throw new ValidationException('robot.error.invalid_plans', 'plan_ids');
+            }
+            $ids[] = $planId;
+        }
+        return array_values(array_unique($ids));
+    }
+
+    /** Attach the robot's active plans ({id,name}) + plan_ids for the SPA. */
+    private function attachPlans(array $robot): array
+    {
+        $robotId = (int) $robot['id'];
+        $robot['plans'] = $this->planRepo->findActivePlansForRobot($robotId);
+        $robot['plan_ids'] = $this->planRepo->findPlanIdsForRobot($robotId);
+        return $robot;
     }
 
     private function ensureAccountOwned(int $userId, int $accountId): void

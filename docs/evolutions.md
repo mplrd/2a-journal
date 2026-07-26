@@ -418,4 +418,72 @@ Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-
 
 ---
 
+## Plans de trading — pistes différées (hors périmètre v1)
+
+**Contexte** : livraison des plans de trading (`docs/83-trading-plans.md`, migration `033_trading_plans.sql`, branche `feat/trading-plans`). Pistes laissées de côté volontairement :
+
+- **Fenêtres chevauchant minuit** : v1 impose `start < end` sur le même jour (documenté doc 83) ; une session 22:00→02:00 demande deux fenêtres. Supporter le wrap (`start > end` = chevauche minuit) si le besoin remonte.
+- **Liste de timezones complète** : `PlansView.vue` propose une liste IANA curée (`BASE_TZ`, 9 zones + celle du plan). `Intl.supportedValuesOf('timeZone')` donnerait la liste exhaustive avec filtre.
+
+**Repéré le** : 2026-07-24.
+**Priorité** : basse — la v1 couvre le besoin exprimé.
+
+---
+
+## Plans de trading — analytics d'adhérence (au-delà du badge/filtre)
+
+**Contexte** : livraison de l'adhérence sur trade manuel (`docs/83`, migration `034_trade_plan_adherence.sql`). La v1 pose `positions.plan_id` + verdict figé `plan_adherence`, un badge dans la liste des trades et un filtre `Dans le plan / Hors plan / Sans plan`. Le besoin exprimé (« identifier les trades hors plan dans les stats ») est couvert au niveau *repérage*.
+
+**À faire (si le besoin monte)** : une vraie brique analytics — comparer la **performance in-plan vs out-of-plan** (win rate, R:R moyen, P&L) dans la vue Performance, un compteur « X % de tes trades ont été pris hors plan », éventuellement une ventilation par plan. Réutiliser le filtre `plan_adherence` déjà exposé par l'API trades. Croiser avec le cadrage perf existant (memory `feedback_perf_charts` : R:R / win rate, pas de P&L brut, pas de graphe par compte).
+
+**Question ouverte (à trancher) — comment matérialiser l'adhérence dans les stats** : quel support UI ? Options à peser :
+- un **segment/toggle** sur la vue Performance existante (in-plan / out-of-plan / tout), qui rejoue les mêmes graphes filtrés ;
+- une **tuile dédiée** « discipline » (% dans le plan, delta de win rate in vs out) façon KPI, sans nouvel écran ;
+- une **ventilation par plan** (petit tableau win rate / R:R par plan).
+Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — probablement côté Performance, pas Dashboard. Décider AVANT de coder pour ne pas empiler des graphes.
+
+**Repéré le** : 2026-07-26.
+**Priorité** : moyenne — forte valeur pédagogique (discipline de trading), mais la v1 badge+filtre suffit à repérer. À reprioriser selon l'usage.
+
+---
+
+## Plans de trading — raison d'adhérence localisable (i18n)
+
+**Contexte** : `PlanEvaluator::evaluate()` renvoie une **raison en anglais** en prose (`entry 18200 outside BUY zones`, `direction BUY not allowed`, `outside trading windows`, `risk X% exceeds plan max Y%`). Elle est stockée telle quelle dans `positions.plan_adherence_reason` ET `tradingview_alert_events.error_message` (audit robots). En v1, le tooltip du badge FR ne l'affiche donc PAS (juste le statut « Dans le plan » / « Hors plan » localisé), pour ne pas montrer d'anglais côté user.
+
+**À faire** : faire renvoyer par `PlanEvaluator` une **raison structurée** (code + params, ex. `{code:'ENTRY_OUTSIDE_ZONES', entry:18200, direction:'BUY'}`) au lieu de la prose. Stocker le code (ou code+params JSON), traduire côté front (clés `plan.reason.*`) pour afficher la raison en français dans le tooltip. Attention : la prose est aussi consommée par l'audit robots (log JSON) — garder une projection lisible là-bas, ou traduire aussi le back-office. Migration douce (les anciennes valeurs prose restent lisibles en fallback).
+
+**Repéré le** : 2026-07-26.
+**Priorité** : moyenne — le badge + statut localisé suffisent au repérage ; la raison détaillée FR est un plus (surtout si on pousse l'analytics d'adhérence).
+
+---
+
+## Dépendances — advisories connues (audits composer + npm)
+
+**Contexte** : relevé pendant l'audit sécurité de `feat/trading-plans` (2026-07-24), rien d'introduit par la feature.
+
+- **Backend (`php composer.phar audit`)** : `firebase/php-jwt` < 7 (low, CVE-2025-45769 « weak encryption ») + 7 advisories **medium** sur `guzzlehttp/guzzle` (cookies, Referer, proxy downgrade…). Guzzle ne sert qu'aux connecteurs broker sortants (surface limitée), mais à bumper.
+- **Frontend (`npm audit`)** : 6 advisories (4 high) toutes dans la **toolchain de build** (vite, rollup, postcss, esbuild, picomatch, yaml) — dev-server/build uniquement, rien dans le bundle livré. `npm audit fix` les couvre.
+
+**À faire** : branche chore dédiée — bump `firebase/php-jwt` v7 (vérifier l'API `encode/decode`), `guzzlehttp/guzzle` dernière 7.x, `npm audit fix` ; re-passer les deux suites complètes.
+
+**Repéré le** : 2026-07-24.
+**Priorité** : moyenne (guzzle/php-jwt) / basse (toolchain front, non exposée en prod).
+
+---
+
+## Tests frontend — pollution inter-suites + flaky en run complet
+
+**Contexte** : relevé le 2026-07-24 en re-passant la suite Vitest complète (`feat/trading-plans` — non lié à la feature, les fichiers en cause ne sont pas touchés par la branche).
+
+- **10 « Unhandled Rejection » `api.get is not a function`** dans `src/services/customFields.js:5`, uniquement en run complet (chaque spec passée isolément est propre) : une suite mocke partiellement `@/services/api` et un `customFieldsService.list()` asynchrone d'un composant monté ailleurs résout après coup sur le mock incomplet. Les 422 tests passent mais Vitest sort en exit 1.
+- **Flaky** : `share-dialog.spec.js > does not render content when not visible` timeout 5 s par intermittence (passe en isolation et sur d'autres runs complets).
+
+**À faire** : identifier la/les suites au mock `api` partiel (chercher `vi.mock('@/services/api'` sans `get`), compléter le mock ou mocker `customFieldsService` directement ; stabiliser le test ShareDialog (attente explicite plutôt que timeout implicite).
+
+**Repéré le** : 2026-07-24.
+**Priorité** : moyenne — masque de vraies erreurs (exit 1 permanent du run complet) et fait échouer toute CI stricte.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

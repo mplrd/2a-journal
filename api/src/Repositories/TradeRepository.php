@@ -38,6 +38,7 @@ class TradeRepository
                     t.remaining_size, t.be_reached, t.avg_exit_price, t.pnl, t.pnl_percent,
                     t.risk_reward, t.duration_minutes, t.status, t.exit_type,
                     p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                    p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                     p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
                     p.position_type, p.created_at, p.updated_at
              FROM trades t
@@ -116,6 +117,18 @@ class TradeRepository
             $params['direction'] = $filters['direction'];
         }
 
+        // Plan adherence (docs/83): IN_PLAN / OUT_OF_PLAN qualify trades that
+        // reference a plan; NONE selects trades with no plan attached. Caller
+        // whitelists the value upstream.
+        if (!empty($filters['plan_adherence'])) {
+            if ($filters['plan_adherence'] === 'NONE') {
+                $where .= ' AND p.plan_id IS NULL';
+            } else {
+                $where .= ' AND p.plan_adherence = :plan_adherence';
+                $params['plan_adherence'] = $filters['plan_adherence'];
+            }
+        }
+
         if (!empty($filters['custom_filter'])) {
             $joins .= ' INNER JOIN custom_field_values cfv ON cfv.trade_id = t.id';
             $where .= ' AND cfv.custom_field_id = :cf_field_id AND cfv.value = :cf_value';
@@ -143,6 +156,7 @@ class TradeRepository
                        t.remaining_size, t.be_reached, t.avg_exit_price, t.pnl, t.pnl_percent,
                        t.risk_reward, t.duration_minutes, t.status, t.exit_type,
                        p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                       p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                        p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
                        p.position_type, p.created_at, p.updated_at
                 FROM trades t

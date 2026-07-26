@@ -9,6 +9,7 @@ use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\RobotRepository;
+use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Services\RobotService;
@@ -53,6 +54,7 @@ class RobotServiceTest extends TestCase
             $this->webhookRepo,
             new TradingViewAlertEventRepository($this->pdo),
             $accountRepo,
+            new TradingPlanRepository($this->pdo),
             'http://test.local/api/webhooks/tradingview',
         );
 
@@ -76,11 +78,51 @@ class RobotServiceTest extends TestCase
     private function cleanup(): void
     {
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-        foreach (['tradingview_alert_events', 'tradingview_webhooks', 'robots', 'accounts'] as $t) {
+        foreach (['robot_plans', 'trading_plan_zones', 'trading_plan_windows', 'trading_plans', 'tradingview_alert_events', 'tradingview_webhooks', 'robots', 'accounts'] as $t) {
             $this->pdo->exec("DELETE FROM {$t}");
         }
         $this->pdo->exec("DELETE FROM users WHERE email IN ('robot-owner@test.com','robot-other@test.com')");
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    private function createPlan(?int $ownerId = null): int
+    {
+        $plan = (new TradingPlanRepository($this->pdo))->create([
+            'user_id' => $ownerId ?? $this->userId,
+            'name' => 'P',
+        ]);
+        return (int) $plan['id'];
+    }
+
+    public function testCreateWithPlansAttachesThem(): void
+    {
+        $planId = $this->createPlan();
+        $result = $this->service->create($this->userId, [
+            'name' => 'Bot', 'account_id' => $this->accountId, 'plan_ids' => [$planId],
+        ]);
+        $this->assertSame([$planId], $result['robot']['plan_ids']);
+    }
+
+    public function testCreateRejectsPlanOwnedByAnotherUser(): void
+    {
+        $otherPlanId = $this->createPlan($this->otherUserId);
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, [
+            'name' => 'Bot', 'account_id' => $this->accountId, 'plan_ids' => [$otherPlanId],
+        ]);
+    }
+
+    public function testUpdateReplacesAttachedPlans(): void
+    {
+        $robot = $this->service->create($this->userId, ['name' => 'Bot', 'account_id' => $this->accountId])['robot'];
+        $p1 = $this->createPlan();
+        $p2 = $this->createPlan();
+
+        $updated = $this->service->update($this->userId, (int) $robot['id'], ['plan_ids' => [$p1, $p2]]);
+
+        $ids = $updated['plan_ids'];
+        sort($ids);
+        $this->assertSame([$p1, $p2], $ids);
     }
 
     public function testCreateReturnsRobotPlusOneShotCredentials(): void

@@ -29,6 +29,17 @@ class FeaturesTest extends TestCase
         $this->assertIsBool($body['data']['broker_auto_sync']);
     }
 
+    public function testFeaturesEndpointExposesPlansFlag(): void
+    {
+        $request = Request::create('GET', '/features');
+        $response = $this->router->dispatch($request);
+
+        $body = $response->getBody();
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertArrayHasKey('plans', $body['data']);
+        $this->assertIsBool($body['data']['plans']);
+    }
+
     public function testFeaturesEndpointIsPublic(): void
     {
         $request = Request::create('GET', '/features');

@@ -104,6 +104,12 @@ const router = createRouter({
           meta: { titleKey: 'robot.title' },
         },
         {
+          path: 'plans',
+          name: 'plans',
+          component: () => import('@/views/PlansView.vue'),
+          meta: { titleKey: 'plan.title' },
+        },
+        {
           path: 'account',
           name: 'account',
           component: () => import('@/views/AccountView.vue'),

@@ -21,10 +21,22 @@ describe('robots service', () => {
     expect(api.get).toHaveBeenCalledWith('/robots/4')
   })
 
-  it('create posts name + account_id', async () => {
+  it('create posts name + account_id + plan_ids', async () => {
     api.post.mockResolvedValue({ success: true, data: { robot: { id: 1 } } })
     await robotsService.create({ name: 'My bot', accountId: 7 })
-    expect(api.post).toHaveBeenCalledWith('/robots', { name: 'My bot', account_id: 7 })
+    expect(api.post).toHaveBeenCalledWith('/robots', { name: 'My bot', account_id: 7, plan_ids: [] })
+  })
+
+  it('create forwards selected plan ids', async () => {
+    api.post.mockResolvedValue({ success: true, data: { robot: { id: 1 } } })
+    await robotsService.create({ name: 'Bot', accountId: 7, planIds: [2, 5] })
+    expect(api.post).toHaveBeenCalledWith('/robots', { name: 'Bot', account_id: 7, plan_ids: [2, 5] })
+  })
+
+  it('update patches name and plan_ids', async () => {
+    api.patch.mockResolvedValue({ success: true, data: { robot: {} } })
+    await robotsService.update(5, { name: 'x', planIds: [1, 2] })
+    expect(api.patch).toHaveBeenCalledWith('/robots/5', { name: 'x', plan_ids: [1, 2] })
   })
 
   it('regenerate posts to the regenerate endpoint', async () => {

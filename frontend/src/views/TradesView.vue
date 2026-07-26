@@ -28,6 +28,7 @@ import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
 import { tradesService } from '@/services/trades'
+import { plansService } from '@/services/plans'
 import { getNextObjective } from '@/utils/nextObjective'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -48,6 +49,10 @@ const customFieldsStore = useCustomFieldsStore()
 const authStore = useAuthStore()
 
 const positionsStore = usePositionsStore()
+
+// Active plans for the optional plan tag on a trade + the adherence filter
+// (docs/83). Empty when the plans feature is off (route 403s), which hides both.
+const plans = ref([])
 
 const showForm = ref(false)
 const editingTrade = ref(null)
@@ -83,6 +88,31 @@ const filterAccountIds = ref([])
 const filterStatuses = ref([TradeStatus.OPEN, TradeStatus.SECURED])
 const filterDateFrom = ref(null)
 const filterDateTo = ref(null)
+const filterAdherence = ref(null)
+
+const adherenceOptions = computed(() => [
+  { label: t('trades.adherence.in_plan'), value: 'IN_PLAN' },
+  { label: t('trades.adherence.out_of_plan'), value: 'OUT_OF_PLAN' },
+  { label: t('trades.adherence.none'), value: 'NONE' },
+])
+
+// Badge shown on a trade row that references a plan (docs/83). Frozen verdict:
+// IN_PLAN (green) / OUT_OF_PLAN (amber, reason in the tooltip). Plan name is
+// resolved from the loaded active plans; an archived plan just shows no name.
+function adherenceBadge(trade) {
+  if (!trade.plan_adherence) return null
+  const inPlan = trade.plan_adherence === 'IN_PLAN'
+  const status = inPlan ? t('trades.adherence.in_plan') : t('trades.adherence.out_of_plan')
+  const planName = plans.value.find((p) => p.id === trade.plan_id)?.name
+  return {
+    // Show the plan name directly; colour + icon convey in/out. Tooltip stays
+    // localized (the backend reason is English — full localization is backlogged).
+    label: planName || status,
+    severity: inPlan ? 'success' : 'warn',
+    icon: inPlan ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle',
+    tooltip: status,
+  }
+}
 
 // Multi-select state for bulk delete
 const selectedTrades = ref([])
@@ -133,10 +163,22 @@ function applyQueryParamFilters() {
   }
 }
 
+async function loadPlans() {
+  // Fetch directly rather than gating on the (possibly stale) features store:
+  // when the plans feature is off the route 403s and we simply keep none.
+  try {
+    const resp = await plansService.list()
+    plans.value = resp.data ?? []
+  } catch {
+    plans.value = []
+  }
+}
+
 onMounted(async () => {
   applyQueryParamFilters()
   store.perPage = Number(authStore.user?.default_page_size) || 10
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups(), customFieldsStore.fetchDefinitions()])
+  await loadPlans()
   if (filterStatuses.value.length > 0) {
     store.setFilters({ statuses: filterStatuses.value })
   }
@@ -166,6 +208,7 @@ async function applyFilters() {
   const dtStr = ymd(filterDateTo.value)
   if (dfStr) filters.date_from = dfStr
   if (dtStr) filters.date_to = dtStr
+  if (filterAdherence.value) filters.plan_adherence = filterAdherence.value
   store.setFilters(filters)
   store.page = 1
   selectedTrades.value = []
@@ -482,6 +525,14 @@ function openActionMenu(event, trade) {
           v-model:to="filterDateTo"
         />
       </div>
+      <div v-if="plans.length" class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.plan') }}</span>
+        <BadgeFilter
+          v-model="filterAdherence"
+          :options="adherenceOptions"
+          @change="applyFilters"
+        />
+      </div>
       <div class="ml-auto">
         <Button :label="t('trades.create')" icon="pi pi-plus" @click="showForm = true" />
       </div>
@@ -513,6 +564,14 @@ function openActionMenu(event, trade) {
           <DateRangePicker
             v-model:from="filterDateFrom"
             v-model:to="filterDateTo"
+          />
+        </div>
+        <div v-if="plans.length" class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('trades.plan') }}</span>
+          <BadgeFilter
+            v-model="filterAdherence"
+            :options="adherenceOptions"
+            @change="applyFilters"
           />
         </div>
       </div>
@@ -639,6 +698,17 @@ function openActionMenu(event, trade) {
       <Column v-if="!isCompact" field="status" :header="t('trades.status')">
         <template #body="{ data }">
           <Tag :value="t(`trades.statuses.${data.status}`)" :severity="statusSeverity(data.status)" />
+        </template>
+      </Column>
+      <Column v-if="!isCompact && plans.length" :header="t('trades.plan')">
+        <template #body="{ data }">
+          <Tag
+            v-if="adherenceBadge(data)"
+            :value="adherenceBadge(data).label"
+            :severity="adherenceBadge(data).severity"
+            :icon="adherenceBadge(data).icon"
+            v-tooltip.top="adherenceBadge(data).tooltip"
+          />
         </template>
       </Column>
       <Column field="pnl" :header="t('trades.pnl')">
@@ -800,6 +870,7 @@ function openActionMenu(event, trade) {
       :accounts="accountsStore.accounts"
       :symbols="symbolsStore.symbolOptions"
       :setups="setupsStore.setupOptions"
+      :plans="plans"
       :customFieldDefinitions="customFieldsStore.activeDefinitions"
       :loading="store.loading"
       @save="handleCreate"
@@ -820,6 +891,7 @@ function openActionMenu(event, trade) {
       :accounts="accountsStore.accounts"
       :symbols="symbolsStore.symbolOptions"
       :setups="setupsStore.setupOptions"
+      :plans="plans"
       :customFieldDefinitions="customFieldsStore.activeDefinitions"
       :loading="store.loading"
       @save="handleEditSave"

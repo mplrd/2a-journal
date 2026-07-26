@@ -141,6 +141,47 @@ foreach ($setups as [$label, $category]) {
 }
 echo "Created " . count($setups) . " setups\n";
 
+// ── 4b. Create a demo trading plan (docs/83) ────────────────
+// A DAX intraday frame with buy/sell price zones (zones-only: no window/risk,
+// both directions). Some seeded DAX orders/trades fall inside it, some outside,
+// so the adherence badge + filter have realistic data to show right away.
+$pdo->prepare("INSERT INTO trading_plans (user_id, name, timezone, status)
+    VALUES (:uid, 'DAX intraday', 'Europe/Paris', 'ACTIVE')")
+    ->execute(['uid' => $userId]);
+$planId = (int) $pdo->lastInsertId();
+
+$planZones = [
+    ['BUY',  17750, 18150],
+    ['BUY',  18350, 18450],
+    ['SELL', 17950, 18100],
+    ['SELL', 18450, 18650],
+];
+foreach ($planZones as [$zDir, $zLow, $zHigh]) {
+    $pdo->prepare("INSERT INTO trading_plan_zones (plan_id, direction, low_price, high_price)
+        VALUES (:pid, :dir, :low, :high)")
+        ->execute(['pid' => $planId, 'dir' => $zDir, 'low' => $zLow, 'high' => $zHigh]);
+}
+echo "Created 1 trading plan (DAX intraday) with " . count($planZones) . " zones\n";
+
+/**
+ * Frozen plan-adherence snapshot for a seeded position, mirroring PlanEvaluator's
+ * zone check (docs/83). Only DAX is under the plan; other symbols get no plan.
+ *
+ * @return array{0: ?int, 1: ?string, 2: ?string} [plan_id, plan_adherence, reason]
+ */
+$planAdherenceFor = static function (string $symbol, string $direction, float $entry) use ($planId, $planZones): array {
+    if ($symbol !== 'DAX') {
+        return [null, null, null];
+    }
+    foreach ($planZones as [$zDir, $zLow, $zHigh]) {
+        if ($zDir === $direction && $entry >= $zLow && $entry <= $zHigh) {
+            return [$planId, 'IN_PLAN', null];
+        }
+    }
+    $trimmed = rtrim(rtrim(sprintf('%.5f', $entry), '0'), '.');
+    return [$planId, 'OUT_OF_PLAN', "entry {$trimmed} outside {$direction} zones"];
+};
+
 // ── 5. Create trades ────────────────────────────────────────
 // Setup field accepts a string (single setup) OR an array (combination).
 // Combinations chosen so that the demo highlights the new "setup combination
@@ -223,8 +264,9 @@ foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitTy
     );
 
     // Create position
-    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
-        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'TRADE')")
+    [$planPid, $planAdh, $planReason] = $planAdherenceFor($symbol, $direction, (float) $entry);
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, plan_id, plan_adherence, plan_adherence_reason, sl_points, sl_price, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :plan_id, :plan_adh, :plan_reason, :sl_pts, :sl_price, 'TRADE')")
         ->execute([
             'uid' => $userId,
             'aid' => $tradeAccountId,
@@ -233,6 +275,9 @@ foreach ($trades as [$symbol, $direction, $entry, $slPoints, $exitPrice, $exitTy
             'entry' => $entry,
             'size' => $size,
             'setup' => json_encode($setupArray),
+            'plan_id' => $planPid,
+            'plan_adh' => $planAdh,
+            'plan_reason' => $planReason,
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
         ]);
@@ -311,8 +356,9 @@ foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $opened
         is_array($setup) ? $setup : [$setup]
     );
 
-    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
-        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'TRADE')")
+    [$planPid, $planAdh, $planReason] = $planAdherenceFor($symbol, $direction, (float) $entry);
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, plan_id, plan_adherence, plan_adherence_reason, sl_points, sl_price, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :plan_id, :plan_adh, :plan_reason, :sl_pts, :sl_price, 'TRADE')")
         ->execute([
             'uid' => $userId,
             'aid' => $openAccountId,
@@ -321,6 +367,9 @@ foreach ($openTrades as [$symbol, $direction, $entry, $slPoints, $setup, $opened
             'entry' => $entry,
             'size' => $size,
             'setup' => json_encode($setupArray),
+            'plan_id' => $planPid,
+            'plan_adh' => $planAdh,
+            'plan_reason' => $planReason,
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
         ]);
@@ -357,8 +406,9 @@ foreach ($securedTrades as [$symbol, $direction, $entry, $slPoints, $beSize, $se
         is_array($setup) ? $setup : [$setup]
     );
 
-    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, be_price, be_size, position_type)
-        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, :be_price, :be_size, 'TRADE')")
+    [$planPid, $planAdh, $planReason] = $planAdherenceFor($symbol, $direction, (float) $entry);
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, plan_id, plan_adherence, plan_adherence_reason, sl_points, sl_price, be_price, be_size, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :plan_id, :plan_adh, :plan_reason, :sl_pts, :sl_price, :be_price, :be_size, 'TRADE')")
         ->execute([
             'uid' => $userId,
             'aid' => $secAccountId,
@@ -367,6 +417,9 @@ foreach ($securedTrades as [$symbol, $direction, $entry, $slPoints, $beSize, $se
             'entry' => $entry,
             'size' => $size,
             'setup' => json_encode($setupArray),
+            'plan_id' => $planPid,
+            'plan_adh' => $planAdh,
+            'plan_reason' => $planReason,
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
             'be_price' => $bePrice,
@@ -405,6 +458,7 @@ $now = new DateTime('2026-03-18 10:00:00');
 $ordersToSeed = [
     // [symbol, direction, entry, sl_points, setup, status, size, account, expires_at_offset_days]
     ['NASDAQ', 'BUY',  19850, 50, 'Breakout',     'PENDING',   1, 1, 7],
+    ['DAX',    'BUY',  17900, 30, 'Pullback',     'PENDING',   1, 1, 5],
     ['EURUSD', 'SELL', 1.0950, 0.0025, 'Range',     'PENDING',   2, 2, 3],
     ['DAX',    'BUY',  18950, 30, 'Pullback',     'EXECUTED',  1, 1, null],
     ['GBPUSD', 'SELL', 1.2780, 0.0030, 'Trend Follow', 'CANCELLED', 2, 2, null],
@@ -420,8 +474,9 @@ foreach ($ordersToSeed as [$symbol, $direction, $entry, $slPoints, $setup, $stat
         is_array($setup) ? $setup : [$setup]
     );
 
-    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
-        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :sl_pts, :sl_price, 'ORDER')")
+    [$planPid, $planAdh, $planReason] = $planAdherenceFor($symbol, $direction, (float) $entry);
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, plan_id, plan_adherence, plan_adherence_reason, sl_points, sl_price, position_type)
+        VALUES (:uid, :aid, :dir, :sym, :entry, :size, :setup, :plan_id, :plan_adh, :plan_reason, :sl_pts, :sl_price, 'ORDER')")
         ->execute([
             'uid' => $userId,
             'aid' => $orderAccountId,
@@ -430,6 +485,9 @@ foreach ($ordersToSeed as [$symbol, $direction, $entry, $slPoints, $setup, $stat
             'entry' => $entry,
             'size' => $size,
             'setup' => json_encode($setupArray),
+            'plan_id' => $planPid,
+            'plan_adh' => $planAdh,
+            'plan_reason' => $planReason,
             'sl_pts' => $slPoints,
             'sl_price' => $slPrice,
         ]);

@@ -65,6 +65,12 @@ class RobotRepository
             ->execute(['status' => $status, 'id' => $id]);
     }
 
+    public function updateName(int $id, string $name): void
+    {
+        $this->pdo->prepare("UPDATE robots SET name = :name WHERE id = :id")
+            ->execute(['name' => $name, 'id' => $id]);
+    }
+
     /** Bump trigger counters + last_triggered_at after a webhook fires. */
     public function recordTrigger(int $id, bool $success): void
     {

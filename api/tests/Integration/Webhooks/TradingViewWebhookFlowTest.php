@@ -17,12 +17,18 @@ use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
+use App\Repositories\SymbolAccountSettingsRepository;
+use App\Repositories\SymbolRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Services\Broker\ConnectorInterface;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\OrderService;
+use App\Services\PlanEvaluator;
+use App\Services\SignalRiskCalculator;
+use App\Services\TradingPlanService;
 use App\Services\TradingViewWebhookService;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -42,6 +48,7 @@ class TradingViewWebhookFlowTest extends TestCase
     private TradingViewAlertEventRepository $eventRepo;
     private BrokerConnectionRepository $connectionRepo;
     private TradingViewWebhookService $service;
+    private TradingPlanService $planService;
     private FakeConnector $connector;
     private CredentialEncryptionService $crypto;
     private int $userId;
@@ -75,6 +82,14 @@ class TradingViewWebhookFlowTest extends TestCase
 
         $this->connector = new FakeConnector();
 
+        $planRepo = new TradingPlanRepository($this->pdo);
+        $this->planService = new TradingPlanService($planRepo);
+        $riskCalculator = new SignalRiskCalculator(
+            new SymbolRepository($this->pdo),
+            new SymbolAccountSettingsRepository($this->pdo),
+            $accountRepo,
+        );
+
         $this->service = new TradingViewWebhookService(
             $this->webhookRepo,
             $this->robotRepo,
@@ -88,6 +103,9 @@ class TradingViewWebhookFlowTest extends TestCase
             $this->connector,
             $this->connector,
             $this->connector,
+            $planRepo,
+            new PlanEvaluator(),
+            $riskCalculator,
         );
 
         $this->userId = $this->seedUser();
@@ -367,7 +385,129 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertSame(WebhookRejectReason::UNSUPPORTED_ACTION->value, end($events)['reject_reason']);
     }
 
+    // ── Trading-plan gate (OPEN only; docs/83) ────────────────────
+
+    public function testOutOfPlanDirectionIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        // Plan allows SELL only; the signal is a BUY.
+        $this->attachPlans($robotId, [$this->createPlan(['allowed_direction' => 'SELL'])]);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+        $this->assertSame(1, (int) $this->robotRepo->findById($robotId)['total_errors']);
+    }
+
+    public function testOutOfPlanPriceZoneIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        // A BUY zone far from the signal's entry (1.1000).
+        $this->attachPlans($robotId, [$this->createPlan([
+            'zones' => [['direction' => 'BUY', 'low_price' => 24000, 'high_price' => 24400]],
+        ])]);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('zone', (string) end($events)['error_message']);
+    }
+
+    public function testSignalApplicableToAtLeastOnePlanIsProcessed(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        // Plan A rejects a BUY (SELL only), plan B accepts it (BUY only) → OR.
+        $planA = $this->createPlan(['name' => 'A', 'allowed_direction' => 'SELL']);
+        $planB = $this->createPlan(['name' => 'B', 'allowed_direction' => 'BUY']);
+        $this->attachPlans($robotId, [$planA, $planB]);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testRobotWithNoPlanExecutesEverySignal(): void
+    {
+        ['token' => $token, 'secret' => $secret] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testCloseBypassesThePlan(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+
+        // Open a BUY with no plan attached yet → processed.
+        $open = $this->validPayload($secret);
+        $open['client_order_id'] = 'COID-BYP';
+        $this->service->process($token, $open);
+
+        // Attach a plan that would reject any BUY, then CLOSE — must bypass.
+        $this->attachPlans($robotId, [$this->createPlan(['allowed_direction' => 'SELL'])]);
+        $this->service->process($token, [
+            'secret' => $secret,
+            'alert_id' => 'TV-' . uniqid('', true),
+            'action' => 'CLOSE',
+            'client_order_id' => 'COID-BYP',
+        ]);
+
+        $this->assertNotNull($this->connector->lastClosePositionId);
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testRiskAbovePlanMaxIsRejected(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        // max 0.1%; size 1 × sl_points 50 × pv 10 = 500 → 5% of 10000 capital.
+        $this->attachPlans($robotId, [$this->createPlan(['max_risk_percent' => 0.1])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('risk', (string) end($events)['error_message']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
+
+    private function createPlan(array $data): int
+    {
+        $plan = $this->planService->create($this->userId, array_merge(
+            ['name' => 'Plan', 'zones' => [], 'windows' => []],
+            $data,
+        ));
+        return (int) $plan['id'];
+    }
+
+    private function attachPlans(int $robotId, array $planIds): void
+    {
+        (new TradingPlanRepository($this->pdo))->setRobotPlans($robotId, $planIds);
+    }
+
+    private function seedSymbol(string $code, float $pointValue): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO symbols (user_id, code, name, type, point_value, currency)
+             VALUES (:u, :code, :name, 'FOREX', :pv, 'USD')"
+        )->execute(['u' => $this->userId, 'code' => $code, 'name' => $code, 'pv' => $pointValue]);
+    }
 
     private function validPayload(string $secret): array
     {
@@ -449,6 +589,10 @@ class TradingViewWebhookFlowTest extends TestCase
     {
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=0');
         foreach ([
+            'robot_plans',
+            'trading_plan_zones',
+            'trading_plan_windows',
+            'trading_plans',
             'tradingview_alert_events',
             'tradingview_webhooks',
             'robots',
@@ -458,6 +602,8 @@ class TradingViewWebhookFlowTest extends TestCase
             'trades',
             'orders',
             'positions',
+            'symbol_account_settings',
+            'symbols',
             'accounts',
             'refresh_tokens',
             'users',

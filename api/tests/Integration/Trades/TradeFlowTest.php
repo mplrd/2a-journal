@@ -226,6 +226,37 @@ class TradeFlowTest extends TestCase
         $this->assertSame('NASDAQ', $body['data'][0]['symbol']);
     }
 
+    /**
+     * The plan-adherence filter must survive the controller's query whitelist,
+     * the service validation and the repository WHERE (docs/83). Regression for
+     * a controller that dropped ?plan_adherence before it reached the service.
+     */
+    public function testListFiltersByPlanAdherence(): void
+    {
+        // A plan owned by the user with a single BUY zone.
+        $this->pdo->prepare("INSERT INTO trading_plans (user_id, name, status) VALUES (:uid, 'Test plan', 'ACTIVE')")
+            ->execute(['uid' => $this->userId]);
+        $planId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare("INSERT INTO trading_plan_zones (plan_id, direction, low_price, high_price) VALUES (:pid, 'BUY', 18000, 18100)")
+            ->execute(['pid' => $planId]);
+
+        $this->createTrade(['plan_id' => $planId, 'entry_price' => 18050]); // in zone → IN_PLAN
+        $this->createTrade(['plan_id' => $planId, 'entry_price' => 18500]); // out of zone → OUT_OF_PLAN
+        $this->createTrade();                                              // no plan
+
+        $out = $this->router->dispatch($this->authRequest('GET', '/trades', [], ['plan_adherence' => 'OUT_OF_PLAN']));
+        $this->assertCount(1, $out->getBody()['data']);
+        $this->assertSame('OUT_OF_PLAN', $out->getBody()['data'][0]['plan_adherence']);
+
+        $inPlan = $this->router->dispatch($this->authRequest('GET', '/trades', [], ['plan_adherence' => 'IN_PLAN']));
+        $this->assertCount(1, $inPlan->getBody()['data']);
+        $this->assertSame('IN_PLAN', $inPlan->getBody()['data'][0]['plan_adherence']);
+
+        $none = $this->router->dispatch($this->authRequest('GET', '/trades', [], ['plan_adherence' => 'NONE']));
+        $this->assertCount(1, $none->getBody()['data']);
+        $this->assertNull($none->getBody()['data'][0]['plan_adherence']);
+    }
+
     public function testListFiltersByMultipleStatuses(): void
     {
         // OPEN

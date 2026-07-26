@@ -18,18 +18,28 @@ describe('features store', () => {
     vi.clearAllMocks()
   })
 
-  it('defaults brokerAutoSync to false before load', () => {
+  it('defaults brokerAutoSync and plans to false before load', () => {
     expect(store.brokerAutoSync).toBe(false)
+    expect(store.plans).toBe(false)
     expect(store.loaded).toBe(false)
   })
 
-  it('load sets brokerAutoSync from API', async () => {
-    featuresService.get.mockResolvedValue({ success: true, data: { broker_auto_sync: true } })
+  it('load sets brokerAutoSync and plans from API', async () => {
+    featuresService.get.mockResolvedValue({ success: true, data: { broker_auto_sync: true, plans: true } })
 
     await store.load()
 
     expect(store.brokerAutoSync).toBe(true)
+    expect(store.plans).toBe(true)
     expect(store.loaded).toBe(true)
+  })
+
+  it('keeps plans false when the API omits or disables it', async () => {
+    featuresService.get.mockResolvedValue({ success: true, data: { broker_auto_sync: true } })
+
+    await store.load()
+
+    expect(store.plans).toBe(false)
   })
 
   it('load keeps brokerAutoSync false when API returns false', async () => {
