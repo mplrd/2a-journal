@@ -34,7 +34,7 @@ class OrderRepository
         $stmt = $this->pdo->prepare(
             'SELECT o.id, o.position_id, o.created_at AS order_created_at, o.expires_at, o.status,
                     o.client_order_id, o.broker_order_id,
-                    p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                    p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup, p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                     p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
                     p.position_type, p.created_at, p.updated_at
              FROM orders o
@@ -88,13 +88,24 @@ class OrderRepository
             $params['direction'] = $filters['direction'];
         }
 
+        // Plan adherence (docs/83): IN_PLAN / OUT_OF_PLAN qualify orders that
+        // reference a plan; NONE selects orders with no plan. Caller whitelists.
+        if (!empty($filters['plan_adherence'])) {
+            if ($filters['plan_adherence'] === 'NONE') {
+                $where .= ' AND p.plan_id IS NULL';
+            } else {
+                $where .= ' AND p.plan_adherence = :plan_adherence';
+                $params['plan_adherence'] = $filters['plan_adherence'];
+            }
+        }
+
         $countSql = "SELECT COUNT(*) FROM orders o INNER JOIN positions p ON p.id = o.position_id $where";
         $countStmt = $this->pdo->prepare($countSql);
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
         $sql = "SELECT o.id, o.position_id, o.created_at AS order_created_at, o.expires_at, o.status,
-                       p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                       p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup, p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                        p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
                        p.position_type, p.created_at, p.updated_at
                 FROM orders o

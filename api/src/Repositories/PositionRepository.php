@@ -10,6 +10,7 @@ class PositionRepository
     private PDO $pdo;
 
     private const COLUMNS = 'id, user_id, account_id, direction, symbol, entry_price, size, setup,
+                    plan_id, plan_adherence, plan_adherence_reason,
                     sl_points, sl_price, be_points, be_price, be_size, targets, notes,
                     import_batch_id, external_id, position_type, created_at, updated_at';
 
@@ -22,9 +23,11 @@ class PositionRepository
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup,
+                    plan_id, plan_adherence, plan_adherence_reason,
                     sl_points, sl_price, be_points, be_price, be_size, targets, notes,
                     import_batch_id, external_id, position_type)
              VALUES (:user_id, :account_id, :direction, :symbol, :entry_price, :size, :setup,
+                    :plan_id, :plan_adherence, :plan_adherence_reason,
                     :sl_points, :sl_price, :be_points, :be_price, :be_size, :targets, :notes,
                     :import_batch_id, :external_id, :position_type)'
         );
@@ -36,6 +39,9 @@ class PositionRepository
             'entry_price' => $data['entry_price'],
             'size' => $data['size'],
             'setup' => $data['setup'] ?? null,
+            'plan_id' => $data['plan_id'] ?? null,
+            'plan_adherence' => $data['plan_adherence'] ?? null,
+            'plan_adherence_reason' => $data['plan_adherence_reason'] ?? null,
             'sl_points' => $data['sl_points'] ?? null,
             'sl_price' => $data['sl_price'] ?? null,
             'be_points' => $data['be_points'] ?? null,
@@ -112,6 +118,7 @@ class PositionRepository
 
         $allowedFields = [
             'direction', 'symbol', 'entry_price', 'size', 'setup',
+            'plan_id', 'plan_adherence', 'plan_adherence_reason',
             'sl_points', 'sl_price', 'be_points', 'be_price', 'be_size',
             'targets', 'notes', 'position_type',
         ];

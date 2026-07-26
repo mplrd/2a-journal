@@ -138,6 +138,7 @@ $router->get('/features', function (App\Core\Request $request) use ($platformSet
     return App\Core\Response::success([
         'broker_auto_sync' => (bool) $platformSettingsService->resolve('broker_auto_sync_enabled'),
         'robots' => (bool) $platformSettingsService->resolve('robots_enabled'),
+        'plans' => (bool) $platformSettingsService->resolve('plans_enabled'),
     ]);
 });
 
@@ -335,9 +336,15 @@ $router->get('/positions/{id}/history', [$positionController, 'history'], [$auth
 $router->get('/positions/{id}/share/text', [$positionController, 'shareText'], [$authMiddleware, $requireSubscription]);
 $router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTextPlain'], [$authMiddleware, $requireSubscription]);
 
+// Plan deps (shared by orders, trades and the webhook ingestion gate): an order
+// records the plan it is placed under; the trade inherits it on execute (docs/83).
+$planRepo = new TradingPlanRepository($pdo);
+$planEvaluator = new PlanEvaluator();
+$signalRiskCalculator = new SignalRiskCalculator($symbolRepo, $symbolSettingsRepo, $accountRepo);
+
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planRepo, $planEvaluator, $signalRiskCalculator);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -348,7 +355,8 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware, $requireSubscription]);
 
 // ── Trades ─────────────────────────────────────────────────────
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo);
+// Plan deps ($planRepo / $planEvaluator / $signalRiskCalculator) defined above.
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planRepo, $planEvaluator, $signalRiskCalculator);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -443,12 +451,16 @@ $tradingViewFeatureFlag = new FeatureFlagMiddleware(
     (bool) $platformSettingsService->resolve('robots_enabled'),
     'webhook.error.feature_disabled'
 );
+// Plans are a standalone frame (usable for manual trading, not only robots), so
+// they sit behind their own flag rather than robots_enabled (docs/83).
+$plansFeatureFlag = new FeatureFlagMiddleware(
+    (bool) $platformSettingsService->resolve('plans_enabled'),
+    'plan.error.feature_disabled'
+);
 $tvWebhookRepo = new TradingViewWebhookRepository($pdo);
 $tvEventRepo = new TradingViewAlertEventRepository($pdo);
 $robotRepo = new RobotRepository($pdo);
-$planRepo = new TradingPlanRepository($pdo);
-$planEvaluator = new PlanEvaluator();
-$signalRiskCalculator = new SignalRiskCalculator($symbolRepo, $symbolSettingsRepo, $accountRepo);
+// $planRepo / $planEvaluator / $signalRiskCalculator defined in the Trades block above.
 $tvWebhookService = new TradingViewWebhookService(
     $tvWebhookRepo,
     $robotRepo,
@@ -498,12 +510,12 @@ $router->post('/robots/{id}/regenerate', [$robotController, 'regenerate'], [$aut
 $router->delete('/robots/{id}', [$robotController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 $router->get('/robots/{id}/events', [$robotController, 'events'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
 
-// Trading plans (the decision frame a robot follows; docs/83). Same flag.
-$router->get('/plans', [$planController, 'index'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->post('/plans', [$planController, 'store'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->get('/plans/{id}', [$planController, 'show'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->put('/plans/{id}', [$planController, 'update'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
-$router->delete('/plans/{id}', [$planController, 'destroy'], [$authMiddleware, $requireSubscription, $tradingViewFeatureFlag]);
+// Trading plans (standalone decision frame; docs/83). Own flag, not robots'.
+$router->get('/plans', [$planController, 'index'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
+$router->post('/plans', [$planController, 'store'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
+$router->get('/plans/{id}', [$planController, 'show'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
+$router->put('/plans/{id}', [$planController, 'update'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
+$router->delete('/plans/{id}', [$planController, 'destroy'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

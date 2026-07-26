@@ -45,6 +45,19 @@ Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** 
 - **0 plan** ⇒ aucun filtre, le robot exécute tout signal reçu (comportement v1 des robots).
 - **≥1 plan** ⇒ un signal est **applicable s'il l'est pour au moins un** des plans (**OR**). Cas d'usage : un robot avec un plan « DAX » + un plan « Nasdaq », chaque signal matche son marché. Le rejet `OUT_OF_PLAN` n'intervient que si le signal échoue à **tous** les plans attachés.
 
+## Adhérence sur ordre & trade manuels (le plan sans robot)
+
+Le plan sert aussi **hors robot** : un **ordre** planifié ou un **trade** saisi à la main (ou synchronisé) peut être **rattaché à un plan** pour repérer, en stats, ceux pris hors du cadre. Différence fondamentale avec le robot : **aucun blocage**. Le robot rejette un signal hors plan (`OUT_OF_PLAN`) ; l'ordre/trade manuel est **toujours enregistré** — on arrive le plus souvent après coup, le garde-fou temps réel n'aurait pas de sens.
+
+**L'info vit sur l'ordre en premier.** Un ordre est une ligne `positions` (type `ORDER`) ; à l'exécution la position bascule `ORDER → TRADE` (même ligne). Comme `plan_id` + le verdict sont **sur `positions`**, un ordre qui porte le plan **transmet automatiquement** l'adhérence au trade à l'exécution — aucune propagation à coder. Le champ sur le trade reste utile pour une saisie directe (sans ordre préalable) ou une synchro broker.
+
+- **Champ** : `positions.plan_id` **optionnel** (FK `ON DELETE SET NULL` — on ne perd jamais l'historique si le plan disparaît). Sans plan rattaché, les trois colonnes restent `NULL`.
+- **Verdict figé à l'écriture** : à la création de l'ordre (ou du trade), on évalue via le **même `PlanEvaluator`** que les robots et on stocke `positions.plan_adherence` (`IN_PLAN` / `OUT_OF_PLAN`) + `plan_adherence_reason` (raison courte, ex. « entry 24610 outside BUY zones », pour le tooltip). Modifier le **plan** ensuite **ne re-qualifie pas** l'existant (snapshot). Éditer un **trade** le re-évalue ; l'**exécution** d'un ordre ne re-évalue pas — le trade hérite du verdict de l'ordre tel quel (la décision a été prise à la pose de l'ordre).
+- **Temps d'évaluation des fenêtres** : pour un **ordre**, l'instant de pose (`now`) converti dans la TZ du plan ; pour un **trade** manuel, son `opened_at` interprété comme heure locale du plan.
+- **Sécurité** : `plan_id` doit être un plan **actif appartenant à l'utilisateur** (sinon `orders.error.invalid_plan` / `trades.error.invalid_plan`). Le verdict n'est jamais posé depuis le corps de la requête (pas de mass-assignment) — seul le service le calcule.
+- **UI** : sélecteur de plan optionnel dans les formulaires **ordre et trade** (masqué si aucun plan / feature off), badge d'adhérence dans les listes ordres et trades (vert « Dans le plan » / ambre « Hors plan » + raison en tooltip), et filtre `Dans le plan / Hors plan / Sans plan`. Dans la liste des plans, les zones sont colorées par sens avec une flèche (↑ achat vert, ↓ vente rouge).
+- **Migration** : `034_trade_plan_adherence.sql` (additive, idempotente via `INFORMATION_SCHEMA`, compatible MariaDB local + MySQL prod). Enum `PlanAdherence`.
+
 ## Pipeline d'ingestion (où le plan s'insère)
 
 Dans `TradingViewWebhookService::process()`, après le gate `ROBOT_PAUSED` et la validation du payload, **uniquement pour l'action `OPEN`** :
@@ -75,7 +88,8 @@ Zones et fenêtres sont **remplacées en bloc** à chaque update du plan (pas de
 
 - **`PlanEvaluator` pur** (aucune I/O) : `evaluate(plan, direction, entryPrice, riskPercent, now) → null | raison`. Testable exhaustivement en unitaire. Le calcul de risque et le chargement du plan restent hors de l'évaluateur.
 - **Enums** : réutilisation de `Direction` (BUY/SELL) ; nouveau `PlanStatus` (ACTIVE/ARCHIVED) ; nouveau `WebhookRejectReason::OUT_OF_PLAN`.
-- **Flag** : les plans sont sous le même flag `robots_enabled` que les robots (même feature). Routes `/plans` derrière `auth + subscription + robots_enabled`.
+- **Flag** : le plan est un **cadre autonome**, pas un sous-module des robots — le robot en est *un* consommateur, le trade manuel en est un autre (voir « Adhérence sur trade manuel » plus bas). Il a donc son **propre flag `plans_enabled`** (indépendant de `robots_enabled`), OFF par défaut comme les robots pour un déploiement prod contrôlé. Routes `/plans` derrière `auth + subscription + plans_enabled` ; `/features` expose `plans` ; la nav affiche l'entrée Plans dès que `plans_enabled` est actif, même robots désactivés.
+  > ⚠️ **Activation (ops)** — comme `robots_enabled` (cf. doc 70) : le flag se résout `BDD > env PLANS_ENABLED > false`. Pour activer, soit toggle en base (`platform_settings.plans_enabled`) via le BO admin, soit variable d'env `PLANS_ENABLED=true` sur Railway (test/prod). **En local** : le row `platform_settings` est **wipé par tout run complet de la suite backend** (comme la démo) → le re-poser après les tests (`INSERT … ON DUPLICATE KEY UPDATE setting_value='true'`), sinon le menu Plans disparaît. Vérifier via `curl http://2a.journal.local/api/features`.
 - **Sécurité** : toutes les requêtes en prepared statements ; ownership vérifié (`user_id`) sur chaque accès plan ; validation serveur systématique (sens, zones `low<high` & `>0`, fenêtres `start<end` & `days_mask≠0`, timezone IANA valide si fenêtres, `max_risk_percent>0`).
 
 ## Couverture des tests

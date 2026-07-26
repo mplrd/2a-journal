@@ -123,7 +123,8 @@
         "mail_from_address": "Adresse expéditeur des emails sortants",
         "billing_grace_days": "Délai de grâce après échec de paiement Stripe (jours)",
         "trade_transfer_enabled": "Active la fonctionnalité de transfert d'un trade entre comptes",
-        "robots_enabled": "Active les robots de trading (webhooks TradingView ; chaque utilisateur gère ensuite les siens)"
+        "robots_enabled": "Active les robots de trading (webhooks TradingView ; chaque utilisateur gère ensuite les siens)",
+        "plans_enabled": "Active les plans de trading (cadre réutilisable : sens, zones, sessions, risque ; pour robots et trades manuels)"
       }
     }
   },

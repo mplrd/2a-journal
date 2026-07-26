@@ -14,6 +14,10 @@ import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import { plansService } from '@/services/plans'
 import { blankPlanForm, planToForm, formToPayload } from '@/utils/planForm'
+import { formatZoneRange, formatWindowTime, daysMaskToLabel } from '@/utils/planDisplay'
+
+// Cap chips per group so a plan with many zones/windows can't blow up a row.
+const MAX_SUMMARY_CHIPS = 4
 
 const { t, locale } = useI18n()
 const toast = useToast()
@@ -57,6 +61,25 @@ const canSave = computed(() => form.value.name.trim().length > 0)
 function directionLabel(value) {
   if (!value) return t('plan.direction.both')
   return t(value === 'BUY' ? 'common.buy' : 'common.sell')
+}
+
+// Readable per-plan summaries for the list (e.g. "Achat 24000–24400",
+// "Lun–Ven 09:00–17:30"), so a plan is recognizable without opening the editor.
+function zoneSummary(plan) {
+  // Colour + arrow each zone by its side, matching the app's long/short
+  // convention (BUY → green ↑, SELL → red ↓). The arrow replaces the word.
+  return (plan.zones ?? []).map((z) => ({
+    text: formatZoneRange(z),
+    severity: z.direction === 'BUY' ? 'success' : 'danger',
+    icon: z.direction === 'BUY' ? 'pi pi-arrow-up' : 'pi pi-arrow-down',
+  }))
+}
+function windowSummary(plan) {
+  const allDays = t('plan.window.all_days')
+  return (plan.windows ?? []).map((w) => `${daysMaskToLabel(w.days_mask, dayLabels.value, allDays)} ${formatWindowTime(w)}`.trim())
+}
+function capped(list) {
+  return { shown: list.slice(0, MAX_SUMMARY_CHIPS), extra: Math.max(0, list.length - MAX_SUMMARY_CHIPS) }
 }
 
 async function load() {
@@ -165,11 +188,17 @@ onMounted(load)
       </Column>
       <Column :header="t('plan.field.filters')">
         <template #body="{ data }">
-          <div class="flex flex-wrap gap-1">
-            <Tag v-if="data.zones.length" :value="t('plan.tag.zones', { count: data.zones.length })" severity="info" />
-            <Tag v-if="data.windows.length" :value="t('plan.tag.windows', { count: data.windows.length })" severity="info" />
+          <div class="flex flex-col gap-1 items-start">
+            <div v-if="data.zones?.length" class="flex flex-wrap gap-1" data-testid="plan-zone-summary">
+              <Tag v-for="(z, i) in capped(zoneSummary(data)).shown" :key="'z' + i" :value="z.text" :severity="z.severity" :icon="z.icon" />
+              <Tag v-if="capped(zoneSummary(data)).extra" :value="t('plan.summary.more', { count: capped(zoneSummary(data)).extra })" severity="secondary" />
+            </div>
+            <div v-if="data.windows?.length" class="flex flex-wrap gap-1" data-testid="plan-window-summary">
+              <Tag v-for="(w, i) in capped(windowSummary(data)).shown" :key="'w' + i" :value="w" severity="contrast" />
+              <Tag v-if="capped(windowSummary(data)).extra" :value="t('plan.summary.more', { count: capped(windowSummary(data)).extra })" severity="secondary" />
+            </div>
             <Tag v-if="data.max_risk_percent != null" :value="t('plan.tag.risk', { pct: Number(data.max_risk_percent) })" severity="warn" />
-            <span v-if="!data.zones.length && !data.windows.length && data.max_risk_percent == null && !data.allowed_direction" class="text-xs text-gray-400">{{ t('plan.tag.none') }}</span>
+            <span v-if="!data.zones?.length && !data.windows?.length && data.max_risk_percent == null" class="text-xs text-gray-400">{{ t('plan.tag.none') }}</span>
           </div>
         </template>
       </Column>

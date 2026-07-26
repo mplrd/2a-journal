@@ -26,6 +26,7 @@ import PositionForm from '@/components/position/PositionForm.vue'
 import TransferDialog from '@/components/position/TransferDialog.vue'
 import ShareDialog from '@/components/common/ShareDialog.vue'
 import { usePositionsStore } from '@/stores/positions'
+import { plansService } from '@/services/plans'
 import { Direction, OrderStatus } from '@/constants/enums'
 
 const { t } = useI18n()
@@ -40,6 +41,10 @@ const { classFor: setupTagClass } = useSetupCategory()
 const authStore = useAuthStore()
 
 const positionsStore = usePositionsStore()
+
+// Active plans for the optional plan tag on an order + the adherence filter
+// (docs/83). Empty when the plans feature is off (route 403s), which hides both.
+const plans = ref([])
 
 const showForm = ref(false)
 const showShare = ref(false)
@@ -76,9 +81,42 @@ const statusOptions = Object.values(OrderStatus).map((value) => ({
   value,
 }))
 
+const filterAdherence = ref(null)
+
+const adherenceOptions = computed(() => [
+  { label: t('orders.adherence.in_plan'), value: 'IN_PLAN' },
+  { label: t('orders.adherence.out_of_plan'), value: 'OUT_OF_PLAN' },
+  { label: t('orders.adherence.none'), value: 'NONE' },
+])
+
+// Badge shown on an order that references a plan (docs/83): frozen verdict at
+// placement — IN_PLAN (green) / OUT_OF_PLAN (amber, reason in the tooltip). The
+// trade issued from the order inherits it. Plan name from the loaded plans.
+function adherenceBadge(order) {
+  if (!order.plan_adherence) return null
+  const planName = plans.value.find((p) => p.id === order.plan_id)?.name ?? ''
+  const inPlan = order.plan_adherence === 'IN_PLAN'
+  return {
+    label: inPlan ? t('orders.adherence.in_plan') : t('orders.adherence.out_of_plan'),
+    severity: inPlan ? 'success' : 'warn',
+    icon: inPlan ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle',
+    tooltip: [planName, order.plan_adherence_reason].filter(Boolean).join(' — '),
+  }
+}
+
+async function loadPlans() {
+  try {
+    const resp = await plansService.list()
+    plans.value = resp.data ?? []
+  } catch {
+    plans.value = []
+  }
+}
+
 onMounted(async () => {
   store.perPage = Number(authStore.user?.default_page_size) || 10
   await Promise.all([accountsStore.fetchAccounts(), symbolsStore.fetchSymbols(), setupsStore.fetchSetups()])
+  await loadPlans()
   if (filterStatuses.value.length > 0) {
     store.setFilters({ statuses: filterStatuses.value })
   }
@@ -89,6 +127,7 @@ async function applyFilters() {
   const filters = {}
   if (filterAccountIds.value.length > 0) filters.account_ids = filterAccountIds.value
   if (filterStatuses.value.length > 0) filters.statuses = filterStatuses.value
+  if (filterAdherence.value) filters.plan_adherence = filterAdherence.value
   store.setFilters(filters)
   store.page = 1
   await store.fetchOrders()
@@ -298,6 +337,14 @@ function statusSeverity(status) {
           @change="applyFilters"
         />
       </div>
+      <div v-if="plans.length" class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.plan') }}</span>
+        <BadgeFilter
+          v-model="filterAdherence"
+          :options="adherenceOptions"
+          @change="applyFilters"
+        />
+      </div>
       <div class="ml-auto">
         <Button :label="t('orders.create')" icon="pi pi-plus" @click="showForm = true" />
       </div>
@@ -321,6 +368,14 @@ function statusSeverity(status) {
             v-model="filterStatuses"
             :options="statusOptions"
             multi
+            @change="applyFilters"
+          />
+        </div>
+        <div v-if="plans.length" class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('orders.plan') }}</span>
+          <BadgeFilter
+            v-model="filterAdherence"
+            :options="adherenceOptions"
             @change="applyFilters"
           />
         </div>
@@ -418,6 +473,18 @@ function statusSeverity(status) {
           <Tag :value="t(`orders.statuses.${data.status}`)" :severity="statusSeverity(data.status)" />
         </template>
       </Column>
+      <Column v-if="!isCompact && plans.length" :header="t('orders.plan')">
+        <template #body="{ data }">
+          <Tag
+            v-if="adherenceBadge(data)"
+            :value="adherenceBadge(data).label"
+            :severity="adherenceBadge(data).severity"
+            :icon="adherenceBadge(data).icon"
+            v-tooltip.top="adherenceBadge(data).tooltip"
+          />
+          <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
+        </template>
+      </Column>
       <Column v-if="!isCompact" field="expires_at" :header="t('orders.expires_at')">
         <template #body="{ data }">
           {{ data.expires_at ? new Date(data.expires_at).toLocaleString() : '-' }}
@@ -512,6 +579,7 @@ function statusSeverity(status) {
       :accounts="accountsStore.accounts"
       :symbols="symbolsStore.symbolOptions"
       :setups="setupsStore.setupOptions"
+      :plans="plans"
       :loading="store.loading"
       @save="handleCreate"
     />

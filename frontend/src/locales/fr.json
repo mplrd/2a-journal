@@ -406,6 +406,14 @@
     "account": "Compte",
     "select_account": "Sélectionner un compte",
     "status": "Statut",
+    "plan": "Plan",
+    "no_plan": "Aucun plan",
+    "plan_hint": "Optionnel : rattache cet ordre à un plan pour repérer, en stats, ceux passés hors du cadre. Le trade issu de l'ordre en hérite. Purement indicatif, ne bloque rien.",
+    "adherence": {
+      "in_plan": "Dans le plan",
+      "out_of_plan": "Hors plan",
+      "none": "Sans plan"
+    },
     "expires_at": "Expiration",
     "execute": "Exécuter",
     "cancel_action": "Annuler",
@@ -440,7 +448,8 @@
       "invalid_target_points": "Les points de l'objectif doivent être positifs",
       "invalid_target_size": "La taille de l'objectif doit être positive",
       "invalid_expires_at": "La date d'expiration doit être dans le futur",
-      "not_pending": "L'ordre n'est plus en attente"
+      "not_pending": "L'ordre n'est plus en attente",
+      "invalid_plan": "Plan invalide ou indisponible."
     },
     "success": {
       "created": "Ordre créé avec succès",
@@ -458,6 +467,14 @@
     "account": "Compte",
     "select_account": "Sélectionner un compte",
     "status": "Statut",
+    "plan": "Plan",
+    "no_plan": "Aucun plan",
+    "plan_hint": "Optionnel : rattache ce trade à un plan pour repérer, dans les stats, ceux pris hors du cadre. Purement indicatif, ne bloque rien.",
+    "adherence": {
+      "in_plan": "Dans le plan",
+      "out_of_plan": "Hors plan",
+      "none": "Sans plan"
+    },
     "opened_at": "Ouvert le",
     "closed_at": "Fermé le",
     "remaining_size": "Taille restante",
@@ -539,7 +556,8 @@
       "invalid_closed_at": "Date de clôture invalide",
       "closed_at_not_closed": "La date de clôture ne peut être modifiée que sur un trade clôturé",
       "bulk_delete_empty": "Aucun trade sélectionné pour la suppression en lot",
-      "bulk_delete_too_many": "Trop de trades sélectionnés (500 max par opération)"
+      "bulk_delete_too_many": "Trop de trades sélectionnés (500 max par opération)",
+      "invalid_plan": "Plan invalide ou indisponible."
     },
     "success": {
       "created": "Trade créé avec succès",
@@ -1156,6 +1174,12 @@
     "direction": {
       "both": "Les deux"
     },
+    "window": {
+      "all_days": "Tous les jours"
+    },
+    "summary": {
+      "more": "+{count} autres"
+    },
     "tag": {
       "zones": "{count} zone(s)",
       "windows": "{count} plage(s)",
@@ -1185,7 +1209,8 @@
       "invalid_window_time": "Heures invalides (le début doit précéder la fin).",
       "in_use": "Ce plan est utilisé par un robot actif. Détachez-le d'abord.",
       "not_found": "Plan introuvable.",
-      "forbidden": "Accès refusé à ce plan."
+      "forbidden": "Accès refusé à ce plan.",
+      "feature_disabled": "Les plans de trading sont désactivés sur ce serveur."
     }
   },
   "notebook": {

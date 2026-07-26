@@ -430,6 +430,17 @@ Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-
 
 ---
 
+## Plans de trading — analytics d'adhérence (au-delà du badge/filtre)
+
+**Contexte** : livraison de l'adhérence sur trade manuel (`docs/83`, migration `034_trade_plan_adherence.sql`). La v1 pose `positions.plan_id` + verdict figé `plan_adherence`, un badge dans la liste des trades et un filtre `Dans le plan / Hors plan / Sans plan`. Le besoin exprimé (« identifier les trades hors plan dans les stats ») est couvert au niveau *repérage*.
+
+**À faire (si le besoin monte)** : une vraie brique analytics — comparer la **performance in-plan vs out-of-plan** (win rate, R:R moyen, P&L) dans la vue Performance, un compteur « X % de tes trades ont été pris hors plan », éventuellement une ventilation par plan. Réutiliser le filtre `plan_adherence` déjà exposé par l'API trades. Croiser avec le cadrage perf existant (memory `feedback_perf_charts` : R:R / win rate, pas de P&L brut, pas de graphe par compte).
+
+**Repéré le** : 2026-07-26.
+**Priorité** : moyenne — forte valeur pédagogique (discipline de trading), mais la v1 badge+filtre suffit à repérer. À reprioriser selon l'usage.
+
+---
+
 ## Dépendances — advisories connues (audits composer + npm)
 
 **Contexte** : relevé pendant l'audit sécurité de `feat/trading-plans` (2026-07-24), rien d'introduit par la feature.

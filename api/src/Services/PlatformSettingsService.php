@@ -76,6 +76,11 @@ class PlatformSettingsService
                 'env_var' => 'ROBOTS_ENABLED',
                 'description' => 'admin.settings.desc.robots_enabled',
             ],
+            'plans_enabled' => [
+                'type' => SettingType::BOOL->value,
+                'env_var' => 'PLANS_ENABLED',
+                'description' => 'admin.settings.desc.plans_enabled',
+            ],
         ];
     }
 
