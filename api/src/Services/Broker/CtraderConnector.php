@@ -7,9 +7,33 @@ use WebSocket\Client as WsClient;
 
 class CtraderConnector implements ConnectorInterface
 {
+    /**
+     * ProtoOAPayloadType numeric codes (OpenApiModelMessages.proto). The
+     * cTrader JSON API keys every frame by these integers — NOT the message
+     * name — with the message fields nested under a `payload` object.
+     */
+    private const PAYLOAD_TYPES = [
+        'ProtoOAApplicationAuthReq' => 2100,
+        'ProtoOAAccountAuthReq'     => 2102,
+        'ProtoOAReconcileReq'       => 2124,
+        'ProtoOATraderReq'          => 2121,
+        'ProtoOAOrderListReq'       => 2175,
+        'ProtoOADealListReq'        => 2133,
+        'ProtoOASymbolsListReq'     => 2114,
+        'ProtoOASymbolByIdReq'      => 2116,
+        'ProtoOANewOrderReq'        => 2106,
+        'ProtoOACancelOrderReq'     => 2108,
+        'ProtoOAClosePositionReq'   => 2111,
+        'ProtoOAErrorRes'           => 2142,
+    ];
+
+    /** Base-protocol heartbeat (ProtoPayloadType.HEARTBEAT_EVENT). */
+    private const HEARTBEAT_EVENT = 51;
+
     private array $config;
     private ?WsClient $wsClient;
     private ?HttpClient $httpClient;
+    private int $msgCounter = 0;
 
     public function __construct(array $config, ?WsClient $wsClient = null, ?HttpClient $httpClient = null)
     {
@@ -92,28 +116,129 @@ class CtraderConnector implements ConnectorInterface
         ];
     }
 
+    /**
+     * Live open positions via ProtoOAReconcileReq → position[]. Best-effort:
+     * returns an empty snapshot when credentials are missing so the diff
+     * service treats it as "no broker open positions this run" rather than
+     * fataling.
+     */
     public function fetchOpenPositions(array $credentials): array
     {
-        // cTrader open positions are exposed over the OpenAPI ProtoOA stream
-        // (ProtoOAReconcileReq → positions[]). Not wired yet for the live
-        // sync — the broker-sync feature only consumes closed positions on
-        // this connector for now. Returning an empty snapshot is safe: the
-        // diff service treats it as "no broker open positions for this run"
-        // and never deletes journal-side rows just because a connector is
-        // silent.
-        return ['positions' => [], 'raw_count' => 0];
+        if (empty($credentials['ctid_trader_account_id']) || empty($credentials['access_token'])) {
+            return ['positions' => [], 'raw_count' => 0];
+        }
+
+        return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
+            $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
+                'ctidTraderAccountId' => $accountId,
+            ]);
+            $positions = $response['position'] ?? [];
+
+            $symbolMap = $this->resolveSymbolNames($ws, $accountId, $this->collectSymbolIds($positions));
+
+            $normalizer = new DealNormalizer();
+            $normalized = [];
+            foreach ($positions as $position) {
+                $symbolId = $position['tradeData']['symbolId'] ?? null;
+                $position['symbolName'] = $symbolMap[$symbolId] ?? ('UNKNOWN_' . $symbolId);
+                $row = $normalizer->normalizeCtraderOpenPosition($position);
+                if ($row !== null) {
+                    $normalized[] = $row;
+                }
+            }
+
+            return ['positions' => $normalized, 'raw_count' => count($positions)];
+        });
     }
 
+    /**
+     * Live pending orders via ProtoOAReconcileReq → order[]. Protective
+     * closing orders (SL/TP bound to an open position) are excluded — they're
+     * already represented via the position's own sl/tp, not standalone
+     * pending orders the user placed.
+     */
     public function fetchOpenOrders(array $credentials): array
     {
-        // Same story as fetchOpenPositions for cTrader — pending orders are
-        // reachable via ProtoOAReconcileReq but not wired here yet.
-        return ['orders' => [], 'raw_count' => 0];
+        if (empty($credentials['ctid_trader_account_id']) || empty($credentials['access_token'])) {
+            return ['orders' => [], 'raw_count' => 0];
+        }
+
+        return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
+            $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
+                'ctidTraderAccountId' => $accountId,
+            ]);
+            $rawOrders = $response['order'] ?? [];
+
+            $orders = array_values(array_filter($rawOrders, fn($o) => empty($o['closingOrder'])));
+
+            $symbolMap = $this->resolveSymbolNames($ws, $accountId, $this->collectSymbolIds($orders));
+
+            $normalizer = new DealNormalizer();
+            $normalized = [];
+            foreach ($orders as $order) {
+                $symbolId = $order['tradeData']['symbolId'] ?? null;
+                $order['symbolName'] = $symbolMap[$symbolId] ?? ('UNKNOWN_' . $symbolId);
+                $row = $normalizer->normalizeCtraderOpenOrder($order);
+                if ($row !== null) {
+                    $normalized[] = $row;
+                }
+            }
+
+            return ['orders' => $normalized, 'raw_count' => count($rawOrders)];
+        });
     }
 
+    /**
+     * Recently-closed orders via ProtoOAOrderListReq (orders in a time
+     * window). Only terminal states (filled/cancelled/expired) survive
+     * normalization — the order diff uses them to disambiguate why a pending
+     * order disappeared, instead of always defaulting to CANCELLED.
+     */
     public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
     {
-        return ['orders' => [], 'raw_count' => 0];
+        if (empty($credentials['ctid_trader_account_id']) || empty($credentials['access_token'])) {
+            return ['orders' => [], 'raw_count' => 0];
+        }
+
+        return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) use ($sinceCursor) {
+            $fromTimestamp = $sinceCursor
+                ? (int) (strtotime($sinceCursor) * 1000)
+                : (int) ((time() - 90 * 86400) * 1000);
+            $toTimestamp = (int) (time() * 1000);
+
+            $response = $this->sendAndReceive($ws, 'ProtoOAOrderListReq', [
+                'ctidTraderAccountId' => $accountId,
+                'fromTimestamp' => $fromTimestamp,
+                'toTimestamp' => $toTimestamp,
+            ]);
+            $orders = $response['order'] ?? [];
+
+            $normalizer = new DealNormalizer();
+            $normalized = [];
+            foreach ($orders as $order) {
+                $row = $normalizer->normalizeCtraderClosedOrder($order);
+                if ($row !== null) {
+                    $normalized[] = $row;
+                }
+            }
+
+            return ['orders' => $normalized, 'raw_count' => count($orders)];
+        });
+    }
+
+    /**
+     * Collect the distinct, non-null symbolId values from a set of positions
+     * or orders (both carry symbolId under tradeData) so we can resolve their
+     * names in a single ProtoOASymbolByIdReq.
+     *
+     * @return int[]
+     */
+    private function collectSymbolIds(array $entities): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(fn($e) => $e['tradeData']['symbolId'] ?? null, $entities),
+            fn($id) => $id !== null,
+        )));
     }
 
     public function refreshCredentials(array $credentials): array
@@ -124,12 +249,17 @@ class CtraderConnector implements ConnectorInterface
 
         $http = $this->httpClient ?? new HttpClient();
 
-        $response = $http->get($this->config['oauth_token_url'], [
+        // The cTrader OAuth app credentials are stored per-connection (the
+        // user enters them in the connect dialog), so prefer the credentials'
+        // client_id/secret and fall back to config. oauth_token_url falls back
+        // to the known cTrader endpoint when not configured.
+        $tokenUrl = $this->config['oauth_token_url'] ?? 'https://openapi.ctrader.com/apps/token';
+        $response = $http->get($tokenUrl, [
             'query' => [
                 'grant_type' => 'refresh_token',
                 'refresh_token' => $credentials['refresh_token'],
-                'client_id' => $this->config['client_id'],
-                'client_secret' => $this->config['client_secret'],
+                'client_id' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
+                'client_secret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
             ],
         ]);
 
@@ -166,12 +296,35 @@ class CtraderConnector implements ConnectorInterface
         }
     }
 
+    /**
+     * Account balance via ProtoOATraderReq → trader. cTrader expresses money
+     * as an integer scaled by moneyDigits (e.g. balance 10053099944 with
+     * moneyDigits 8 → 100.53099944). Best-effort: any failure returns null so
+     * the sync leaves the previous balance alone.
+     */
     public function fetchBalance(array $credentials): ?float
     {
-        // cTrader balance is exposed via ProtoOATraderRes (account snapshot
-        // returned after ProtoOAAccountAuthReq). Not wired yet on this
-        // connector. Return null so the broker sync skips the update.
-        return null;
+        if (empty($credentials['ctid_trader_account_id']) || empty($credentials['access_token'])) {
+            return null;
+        }
+
+        try {
+            $result = $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
+                $response = $this->sendAndReceive($ws, 'ProtoOATraderReq', [
+                    'ctidTraderAccountId' => $accountId,
+                ]);
+                $trader = $response['trader'] ?? [];
+                if (!isset($trader['balance'])) {
+                    return ['balance' => null];
+                }
+                $moneyDigits = (int) ($trader['moneyDigits'] ?? 2);
+                return ['balance' => ((float) $trader['balance']) / (10 ** $moneyDigits)];
+            });
+
+            return $result['balance'];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function placeOrder(array $credentials, array $order): array
@@ -284,7 +437,8 @@ class CtraderConnector implements ConnectorInterface
             }
 
             $response = $this->sendAndReceive($ws, 'ProtoOAClosePositionReq', $payload);
-            return ['status' => $response['executionEvent']['executionType'] ?? null, 'raw' => $response];
+            // ProtoOAExecutionEvent carries executionType at the payload root.
+            return ['status' => $response['executionType'] ?? $response['executionEvent']['executionType'] ?? null, 'raw' => $response];
         });
     }
 
@@ -391,11 +545,18 @@ class CtraderConnector implements ConnectorInterface
     }
 
     /**
-     * Build a JSON message for the cTrader Open API.
+     * Build a JSON message for the cTrader Open API. Wire format:
+     * {clientMsgId, payloadType:<int>, payload:{…}} — numeric payloadType and
+     * nested payload, per https://help.ctrader.com/open-api/sending-receiving-json/.
+     * The (object) cast keeps an empty payload serialized as `{}`, not `[]`.
      */
     public function buildMessage(string $payloadType, array $payload = []): string
     {
-        return json_encode(array_merge(['payloadType' => $payloadType], $payload));
+        return json_encode([
+            'clientMsgId' => (string) (++$this->msgCounter),
+            'payloadType' => self::PAYLOAD_TYPES[$payloadType],
+            'payload' => (object) $payload,
+        ]);
     }
 
     private function connectWebSocket(): WsClient
@@ -415,20 +576,36 @@ class CtraderConnector implements ConnectorInterface
     private function sendAndReceive(WsClient $ws, string $payloadType, array $payload = []): array
     {
         $ws->text($this->buildMessage($payloadType, $payload));
-        $response = $ws->receive();
 
-        $decoded = json_decode($response, true);
-        if (!$decoded) {
-            throw new \RuntimeException("Invalid response from cTrader API for $payloadType");
+        // The Open API is asynchronous: heartbeats (payloadType 51) and other
+        // unsolicited events can arrive interleaved. Keep reading until a real
+        // response frame arrives rather than mistaking a heartbeat for it.
+        while (true) {
+            $response = $ws->receive();
+
+            $decoded = json_decode($response, true);
+            if (!$decoded) {
+                throw new \RuntimeException("Invalid response from cTrader API for $payloadType");
+            }
+
+            $type = $decoded['payloadType'] ?? null;
+            if ($type === self::HEARTBEAT_EVENT) {
+                continue;
+            }
+
+            // Every ProtoOA frame nests its fields under `payload`.
+            $inner = $decoded['payload'] ?? [];
+
+            // Error detection MUST compare the numeric code — the old string
+            // comparison never matched, so real errors were swallowed.
+            if ($type === self::PAYLOAD_TYPES['ProtoOAErrorRes']) {
+                $errorCode = $inner['errorCode'] ?? 'UNKNOWN';
+                $description = $inner['description'] ?? '';
+                throw new \RuntimeException("cTrader API error: $errorCode - $description");
+            }
+
+            return $inner;
         }
-
-        if (isset($decoded['payloadType']) && $decoded['payloadType'] === 'ProtoOAErrorRes') {
-            $errorCode = $decoded['errorCode'] ?? 'UNKNOWN';
-            $description = $decoded['description'] ?? '';
-            throw new \RuntimeException("cTrader API error: $errorCode - $description");
-        }
-
-        return $decoded;
     }
 
     private function resolveSymbolNames(WsClient $ws, int $accountId, array $symbolIds): array

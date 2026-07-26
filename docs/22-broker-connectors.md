@@ -57,6 +57,29 @@ La méthode `ImportService::importNormalizedPositions()` a été extraite de `co
 
 cTrader n'a pas d'API REST pour les trades. Le protocole natif est Protobuf over TCP, mais le port 5036 accepte du JSON over WebSocket — évitant la compilation protobuf. La lib `textalk/websocket` fournit un client synchrone adapté au pattern connect → fetch → disconnect.
 
+**Format des messages (impératif).** Chaque frame suit l'enveloppe JSON officielle ([doc cTrader](https://help.ctrader.com/open-api/sending-receiving-json/)) :
+
+```json
+{ "clientMsgId": "12", "payloadType": 2100, "payload": { "clientId": "…", "clientSecret": "…" } }
+```
+
+- `payloadType` est le **code numérique** `ProtoOAPayloadType` (2100 = AppAuth, 2102 = AccountAuth, 2142 = ErrorRes, 51 = heartbeat…), **jamais** le nom de message.
+- Les champs métier sont **imbriqués sous `payload`**.
+- `clientMsgId` (compteur monotone) identifie la requête.
+
+Côté réception, `sendAndReceive()` : ignore les heartbeats (`payloadType 51`) en bouclant, détecte les erreurs sur le **code numérique 2142** (une comparaison sur le nom de message ne matcherait jamais), et retourne le sous-objet `payload`. La table nom→code vit dans `CtraderConnector::PAYLOAD_TYPES`.
+
+**Lecture complète (parité Ouinex/BingX).** Au-delà de `fetchDeals` (trades clos via `ProtoOADealListReq`), le connecteur câble tout le read path consommé par `BrokerSyncService` :
+
+| Méthode | Message cTrader | Contenu |
+|---------|-----------------|---------|
+| `fetchOpenPositions` | `ProtoOAReconcileReq` → `position[]` | positions ouvertes (entry, SL/TP, volume) |
+| `fetchOpenOrders` | `ProtoOAReconcileReq` → `order[]` | ordres en attente (hors `closingOrder` = SL/TP de position) |
+| `fetchClosedOrders` | `ProtoOAOrderListReq` | statuts terminaux (EXECUTED/CANCELLED/EXPIRED) pour désambiguïser une disparition d'ordre |
+| `fetchBalance` | `ProtoOATraderReq` → `trader` | balance (`balance / 10^moneyDigits`) |
+
+Les `symbolId` numériques sont résolus en noms via `ProtoOASymbolByIdReq`. Les normalizers (`normalizeCtraderOpenPosition` / `OpenOrder` / `ClosedOrder`) préservent l'invariant `external_id` = `ctrader_<positionId>` / `ctrader_order_<orderId>`, indispensable aux transitions OPEN→CLOSED et au diff d'ordres. La tolérance enum (nom `'BUY'` **ou** code `1`) couvre l'incertitude sur la sérialisation JSON des enums, à figer au premier run live.
+
 ### Chiffrement des credentials
 
 AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'environnement `BROKER_ENCRYPTION_KEY`. Chaque connexion a son propre IV. Les credentials ne sont jamais exposés dans les réponses API.
@@ -100,14 +123,12 @@ Audit trail : connexion, deals récupérés/importés/ignorés, erreurs, timesta
 | Test | Scénario | Statut |
 |------|----------|--------|
 | `CredentialEncryptionServiceTest` (6) | Encrypt/decrypt, wrong key, corrupted data | ✅ |
-| `DealNormalizerTest` (6) | cTrader + MetaApi deals, skip non-closing, direction | ✅ |
-| `MetaApiConnectorTest` (6) | fetchDeals, cursor, testConnection, refresh no-op | ✅ |
-| `CtraderConnectorTest` (4) | refreshCredentials, normalize deals, buildMessage | ✅ |
-| `BrokerSyncServiceTest` (5) | sync flow, wrong user, inactive, cursor, provider routing | ✅ |
+| `DealNormalizerTest` | cTrader (deals + positions/ordres ouverts + ordres clos) + MetaApi + Ouinex + BingX | ✅ |
+| `MetaApiConnectorTest` | fetchDeals, cursor, testConnection, refresh no-op | ✅ |
+| `CtraderConnectorTest` | format wire (payloadType numérique + `payload` + `clientMsgId`), détection erreur 2142, skip heartbeat, fetchOpen{Positions,Orders}, fetchClosedOrders, fetchBalance, ordres sortants, refresh | ✅ |
+| `BrokerSyncServiceTest` | sync flow, wrong user, inactive, cursor, provider routing | ✅ |
 
-**Total : 27 tests, 70 assertions** pour les connecteurs.
-
-Suite complète : **740 tests, 2040 assertions**, aucune régression.
+Suite unitaire Broker complète : **184 tests, 613 assertions**, aucune régression.
 
 ## Configuration requise
 
