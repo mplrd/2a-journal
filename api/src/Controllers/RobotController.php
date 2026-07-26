@@ -46,6 +46,14 @@ class RobotController extends Controller
         return $this->jsonSuccess($robot);
     }
 
+    public function update(Request $request): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $robotId = (int) $request->getRouteParam('id');
+        $robot = $this->service->update($userId, $robotId, $request->getBody());
+        return $this->jsonSuccess($robot);
+    }
+
     public function destroy(Request $request): Response
     {
         $userId = (int) $request->getAttribute('user_id');

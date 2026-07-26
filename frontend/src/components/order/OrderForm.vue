@@ -26,6 +26,7 @@ const props = defineProps({
   accounts: { type: Array, default: () => [] },
   symbols: { type: Array, default: () => [] },
   setups: { type: Array, default: () => [] },
+  plans: { type: Array, default: () => [] },
   loading: Boolean,
 })
 
@@ -51,6 +52,13 @@ const directionOptions = Object.values(Direction).map((value) => ({
   value,
 }))
 
+// Optional plan tag: "no plan" + the user's active plans (docs/83). The trade
+// issued from this order inherits the verdict. Hidden when there are no plans.
+const planOptions = computed(() => [
+  { label: t('orders.no_plan'), value: null },
+  ...props.plans.map((p) => ({ label: p.name, value: p.id })),
+])
+
 function getDefaultForm() {
   return {
     account_id: null,
@@ -62,6 +70,7 @@ function getDefaultForm() {
     direction: Direction.BUY,
     symbol: '',
     setup: [],
+    plan_id: null,
     notes: '',
     targets: [],
     expires_at: null,
@@ -229,6 +238,19 @@ async function handleSymbolCreate(data) {
           class="w-full"
           @complete="searchSetups"
         />
+      </div>
+
+      <div v-if="plans.length">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('orders.plan') }}</label>
+        <Select
+          v-model="form.plan_id"
+          :options="planOptions"
+          option-label="label"
+          option-value="value"
+          class="w-full"
+          data-testid="order-plan-select"
+        />
+        <p class="text-xs text-gray-400 mt-1">{{ t('orders.plan_hint') }}</p>
       </div>
 
       <div class="grid grid-cols-2 gap-4">

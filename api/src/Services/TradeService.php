@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\Direction;
 use App\Enums\EntityType;
 use App\Enums\ExitType;
+use App\Enums\PlanAdherence;
 use App\Enums\PositionType;
 use App\Enums\TradeStatus;
 use App\Enums\TriggerType;
@@ -17,7 +18,11 @@ use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\TradingPlanRepository;
+use DateTimeImmutable;
+use DateTimeZone;
 use PDO;
+use Throwable;
 
 class TradeService
 {
@@ -32,6 +37,9 @@ class TradeService
     private ?CustomFieldService $customFieldService;
     private ?DrawdownService $drawdownService;
     private ?PDO $pdo;
+    private ?TradingPlanRepository $planRepo;
+    private ?PlanEvaluator $planEvaluator;
+    private ?SignalRiskCalculator $riskCalculator;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -42,7 +50,10 @@ class TradeService
         ?SetupRepository $setupRepo = null,
         ?CustomFieldService $customFieldService = null,
         ?DrawdownService $drawdownService = null,
-        ?PDO $pdo = null
+        ?PDO $pdo = null,
+        ?TradingPlanRepository $planRepo = null,
+        ?PlanEvaluator $planEvaluator = null,
+        ?SignalRiskCalculator $riskCalculator = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -53,6 +64,9 @@ class TradeService
         $this->customFieldService = $customFieldService;
         $this->drawdownService = $drawdownService;
         $this->pdo = $pdo;
+        $this->planRepo = $planRepo;
+        $this->planEvaluator = $planEvaluator;
+        $this->riskCalculator = $riskCalculator;
     }
 
     public function create(int $userId, array $data): array
@@ -101,8 +115,15 @@ class TradeService
             $this->setupRepo->ensureExist($userId, $data['setup']);
         }
 
-        // Create position
+        // Trading-plan adherence, evaluated once and frozen (docs/83). Optional:
+        // no plan_id ⇒ all three fields stay null.
         $size = (float) $data['size'];
+        $planId = $this->normalizePlanId($data['plan_id'] ?? null);
+        $adherence = $this->evaluatePlanAdherence(
+            $userId, $accountId, $planId, $direction, (string) $data['symbol'], $entryPrice, $size, $slPoints, (string) $data['opened_at']
+        );
+
+        // Create position
         $position = $this->positionRepo->create([
             'user_id' => $userId,
             'account_id' => $accountId,
@@ -111,6 +132,9 @@ class TradeService
             'entry_price' => $entryPrice,
             'size' => $size,
             'setup' => json_encode($data['setup']),
+            'plan_id' => $adherence['plan_id'],
+            'plan_adherence' => $adherence['plan_adherence'],
+            'plan_adherence_reason' => $adherence['plan_adherence_reason'],
             'sl_points' => $slPoints,
             'sl_price' => $slPrice,
             'be_points' => $data['be_points'] ?? null,
@@ -185,6 +209,13 @@ class TradeService
 
         if (!empty($filters['direction']) && Direction::tryFrom($filters['direction'])) {
             $validFilters['direction'] = $filters['direction'];
+        }
+
+        // Plan adherence filter (docs/83): a PlanAdherence value or the literal
+        // 'NONE' (trades with no plan). Anything else is silently dropped.
+        if (!empty($filters['plan_adherence'])
+            && ($filters['plan_adherence'] === 'NONE' || PlanAdherence::tryFrom($filters['plan_adherence']) !== null)) {
+            $validFilters['plan_adherence'] = $filters['plan_adherence'];
         }
 
         if (!empty($filters['symbol'])) {
@@ -575,6 +606,32 @@ class TradeService
             $positionUpdates['setup'] = json_encode($positionUpdates['setup']);
         }
 
+        // Plan adherence — re-snapshot when the plan link OR any evaluation input
+        // changes (docs/83). Editing the plan itself never re-labels an existing
+        // trade; editing the trade does. Setting plan_id to null clears the verdict.
+        $planTouched = array_key_exists('plan_id', $data);
+        $evalTouched = (bool) array_intersect(['direction', 'entry_price', 'size', 'sl_points', 'symbol', 'opened_at'], array_keys($data));
+        $effectivePlanId = $planTouched
+            ? $this->normalizePlanId($data['plan_id'])
+            : $this->normalizePlanId($trade['plan_id'] ?? null);
+
+        if ($planTouched || ($evalTouched && $effectivePlanId !== null)) {
+            $adherence = $this->evaluatePlanAdherence(
+                $userId,
+                (int) $trade['account_id'],
+                $effectivePlanId,
+                $direction,
+                (string) ($data['symbol'] ?? $trade['symbol']),
+                $entryPrice,
+                isset($data['size']) ? (float) $data['size'] : (float) $trade['size'],
+                isset($data['sl_points']) ? (float) $data['sl_points'] : (float) $trade['sl_points'],
+                (string) ($data['opened_at'] ?? $trade['opened_at'])
+            );
+            $positionUpdates['plan_id'] = $adherence['plan_id'];
+            $positionUpdates['plan_adherence'] = $adherence['plan_adherence'];
+            $positionUpdates['plan_adherence_reason'] = $adherence['plan_adherence_reason'];
+        }
+
         if (!empty($positionUpdates)) {
             $this->positionRepo->update((int) $trade['position_id'], $positionUpdates);
         }
@@ -612,6 +669,66 @@ class TradeService
         $this->recalcRealizedMetrics($tradeId);
 
         return $this->get($userId, $tradeId);
+    }
+
+    /** Normalize an incoming plan_id (string/int/empty/0) to ?int. */
+    private function normalizePlanId(mixed $planId): ?int
+    {
+        if ($planId === null || $planId === '' || (int) $planId <= 0) {
+            return null;
+        }
+        return (int) $planId;
+    }
+
+    /**
+     * Evaluate a trade against the plan it was taken under and freeze the verdict
+     * (docs/83). Manual trades are never blocked — an unknown/foreign/archived
+     * plan is the only hard error. The window check treats opened_at as plan-local
+     * wall-clock; risk % is best-effort (skipped when not computable).
+     *
+     * @return array{plan_id:?int, plan_adherence:?string, plan_adherence_reason:?string}
+     */
+    private function evaluatePlanAdherence(
+        int $userId,
+        int $accountId,
+        ?int $planId,
+        string $direction,
+        string $symbol,
+        float $entryPrice,
+        float $size,
+        float $slPoints,
+        string $openedAt
+    ): array {
+        if ($planId === null) {
+            return ['plan_id' => null, 'plan_adherence' => null, 'plan_adherence_reason' => null];
+        }
+        // Plan feature not wired in this context: keep the link, no verdict.
+        if ($this->planRepo === null || $this->planEvaluator === null) {
+            return ['plan_id' => $planId, 'plan_adherence' => null, 'plan_adherence_reason' => null];
+        }
+        if (!$this->planRepo->isOwnedAndActive($userId, $planId)) {
+            throw new ValidationException('trades.error.invalid_plan', 'plan_id');
+        }
+        $plan = $this->planRepo->findByIdAssembled($planId);
+        if ($plan === null) {
+            throw new ValidationException('trades.error.invalid_plan', 'plan_id');
+        }
+
+        $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
+
+        $tz = $plan['timezone'] ?? null;
+        try {
+            $now = new DateTimeImmutable($openedAt, $tz !== null ? new DateTimeZone($tz) : null);
+        } catch (Throwable) {
+            $now = new DateTimeImmutable('now');
+        }
+
+        $reason = $this->planEvaluator->evaluate($plan, $direction, $entryPrice, $riskPercent, $now);
+        return [
+            'plan_id' => $planId,
+            'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,
+            'plan_adherence_reason' => $reason,
+        ];
     }
 
     private function validatePartialPositionFields(array $data): void

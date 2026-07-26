@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\Direction;
 use App\Enums\EntityType;
 use App\Enums\OrderStatus;
+use App\Enums\PlanAdherence;
 use App\Enums\PositionType;
 use App\Enums\TradeStatus;
 use App\Enums\TriggerType;
@@ -17,6 +18,9 @@ use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use App\Repositories\TradingPlanRepository;
+use DateTimeImmutable;
+use Throwable;
 
 class OrderService
 {
@@ -26,6 +30,9 @@ class OrderService
     private StatusHistoryRepository $historyRepo;
     private TradeRepository $tradeRepo;
     private ?SetupRepository $setupRepo;
+    private ?TradingPlanRepository $planRepo;
+    private ?PlanEvaluator $planEvaluator;
+    private ?SignalRiskCalculator $riskCalculator;
 
     public function __construct(
         OrderRepository $orderRepo,
@@ -33,7 +40,10 @@ class OrderService
         AccountRepository $accountRepo,
         StatusHistoryRepository $historyRepo,
         TradeRepository $tradeRepo,
-        ?SetupRepository $setupRepo = null
+        ?SetupRepository $setupRepo = null,
+        ?TradingPlanRepository $planRepo = null,
+        ?PlanEvaluator $planEvaluator = null,
+        ?SignalRiskCalculator $riskCalculator = null
     ) {
         $this->orderRepo = $orderRepo;
         $this->positionRepo = $positionRepo;
@@ -41,6 +51,9 @@ class OrderService
         $this->historyRepo = $historyRepo;
         $this->tradeRepo = $tradeRepo;
         $this->setupRepo = $setupRepo;
+        $this->planRepo = $planRepo;
+        $this->planEvaluator = $planEvaluator;
+        $this->riskCalculator = $riskCalculator;
     }
 
     public function create(int $userId, array $data): array
@@ -109,6 +122,13 @@ class OrderService
             $this->setupRepo->ensureExist($userId, $data['setup']);
         }
 
+        // Trading-plan adherence, frozen at order placement (docs/83). Optional;
+        // carried by the position, so the trade inherits it verbatim on execute.
+        $planId = $this->normalizePlanId($data['plan_id'] ?? null);
+        $adherence = $this->evaluatePlanAdherence(
+            $userId, $accountId, $planId, $direction, (string) $data['symbol'], $entryPrice, (float) $data['size'], $slPoints
+        );
+
         // Create position
         $position = $this->positionRepo->create([
             'user_id' => $userId,
@@ -118,6 +138,9 @@ class OrderService
             'entry_price' => $entryPrice,
             'size' => (float) $data['size'],
             'setup' => json_encode($data['setup']),
+            'plan_id' => $adherence['plan_id'],
+            'plan_adherence' => $adherence['plan_adherence'],
+            'plan_adherence_reason' => $adherence['plan_adherence_reason'],
             'sl_points' => $slPoints,
             'sl_price' => $slPrice,
             'be_points' => $data['be_points'] ?? null,
@@ -177,6 +200,12 @@ class OrderService
 
         if (!empty($filters['direction']) && Direction::tryFrom($filters['direction'])) {
             $validFilters['direction'] = $filters['direction'];
+        }
+
+        // Plan adherence filter (docs/83): a PlanAdherence value or 'NONE'.
+        if (!empty($filters['plan_adherence'])
+            && ($filters['plan_adherence'] === 'NONE' || PlanAdherence::tryFrom($filters['plan_adherence']) !== null)) {
+            $validFilters['plan_adherence'] = $filters['plan_adherence'];
         }
 
         if (!empty($filters['symbol'])) {
@@ -298,6 +327,64 @@ class OrderService
 
         // Delete the position (CASCADE will delete the order)
         $this->positionRepo->delete((int) $order['position_id']);
+    }
+
+    /** Normalize an incoming plan_id (string/int/empty/0) to ?int. */
+    private function normalizePlanId(mixed $planId): ?int
+    {
+        if ($planId === null || $planId === '' || (int) $planId <= 0) {
+            return null;
+        }
+        return (int) $planId;
+    }
+
+    /**
+     * Evaluate an order against the plan it is placed under and freeze the
+     * verdict (docs/83). The order carries it on its position, so the trade
+     * inherits it on execute. Manual orders are never blocked — an unknown/
+     * foreign/archived plan is the only hard error. Windows are evaluated at the
+     * placement instant (now); risk % is best-effort (skipped if not computable).
+     *
+     * @return array{plan_id:?int, plan_adherence:?string, plan_adherence_reason:?string}
+     */
+    private function evaluatePlanAdherence(
+        int $userId,
+        int $accountId,
+        ?int $planId,
+        string $direction,
+        string $symbol,
+        float $entryPrice,
+        float $size,
+        float $slPoints
+    ): array {
+        if ($planId === null) {
+            return ['plan_id' => null, 'plan_adherence' => null, 'plan_adherence_reason' => null];
+        }
+        if ($this->planRepo === null || $this->planEvaluator === null) {
+            return ['plan_id' => $planId, 'plan_adherence' => null, 'plan_adherence_reason' => null];
+        }
+        if (!$this->planRepo->isOwnedAndActive($userId, $planId)) {
+            throw new ValidationException('orders.error.invalid_plan', 'plan_id');
+        }
+        $plan = $this->planRepo->findByIdAssembled($planId);
+        if ($plan === null) {
+            throw new ValidationException('orders.error.invalid_plan', 'plan_id');
+        }
+
+        $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
+
+        try {
+            $now = new DateTimeImmutable('now');
+        } catch (Throwable) {
+            $now = new DateTimeImmutable();
+        }
+
+        $reason = $this->planEvaluator->evaluate($plan, $direction, $entryPrice, $riskPercent, $now);
+        return [
+            'plan_id' => $planId,
+            'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,
+            'plan_adherence_reason' => $reason,
+        ];
     }
 
     private function validatePositionFields(array $data): void
