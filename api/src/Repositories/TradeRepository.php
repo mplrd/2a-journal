@@ -156,6 +156,7 @@ class TradeRepository
                        t.remaining_size, t.be_reached, t.avg_exit_price, t.pnl, t.pnl_percent,
                        t.risk_reward, t.duration_minutes, t.status, t.exit_type,
                        p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                       p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                        p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
                        p.position_type, p.created_at, p.updated_at
                 FROM trades t

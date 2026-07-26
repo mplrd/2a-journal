@@ -94,13 +94,16 @@ const adherenceOptions = computed(() => [
 // trade issued from the order inherits it. Plan name from the loaded plans.
 function adherenceBadge(order) {
   if (!order.plan_adherence) return null
-  const planName = plans.value.find((p) => p.id === order.plan_id)?.name ?? ''
   const inPlan = order.plan_adherence === 'IN_PLAN'
+  const status = inPlan ? t('orders.adherence.in_plan') : t('orders.adherence.out_of_plan')
+  const planName = plans.value.find((p) => p.id === order.plan_id)?.name
   return {
-    label: inPlan ? t('orders.adherence.in_plan') : t('orders.adherence.out_of_plan'),
+    // Show the plan name directly; colour + icon convey in/out. Tooltip stays
+    // localized (the backend reason is English — full localization is backlogged).
+    label: planName || status,
     severity: inPlan ? 'success' : 'warn',
     icon: inPlan ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle',
-    tooltip: [planName, order.plan_adherence_reason].filter(Boolean).join(' — '),
+    tooltip: status,
   }
 }
 
@@ -482,7 +485,6 @@ function statusSeverity(status) {
             :icon="adherenceBadge(data).icon"
             v-tooltip.top="adherenceBadge(data).tooltip"
           />
-          <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
         </template>
       </Column>
       <Column v-if="!isCompact" field="expires_at" :header="t('orders.expires_at')">

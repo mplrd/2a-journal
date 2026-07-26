@@ -436,8 +436,25 @@ Le point (2) **ne fonctionne pas de façon fiable** : testé en prod le 2026-05-
 
 **À faire (si le besoin monte)** : une vraie brique analytics — comparer la **performance in-plan vs out-of-plan** (win rate, R:R moyen, P&L) dans la vue Performance, un compteur « X % de tes trades ont été pris hors plan », éventuellement une ventilation par plan. Réutiliser le filtre `plan_adherence` déjà exposé par l'API trades. Croiser avec le cadrage perf existant (memory `feedback_perf_charts` : R:R / win rate, pas de P&L brut, pas de graphe par compte).
 
+**Question ouverte (à trancher) — comment matérialiser l'adhérence dans les stats** : quel support UI ? Options à peser :
+- un **segment/toggle** sur la vue Performance existante (in-plan / out-of-plan / tout), qui rejoue les mêmes graphes filtrés ;
+- une **tuile dédiée** « discipline » (% dans le plan, delta de win rate in vs out) façon KPI, sans nouvel écran ;
+- une **ventilation par plan** (petit tableau win rate / R:R par plan).
+Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — probablement côté Performance, pas Dashboard. Décider AVANT de coder pour ne pas empiler des graphes.
+
 **Repéré le** : 2026-07-26.
 **Priorité** : moyenne — forte valeur pédagogique (discipline de trading), mais la v1 badge+filtre suffit à repérer. À reprioriser selon l'usage.
+
+---
+
+## Plans de trading — raison d'adhérence localisable (i18n)
+
+**Contexte** : `PlanEvaluator::evaluate()` renvoie une **raison en anglais** en prose (`entry 18200 outside BUY zones`, `direction BUY not allowed`, `outside trading windows`, `risk X% exceeds plan max Y%`). Elle est stockée telle quelle dans `positions.plan_adherence_reason` ET `tradingview_alert_events.error_message` (audit robots). En v1, le tooltip du badge FR ne l'affiche donc PAS (juste le statut « Dans le plan » / « Hors plan » localisé), pour ne pas montrer d'anglais côté user.
+
+**À faire** : faire renvoyer par `PlanEvaluator` une **raison structurée** (code + params, ex. `{code:'ENTRY_OUTSIDE_ZONES', entry:18200, direction:'BUY'}`) au lieu de la prose. Stocker le code (ou code+params JSON), traduire côté front (clés `plan.reason.*`) pour afficher la raison en français dans le tooltip. Attention : la prose est aussi consommée par l'audit robots (log JSON) — garder une projection lisible là-bas, ou traduire aussi le back-office. Migration douce (les anciennes valeurs prose restent lisibles en fallback).
+
+**Repéré le** : 2026-07-26.
+**Priorité** : moyenne — le badge + statut localisé suffisent au repérage ; la raison détaillée FR est un plus (surtout si on pousse l'analytics d'adhérence).
 
 ---
 

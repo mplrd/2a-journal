@@ -101,13 +101,16 @@ const adherenceOptions = computed(() => [
 // resolved from the loaded active plans; an archived plan just shows no name.
 function adherenceBadge(trade) {
   if (!trade.plan_adherence) return null
-  const planName = plans.value.find((p) => p.id === trade.plan_id)?.name ?? ''
   const inPlan = trade.plan_adherence === 'IN_PLAN'
+  const status = inPlan ? t('trades.adherence.in_plan') : t('trades.adherence.out_of_plan')
+  const planName = plans.value.find((p) => p.id === trade.plan_id)?.name
   return {
-    label: inPlan ? t('trades.adherence.in_plan') : t('trades.adherence.out_of_plan'),
+    // Show the plan name directly; colour + icon convey in/out. Tooltip stays
+    // localized (the backend reason is English — full localization is backlogged).
+    label: planName || status,
     severity: inPlan ? 'success' : 'warn',
     icon: inPlan ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle',
-    tooltip: [planName, trade.plan_adherence_reason].filter(Boolean).join(' — '),
+    tooltip: status,
   }
 }
 
@@ -706,7 +709,6 @@ function openActionMenu(event, trade) {
             :icon="adherenceBadge(data).icon"
             v-tooltip.top="adherenceBadge(data).tooltip"
           />
-          <span v-else class="text-xs text-gray-300 dark:text-gray-600">—</span>
         </template>
       </Column>
       <Column field="pnl" :header="t('trades.pnl')">

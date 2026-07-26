@@ -21,7 +21,7 @@ class OrderController extends Controller
         $userId = $request->getAttribute('user_id');
         $filters = [];
 
-        foreach (['account_id', 'status', 'symbol', 'direction', 'page', 'per_page'] as $key) {
+        foreach (['account_id', 'status', 'symbol', 'direction', 'plan_adherence', 'page', 'per_page'] as $key) {
             $value = $request->getQuery($key);
             if ($value !== null && $value !== '') {
                 $filters[$key] = $value;
