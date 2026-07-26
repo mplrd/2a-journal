@@ -107,6 +107,197 @@ class DealNormalizerTest extends TestCase
         $this->assertNull($normalized);
     }
 
+    // ── cTrader open positions (ProtoOAReconcileRes → position[]) ───
+
+    public function testNormalizeCtraderOpenPosition(): void
+    {
+        // A live position from ProtoOAReconcileRes. symbolName is injected by
+        // the connector after resolving symbolId. Volume uses the same
+        // /100000 convention as normalizeCtraderDeal, and the entry price is
+        // the position's `price` field.
+        $position = [
+            'positionId' => 999,
+            'positionStatus' => 'POSITION_STATUS_OPEN',
+            'price' => 19200.0,
+            'stopLoss' => 19000.0,
+            'takeProfit' => 19500.0,
+            'symbolName' => 'GER40',
+            'tradeData' => [
+                'symbolId' => 22,
+                'volume' => 50000, // /100000 → 0.5 lots
+                'tradeSide' => 'BUY',
+                'openTimestamp' => 1700000000000,
+            ],
+        ];
+
+        $row = $this->normalizer->normalizeCtraderOpenPosition($position);
+
+        $this->assertSame('GER40', $row['symbol']);
+        $this->assertSame('BUY', $row['direction']);
+        $this->assertEquals(19200.0, $row['entry_price']);
+        $this->assertEquals(0.5, $row['size']);
+        $this->assertEquals(19000.0, $row['sl_price']);
+        $this->assertEquals(19500.0, $row['tp_price']);
+        $this->assertSame('ctrader_999', $row['external_id']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $row['opened_at']);
+        // No closed_at: this is an OPEN row.
+        $this->assertArrayNotHasKey('closed_at', $row);
+        $this->assertNull($row['pnl']);
+    }
+
+    public function testNormalizeCtraderOpenPositionExternalIdMatchesClosedDeal(): void
+    {
+        // Load-bearing invariant: the same positionId must yield the same
+        // external_id whether seen live (reconcile) or closed (deal list), so
+        // the OPEN→CLOSED transition re-targets the same journal row instead
+        // of duplicating it.
+        $open = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 4242,
+            'price' => 100.0,
+            'symbolName' => 'EURUSD',
+            'tradeData' => ['symbolId' => 1, 'volume' => 100000, 'tradeSide' => 'BUY', 'openTimestamp' => 1700000000000],
+        ]);
+
+        $closed = $this->normalizer->normalizeCtraderDeal([
+            'dealId' => 1, 'positionId' => 4242, 'volume' => 100000, 'symbolName' => 'EURUSD',
+            'createTimestamp' => 1700000000000, 'executionTimestamp' => 1700003600000,
+            'executionPrice' => 101.0, 'tradeSide' => 'SELL', 'dealStatus' => 'FILLED',
+            'commission' => 0, 'swap' => 0,
+            'closePositionDetail' => ['entryPrice' => 100.0, 'grossProfit' => 100, 'closedVolume' => 100000],
+        ]);
+
+        $this->assertSame($open['external_id'], $closed['external_id']);
+    }
+
+    public function testNormalizeCtraderOpenPositionAcceptsNumericTradeSide(): void
+    {
+        // cTrader's JSON serialization may emit enum fields as their integer
+        // code (tradeSide: 2) rather than the name ('SELL'). Tolerate both.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 5,
+            'price' => 50.0,
+            'symbolName' => 'X',
+            'tradeData' => ['symbolId' => 1, 'volume' => 100000, 'tradeSide' => 2, 'openTimestamp' => 1700000000000],
+        ]);
+
+        $this->assertSame('SELL', $row['direction']);
+    }
+
+    public function testNormalizeCtraderOpenPositionSkipsWithoutEntryPrice(): void
+    {
+        $this->assertNull($this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 6,
+            'symbolName' => 'X',
+            'tradeData' => ['symbolId' => 1, 'volume' => 100000, 'tradeSide' => 1],
+            // no 'price'
+        ]));
+    }
+
+    // ── cTrader open orders (ProtoOAReconcileRes → order[]) ─────────
+
+    public function testNormalizeCtraderOpenOrder(): void
+    {
+        $order = [
+            'orderId' => 555,
+            'orderType' => 'LIMIT',
+            'orderStatus' => 'ORDER_STATUS_ACCEPTED',
+            'limitPrice' => 18000.0,
+            'stopLoss' => 17500.0,
+            'takeProfit' => 18500.0,
+            'expirationTimestamp' => 1700100000000,
+            'symbolName' => 'GER40',
+            'tradeData' => ['symbolId' => 22, 'volume' => 10000, 'tradeSide' => 'BUY', 'openTimestamp' => 1700000000000],
+        ];
+
+        $row = $this->normalizer->normalizeCtraderOpenOrder($order);
+
+        $this->assertSame('GER40', $row['symbol']);
+        $this->assertSame('BUY', $row['direction']);
+        $this->assertEquals(18000.0, $row['entry_price']);
+        $this->assertEquals(0.1, $row['size']);
+        $this->assertEquals(17500.0, $row['sl_price']);
+        $this->assertEquals(18500.0, $row['tp_price']);
+        $this->assertSame('ctrader_order_555', $row['external_id']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $row['expires_at']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $row['created_at']);
+    }
+
+    public function testNormalizeCtraderOpenOrderFallsBackToStopPrice(): void
+    {
+        // A STOP order carries stopPrice, not limitPrice — that's the entry.
+        $row = $this->normalizer->normalizeCtraderOpenOrder([
+            'orderId' => 556,
+            'orderType' => 'STOP',
+            'stopPrice' => 19000.0,
+            'symbolName' => 'GER40',
+            'tradeData' => ['symbolId' => 22, 'volume' => 10000, 'tradeSide' => 'SELL', 'openTimestamp' => 1700000000000],
+        ]);
+
+        $this->assertEquals(19000.0, $row['entry_price']);
+        $this->assertSame('SELL', $row['direction']);
+    }
+
+    public function testNormalizeCtraderOpenOrderSkipsWithoutTriggerPrice(): void
+    {
+        $this->assertNull($this->normalizer->normalizeCtraderOpenOrder([
+            'orderId' => 557,
+            'symbolName' => 'X',
+            'tradeData' => ['symbolId' => 1, 'volume' => 10000, 'tradeSide' => 1],
+            // no limitPrice, no stopPrice
+        ]));
+    }
+
+    public function testNormalizeCtraderOpenOrderLeavesOptionalsNullWhenAbsent(): void
+    {
+        $row = $this->normalizer->normalizeCtraderOpenOrder([
+            'orderId' => 558,
+            'limitPrice' => 100.0,
+            'symbolName' => 'X',
+            'tradeData' => ['symbolId' => 1, 'volume' => 10000, 'tradeSide' => 1, 'openTimestamp' => 1700000000000],
+        ]);
+
+        $this->assertNull($row['expires_at']);
+        $this->assertNull($row['sl_price']);
+        $this->assertNull($row['tp_price']);
+    }
+
+    // ── cTrader closed orders (ProtoOAOrderListRes → terminal states) ─
+
+    public function testNormalizeCtraderClosedOrderMapsFilledToExecuted(): void
+    {
+        $row = $this->normalizer->normalizeCtraderClosedOrder([
+            'orderId' => 700,
+            'orderStatus' => 'ORDER_STATUS_FILLED',
+        ]);
+
+        $this->assertSame('ctrader_order_700', $row['external_id']);
+        $this->assertSame('EXECUTED', $row['final_status']);
+    }
+
+    public function testNormalizeCtraderClosedOrderMapsCancelledAndExpired(): void
+    {
+        $this->assertSame('CANCELLED', $this->normalizer->normalizeCtraderClosedOrder(
+            ['orderId' => 1, 'orderStatus' => 'ORDER_STATUS_CANCELLED'])['final_status']);
+        $this->assertSame('EXPIRED', $this->normalizer->normalizeCtraderClosedOrder(
+            ['orderId' => 2, 'orderStatus' => 'ORDER_STATUS_EXPIRED'])['final_status']);
+    }
+
+    public function testNormalizeCtraderClosedOrderAcceptsNumericStatus(): void
+    {
+        // ORDER_STATUS_FILLED = 2 in the proto enum.
+        $row = $this->normalizer->normalizeCtraderClosedOrder(['orderId' => 701, 'orderStatus' => 2]);
+
+        $this->assertSame('EXECUTED', $row['final_status']);
+    }
+
+    public function testNormalizeCtraderClosedOrderSkipsNonTerminal(): void
+    {
+        // ACCEPTED is still live — skip it so the order diff keeps the row
+        // pending rather than misclassifying it.
+        $this->assertNull($this->normalizer->normalizeCtraderClosedOrder(
+            ['orderId' => 702, 'orderStatus' => 'ORDER_STATUS_ACCEPTED']));
+    }
+
     // ── MetaApi deals ───────────────────────────────────────────────
 
     public function testNormalizeMetaApiClosingDeal(): void

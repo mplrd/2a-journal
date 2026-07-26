@@ -486,4 +486,26 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 
 ---
 
+## cTrader — suites de la lecture live (branche `feat/ctrader-live-read`)
+
+**Contexte** : relevé pendant le câblage de la lecture cTrader (2026-07-26). Le connecteur lit maintenant positions/ordres ouverts, ordres clos et balance, et le format JSON wire est corrigé — ces points restent à traiter derrière.
+
+- **Confirmer la sérialisation JSON des enums au premier run live.** Les normalizers cTrader tolèrent `tradeSide`/`orderStatus` en nom (`'BUY'`) **et** en code numérique (`1`), faute de certitude sur le format réel. Au premier run réel (log de la frame brute, cf. plan), figer le format et, si c'est du numérique, **appliquer `normalizeCtraderTradeSide()` aussi à `normalizeCtraderDeal()`** (aujourd'hui laissé tel quel, path clos hors scope, testé avec des strings).
+- **Session WebSocket unique par sync.** `BrokerSyncService::sync()` appelle `fetchDeals` + `fetchOpenPositions` + `fetchOpenOrders` + `fetchClosedOrders` + `fetchBalance` séparément ; chacune ouvre sa propre session cTrader (app-auth + account-auth). Soit ~4 handshakes/refresh par sync. Optimisable en une session partagée (un `ProtoOAReconcileReq` couvre déjà positions+ordres). Chatty mais correct en l'état.
+- **Échelle de volume incohérente (pré-existant).** `placeOrder` convertit `size × 100`, alors que `normalizeCtraderDeal`/`OpenPosition` font `volume / 100000`. Les deux ne peuvent pas être justes pour le même symbole — à réconcilier (dépend probablement du contract size par symbole).
+
+**Repéré le** : 2026-07-26. **Priorité** : le point enum est **bloquant à valider** avant d'activer cTrader en test ; les deux autres sont basse priorité.
+
+---
+
+## BrokerOpenSyncService — `Undefined array key "id"` (pré-existant)
+
+**Contexte** : warning PHPUnit relevé le 2026-07-26 en passant la suite Broker (2 tests BingX open-sync le déclenchent). Non lié à cTrader.
+
+- `BrokerOpenSyncService.php:141` (`insertNewOpen` → `insertPartialExits((int) $trade['id'], …)`) lit `$trade['id']` alors que `tradeRepo->create()` peut renvoyer la clé sous un autre nom dans le contexte testé. À vérifier : la clé exacte retournée par `TradeRepository::create()` et aligner (probablement `$trade['id']` vs absence).
+
+**Repéré le** : 2026-07-26. **Priorité** : basse (warning, pas d'échec de test).
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

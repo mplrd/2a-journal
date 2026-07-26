@@ -33,6 +33,129 @@ class DealNormalizer
     }
 
     /**
+     * Normalize a live cTrader position (from ProtoOAReconcileRes.position[])
+     * into the journal-side OPEN row format. Returns null without an entry
+     * price — unusable for the position model.
+     *
+     * Critical invariant: external_id MUST match what normalizeCtraderDeal
+     * produces for the same positionId ('ctrader_<positionId>'), so the
+     * OPEN→CLOSED transition re-targets the same row instead of duplicating.
+     *
+     * `symbolName` is injected by the connector after resolving symbolId.
+     * Volume lives under tradeData and uses the same /100000 convention as
+     * normalizeCtraderDeal. No closed_at key: this is an OPEN row.
+     */
+    public function normalizeCtraderOpenPosition(array $position): ?array
+    {
+        if (!isset($position['price']) || $position['price'] === null) {
+            return null;
+        }
+
+        $trade = $position['tradeData'] ?? [];
+        $volume = ($trade['volume'] ?? 0) / 100000;
+
+        return [
+            'symbol' => $position['symbolName'] ?? null,
+            'direction' => $this->normalizeCtraderTradeSide($trade['tradeSide'] ?? null),
+            'entry_price' => (float) $position['price'],
+            'size' => round($volume, 5),
+            'sl_price' => isset($position['stopLoss']) ? (float) $position['stopLoss'] : null,
+            'tp_price' => isset($position['takeProfit']) ? (float) $position['takeProfit'] : null,
+            'opened_at' => $this->msTimestampToDatetime((int) ($trade['openTimestamp'] ?? 0)),
+            'external_id' => 'ctrader_' . ($position['positionId'] ?? ''),
+            'pnl' => null,
+            'comment' => null,
+        ];
+    }
+
+    /**
+     * Normalize a live cTrader pending order (from ProtoOAReconcileRes.order[])
+     * into a journal-side ORDER row. Returns null without a trigger price
+     * (limit or stop) — the order is unusable.
+     *
+     * Distinct external_id prefix ('ctrader_order_') vs positions
+     * ('ctrader_') so the order diff and position diff never collide, mirroring
+     * the Ouinex/BingX pattern.
+     */
+    public function normalizeCtraderOpenOrder(array $order): ?array
+    {
+        $trigger = $order['limitPrice'] ?? $order['stopPrice'] ?? null;
+        if ($trigger === null) {
+            return null;
+        }
+
+        $trade = $order['tradeData'] ?? [];
+        $volume = ($trade['volume'] ?? 0) / 100000;
+        $expiration = (int) ($order['expirationTimestamp'] ?? 0);
+
+        return [
+            'symbol' => $order['symbolName'] ?? null,
+            'direction' => $this->normalizeCtraderTradeSide($trade['tradeSide'] ?? null),
+            'entry_price' => (float) $trigger,
+            'size' => round($volume, 5),
+            'sl_price' => isset($order['stopLoss']) ? (float) $order['stopLoss'] : null,
+            'tp_price' => isset($order['takeProfit']) ? (float) $order['takeProfit'] : null,
+            'expires_at' => $expiration > 0 ? $this->msTimestampToDatetime($expiration) : null,
+            'created_at' => $this->msTimestampToDatetime((int) ($trade['openTimestamp'] ?? 0)),
+            'external_id' => 'ctrader_order_' . ($order['orderId'] ?? ''),
+        ];
+    }
+
+    /**
+     * Normalize a cTrader order in a terminal state (from ProtoOAOrderListRes)
+     * into the {external_id, final_status} shape the order diff consumes to
+     * disambiguate why a pending order disappeared. Returns null for
+     * non-terminal states (e.g. ACCEPTED) so the diff keeps the row pending.
+     *
+     * orderStatus may arrive as the enum name ('ORDER_STATUS_FILLED') or its
+     * numeric code (FILLED=2, EXPIRED=4, CANCELLED=5) — both are handled.
+     */
+    public function normalizeCtraderClosedOrder(array $order): ?array
+    {
+        $status = $order['orderStatus'] ?? '';
+        if (is_int($status) || (is_string($status) && ctype_digit($status))) {
+            $status = match ((int) $status) {
+                2 => 'FILLED',
+                4 => 'EXPIRED',
+                5 => 'CANCELLED',
+                default => '',
+            };
+        }
+
+        $finalStatus = $this->mapClosedOrderStatus((string) $status);
+        if ($finalStatus === null) {
+            return null;
+        }
+
+        return [
+            'external_id' => 'ctrader_order_' . ($order['orderId'] ?? ''),
+            'final_status' => $finalStatus,
+        ];
+    }
+
+    /**
+     * Map a cTrader tradeSide to the journal Direction vocabulary. The JSON
+     * API may serialize the enum as its name ('BUY'/'SELL', optionally
+     * prefixed) or its integer code (BUY=1, SELL=2) — tolerate both.
+     */
+    private function normalizeCtraderTradeSide(mixed $side): ?string
+    {
+        if (is_int($side) || (is_string($side) && ctype_digit($side))) {
+            return match ((int) $side) {
+                1 => 'BUY',
+                2 => 'SELL',
+                default => null,
+            };
+        }
+
+        return match (strtoupper(str_replace('TRADE_SIDE_', '', (string) $side))) {
+            'BUY' => 'BUY',
+            'SELL' => 'SELL',
+            default => null,
+        };
+    }
+
+    /**
      * Normalize a MetaApi deal into the import row format.
      * Returns null for opening deals (entryType = DEAL_ENTRY_IN).
      */
@@ -349,7 +472,11 @@ class DealNormalizer
      */
     private function mapClosedOrderStatus(string $raw): ?string
     {
-        return match (strtoupper($raw)) {
+        // Strip cTrader's ORDER_STATUS_ prefix so its enum names fold into the
+        // same vocabulary as Ouinex/BingX (which send bare 'FILLED' etc.).
+        $normalized = str_replace('ORDER_STATUS_', '', strtoupper($raw));
+
+        return match ($normalized) {
             'EXECUTED', 'FILLED', 'COMPLETED' => 'EXECUTED',
             'CANCELLED', 'CANCELED' => 'CANCELLED',
             'EXPIRED' => 'EXPIRED',
