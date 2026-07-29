@@ -643,6 +643,8 @@ class TradingViewWebhookFlowTest extends TestCase
  */
 class FakeConnector implements ConnectorInterface
 {
+    use \App\Services\Broker\TracksLastTestError;
+
     public ?BrokerOrderException $throwOnNext = null;
     public ?array $lastOrder = null;
     public ?string $lastCancelOrderId = null;

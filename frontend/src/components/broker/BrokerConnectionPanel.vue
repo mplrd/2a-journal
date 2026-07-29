@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import { brokerSyncService } from '@/services/brokerSync'
+import { CtraderEnvironment } from '@/constants/enums'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Message from 'primevue/message'
@@ -30,6 +31,8 @@ const showMetaApiDialog = ref(false)
 const showOuinexDialog = ref(false)
 const showBingxDialog = ref(false)
 const showHistory = ref(false)
+// Set while a dialog is open in reconfigure mode; null means create mode.
+const editingConnection = ref(null)
 
 const isConnected = computed(() => connection.value && connection.value.status === 'ACTIVE')
 const isBroken = computed(() => connection.value && connection.value.status !== 'ACTIVE')
@@ -41,9 +44,23 @@ const PROVIDER_LABELS = {
   BINGX: 'BingX',
 }
 
+const DIALOG_FLAGS = {
+  CTRADER: showCtraderDialog,
+  METAAPI: showMetaApiDialog,
+  OUINEX: showOuinexDialog,
+  BINGX: showBingxDialog,
+}
+
 const providerLabel = computed(() => {
   if (!connection.value) return ''
   return PROVIDER_LABELS[connection.value.provider] || connection.value.provider
+})
+
+/** cTrader connections carry which server they talk to — worth showing. */
+const environmentLabel = computed(() => {
+  const env = connection.value?.credentials_public?.environment
+  if (!env) return null
+  return env === CtraderEnvironment.DEMO ? t('broker.ctrader_env_demo') : t('broker.ctrader_env_live')
 })
 
 const statusSeverity = computed(() => {
@@ -99,23 +116,42 @@ async function disconnect() {
   }
 }
 
-function onCtraderConnected() {
-  showCtraderDialog.value = false
-  loadConnection()
+/** Open the current provider's dialog prefilled with the existing connection. */
+function reconfigure() {
+  if (!connection.value) return
+  const flag = DIALOG_FLAGS[connection.value.provider]
+  if (!flag) return
+  editingConnection.value = connection.value
+  flag.value = true
 }
 
-function onMetaApiConnected() {
-  showMetaApiDialog.value = false
-  loadConnection()
+function openConnectDialog(provider) {
+  editingConnection.value = null
+  DIALOG_FLAGS[provider].value = true
 }
 
-function onOuinexConnected() {
-  showOuinexDialog.value = false
-  loadConnection()
-}
+/**
+ * Saving is deliberately never blocked on the credential test (a broker
+ * outage must not stop the user from correcting a secret), so this toast is
+ * the only signal that the credentials just saved are still refused — and it
+ * repeats the broker's own wording, which names the offending field.
+ */
+function onConnected(provider, result) {
+  DIALOG_FLAGS[provider].value = false
+  editingConnection.value = null
 
-function onBingxConnected() {
-  showBingxDialog.value = false
+  const test = result?.connection_test
+  if (test && test.success === false) {
+    toast.add({
+      severity: 'warn',
+      summary: t('broker.credentials_saved_test_failed'),
+      detail: test.error || t('broker.credentials_test_failed_generic'),
+      life: 10000,
+    })
+  } else if (test?.success) {
+    toast.add({ severity: 'success', summary: t('broker.credentials_saved_test_ok'), life: 4000 })
+  }
+
   loadConnection()
 }
 </script>
@@ -129,14 +165,15 @@ function onBingxConnected() {
 
     <!-- Connected -->
     <div v-else-if="isConnected" class="space-y-3">
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
         <Tag :value="providerLabel" :severity="statusSeverity" />
+        <Tag v-if="environmentLabel" :value="environmentLabel" severity="info" />
         <span v-if="connection.last_sync_at" class="text-xs text-gray-400">
           {{ t('broker.last_sync') }}: {{ new Date(connection.last_sync_at).toLocaleString() }}
         </span>
       </div>
 
-      <div v-if="connection.last_sync_status === 'FAILED'" class="text-xs text-red-500">
+      <div v-if="connection.last_sync_status === 'FAILED'" class="text-xs text-red-500 break-words">
         {{ connection.last_sync_error }}
       </div>
 
@@ -145,23 +182,24 @@ function onBingxConnected() {
         {{ t('broker.sync_imported', { positions: syncResult.imported_positions, skipped: syncResult.skipped_duplicates }) }}
       </Message>
 
-      <div class="flex gap-2">
-        <Button :label="t('broker.sync_now')" icon="pi pi-refresh" size="small" :loading="syncing" @click="doSync" />
-        <Button :label="t('broker.history')" icon="pi pi-list" size="small" severity="secondary" text @click="showHistory = true" />
-        <Button :label="t('broker.disconnect')" icon="pi pi-times" size="small" severity="danger" text @click="disconnect" />
+      <div class="flex gap-2 flex-wrap">
+        <Button :label="t('broker.sync_now')" icon="pi pi-refresh" size="small" data-testid="broker-sync" :loading="syncing" @click="doSync" />
+        <Button :label="t('broker.reconfigure')" icon="pi pi-pencil" size="small" severity="secondary" data-testid="broker-reconfigure" @click="reconfigure" />
+        <Button :label="t('broker.history')" icon="pi pi-list" size="small" severity="secondary" text data-testid="broker-history" @click="showHistory = true" />
+        <Button :label="t('broker.disconnect')" icon="pi pi-times" size="small" severity="danger" text data-testid="broker-disconnect" @click="disconnect" />
       </div>
     </div>
 
-    <!-- Connection exists but not ACTIVE (ERROR / REVOKED / PENDING). The
-         backend refuses to create a fresh connection while a row exists for
-         this account, so we surface the broken row explicitly with its last
-         error and a Delete button — otherwise the user is stuck in a
-         cul-de-sac (connect form visible but every submit returns
-         already_connected). -->
+    <!-- Connection exists but not ACTIVE (ERROR / REVOKED / PENDING). Sync
+         refuses anything but ACTIVE, so without a reconfigure path the only
+         way out of a stale credential was deleting the connection — which
+         drops its sync cursor and its whole log history. Reconfiguring
+         replaces the credentials in place and resets the status. -->
     <div v-else-if="isBroken" class="space-y-3">
       <div class="flex items-center gap-3 flex-wrap">
         <Tag :value="providerLabel" severity="warn" />
         <Tag :value="connection.status" :severity="statusSeverity" />
+        <Tag v-if="environmentLabel" :value="environmentLabel" severity="info" />
         <span v-if="connection.last_sync_at" class="text-xs text-gray-400">
           {{ t('broker.last_sync') }}: {{ new Date(connection.last_sync_at).toLocaleString() }}
         </span>
@@ -171,11 +209,12 @@ function onBingxConnected() {
         {{ connection.last_sync_error }}
       </div>
 
-      <p class="text-sm text-gray-500">{{ t('broker.disabled_help') }}</p>
+      <p class="text-sm text-gray-500">{{ t('broker.broken_help') }}</p>
 
-      <div class="flex gap-2">
-        <Button :label="t('broker.history')" icon="pi pi-list" size="small" severity="secondary" text @click="showHistory = true" />
-        <Button :label="t('broker.disconnect')" icon="pi pi-trash" size="small" severity="danger" @click="disconnect" />
+      <div class="flex gap-2 flex-wrap">
+        <Button :label="t('broker.reconfigure')" icon="pi pi-pencil" size="small" data-testid="broker-reconfigure" @click="reconfigure" />
+        <Button :label="t('broker.history')" icon="pi pi-list" size="small" severity="secondary" text data-testid="broker-history" @click="showHistory = true" />
+        <Button :label="t('broker.disconnect')" icon="pi pi-trash" size="small" severity="danger" text data-testid="broker-disconnect" @click="disconnect" />
       </div>
     </div>
 
@@ -186,16 +225,16 @@ function onBingxConnected() {
       <div>
         <h5 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">{{ t('broker.section_platforms') }}</h5>
         <div class="flex flex-wrap gap-2">
-          <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" @click="showMetaApiDialog = true" />
-          <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="showCtraderDialog = true" />
+          <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" @click="openConnectDialog('METAAPI')" />
+          <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="openConnectDialog('CTRADER')" />
         </div>
       </div>
 
       <div>
         <h5 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">{{ t('broker.section_brokers') }}</h5>
         <div class="flex flex-wrap gap-2">
-          <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" @click="showBingxDialog = true" />
-          <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="showOuinexDialog = true" />
+          <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" @click="openConnectDialog('BINGX')" />
+          <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="openConnectDialog('OUINEX')" />
         </div>
       </div>
     </div>
@@ -204,25 +243,29 @@ function onBingxConnected() {
     <CtraderConnectDialog
       v-model:visible="showCtraderDialog"
       :account="account"
-      @connected="onCtraderConnected"
+      :connection="editingConnection"
+      @connected="onConnected('CTRADER', $event)"
     />
 
     <MetaApiConnectDialog
       v-model:visible="showMetaApiDialog"
       :account="account"
-      @connected="onMetaApiConnected"
+      :connection="editingConnection"
+      @connected="onConnected('METAAPI', $event)"
     />
 
     <OuinexConnectDialog
       v-model:visible="showOuinexDialog"
       :account="account"
-      @connected="onOuinexConnected"
+      :connection="editingConnection"
+      @connected="onConnected('OUINEX', $event)"
     />
 
     <BingxConnectDialog
       v-model:visible="showBingxDialog"
       :account="account"
-      @connected="onBingxConnected"
+      :connection="editingConnection"
+      @connected="onConnected('BINGX', $event)"
     />
 
     <SyncHistoryDialog
