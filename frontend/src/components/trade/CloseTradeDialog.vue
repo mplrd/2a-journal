@@ -68,7 +68,9 @@ watch(
 )
 
 // Initial form values are prefilled based on what the system knows:
-// - BE: exit_price = entry, points = 0 (slippage = 0 by default; user adjusts)
+// - BE: exit_price from the prefill when the caller planned the move to BE
+//   (lightening at the configured BE price), else entry price = stopped out at
+//   break-even (see the BE branch below)
 // - SL: exit_price/points from trade.sl_points (the SL planned at creation;
 //   user adjusts on real slippage)
 // - TP (from "next objective"): exit_price + size from the target spec
@@ -88,21 +90,22 @@ function buildInitialForm(trade, prefill) {
   }
 
   if (exitType === ExitType.BE) {
-    // Propose the break-even the trader configured on the trade (a BE moved off
-    // entry to cover fees, with its planned exit size) rather than the raw entry
-    // price. Fall back to entry (points 0) when no BE was set up. (#23)
-    const bePoints = trade.be_points != null ? Number(trade.be_points) : null
-    const hasBe = bePoints != null && bePoints > 0
-    const bePrice = hasBe
-      ? (trade.direction === Direction.BUY ? entry + bePoints : entry - bePoints)
-      : entry
-    const beSize = trade.be_size != null ? Number(trade.be_size) : null
-    return {
-      ...base,
-      exit_price: bePrice,
-      exit_points: hasBe ? bePoints : 0,
-      exit_size: prefill?.exit_size ?? (beSize != null ? beSize : remaining),
+    // Two intents reach this dialog with exit_type = BE:
+    // - Moving TO break-even (the "next objective" shortcut): the trader
+    //   lightens the planned size at the BE price configured on the trade, so
+    //   the caller passes that price in the prefill — honour it. (#23)
+    // - Being stopped out AT break-even (the BE button): the stop sits at the
+    //   entry price, so that's what we propose, for the whole remaining size.
+    //   The configured BE price is only the lightening trigger, never the
+    //   stop-out price. (#32)
+    // Either way the fields stay editable — the trader books the real spread.
+    if (prefill?.exit_price != null) {
+      const price = Number(prefill.exit_price)
+      // BE points are signed (slippage either side of entry), cf. PricePointsInput.
+      const points = trade.direction === Direction.BUY ? price - entry : entry - price
+      return { ...base, exit_price: price, exit_points: points }
     }
+    return { ...base, exit_price: entry, exit_points: 0 }
   }
 
   if (exitType === ExitType.SL && trade.sl_points != null) {

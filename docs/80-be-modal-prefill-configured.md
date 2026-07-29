@@ -1,5 +1,11 @@
 # 80 - Correctif : la modale BE prérremplit le break-even configuré sur le trade
 
+> **Affiné par [84 - Sortie à BE au cours d'entrée](84-be-exit-price-entry.md) (ticket #32).**
+> Le préremplissage décrit ici ne s'applique plus qu'au chemin « mise à BE » (bouton `↑↑` prochain
+> objectif), qui transmet le prix planifié dans le prefill. Le bouton « Breakeven » de la grille
+> signifie « je me suis fait prendre à BE » et propose désormais le **prix d'entrée** et la taille
+> restante. Les extraits de code ci-dessous ne reflètent plus l'implémentation.
+
 ## Contexte
 
 Ticket support #23. À la mise à BE (bouton « Breakeven » de la grille, voir [65 - Clôture de trade](65-close-trade-points.md)), la modale `CloseTradeDialog` proposait **toujours le prix d'entrée** (`exit_price = entry`, points = 0), en ignorant le break-even que l'utilisateur avait paramétré sur le trade (BE remonté de quelques points pour couvrir les frais, avec une quantité à sortir).
