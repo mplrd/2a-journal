@@ -7,6 +7,8 @@ use GuzzleHttp\Exception\GuzzleException;
 
 class OuinexConnector implements ConnectorInterface
 {
+    use TracksLastTestError;
+
     /**
      * Refresh the JWT a minute before its real expiry — keeps a safety margin
      * so a request issued right at the boundary doesn't race the expiration.
@@ -212,11 +214,12 @@ class OuinexConnector implements ConnectorInterface
 
     public function testConnection(array $credentials): bool
     {
+        $this->clearTestError();
         try {
             $this->signin($credentials);
             return true;
-        } catch (\Throwable) {
-            return false;
+        } catch (\Throwable $e) {
+            return $this->failedTest($e);
         }
     }
 

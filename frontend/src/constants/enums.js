@@ -15,6 +15,12 @@ export const Direction = {
   SELL: 'SELL',
 }
 
+/** Which cTrader server a connection talks to. Mirrors App\Enums\CtraderEnvironment. */
+export const CtraderEnvironment = {
+  LIVE: 'LIVE',
+  DEMO: 'DEMO',
+}
+
 export const OrderStatus = {
   PENDING: 'PENDING',
   EXECUTED: 'EXECUTED',

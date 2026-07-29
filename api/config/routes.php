@@ -74,9 +74,12 @@ use App\Services\ShareService;
 use App\Services\CustomFieldService;
 use App\Services\SetupService;
 use App\Services\Broker\BingxConnector;
+use App\Services\Broker\BrokerConnectionService;
+use App\Services\Broker\BrokerCredentialMapper;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
+use App\Services\Broker\ConnectorRegistry;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\Broker\CtraderConnector;
 use App\Services\Broker\MetaApiConnector;
@@ -432,14 +435,25 @@ $brokerSyncService = new BrokerSyncService(
     $brokerOrderSyncService,
     $accountRepo,
 );
+$brokerConnectionService = new BrokerConnectionService(
+    $brokerConnectionRepo,
+    $cryptoService,
+    new BrokerCredentialMapper(),
+    new ConnectorRegistry(
+        $ctraderConnector,
+        $metaApiConnector,
+        $ouinexConnector,
+        $bingxConnector,
+    ),
+);
 $brokerSyncController = new BrokerSyncController(
     $brokerSyncService,
-    $brokerConnectionRepo,
+    $brokerConnectionService,
     $syncLogRepo,
-    $cryptoService,
 );
 
 $router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->put('/broker/connections/{id}', [$brokerSyncController, 'updateConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);

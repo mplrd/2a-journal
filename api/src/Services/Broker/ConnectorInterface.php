@@ -65,6 +65,16 @@ interface ConnectorInterface
     public function testConnection(array $credentials): bool;
 
     /**
+     * Human-readable reason the last testConnection() call returned false, or
+     * null when it succeeded (or was never run). This is the broker's own
+     * error text — surfaced verbatim to the user, because "wrong clientSecret"
+     * is actionable where a bare false is not.
+     *
+     * Implementations get this for free via the TracksLastTestError trait.
+     */
+    public function getLastTestError(): ?string;
+
+    /**
      * Fetch the current account equity (or balance — connector chooses
      * whichever is the most meaningful "total value" figure the broker
      * exposes, typically equity = balance + unrealized PnL).

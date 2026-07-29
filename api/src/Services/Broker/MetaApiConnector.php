@@ -7,6 +7,8 @@ use GuzzleHttp\Exception\GuzzleException;
 
 class MetaApiConnector implements ConnectorInterface
 {
+    use TracksLastTestError;
+
     private Client $httpClient;
     private string $baseUrl;
 
@@ -83,6 +85,7 @@ class MetaApiConnector implements ConnectorInterface
 
     public function testConnection(array $credentials): bool
     {
+        $this->clearTestError();
         try {
             $accountId = $credentials['metaapi_account_id'];
             $token = $credentials['api_token'];
@@ -93,8 +96,8 @@ class MetaApiConnector implements ConnectorInterface
             );
 
             return $response->getStatusCode() === 200;
-        } catch (GuzzleException) {
-            return false;
+        } catch (GuzzleException $e) {
+            return $this->failedTest($e);
         }
     }
 

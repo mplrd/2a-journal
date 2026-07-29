@@ -28,6 +28,8 @@ use GuzzleHttp\Exception\GuzzleException;
  */
 class BingxConnector implements ConnectorInterface
 {
+    use TracksLastTestError;
+
     /** Page size for allOrders pagination per chunk. */
     private const PAGE_SIZE = 100;
 
@@ -524,11 +526,12 @@ class BingxConnector implements ConnectorInterface
 
     public function testConnection(array $credentials): bool
     {
+        $this->clearTestError();
         try {
             $this->httpGetSigned('/openApi/swap/v3/user/balance', [], $credentials);
             return true;
-        } catch (\Throwable) {
-            return false;
+        } catch (\Throwable $e) {
+            return $this->failedTest($e);
         }
     }
 

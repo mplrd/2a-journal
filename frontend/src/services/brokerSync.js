@@ -30,15 +30,27 @@ export const brokerSyncService = {
     return api.get(`/broker/connections/${connectionId}/logs`)
   },
 
-  async createCtraderConnection(accountId, clientId, clientSecret, accessToken, accountIdCtrader) {
+  /**
+   * @param {object} credentials client_id, client_secret, access_token,
+   *   account_id_ctrader, environment ('LIVE' | 'DEMO')
+   */
+  async createCtraderConnection(accountId, credentials) {
     return api.post('/broker/connections', {
       provider: 'CTRADER',
       account_id: accountId,
-      client_id: clientId,
-      client_secret: clientSecret,
-      access_token: accessToken,
-      account_id_ctrader: accountIdCtrader,
+      ...credentials,
     })
+  },
+
+  /**
+   * Reconfigure an existing connection in place. Only send the fields the user
+   * actually edited — an omitted field keeps its stored value server-side,
+   * which is how a single rotated secret gets fixed without re-entering the
+   * others (and without deleting the connection, which would drop its sync
+   * cursor and log history).
+   */
+  async updateConnection(connectionId, credentials) {
+    return api.put(`/broker/connections/${connectionId}`, credentials)
   },
 
   async createOuinexConnection(accountId, serviceApiKey, serviceApiSecret) {

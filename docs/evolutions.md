@@ -526,4 +526,17 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 
 ---
 
+## Broker — suites de la reconfiguration de connexion
+
+**Contexte** : relevé en livrant `docs/85-broker-connection-reconfigure.md` (2026-07-29).
+
+- **`BrokerSyncService` doit adopter `ConnectorRegistry`.** La résolution provider → connecteur existe maintenant en deux exemplaires : le `match()` privé de `BrokerSyncService::getConnector()` et le nouveau `ConnectorRegistry`. Le registre n'a volontairement pas été injecté dans `BrokerSyncService` pour ne pas changer sa signature de constructeur (4 connecteurs) ni son test. À unifier.
+- **Divulgation d'existence sur les connexions d'autrui.** `BrokerConnectionService::requireOwnedConnection()` lève `ForbiddenException` (403) quand la connexion appartient à un autre utilisateur, et `ValidationException` (422 `connection_not_found`) quand elle n'existe pas — un attaquant peut donc énumérer les ids existants. C'est le comportement déjà en place dans `BrokerSyncService::sync()`, conservé par cohérence. À trancher globalement : soit tout en `not_found`, soit assumer la distinction.
+- **`GET /broker/connections/{id}/logs` renvoie encore les erreurs brutes.** Les messages de connecteur sont désormais expurgés (signatures HMAC, tokens, clés) avant de sortir vers le client sur `connection_test.error` et sur `last_sync_error` — mais `sync_logs.error_message`, servi par la route `/logs` et affiché dans `SyncHistoryDialog`, passe toujours en clair. Même classe de fuite, même sanitizer à appliquer (`BrokerConnectionService::sanitizeTestError`). Concerne surtout BingX, qui signe en query string : un `GuzzleException` embarque l'URI complète.
+- **Changement de provider sur un compte existant.** Hors périmètre volontairement : la reconfiguration ne touche pas au provider. Basculer un compte de cTrader vers BingX impose toujours supprimer/recréer, car les données importées sont préfixées par provider (`ctrader_`, `bingx_`…) et le curseur n'a plus de sens. À traiter si le besoin se présente.
+
+**Repéré le** : 2026-07-29. **Priorité** : basse pour les trois.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
