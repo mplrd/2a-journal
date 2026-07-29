@@ -366,6 +366,15 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 **Repéré le** : 2026-07-29 (ticket #32).
 **Priorité** : basse à moyenne (confort admin ; contournable en base).
 
+### Réponse + changement de statut en un seul e-mail
+
+**Contexte** : côté admin, répondre (`POST /admin/support/tickets/{id}/messages` → `replyAsAdmin()`) et changer le statut (`PATCH /admin/support/tickets/{id}/status` → `changeStatus()`) sont deux appels distincts, chacun notifiant l'auteur de son côté (`sendTicketReplyEmail` / `sendTicketStatusChangedEmail`). Clore un ticket en répondant envoie donc **deux e-mails** au demandeur à quelques secondes d'intervalle — constaté sur le ticket #32 (réponse puis passage en RESOLVED).
+
+**À faire** : accepter un `status` optionnel dans le corps de la réponse admin, l'appliquer dans le même appel et n'envoyer qu'un seul e-mail combiné (« nouvelle réponse — ticket passé à X »). Ajouter l'option correspondante à `support-cli` (`reply <id> --body="…" --status=RESOLVED`).
+
+**Repéré le** : 2026-07-29 (ticket #32).
+**Priorité** : basse (confort ; le double e-mail reste acceptable).
+
 ### Refacto upload avatar sur FileUploadService
 
 **Contexte** : `AuthService::uploadProfilePicture()` duplique la logique de validation/stockage désormais factorisée dans `FileUploadService`. Non refactorée pour rester hors-scope.
