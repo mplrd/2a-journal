@@ -357,6 +357,15 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 **Repéré le** : 2026-05-30.
 **Priorité** : basse.
 
+### Reclassement du type d'un ticket (SUPPORT / BUG / FEATURE)
+
+**Contexte** : le `type` est choisi par le demandeur à la création et n'est plus modifiable ensuite. Côté admin il existe `PATCH /admin/support/tickets/{id}/status` et `/priority`, mais **aucun endpoint pour le type**. Or les utilisateurs se trompent régulièrement de catégorie (ticket #32 déposé en FEATURE alors que c'est un bug confirmé), ce qui fausse le tri et les stats support.
+
+**À faire** : `PATCH /admin/support/tickets/{id}/type` (admin only, valeurs de l'enum `TicketType`, sans notification e-mail — c'est un reclassement interne), + commande `set-type` dans `support-cli`.
+
+**Repéré le** : 2026-07-29 (ticket #32).
+**Priorité** : basse à moyenne (confort admin ; contournable en base).
+
 ### Refacto upload avatar sur FileUploadService
 
 **Contexte** : `AuthService::uploadProfilePicture()` duplique la logique de validation/stockage désormais factorisée dans `FileUploadService`. Non refactorée pour rester hors-scope.
