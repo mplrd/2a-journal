@@ -87,8 +87,10 @@ AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'en
 ### Credentials par utilisateur
 
 Chaque utilisateur fournit ses propres identifiants API :
-- **cTrader** : Client ID + Client Secret + Access Token + Account ID (depuis openapi.ctrader.com)
+- **cTrader** : Client ID + Client Secret + Access Token + Account ID (depuis openapi.ctrader.com) + serveur Live/Démo
 - **MetaApi** : API Token + Account ID MetaApi (depuis metaapi.cloud)
+
+Le serveur cTrader est stocké par connexion (`environment` : `LIVE` / `DEMO`) dans le blob chiffré, et non plus lu depuis la variable globale `CTRADER_WS_HOST` — un compte n'existe que sur un seul des deux serveurs. Les connexions antérieures, sans cette clé, continuent d'utiliser `CTRADER_WS_HOST`.
 
 Pas de clés API partagées au niveau de l'application. Les credentials sont stockés chiffrés AES-256-CBC par utilisateur dans `broker_connections`.
 
@@ -97,10 +99,13 @@ Pas de clés API partagées au niveau de l'application. Les credentials sont sto
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | POST | `/broker/connections` | Créer connexion (cTrader ou MetaApi) |
+| PUT | `/broker/connections/{id}` | Reconfigurer les identifiants sur place (voir `85-broker-connection-reconfigure.md`) |
 | GET | `/broker/connections?account_id=X` | Statut connexion |
 | POST | `/broker/connections/{id}/sync` | Déclencher sync |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |
 | GET | `/broker/connections/{id}/logs` | Historique syncs |
+
+La création et la reconfiguration renvoient toutes deux `connection_test: { success, error }` : le résultat du `testConnection()` du provider, exécuté **sans bloquer** l'enregistrement.
 
 ## Tables
 
@@ -112,9 +117,10 @@ Audit trail : connexion, deals récupérés/importés/ignorés, erreurs, timesta
 
 ## Frontend
 
-- **BrokerConnectionPanel** : statut connexion, bouton sync, dernière sync, déconnexion
-- **CtraderConnectDialog** : formulaire Client ID, Client Secret, Access Token, Account ID
+- **BrokerConnectionPanel** : statut connexion, bouton sync, dernière sync, **reconfiguration**, déconnexion
+- **CtraderConnectDialog** : formulaire Client ID, Client Secret, Access Token, Account ID, **serveur Live/Démo**
 - **MetaApiConnectDialog** : formulaire token + account ID
+- Tous les dialogues ont un mode **reconfiguration** (prop `connection`) : identifiants non secrets préremplis, secrets vides où « vide = conservé ». Logique partagée dans `useBrokerCredentialForm`.
 - **SyncHistoryDialog** : DataTable des `sync_logs`
 - Bouton sync (pi-sync) dans la vue Comptes à côté de chaque compte
 

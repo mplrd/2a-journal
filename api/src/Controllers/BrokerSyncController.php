@@ -5,65 +5,58 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
-use App\Enums\BrokerProvider;
-use App\Enums\ConnectionStatus;
-use App\Exceptions\ValidationException;
-use App\Repositories\BrokerConnectionRepository;
 use App\Repositories\SyncLogRepository;
+use App\Services\Broker\BrokerConnectionService;
 use App\Services\Broker\BrokerSyncService;
-use App\Services\Broker\CredentialEncryptionService;
 
 class BrokerSyncController extends Controller
 {
     public function __construct(
         private BrokerSyncService $syncService,
-        private BrokerConnectionRepository $connectionRepo,
+        private BrokerConnectionService $connectionService,
         private SyncLogRepository $syncLogRepo,
-        private CredentialEncryptionService $crypto,
     ) {}
 
     /**
-     * Create a MetaApi connection (credentials provided in body).
+     * Create a broker connection (credentials provided in body).
      */
     public function createConnection(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
         $body = $request->getBody();
 
-        $provider = $body['provider'] ?? '';
-        $accountId = (int) ($body['account_id'] ?? 0);
+        $result = $this->connectionService->createConnection(
+            $userId,
+            (int) ($body['account_id'] ?? 0),
+            (string) ($body['provider'] ?? ''),
+            $body,
+        );
 
-        if (!$accountId) {
-            throw new ValidationException('broker.error.account_required', 'account_id');
-        }
-
-        // Check no existing connection for this account
-        $existing = $this->connectionRepo->findByAccountId($accountId);
-        if ($existing) {
-            throw new ValidationException('broker.error.already_connected', 'account_id');
-        }
-
-        if ($provider === BrokerProvider::METAAPI->value) {
-            return $this->createMetaApiConnection($userId, $accountId, $body);
-        }
-
-        if ($provider === BrokerProvider::CTRADER->value) {
-            return $this->createCtraderConnection($userId, $accountId, $body);
-        }
-
-        if ($provider === BrokerProvider::OUINEX->value) {
-            return $this->createOuinexConnection($userId, $accountId, $body);
-        }
-
-        if ($provider === BrokerProvider::BINGX->value) {
-            return $this->createBingxConnection($userId, $accountId, $body);
-        }
-
-        throw new ValidationException('broker.error.unsupported_provider', 'provider');
+        return $this->jsonSuccess($result);
     }
 
     /**
-     * Get connection for an account.
+     * Reconfigure an existing connection's credentials in place. Fields left
+     * blank keep their stored value, so the user can fix a single rotated
+     * secret without re-entering everything — and without deleting the
+     * connection, which would drop its sync cursor and log history.
+     */
+    public function updateConnection(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $connectionId = (int) $request->getRouteParam('id');
+
+        $result = $this->connectionService->updateCredentials(
+            $connectionId,
+            $userId,
+            $request->getBody(),
+        );
+
+        return $this->jsonSuccess($result);
+    }
+
+    /**
+     * Get connection for an account, or every connection of the user.
      */
     public function connections(Request $request): Response
     {
@@ -71,15 +64,10 @@ class BrokerSyncController extends Controller
         $accountId = (int) ($request->getQuery()['account_id'] ?? 0);
 
         if ($accountId) {
-            $connection = $this->connectionRepo->findByAccountId($accountId);
-            if ($connection && (int) $connection['user_id'] === $userId) {
-                return $this->jsonSuccess($this->sanitizeConnection($connection));
-            }
-            return $this->jsonSuccess(null);
+            return $this->jsonSuccess($this->connectionService->findForAccount($accountId, $userId));
         }
 
-        $connections = $this->connectionRepo->findAllByUserId($userId);
-        return $this->jsonSuccess(array_map([$this, 'sanitizeConnection'], $connections));
+        return $this->jsonSuccess($this->connectionService->findAllForUser($userId));
     }
 
     /**
@@ -103,12 +91,8 @@ class BrokerSyncController extends Controller
         $userId = $request->getAttribute('user_id');
         $connectionId = (int) $request->getRouteParam('id');
 
-        $connection = $this->connectionRepo->findById($connectionId);
-        if (!$connection || (int) $connection['user_id'] !== $userId) {
-            throw new ValidationException('broker.error.connection_not_found', 'id');
-        }
-
-        $this->connectionRepo->delete($connectionId);
+        $connection = $this->connectionService->requireOwnedConnection($connectionId, $userId);
+        $this->connectionService->deleteConnection((int) $connection['id']);
 
         return $this->jsonSuccess(['message_key' => 'broker.success.disconnected']);
     }
@@ -121,146 +105,8 @@ class BrokerSyncController extends Controller
         $userId = $request->getAttribute('user_id');
         $connectionId = (int) $request->getRouteParam('id');
 
-        $connection = $this->connectionRepo->findById($connectionId);
-        if (!$connection || (int) $connection['user_id'] !== $userId) {
-            throw new ValidationException('broker.error.connection_not_found', 'id');
-        }
+        $this->connectionService->requireOwnedConnection($connectionId, $userId);
 
-        $logs = $this->syncLogRepo->findByConnectionId($connectionId);
-
-        return $this->jsonSuccess($logs);
-    }
-
-    private function createCtraderConnection(int $userId, int $accountId, array $body): Response
-    {
-        // trim() every credential: browser password-manager autofill or hand
-        // copy-paste from the broker UI tends to drag trailing spaces or
-        // newlines, which silently invalidate every HMAC signature downstream.
-        // The connector layer cannot recover from this — sanitise at the gate.
-        $clientId = trim((string) ($body['client_id'] ?? ''));
-        $clientSecret = trim((string) ($body['client_secret'] ?? ''));
-        $accessToken = trim((string) ($body['access_token'] ?? ''));
-        $accountNumber = trim((string) ($body['account_id_ctrader'] ?? ''));
-
-        if (!$clientId || !$clientSecret || !$accessToken || !$accountNumber) {
-            throw new ValidationException('broker.error.credentials_required', 'access_token');
-        }
-
-        $credentials = [
-            'client_id' => $clientId,
-            'client_secret' => $clientSecret,
-            'access_token' => $accessToken,
-            'ctid_trader_account_id' => (int) $accountNumber,
-        ];
-
-        $encrypted = $this->crypto->encrypt($credentials);
-
-        $connection = $this->connectionRepo->create([
-            'user_id' => $userId,
-            'account_id' => $accountId,
-            'provider' => BrokerProvider::CTRADER->value,
-            'status' => ConnectionStatus::ACTIVE->value,
-            'credentials_encrypted' => $encrypted['ciphertext'],
-            'credentials_iv' => $encrypted['iv'],
-        ]);
-
-        return $this->jsonSuccess($this->sanitizeConnection($connection));
-    }
-
-    private function createMetaApiConnection(int $userId, int $accountId, array $body): Response
-    {
-        $apiToken = trim((string) ($body['api_token'] ?? ''));
-        $metaApiAccountId = trim((string) ($body['metaapi_account_id'] ?? ''));
-
-        if (!$apiToken || !$metaApiAccountId) {
-            throw new ValidationException('broker.error.credentials_required', 'api_token');
-        }
-
-        $credentials = [
-            'api_token' => $apiToken,
-            'metaapi_account_id' => $metaApiAccountId,
-        ];
-
-        $encrypted = $this->crypto->encrypt($credentials);
-
-        $connection = $this->connectionRepo->create([
-            'user_id' => $userId,
-            'account_id' => $accountId,
-            'provider' => BrokerProvider::METAAPI->value,
-            'status' => ConnectionStatus::ACTIVE->value,
-            'credentials_encrypted' => $encrypted['ciphertext'],
-            'credentials_iv' => $encrypted['iv'],
-        ]);
-
-        return $this->jsonSuccess($this->sanitizeConnection($connection));
-    }
-
-    private function createOuinexConnection(int $userId, int $accountId, array $body): Response
-    {
-        $apiKey = trim((string) ($body['service_api_key'] ?? ''));
-        $apiSecret = trim((string) ($body['service_api_secret'] ?? ''));
-
-        if (!$apiKey || !$apiSecret) {
-            throw new ValidationException('broker.error.credentials_required', 'service_api_key');
-        }
-
-        // Store the API key/secret only — JWT is fetched lazily on first sync
-        // and re-cached into credentials by BrokerSyncService::sync via
-        // OuinexConnector::refreshCredentials.
-        $credentials = [
-            'service_api_key' => $apiKey,
-            'service_api_secret' => $apiSecret,
-        ];
-
-        $encrypted = $this->crypto->encrypt($credentials);
-
-        $connection = $this->connectionRepo->create([
-            'user_id' => $userId,
-            'account_id' => $accountId,
-            'provider' => BrokerProvider::OUINEX->value,
-            'status' => ConnectionStatus::ACTIVE->value,
-            'credentials_encrypted' => $encrypted['ciphertext'],
-            'credentials_iv' => $encrypted['iv'],
-        ]);
-
-        return $this->jsonSuccess($this->sanitizeConnection($connection));
-    }
-
-    private function createBingxConnection(int $userId, int $accountId, array $body): Response
-    {
-        $apiKey = trim((string) ($body['api_key'] ?? ''));
-        $apiSecret = trim((string) ($body['api_secret'] ?? ''));
-
-        if (!$apiKey || !$apiSecret) {
-            throw new ValidationException('broker.error.credentials_required', 'api_key');
-        }
-
-        // BingX uses static HMAC credentials — no token refresh ever.
-        $credentials = [
-            'api_key' => $apiKey,
-            'api_secret' => $apiSecret,
-        ];
-
-        $encrypted = $this->crypto->encrypt($credentials);
-
-        $connection = $this->connectionRepo->create([
-            'user_id' => $userId,
-            'account_id' => $accountId,
-            'provider' => BrokerProvider::BINGX->value,
-            'status' => ConnectionStatus::ACTIVE->value,
-            'credentials_encrypted' => $encrypted['ciphertext'],
-            'credentials_iv' => $encrypted['iv'],
-        ]);
-
-        return $this->jsonSuccess($this->sanitizeConnection($connection));
-    }
-
-    /**
-     * Remove sensitive fields from connection before returning to client.
-     */
-    private function sanitizeConnection(array $connection): array
-    {
-        unset($connection['credentials_encrypted'], $connection['credentials_iv']);
-        return $connection;
+        return $this->jsonSuccess($this->syncLogRepo->findByConnectionId($connectionId));
     }
 }

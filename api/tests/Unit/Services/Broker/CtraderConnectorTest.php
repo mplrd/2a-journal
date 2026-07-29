@@ -482,6 +482,83 @@ class CtraderConnectorTest extends TestCase
         $sentPartial = json_decode($ws2->sentMessages[2], true);
         $this->assertSame(50, $sentPartial['payload']['volume']);
     }
+
+    // ── Per-connection endpoint (live vs demo) ──────────────────────
+
+    public function testEndpointFollowsTheConnectionEnvironment(): void
+    {
+        // The host used to come from the global CTRADER_WS_HOST env var, so a
+        // demo account and a live account could not coexist across users.
+        $connector = new CtraderConnector($this->config);
+
+        $this->assertSame(
+            'wss://live.ctraderapi.com:5036',
+            $connector->resolveWsUrl(['environment' => 'LIVE']),
+        );
+        $this->assertSame(
+            'wss://demo.ctraderapi.com:5036',
+            $connector->resolveWsUrl(['environment' => 'DEMO']),
+        );
+    }
+
+    public function testEndpointFallsBackToConfiguredHostWhenEnvironmentIsAbsent(): void
+    {
+        // Connections created before the selector shipped carry no environment
+        // key — they keep resolving through the configured host.
+        $connector = new CtraderConnector($this->config);
+
+        $this->assertSame('wss://demo.ctraderapi.com:5036', $connector->resolveWsUrl([]));
+    }
+
+    public function testEndpointIgnoresAnUnknownEnvironmentValue(): void
+    {
+        $connector = new CtraderConnector($this->config);
+
+        $this->assertSame('wss://demo.ctraderapi.com:5036', $connector->resolveWsUrl(['environment' => 'STAGING']));
+    }
+
+    // ── testConnection surfaces the broker's reason ─────────────────
+
+    public function testTestConnectionExposesTheBrokerErrorMessage(): void
+    {
+        // Without this, a rotated clientSecret only ever produced a bare
+        // "false" and the user had no idea which credential was rejected.
+        $ws = $this->makeWsStub([
+            self::frame(self::ERROR_RES, [
+                'errorCode' => 'CH_CLIENT_AUTH_FAILURE',
+                'description' => 'wrong clientSecret',
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $ok = $connector->testConnection([
+            'client_id' => 'a',
+            'client_secret' => 'wrong',
+            'access_token' => 't',
+            'ctid_trader_account_id' => 1,
+        ]);
+
+        $this->assertFalse($ok);
+        $this->assertStringContainsString('CH_CLIENT_AUTH_FAILURE', $connector->getLastTestError());
+        $this->assertStringContainsString('wrong clientSecret', $connector->getLastTestError());
+    }
+
+    public function testTestConnectionClearsTheErrorOnSuccess(): void
+    {
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $this->assertTrue($connector->testConnection([
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 't',
+            'ctid_trader_account_id' => 1,
+        ]));
+        $this->assertNull($connector->getLastTestError());
+    }
 }
 
 /**

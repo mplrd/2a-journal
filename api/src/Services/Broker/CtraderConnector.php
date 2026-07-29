@@ -2,11 +2,14 @@
 
 namespace App\Services\Broker;
 
+use App\Enums\CtraderEnvironment;
 use GuzzleHttp\Client as HttpClient;
 use WebSocket\Client as WsClient;
 
 class CtraderConnector implements ConnectorInterface
 {
+    use TracksLastTestError;
+
     /**
      * ProtoOAPayloadType numeric codes (OpenApiModelMessages.proto). The
      * cTrader JSON API keys every frame by these integers — NOT the message
@@ -44,7 +47,7 @@ class CtraderConnector implements ConnectorInterface
 
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
     {
-        $ws = $this->connectWebSocket();
+        $ws = $this->connectWebSocket($credentials);
 
         try {
             // 1. Application auth (credentials provided by user)
@@ -279,8 +282,9 @@ class CtraderConnector implements ConnectorInterface
 
     public function testConnection(array $credentials): bool
     {
+        $this->clearTestError();
         try {
-            $ws = $this->connectWebSocket();
+            $ws = $this->connectWebSocket($credentials);
             $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
                 'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
                 'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
@@ -291,8 +295,11 @@ class CtraderConnector implements ConnectorInterface
             ]);
             $ws->close();
             return true;
-        } catch (\Throwable) {
-            return false;
+        } catch (\Throwable $e) {
+            // The message carries the broker's own wording, e.g.
+            // "cTrader API error: CH_CLIENT_AUTH_FAILURE - wrong clientSecret",
+            // which tells the user exactly which credential to fix.
+            return $this->failedTest($e);
         }
     }
 
@@ -460,7 +467,7 @@ class CtraderConnector implements ConnectorInterface
         }
 
         try {
-            $ws = $this->connectWebSocket();
+            $ws = $this->connectWebSocket($credentials);
         } catch (\Throwable $e) {
             BrokerLogger::failure('ctrader', 'ws_connect_failed', [
                 'account_id' => (int) $accountId,
@@ -559,18 +566,39 @@ class CtraderConnector implements ConnectorInterface
         ]);
     }
 
-    private function connectWebSocket(): WsClient
+    private function connectWebSocket(array $credentials = []): WsClient
     {
         if ($this->wsClient) {
             return $this->wsClient;
         }
 
-        $host = $this->config['ws_host'] ?? 'live.ctraderapi.com';
-        $port = $this->config['ws_port'] ?? 5036;
-
-        return new WsClient("wss://{$host}:{$port}", [
+        return new WsClient($this->resolveWsUrl($credentials), [
             'timeout' => 30,
         ]);
+    }
+
+    /**
+     * Endpoint for a given connection. A cTrader trading account lives on
+     * exactly one of the two servers, so the host follows the connection's own
+     * `environment` credential rather than a process-wide env var — otherwise
+     * one user's demo account forces every other user onto the demo host.
+     *
+     * Connections created before the selector shipped carry no `environment`
+     * key and keep resolving through the configured host (CTRADER_WS_HOST),
+     * which preserves their existing behaviour exactly.
+     */
+    public function resolveWsUrl(array $credentials = []): string
+    {
+        $environment = CtraderEnvironment::tryFrom(
+            strtoupper((string) ($credentials['environment'] ?? ''))
+        );
+
+        $host = $environment?->wsHost()
+            ?? $this->config['ws_host']
+            ?? CtraderEnvironment::LIVE->wsHost();
+        $port = $this->config['ws_port'] ?? 5036;
+
+        return "wss://{$host}:{$port}";
     }
 
     private function sendAndReceive(WsClient $ws, string $payloadType, array $payload = []): array
