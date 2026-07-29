@@ -357,6 +357,15 @@ Ouvre aussi la question UX : garde-t-on le bouton ⚡ sur `AccountsView` en racc
 **Repéré le** : 2026-05-30.
 **Priorité** : basse.
 
+### Reclassement du type d'un ticket (SUPPORT / BUG / FEATURE)
+
+**Contexte** : le `type` est choisi par le demandeur à la création et n'est plus modifiable ensuite. Côté admin il existe `PATCH /admin/support/tickets/{id}/status` et `/priority`, mais **aucun endpoint pour le type**. Or les utilisateurs se trompent régulièrement de catégorie (ticket #32 déposé en FEATURE alors que c'est un bug confirmé), ce qui fausse le tri et les stats support.
+
+**À faire** : `PATCH /admin/support/tickets/{id}/type` (admin only, valeurs de l'enum `TicketType`, sans notification e-mail — c'est un reclassement interne), + commande `set-type` dans `support-cli`.
+
+**Repéré le** : 2026-07-29 (ticket #32).
+**Priorité** : basse à moyenne (confort admin ; contournable en base).
+
 ### Refacto upload avatar sur FileUploadService
 
 **Contexte** : `AuthService::uploadProfilePicture()` duplique la logique de validation/stockage désormais factorisée dans `FileUploadService`. Non refactorée pour rester hors-scope.
@@ -483,6 +492,28 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 
 **Repéré le** : 2026-07-24.
 **Priorité** : moyenne — masque de vraies erreurs (exit 1 permanent du run complet) et fait échouer toute CI stricte.
+
+---
+
+## cTrader — suites de la lecture live (branche `feat/ctrader-live-read`)
+
+**Contexte** : relevé pendant le câblage de la lecture cTrader (2026-07-26). Le connecteur lit maintenant positions/ordres ouverts, ordres clos et balance, et le format JSON wire est corrigé — ces points restent à traiter derrière.
+
+- **Confirmer la sérialisation JSON des enums au premier run live.** Les normalizers cTrader tolèrent `tradeSide`/`orderStatus` en nom (`'BUY'`) **et** en code numérique (`1`), faute de certitude sur le format réel. Au premier run réel (log de la frame brute, cf. plan), figer le format et, si c'est du numérique, **appliquer `normalizeCtraderTradeSide()` aussi à `normalizeCtraderDeal()`** (aujourd'hui laissé tel quel, path clos hors scope, testé avec des strings).
+- **Session WebSocket unique par sync.** `BrokerSyncService::sync()` appelle `fetchDeals` + `fetchOpenPositions` + `fetchOpenOrders` + `fetchClosedOrders` + `fetchBalance` séparément ; chacune ouvre sa propre session cTrader (app-auth + account-auth). Soit ~4 handshakes/refresh par sync. Optimisable en une session partagée (un `ProtoOAReconcileReq` couvre déjà positions+ordres). Chatty mais correct en l'état.
+- **Échelle de volume incohérente (pré-existant).** `placeOrder` convertit `size × 100`, alors que `normalizeCtraderDeal`/`OpenPosition` font `volume / 100000`. Les deux ne peuvent pas être justes pour le même symbole — à réconcilier (dépend probablement du contract size par symbole).
+
+**Repéré le** : 2026-07-26. **Priorité** : le point enum est **bloquant à valider** avant d'activer cTrader en test ; les deux autres sont basse priorité.
+
+---
+
+## BrokerOpenSyncService — `Undefined array key "id"` (pré-existant)
+
+**Contexte** : warning PHPUnit relevé le 2026-07-26 en passant la suite Broker (2 tests BingX open-sync le déclenchent). Non lié à cTrader.
+
+- `BrokerOpenSyncService.php:141` (`insertNewOpen` → `insertPartialExits((int) $trade['id'], …)`) lit `$trade['id']` alors que `tradeRepo->create()` peut renvoyer la clé sous un autre nom dans le contexte testé. À vérifier : la clé exacte retournée par `TradeRepository::create()` et aligner (probablement `$trade['id']` vs absence).
+
+**Repéré le** : 2026-07-26. **Priorité** : basse (warning, pas d'échec de test).
 
 ---
 
