@@ -302,6 +302,69 @@ class BrokerConnectionServiceTest extends TestCase
         ]);
     }
 
+    // ── cTrader account discovery ───────────────────────────────────
+
+    public function testDiscoverCtraderAccountsWithTypedCredentials(): void
+    {
+        $result = $this->service->discoverCtraderAccounts($this->userId, [
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 'tok',
+        ]);
+
+        $this->assertSame([
+            ['ctid_trader_account_id' => 42111, 'trader_login' => '1234567', 'is_live' => true],
+        ], $result['accounts']);
+        $this->assertNull($result['error']);
+    }
+
+    public function testDiscoverCtraderAccountsReusesStoredSecretsWhenReconfiguring(): void
+    {
+        // While reconfiguring, the user should be able to list their accounts
+        // without retyping the secret — it is already stored and never echoed.
+        $id = $this->seedConnection('CTRADER', $this->ctraderCredentials());
+
+        $result = $this->service->discoverCtraderAccounts($this->userId, ['connection_id' => $id]);
+
+        $this->assertNotEmpty($result['accounts']);
+    }
+
+    public function testDiscoverCtraderAccountsRequiresCredentialsWithoutAConnection(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->discoverCtraderAccounts($this->userId, ['client_id' => 'a']);
+    }
+
+    public function testDiscoverCtraderAccountsRejectsAnotherUsersConnection(): void
+    {
+        $id = $this->seedConnection('CTRADER', $this->ctraderCredentials());
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->discoverCtraderAccounts($this->otherUserId, ['connection_id' => $id]);
+    }
+
+    public function testDiscoverCtraderAccountsReportsTheBrokerReasonWithoutThrowing(): void
+    {
+        // The reason is the actionable part — "wrong clientSecret" tells the
+        // user which field to fix. Swallowing it would defeat the button.
+        $failing = new FakeConnector(false, null, true);
+        $service = new BrokerConnectionService(
+            $this->repo,
+            $this->crypto,
+            new BrokerCredentialMapper(),
+            new ConnectorRegistry($failing, $failing, $failing, $failing),
+        );
+
+        $result = $service->discoverCtraderAccounts($this->userId, [
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 'tok',
+        ]);
+
+        $this->assertSame([], $result['accounts']);
+        $this->assertStringContainsString('boom', $result['error']);
+    }
+
     // ── Public view on read ─────────────────────────────────────────
 
     public function testFindForAccountExposesIdentifiersButNoSecrets(): void
@@ -457,6 +520,15 @@ class FakeConnector implements \App\Services\Broker\ConnectorInterface
             throw new \RuntimeException('boom');
         }
         return $this->testResult;
+    }
+
+    /** cTrader-only, resolved via method_exists — not part of ConnectorInterface. */
+    public function fetchAccounts(array $credentials): array
+    {
+        if ($this->throws) {
+            throw new \RuntimeException('boom');
+        }
+        return [['ctid_trader_account_id' => 42111, 'trader_login' => '1234567', 'is_live' => true]];
     }
 
     public function getLastTestError(): ?string
