@@ -43,6 +43,18 @@ export const brokerSyncService = {
   },
 
   /**
+   * List the cTrader accounts reachable with a set of app credentials, so the
+   * user picks one instead of typing ctidTraderAccountId — a number the cTrader
+   * platform never shows.
+   *
+   * @param {object} payload client_id/client_secret/access_token (+ environment),
+   *   or connection_id alone to reuse the stored credentials when reconfiguring.
+   */
+  async fetchCtraderAccounts(payload) {
+    return api.post('/broker/ctrader/accounts', payload)
+  },
+
+  /**
    * Reconfigure an existing connection in place. Only send the fields the user
    * actually edited — an omitted field keeps its stored value server-side,
    * which is how a single rotated secret gets fixed without re-entering the

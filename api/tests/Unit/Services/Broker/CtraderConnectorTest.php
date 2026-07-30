@@ -28,6 +28,7 @@ class CtraderConnectorTest extends TestCase
     private const ORDER_LIST_RES   = 2176;
     private const SYMBOLS_LIST_RES = 2115;
     private const SYMBOL_BY_ID_RES = 2117;
+    private const ACCOUNT_LIST_RES = 2150;
     private const EXECUTION_EVENT  = 2126;
 
     private array $config;
@@ -481,6 +482,92 @@ class CtraderConnectorTest extends TestCase
         $connector2->closePosition(['ctid_trader_account_id' => 1, 'access_token' => 't'], 'pos-99', 0.5);
         $sentPartial = json_decode($ws2->sentMessages[2], true);
         $this->assertSame(50, $sentPartial['payload']['volume']);
+    }
+
+    // ── Account discovery (ProtoOAGetAccountListByAccessTokenReq) ───
+
+    public function testFetchAccountsListsEveryAccountBehindTheAccessToken(): void
+    {
+        // The connect form used to ask the user to type ctidTraderAccountId by
+        // hand — a number the cTrader platform never shows (it displays
+        // traderLogin instead), so a real user filled in the login and got
+        // "account not found". Discover them from the token instead.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true],
+                    ['ctidTraderAccountId' => 42112, 'traderLogin' => 7654321, 'isLive' => false],
+                ],
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts([
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 'tok',
+        ]);
+
+        $this->assertSame([
+            ['ctid_trader_account_id' => 42111, 'trader_login' => '1234567', 'is_live' => true],
+            ['ctid_trader_account_id' => 42112, 'trader_login' => '7654321', 'is_live' => false],
+        ], $accounts);
+
+        // Request carries the access token under the right payload type.
+        $sent = json_decode($ws->sentMessages[1], true);
+        $this->assertSame(2149, $sent['payloadType']);
+        $this->assertSame('tok', $sent['payload']['accessToken']);
+    }
+
+    public function testFetchAccountsToleratesAMissingIsLiveFlag(): void
+    {
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [['ctidTraderAccountId' => 7, 'traderLogin' => 99]],
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts(['access_token' => 'tok']);
+
+        $this->assertFalse($accounts[0]['is_live']);
+    }
+
+    public function testFetchAccountsSkipsEntriesWithoutAnId(): void
+    {
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['traderLogin' => 1],
+                    ['ctidTraderAccountId' => 8, 'traderLogin' => 2, 'isLive' => true],
+                ],
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts(['access_token' => 'tok']);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame(8, $accounts[0]['ctid_trader_account_id']);
+    }
+
+    public function testFetchAccountsPropagatesTheBrokerError(): void
+    {
+        // A wrong clientSecret must surface as itself here too, otherwise the
+        // "load my accounts" button fails silently.
+        $ws = $this->makeWsStub([
+            self::frame(self::ERROR_RES, [
+                'errorCode' => 'CH_CLIENT_AUTH_FAILURE',
+                'description' => 'wrong clientSecret',
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $this->expectExceptionMessageMatches('/CH_CLIENT_AUTH_FAILURE/');
+        $connector->fetchAccounts(['client_id' => 'a', 'client_secret' => 'bad', 'access_token' => 'tok']);
     }
 
     // ── Per-connection endpoint (live vs demo) ──────────────────────

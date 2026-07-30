@@ -22,6 +22,7 @@ class CtraderConnector implements ConnectorInterface
         'ProtoOATraderReq'          => 2121,
         'ProtoOAOrderListReq'       => 2175,
         'ProtoOADealListReq'        => 2133,
+        'ProtoOAGetAccountListByAccessTokenReq' => 2149,
         'ProtoOASymbolsListReq'     => 2114,
         'ProtoOASymbolByIdReq'      => 2116,
         'ProtoOANewOrderReq'        => 2106,
@@ -242,6 +243,61 @@ class CtraderConnector implements ConnectorInterface
             array_map(fn($e) => $e['tradeData']['symbolId'] ?? null, $entities),
             fn($id) => $id !== null,
         )));
+    }
+
+    /**
+     * List the trading accounts reachable with an access token.
+     *
+     * Exists because the connect form used to ask the user to type
+     * `ctidTraderAccountId` by hand — a number the cTrader platform never
+     * displays. What the platform shows is `traderLogin`, a *different* number,
+     * so entering it produced "account not found". This returns both, plus the
+     * live/demo flag, so the UI can show the login the user recognises while
+     * storing the id the API actually authenticates with, and derive the server
+     * instead of asking.
+     *
+     * Only application auth is required — the request is keyed by access token,
+     * not by account, so it runs before we know which account to authenticate.
+     *
+     * @return list<array{ctid_trader_account_id: int, trader_login: string, is_live: bool}>
+     */
+    public function fetchAccounts(array $credentials): array
+    {
+        $ws = $this->connectWebSocket($credentials);
+
+        try {
+            $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
+                'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
+                'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
+            ]);
+
+            $response = $this->sendAndReceive($ws, 'ProtoOAGetAccountListByAccessTokenReq', [
+                'accessToken' => $credentials['access_token'] ?? '',
+            ]);
+
+            try { $ws->close(); } catch (\Throwable) {}
+        } catch (\Throwable $e) {
+            try { $ws->close(); } catch (\Throwable) {}
+            throw $e;
+        }
+
+        $accounts = [];
+        foreach ($response['ctidTraderAccount'] ?? [] as $account) {
+            // An entry without an id is unusable — it is precisely the value we
+            // need to store, so skip rather than emit a broken option.
+            if (!isset($account['ctidTraderAccountId'])) {
+                continue;
+            }
+            $accounts[] = [
+                'ctid_trader_account_id' => (int) $account['ctidTraderAccountId'],
+                // Kept as a string: logins can exceed PHP's int range on some
+                // brokers and it is only ever displayed, never computed with.
+                'trader_login' => (string) ($account['traderLogin'] ?? ''),
+                'is_live' => (bool) ($account['isLive'] ?? false),
+            ];
+        }
+
+        return $accounts;
     }
 
     public function refreshCredentials(array $credentials): array

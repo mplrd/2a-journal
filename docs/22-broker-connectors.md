@@ -87,7 +87,7 @@ AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'en
 ### Credentials par utilisateur
 
 Chaque utilisateur fournit ses propres identifiants API :
-- **cTrader** : Client ID + Client Secret + Access Token + Account ID (depuis openapi.ctrader.com) + serveur Live/Démo
+- **cTrader** : Client ID + Client Secret + Access Token (depuis openapi.ctrader.com). Le compte et le serveur ne sont **pas saisis** : ils sont découverts depuis l'access token (`86-ctrader-account-discovery.md`). Le `ctidTraderAccountId` stocké n'est pas le numéro de compte affiché dans la plateforme (`traderLogin`)
 - **MetaApi** : API Token + Account ID MetaApi (depuis metaapi.cloud)
 
 Le serveur cTrader est stocké par connexion (`environment` : `LIVE` / `DEMO`) dans le blob chiffré, et non plus lu depuis la variable globale `CTRADER_WS_HOST` — un compte n'existe que sur un seul des deux serveurs. Les connexions antérieures, sans cette clé, continuent d'utiliser `CTRADER_WS_HOST`.
@@ -100,6 +100,7 @@ Pas de clés API partagées au niveau de l'application. Les credentials sont sto
 |---------|-------|-------------|
 | POST | `/broker/connections` | Créer connexion (cTrader ou MetaApi) |
 | PUT | `/broker/connections/{id}` | Reconfigurer les identifiants sur place (voir `85-broker-connection-reconfigure.md`) |
+| POST | `/broker/ctrader/accounts` | Lister les comptes cTrader d'un access token (voir `86-ctrader-account-discovery.md`) |
 | GET | `/broker/connections?account_id=X` | Statut connexion |
 | POST | `/broker/connections/{id}/sync` | Déclencher sync |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |

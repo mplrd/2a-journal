@@ -11,6 +11,7 @@ vi.mock('@/services/brokerSync', () => ({
   brokerSyncService: {
     createCtraderConnection: vi.fn(),
     updateConnection: vi.fn(),
+    fetchCtraderAccounts: vi.fn(),
   },
 }))
 
@@ -44,6 +45,16 @@ function createWrapper(props = {}) {
           emits: ['update:modelValue'],
         },
         Message: { template: '<div class="message"><slot /></div>' },
+        FieldHelpIcon: {
+          template: '<i :data-testid="testid" :aria-label="text" />',
+          props: ['text', 'testid'],
+        },
+        Select: {
+          template:
+            '<div class="select" :data-name="$attrs.name"><button v-for="o in options" :key="o[optionValue]" :data-value="o[optionValue]" @click="$emit(\'update:modelValue\', o[optionValue])">{{ o[optionLabel] }}</button></div>',
+          props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
+          emits: ['update:modelValue'],
+        },
         Button: {
           template:
             '<button :data-testid="$attrs[`data-testid`]" :disabled="disabled" @click="$emit(\'click\')">{{ label }}</button>',
@@ -114,6 +125,121 @@ describe('CtraderConnectDialog', () => {
         7,
         expect.objectContaining({ environment: 'DEMO' }),
       )
+    })
+  })
+
+  describe('account discovery', () => {
+    const accounts = [
+      { ctid_trader_account_id: 42111, trader_login: '1234567', is_live: true },
+      { ctid_trader_account_id: 42112, trader_login: '7654321', is_live: false },
+    ]
+
+    async function fillAppCredentials(wrapper) {
+      await field(wrapper, 'ctrader-client-id').setValue('30528')
+      await field(wrapper, 'ctrader-client-secret').setValue('sec')
+      await field(wrapper, 'ctrader-access-token').setValue('tok')
+    }
+
+    it('cannot load accounts before the app credentials are filled', () => {
+      const wrapper = createWrapper()
+
+      expect(wrapper.find('[data-testid="ctrader-load-accounts"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('lists the accounts behind the token, labelled by the login the user recognises', async () => {
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      const options = wrapper.findAll('[data-name="ctrader-account-picker"] button')
+      expect(options).toHaveLength(2)
+      // traderLogin is the number shown in the cTrader platform; the opaque
+      // ctidTraderAccountId is what we store, never what we display.
+      expect(options[0].text()).toContain('1234567')
+    })
+
+    it('fills the account id and derives the server from the picked account', async () => {
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      // Pick the demo account.
+      await wrapper.find('[data-name="ctrader-account-picker"] [data-value="42112"]').trigger('click')
+      await submit(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(brokerSyncService.createCtraderConnection).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ account_id_ctrader: '42112', environment: 'DEMO' }),
+      )
+    })
+
+    it('shows the broker reason when discovery fails', async () => {
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({
+        data: { accounts: [], error: 'cTrader API error: CH_CLIENT_AUTH_FAILURE - wrong clientSecret' },
+      })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('CH_CLIENT_AUTH_FAILURE')
+    })
+
+    it('sends the stored connection id so reconfiguring needs no retyped secret', async () => {
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper({ connection: existingConnection })
+
+      // client_id is prefilled and the secrets are stored — the button must be
+      // usable without retyping anything.
+      expect(wrapper.find('[data-testid="ctrader-load-accounts"]').attributes('disabled')).toBeUndefined()
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      expect(brokerSyncService.fetchCtraderAccounts).toHaveBeenCalledWith(
+        expect.objectContaining({ connection_id: 42 }),
+      )
+    })
+  })
+
+  describe('credential help hints', () => {
+    // The account-id field caused a real support case: the user entered the
+    // account number shown in the cTrader platform (traderLogin), but the API
+    // authenticates with ctidTraderAccountId — a different number.
+    it('warns that the account id is not the platform account number', () => {
+      const wrapper = createWrapper()
+      const hint = wrapper.find('[data-testid="ctrader-account-id-help"]')
+
+      expect(hint.exists()).toBe(true)
+      expect(hint.attributes('aria-label')).toBe(fr.broker.ctrader_account_id_help)
+      expect(fr.broker.ctrader_account_id_help).toContain('ctidTraderAccountId')
+    })
+
+    it('does not suggest a platform login number as the placeholder', () => {
+      // "ex: 12345678" reads exactly like a trading account login and is what
+      // sent the user down the wrong path.
+      expect(fr.broker.ctrader_account_id_placeholder).not.toBe('ex: 12345678')
+    })
+
+    it('hints every credential field', () => {
+      const wrapper = createWrapper()
+
+      for (const testid of [
+        'ctrader-client-id-help',
+        'ctrader-client-secret-help',
+        'ctrader-access-token-help',
+        'ctrader-account-id-help',
+      ]) {
+        const hint = wrapper.find(`[data-testid="${testid}"]`)
+        expect(hint.exists(), testid).toBe(true)
+        expect(hint.attributes('aria-label'), testid).toBeTruthy()
+      }
     })
   })
 
