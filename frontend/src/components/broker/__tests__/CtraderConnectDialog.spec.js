@@ -51,8 +51,8 @@ function createWrapper(props = {}) {
         },
         Select: {
           template:
-            '<div class="select" :data-name="$attrs.name"><button v-for="o in options" :key="o[optionValue]" :data-value="o[optionValue]" @click="$emit(\'update:modelValue\', o[optionValue])">{{ o[optionLabel] }}</button></div>',
-          props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
+            '<div class="select" :data-name="$attrs.name"><button v-for="o in options" :key="o[optionValue]" :data-value="o[optionValue]" :disabled="optionDisabled ? o[optionDisabled] : false" @click="$emit(\'update:modelValue\', o[optionValue])">{{ o[optionLabel] }}</button></div>',
+          props: ['modelValue', 'options', 'optionLabel', 'optionValue', 'optionDisabled'],
           emits: ['update:modelValue'],
         },
         Button: {
@@ -130,8 +130,28 @@ describe('CtraderConnectDialog', () => {
 
   describe('account discovery', () => {
     const accounts = [
-      { ctid_trader_account_id: 42111, trader_login: '1234567', is_live: true },
-      { ctid_trader_account_id: 42112, trader_login: '7654321', is_live: false },
+      {
+        ctid_trader_account_id: 42111,
+        trader_login: '1234567',
+        is_live: true,
+        broker_name: 'FTMO',
+        balance: 80000,
+        currency: 'EUR',
+        is_disabled: false,
+        disabled_reason: null,
+        details: { brokerTitleShort: 'FTMO', ctidTraderAccountId: 42111, traderLogin: 1234567 },
+      },
+      {
+        ctid_trader_account_id: 42112,
+        trader_login: '7654321',
+        is_live: false,
+        broker_name: null,
+        balance: null,
+        currency: null,
+        is_disabled: false,
+        disabled_reason: null,
+        details: {},
+      },
     ]
 
     async function fillAppCredentials(wrapper) {
@@ -177,6 +197,86 @@ describe('CtraderConnectDialog', () => {
         7,
         expect.objectContaining({ account_id_ctrader: '42112', environment: 'DEMO' }),
       )
+    })
+
+    it('labels an account by broker, size and login', async () => {
+      // Several accounts at the same prop firm all read "FTMO", so the broker
+      // name alone does not separate them — the balance is what does. Reported
+      // by a user with several FTMO accounts who could not tell which was which.
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      const label = wrapper.findAll('[data-name="ctrader-account-picker"] button')[0].text()
+      expect(label).toContain('FTMO')
+      expect(label).toContain('1234567')
+      // Grouping separators are locale- and runtime-dependent; assert the
+      // digits and the currency, not the exact spacing.
+      expect(label).toMatch(/80[\s  ]?000/)
+      expect(label).toContain('€')
+    })
+
+    it('omits the size when the broker did not give one', async () => {
+      // Enrichment is best-effort: an account we could not read must still be
+      // listed and pickable, just without its balance.
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      const label = wrapper.findAll('[data-name="ctrader-account-picker"] button')[1].text()
+      expect(label).toContain('7654321')
+      expect(label).not.toContain('€')
+      expect(label).not.toContain('null')
+    })
+
+    it('marks accounts the broker refused and stops them being picked', async () => {
+      // The list includes archived accounts; picking one used to fail only
+      // after saving, with RET_ACCOUNT_DISABLED. Account auth already told us
+      // during discovery, so say it here instead.
+      const withArchived = [
+        { ...accounts[0], is_disabled: true, disabled_reason: 'RET_ACCOUNT_DISABLED' },
+        accounts[1],
+      ]
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({
+        data: { accounts: withArchived, error: null },
+      })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      const archived = wrapper.find('[data-name="ctrader-account-picker"] [data-value="42111"]')
+      expect(archived.text()).toContain('RET_ACCOUNT_DISABLED')
+      expect(archived.attributes('disabled')).toBeDefined()
+    })
+
+    it('shows every field the API returned for the selected account', async () => {
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      await wrapper.find('[data-name="ctrader-account-picker"] [data-value="42111"]').trigger('click')
+
+      const details = wrapper.find('[data-testid="ctrader-account-details"]')
+      expect(details.exists()).toBe(true)
+      expect(details.text()).toContain('brokerTitleShort')
+      expect(details.text()).toContain('FTMO')
+    })
+
+    it('reports how many accounts came back so a long list is not a surprise', async () => {
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="ctrader-account-count"]').text()).toContain('2')
     })
 
     it('shows the broker reason when discovery fails', async () => {

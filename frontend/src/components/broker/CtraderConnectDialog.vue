@@ -12,7 +12,7 @@ import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -63,14 +63,52 @@ const canDiscover = computed(() => {
  * shows. The value is ctidTraderAccountId, which is what the API authenticates
  * with and what we store.
  */
+/**
+ * Compact identification, rounded on purpose: "FTMO — 80 000 € — 1234567 —
+ * Live". Several accounts at the same prop firm all carry the same broker
+ * name, so the size is what actually tells them apart. The exact figures stay
+ * in the details panel below — this line is for recognising an account, not
+ * for reading its balance to the cent.
+ */
+function formatBalance(account) {
+  if (account.balance == null) return null
+  try {
+    return new Intl.NumberFormat(locale.value, {
+      ...(account.currency ? { style: 'currency', currency: account.currency } : {}),
+      maximumFractionDigits: 0,
+    }).format(account.balance)
+  } catch {
+    // An unexpected currency code must not take the whole picker down.
+    return String(account.balance)
+  }
+}
+
 const accountOptions = computed(() =>
   discoveredAccounts.value.map((a) => ({
-    label: `${a.trader_login || a.ctid_trader_account_id} — ${
-      a.is_live ? t('broker.ctrader_env_live') : t('broker.ctrader_env_demo')
-    }`,
+    label: [
+      a.broker_name,
+      formatBalance(a),
+      a.trader_login || a.ctid_trader_account_id,
+      a.is_live ? t('broker.ctrader_env_live') : t('broker.ctrader_env_demo'),
+      // Say it in the list rather than letting the user find out after saving.
+      a.is_disabled ? t('broker.ctrader_account_archived', { reason: a.disabled_reason }) : null,
+    ]
+      .filter(Boolean)
+      .join(' — '),
     value: String(a.ctid_trader_account_id),
+    // The broker already refused this one during discovery: picking it could
+    // only produce the same failure again, later and with less context.
+    disabled: Boolean(a.is_disabled),
   })),
 )
+
+/** Everything the API returned for the picked account, for identification. */
+const selectedAccountDetails = computed(() => {
+  const picked = discoveredAccounts.value.find(
+    (a) => String(a.ctid_trader_account_id) === String(values.value.account_id_ctrader),
+  )
+  return Object.entries(picked?.details || {})
+})
 
 async function loadAccounts() {
   if (!canDiscover.value) return
@@ -231,10 +269,41 @@ async function submit() {
           :options="accountOptions"
           option-label="label"
           option-value="value"
+          option-disabled="disabled"
           class="w-full"
+          filter
           name="ctrader-account-picker"
           :placeholder="t('broker.ctrader_account_pick')"
         />
+
+        <p
+          v-if="accountOptions.length"
+          class="text-xs text-gray-500 dark:text-gray-400"
+          data-testid="ctrader-account-count"
+        >
+          {{ t('broker.ctrader_account_count', { count: accountOptions.length }) }}
+        </p>
+
+        <!-- Everything cTrader returned for this account. A user with a long
+             list could not tell which entries were their live accounts — the
+             list also contains archived ones, which fail account auth with
+             RET_ACCOUNT_DISABLED. Showing the raw metadata lets them identify
+             the right one instead of guessing. -->
+        <div
+          v-if="selectedAccountDetails.length"
+          class="rounded bg-gray-50 dark:bg-gray-800/50 p-2"
+          data-testid="ctrader-account-details"
+        >
+          <p class="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_account_details') }}
+          </p>
+          <dl class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+            <template v-for="[key, value] in selectedAccountDetails" :key="key">
+              <dt class="text-gray-500 dark:text-gray-400 truncate">{{ key }}</dt>
+              <dd class="text-gray-700 dark:text-gray-200 break-all">{{ value }}</dd>
+            </template>
+          </dl>
+        </div>
 
         <Message v-if="discoveryError" severity="warn" :closable="false" class="text-sm">
           {{ discoveryError }}

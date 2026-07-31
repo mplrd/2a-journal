@@ -23,6 +23,7 @@ class CtraderConnector implements ConnectorInterface
         'ProtoOAOrderListReq'       => 2175,
         'ProtoOADealListReq'        => 2133,
         'ProtoOAGetAccountListByAccessTokenReq' => 2149,
+        'ProtoOAAssetListReq'       => 2112,
         'ProtoOASymbolsListReq'     => 2114,
         'ProtoOASymbolByIdReq'      => 2116,
         'ProtoOANewOrderReq'        => 2106,
@@ -33,6 +34,13 @@ class CtraderConnector implements ConnectorInterface
 
     /** Base-protocol heartbeat (ProtoPayloadType.HEARTBEAT_EVENT). */
     private const HEARTBEAT_EVENT = 51;
+
+    /**
+     * Accounts enriched with balance/currency in one discovery call. Enrichment
+     * costs two to three round trips each, so an unbounded list would keep the
+     * HTTP request open long enough to time out.
+     */
+    private const MAX_ENRICHED_ACCOUNTS = 40;
 
     private array $config;
     private ?WsClient $wsClient;
@@ -256,10 +264,13 @@ class CtraderConnector implements ConnectorInterface
      * storing the id the API actually authenticates with, and derive the server
      * instead of asking.
      *
-     * Only application auth is required — the request is keyed by access token,
-     * not by account, so it runs before we know which account to authenticate.
+     * Listing the accounts is keyed by access token, not by account, so it runs
+     * under application auth alone — before we know which account to
+     * authenticate. Each entry is then enriched per account, which does need
+     * account auth: see enrichAccounts() for the balance, the currency and the
+     * archived flag, and scalarDetails() for the raw passthrough.
      *
-     * @return list<array{ctid_trader_account_id: int, trader_login: string, is_live: bool}>
+     * @return list<array{ctid_trader_account_id: int, trader_login: string, is_live: bool, broker_name: ?string, balance: ?float, currency: ?string, is_disabled: bool, disabled_reason: ?string, details: array<string, string|int|float|bool>}>
      */
     public function fetchAccounts(array $credentials): array
     {
@@ -275,29 +286,208 @@ class CtraderConnector implements ConnectorInterface
                 'accessToken' => $credentials['access_token'] ?? '',
             ]);
 
+            $accounts = [];
+            foreach ($response['ctidTraderAccount'] ?? [] as $account) {
+                // An entry without an id is unusable — it is precisely the value we
+                // need to store, so skip rather than emit a broken option.
+                if (!isset($account['ctidTraderAccountId'])) {
+                    continue;
+                }
+                $accounts[] = [
+                    'ctid_trader_account_id' => (int) $account['ctidTraderAccountId'],
+                    // Kept as a string: logins can exceed PHP's int range on some
+                    // brokers and it is only ever displayed, never computed with.
+                    'trader_login' => (string) ($account['traderLogin'] ?? ''),
+                    'is_live' => (bool) ($account['isLive'] ?? false),
+                    'broker_name' => isset($account['brokerTitleShort'])
+                        ? (string) $account['brokerTitleShort']
+                        : null,
+                    // Filled in by enrichAccounts() below, when reachable.
+                    'balance' => null,
+                    'currency' => null,
+                    'is_disabled' => false,
+                    'disabled_reason' => null,
+                    // Everything else, verbatim. A user with many accounts could
+                    // not tell which were their live FTMO ones — the list also
+                    // returns archived accounts (picking one fails with
+                    // RET_ACCOUNT_DISABLED), and whatever distinguishes them was
+                    // being dropped here. Passing the raw entry through means the
+                    // UI can surface it without another round-trip, and without us
+                    // guessing which fields this broker actually sends.
+                    'details' => $this->scalarDetails($account),
+                ];
+            }
+
+            // Same socket, still open: enrichment is a series of extra requests,
+            // not a second connection.
+            $accounts = $this->enrichAccounts($ws, $accounts, (string) ($credentials['access_token'] ?? ''));
+
             try { $ws->close(); } catch (\Throwable) {}
         } catch (\Throwable $e) {
             try { $ws->close(); } catch (\Throwable) {}
             throw $e;
         }
 
-        $accounts = [];
-        foreach ($response['ctidTraderAccount'] ?? [] as $account) {
-            // An entry without an id is unusable — it is precisely the value we
-            // need to store, so skip rather than emit a broken option.
-            if (!isset($account['ctidTraderAccountId'])) {
+        return $accounts;
+    }
+
+    /**
+     * Add balance, deposit currency and reachability to each listed account.
+     *
+     * The account list is not enough to tell accounts apart: at a prop firm
+     * they share one `brokerTitleShort` and differ only by size, so the picker
+     * needs "FTMO — 80 000 € — 1234567". Balance and `depositAssetId` live in
+     * ProtoOATrader, which is one account auth away.
+     *
+     * That auth doubles as the archived-account test. Nothing in
+     * ProtoOACtidTraderAccount marks an archived account, but authenticating
+     * one fails with RET_ACCOUNT_DISABLED — so the accounts that cannot be
+     * connected identify themselves here, instead of the user discovering it
+     * after saving the connection.
+     *
+     * Best-effort throughout: one account's failure never costs the others
+     * their entry, and never costs the list its own result.
+     */
+    private function enrichAccounts(WsClient $ws, array $accounts, string $accessToken): array
+    {
+        // Asset ids are broker-scoped, so accounts at the same broker share one
+        // list — worth caching, as it is a third of the round trips otherwise.
+        $assetNames = [];
+
+        foreach ($accounts as $i => $account) {
+            // A token with hundreds of accounts would hold the request open for
+            // minutes. Past the cap the entries stay listed, just unenriched.
+            if ($i >= self::MAX_ENRICHED_ACCOUNTS) {
+                break;
+            }
+
+            $accountId = $account['ctid_trader_account_id'];
+
+            try {
+                $this->sendAndReceive($ws, 'ProtoOAAccountAuthReq', [
+                    'ctidTraderAccountId' => $accountId,
+                    'accessToken' => $accessToken,
+                ]);
+            } catch (\Throwable $e) {
+                // Only a refusal from the broker means "you cannot use this
+                // account". A dead socket says nothing about the account.
+                if ($code = $this->brokerErrorCode($e)) {
+                    $accounts[$i]['is_disabled'] = true;
+                    $accounts[$i]['disabled_reason'] = $code;
+                }
                 continue;
             }
-            $accounts[] = [
-                'ctid_trader_account_id' => (int) $account['ctidTraderAccountId'],
-                // Kept as a string: logins can exceed PHP's int range on some
-                // brokers and it is only ever displayed, never computed with.
-                'trader_login' => (string) ($account['traderLogin'] ?? ''),
-                'is_live' => (bool) ($account['isLive'] ?? false),
-            ];
+
+            try {
+                $trader = $this->sendAndReceive($ws, 'ProtoOATraderReq', [
+                    'ctidTraderAccountId' => $accountId,
+                ])['trader'] ?? [];
+            } catch (\Throwable) {
+                continue;
+            }
+
+            $accounts[$i]['details'] = array_merge(
+                $accounts[$i]['details'],
+                $this->scalarDetails($trader),
+            );
+
+            if (isset($trader['balance'])) {
+                // Money is an integer scaled by moneyDigits (see fetchBalance).
+                $moneyDigits = (int) ($trader['moneyDigits'] ?? 2);
+                $accounts[$i]['balance'] = ((float) $trader['balance']) / (10 ** $moneyDigits);
+            }
+
+            if (!isset($trader['depositAssetId'])) {
+                continue;
+            }
+
+            // No broker name to key the cache on: treat the account as its own
+            // broker rather than risk borrowing another's asset ids.
+            $brokerKey = $account['broker_name'] ?? "#{$accountId}";
+            if (!array_key_exists($brokerKey, $assetNames)) {
+                $assetNames[$brokerKey] = $this->fetchAssetNames($ws, $accountId);
+            }
+            $accounts[$i]['currency'] = $assetNames[$brokerKey][(int) $trader['depositAssetId']] ?? null;
         }
 
         return $accounts;
+    }
+
+    /**
+     * Map assetId → asset name ("EUR") for one account's broker.
+     *
+     * ProtoOATrader gives the deposit currency as a numeric `depositAssetId`;
+     * only this list turns it into something a user can read. Best-effort: a
+     * failure costs the currency, not the account entry.
+     *
+     * @return array<int, string>
+     */
+    private function fetchAssetNames(WsClient $ws, int $accountId): array
+    {
+        try {
+            $response = $this->sendAndReceive($ws, 'ProtoOAAssetListReq', [
+                'ctidTraderAccountId' => $accountId,
+            ]);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($response['asset'] ?? [] as $asset) {
+            if (isset($asset['assetId'], $asset['name'])) {
+                $names[(int) $asset['assetId']] = (string) $asset['name'];
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * The broker's own error code, or null when the failure was not a refusal.
+     *
+     * sendAndReceive() renders a ProtoOAErrorRes as "cTrader API error: CODE -
+     * description" and leaves every other failure (closed socket, malformed
+     * frame) with its own wording. Telling them apart is what keeps a transport
+     * glitch from being reported to the user as an archived account.
+     */
+    private function brokerErrorCode(\Throwable $e): ?string
+    {
+        return preg_match('/^cTrader API error: ([A-Z0-9_]+)/', $e->getMessage(), $m)
+            ? $m[1]
+            : null;
+    }
+
+    /**
+     * Flatten one raw account entry to its scalar fields, for display.
+     *
+     * Nested structures are skipped rather than rendered: the point is a
+     * readable "what is this account" panel, not a JSON dump.
+     *
+     * Safe to show as-is: `ProtoOACtidTraderAccount` documents six fields —
+     * ctidTraderAccountId, isLive, traderLogin, lastClosingDealTimestamp,
+     * lastBalanceUpdateTimestamp, brokerTitleShort — none of which is a secret,
+     * a credential or an amount. This is a pass-through rather than an
+     * allow-list on purpose: an unknown field is the thing we most want to see
+     * in the panel, since none of the six marks an account as archived and we
+     * are still looking for what does.
+     *
+     * enrichAccounts() also runs ProtoOATrader through here, which is a wider
+     * surface. Still the user's own data, shown only to them and never written
+     * down — but note `swapFree` means "Shariah compliant", i.e. an inference
+     * about religion. Harmless while this stays in-flight; do not log the
+     * discovery response without revisiting that.
+     *
+     * @return array<string, string|int|float|bool>
+     */
+    private function scalarDetails(array $account): array
+    {
+        $details = [];
+        foreach ($account as $key => $value) {
+            if (is_scalar($value)) {
+                $details[$key] = $value;
+            }
+        }
+        return $details;
     }
 
     public function refreshCredentials(array $credentials): array

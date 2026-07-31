@@ -29,6 +29,7 @@ class CtraderConnectorTest extends TestCase
     private const SYMBOLS_LIST_RES = 2115;
     private const SYMBOL_BY_ID_RES = 2117;
     private const ACCOUNT_LIST_RES = 2150;
+    private const ASSET_LIST_RES   = 2113;
     private const EXECUTION_EVENT  = 2126;
 
     private array $config;
@@ -509,15 +510,198 @@ class CtraderConnectorTest extends TestCase
             'access_token' => 'tok',
         ]);
 
+        // Only the account list is scripted here, so per-account enrichment
+        // cannot run: the entries keep their base shape with empty extras
+        // rather than disappearing or being flagged disabled.
         $this->assertSame([
-            ['ctid_trader_account_id' => 42111, 'trader_login' => '1234567', 'is_live' => true],
-            ['ctid_trader_account_id' => 42112, 'trader_login' => '7654321', 'is_live' => false],
+            [
+                'ctid_trader_account_id' => 42111,
+                'trader_login' => '1234567',
+                'is_live' => true,
+                'broker_name' => null,
+                'balance' => null,
+                'currency' => null,
+                'is_disabled' => false,
+                'disabled_reason' => null,
+                'details' => ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true],
+            ],
+            [
+                'ctid_trader_account_id' => 42112,
+                'trader_login' => '7654321',
+                'is_live' => false,
+                'broker_name' => null,
+                'balance' => null,
+                'currency' => null,
+                'is_disabled' => false,
+                'disabled_reason' => null,
+                'details' => ['ctidTraderAccountId' => 42112, 'traderLogin' => 7654321, 'isLive' => false],
+            ],
         ], $accounts);
 
         // Request carries the access token under the right payload type.
         $sent = json_decode($ws->sentMessages[1], true);
         $this->assertSame(2149, $sent['payloadType']);
         $this->assertSame('tok', $sent['payload']['accessToken']);
+    }
+
+    public function testFetchAccountsPassesThroughEveryFieldTheApiReturns(): void
+    {
+        // A real user got a long list of accounts and could not find the ones
+        // FTMO shows them; picking one returned RET_ACCOUNT_DISABLED, i.e. the
+        // list includes archived accounts. Mapping only three fields threw away
+        // whatever distinguishes them, so keep everything and let the UI decide.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [[
+                    'ctidTraderAccountId' => 42111,
+                    'traderLogin' => 1234567,
+                    'isLive' => true,
+                    'brokerTitleShort' => 'FTMO',
+                    'lastClosingDealTimestamp' => 1750000000000,
+                    'someFutureField' => 'kept anyway',
+                ]],
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $account = $connector->fetchAccounts(['access_token' => 'tok'])[0];
+
+        // Mapped fields stay stable for the callers that rely on them.
+        $this->assertSame(42111, $account['ctid_trader_account_id']);
+        $this->assertSame('1234567', $account['trader_login']);
+        $this->assertTrue($account['is_live']);
+        // Everything else survives verbatim, including fields we do not know about.
+        $this->assertSame('FTMO', $account['details']['brokerTitleShort']);
+        $this->assertSame('kept anyway', $account['details']['someFutureField']);
+        $this->assertSame(1750000000000, $account['details']['lastClosingDealTimestamp']);
+    }
+
+    public function testFetchAccountsEnrichesEachEntryWithItsBalanceAndCurrency(): void
+    {
+        // brokerTitleShort alone does not separate several accounts at the same
+        // prop firm — they all read "FTMO". What tells them apart is the size:
+        // "FTMO 80 000 € — 1234567". Balance and deposit currency live in
+        // ProtoOATrader, one account auth away, so fetch them per account.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true, 'brokerTitleShort' => 'FTMO'],
+                ],
+            ]),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            // Money is an integer scaled by moneyDigits: 8000000 / 10^2 = 80000.
+            self::frame(self::TRADER_RES, ['trader' => [
+                'balance' => 8000000,
+                'moneyDigits' => 2,
+                'depositAssetId' => 3,
+                'leverageInCents' => 10000,
+            ]]),
+            self::frame(self::ASSET_LIST_RES, ['asset' => [
+                ['assetId' => 3, 'name' => 'EUR'],
+                ['assetId' => 4, 'name' => 'USD'],
+            ]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $account = $connector->fetchAccounts(['access_token' => 'tok'])[0];
+
+        $this->assertSame(80000.0, $account['balance']);
+        $this->assertSame('EUR', $account['currency']);
+        $this->assertSame('FTMO', $account['broker_name']);
+        $this->assertFalse($account['is_disabled']);
+        // Trader fields join the raw panel too, so an unknown one still shows.
+        $this->assertSame(10000, $account['details']['leverageInCents']);
+    }
+
+    public function testFetchAccountsFlagsAccountsTheBrokerRefusesToAuthenticate(): void
+    {
+        // This is the real answer to "which ones are archived": nothing in
+        // ProtoOACtidTraderAccount marks them, but account auth rejects them
+        // with RET_ACCOUNT_DISABLED. One refusal must not abort the others.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true, 'brokerTitleShort' => 'FTMO'],
+                    ['ctidTraderAccountId' => 42112, 'traderLogin' => 7654321, 'isLive' => true, 'brokerTitleShort' => 'FTMO'],
+                ],
+            ]),
+            self::frame(self::ERROR_RES, ['errorCode' => 'RET_ACCOUNT_DISABLED', 'description' => 'Account is disabled']),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::TRADER_RES, ['trader' => ['balance' => 2500000, 'moneyDigits' => 2, 'depositAssetId' => 4]]),
+            self::frame(self::ASSET_LIST_RES, ['asset' => [['assetId' => 4, 'name' => 'USD']]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts(['access_token' => 'tok']);
+
+        $this->assertTrue($accounts[0]['is_disabled']);
+        $this->assertStringContainsString('RET_ACCOUNT_DISABLED', $accounts[0]['disabled_reason']);
+        $this->assertNull($accounts[0]['balance']);
+        // The next account is still enriched — the loop carries on.
+        $this->assertFalse($accounts[1]['is_disabled']);
+        $this->assertSame(25000.0, $accounts[1]['balance']);
+        $this->assertSame('USD', $accounts[1]['currency']);
+    }
+
+    public function testFetchAccountsRequestsTheAssetListOncePerBroker(): void
+    {
+        // Asset ids are broker-scoped, so two accounts at the same broker share
+        // one list. Re-requesting it per account would triple the round trips
+        // on a long list for nothing.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true, 'brokerTitleShort' => 'FTMO'],
+                    ['ctidTraderAccountId' => 42112, 'traderLogin' => 7654321, 'isLive' => true, 'brokerTitleShort' => 'FTMO'],
+                ],
+            ]),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::TRADER_RES, ['trader' => ['balance' => 8000000, 'moneyDigits' => 2, 'depositAssetId' => 3]]),
+            self::frame(self::ASSET_LIST_RES, ['asset' => [['assetId' => 3, 'name' => 'EUR']]]),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::TRADER_RES, ['trader' => ['balance' => 1000000, 'moneyDigits' => 2, 'depositAssetId' => 3]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts(['access_token' => 'tok']);
+
+        $this->assertSame('EUR', $accounts[0]['currency']);
+        $this->assertSame('EUR', $accounts[1]['currency']);
+
+        $assetListRequests = array_filter(
+            $ws->sentMessages,
+            fn (string $m) => (json_decode($m, true)['payloadType'] ?? null) === 2112,
+        );
+        $this->assertCount(1, $assetListRequests);
+    }
+
+    public function testFetchAccountsKeepsTheEntryWhenEnrichmentBreaksDown(): void
+    {
+        // A transport failure is not a disabled account. Saying "archived"
+        // because the socket died would send the user chasing a phantom, so
+        // only a broker refusal sets the flag; anything else leaves it unknown.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true, 'brokerTitleShort' => 'FTMO'],
+                ],
+            ]),
+            // Nothing scripted for the account auth: the stub throws.
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts(['access_token' => 'tok']);
+
+        $this->assertCount(1, $accounts);
+        $this->assertSame('1234567', $accounts[0]['trader_login']);
+        $this->assertSame('FTMO', $accounts[0]['broker_name']);
+        $this->assertNull($accounts[0]['balance']);
+        $this->assertFalse($accounts[0]['is_disabled']);
     }
 
     public function testFetchAccountsToleratesAMissingIsLiveFlag(): void
