@@ -144,7 +144,7 @@ class BrokerConnectionService
      * comes back in `error` — redacted — alongside an empty list. Only a
      * caller mistake (missing credential, someone else's connection) throws.
      *
-     * @return array{accounts: list<array{ctid_trader_account_id: int, trader_login: string, is_live: bool}>, error: ?string}
+     * @return array{accounts: list<array{ctid_trader_account_id: int, trader_login: string, is_live: bool, broker_name: ?string, balance: ?float, currency: ?string, is_disabled: bool, disabled_reason: ?string, details: array<string, string|int|float|bool>}>, error: ?string}
      */
     public function discoverCtraderAccounts(int $userId, array $body): array
     {

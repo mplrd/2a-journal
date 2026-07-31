@@ -502,6 +502,14 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 **Repéré le** : 2026-07-24.
 **Priorité** : moyenne — masque de vraies erreurs (exit 1 permanent du run complet) et fait échouer toute CI stricte.
 
+**Mise à jour 2026-07-31** (relevé sur `fix/ctrader-account-picker-details`, fichiers en cause non touchés par la branche) — le diagnostic « pollution inter-suites » est **faux, ou au moins incomplet** :
+
+- Les 10 erreurs se reproduisent en lançant **`src/__tests__/account-view.spec.js` seul** (exit 255). Ce n'est donc pas seulement un effet de run complet : ce spec est cassé en isolation.
+- La pile pointe `src/stores/customFields.js:20` (le **store**, pas le service comme noté au 2026-07-24) : `fetchDefinitions()` → `await customFieldsService.list()` échoue, et le `catch` **relance** (`throw err`, l.25) sans que le `onMounted` de `CustomFieldsTab.vue:23` n'attrape quoi que ce soit → rejet non géré.
+- Volumétrie au 2026-07-31 : 52 fichiers, 466 tests passés, 10 erreurs, exit 1.
+
+→ Chercher le mock manquant dans `account-view.spec.js` en premier (piste la plus courte), avant de traquer une pollution croisée. Question de fond derrière : `fetchDefinitions` doit-il relancer alors qu'il stocke déjà `error.value` ? Un appelant `onMounted` non-`await`é ne peut pas l'attraper.
+
 ---
 
 ## cTrader — suites de la lecture live (branche `feat/ctrader-live-read`)
@@ -536,6 +544,42 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 - **Changement de provider sur un compte existant.** Hors périmètre volontairement : la reconfiguration ne touche pas au provider. Basculer un compte de cTrader vers BingX impose toujours supprimer/recréer, car les données importées sont préfixées par provider (`ctrader_`, `bingx_`…) et le curseur n'a plus de sens. À traiter si le besoin se présente.
 
 **Repéré le** : 2026-07-29. **Priorité** : basse pour les trois.
+
+---
+
+## Admin — 6 `message_key` sans traduction
+
+**Contexte** : relevé par `/check-i18n` en livrant la suite de `docs/86-ctrader-account-discovery.md` (2026-07-31). Hors périmètre de la branche cTrader, pas corrigé pour ne pas mélanger deux sujets dans un même diff.
+
+Six clés sont levées par le back mais absentes de `fr.json` **et** de `en.json` — l'admin voit donc la clé brute (`admin.error.user_not_found`) au lieu d'un message :
+
+| Clé | Levée dans |
+|---|---|
+| `admin.error.user_not_found` | `AdminUserService.php:94,106` |
+| `admin.error.cannot_self_suspend` | `AdminUserService.php:102` |
+| `admin.error.cannot_self_delete` | `AdminUserService.php:142` |
+| `admin.settings.error.unknown_key` | `PlatformSettingsService.php:203` |
+| `admin.settings.error.invalid_type` | `PlatformSettingsService.php:227,235` |
+| `admin.settings.error.value_required` | `AdminSettingsController.php:25` |
+
+Correction : ajouter les 6 clés dans les deux locales. Aucun changement de code.
+
+**Repéré le** : 2026-07-31. **Priorité** : basse (chemins d'erreur admin uniquement), mais le correctif est trivial.
+
+---
+
+## Dépendances — 2 alertes ouvertes, non exploitables en l'état
+
+Relevé par `/audit-security` le 2026-07-31. **Aucune n'est exploitable dans ce codebase** — noté ici pour éviter d'avoir à refaire l'analyse à chaque audit :
+
+- **`phpoffice/phpspreadsheet`** — CVE-2026-40296 et CVE-2026-35453 (medium), XSS via le **writer HTML**. On n'instancie que `Writer\Xlsx` et `Writer\Ods` (`ImportController.php:146` et `:150`) ; le writer HTML n'est utilisé nulle part. Vecteur absent.
+- **`vite`** — 4 advisories high (path traversal, lecture de fichier arbitraire, bypass `server.fs.deny`). C'est une **devDependency** : les failles visent le serveur de dev, alors que la prod sert le build statique de `dist/`. Non exposé.
+
+À faire quand même à l'occasion : `npm audit fix` et bump de PhpSpreadsheet, pour ne pas garder un audit rouge en permanence (ça finit par masquer une vraie alerte).
+
+**Repéré le** : 2026-07-31. **Priorité** : basse.
+
+*Note* : le reste de l'audit est vert — `fr.json` et `en.json` ont exactement les mêmes 1181 clés. Les deux « clés manquantes » côté Vue (`robot.events.status_`, `webhook.tradingview.reject_reason.`) sont des **faux positifs** : ce sont des préfixes de concaténation (`t('robot.events.status_' + data.status.toLowerCase())`, `RobotsView.vue:488` et `:493`), pas des clés littérales.
 
 ---
 
