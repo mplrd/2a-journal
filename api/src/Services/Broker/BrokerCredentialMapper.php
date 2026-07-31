@@ -33,6 +33,11 @@ class BrokerCredentialMapper
             'client_id'          => ['key' => 'client_id', 'secret' => false, 'required' => true],
             'client_secret'      => ['key' => 'client_secret', 'secret' => true, 'required' => true],
             'access_token'       => ['key' => 'access_token', 'secret' => true, 'required' => true],
+            // Optional, but the only thing that lets a connection outlive its
+            // access token: CtraderConnector::refreshCredentials() returns
+            // early without it, so a connection created without one simply
+            // stops working at expiry instead of renewing itself.
+            'refresh_token'      => ['key' => 'refresh_token', 'secret' => true, 'required' => false],
             'account_id_ctrader' => ['key' => 'ctid_trader_account_id', 'secret' => false, 'required' => true, 'cast' => 'int'],
             'environment'        => ['key' => 'environment', 'secret' => false, 'required' => false, 'enum' => CtraderEnvironment::class, 'default' => CtraderEnvironment::LIVE->value],
         ],

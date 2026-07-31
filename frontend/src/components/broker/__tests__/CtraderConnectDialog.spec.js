@@ -160,6 +160,17 @@ describe('CtraderConnectDialog', () => {
       await field(wrapper, 'ctrader-access-token').setValue('tok')
     }
 
+    it('puts the manual id above the lookup box, not buried inside it', async () => {
+      // The box is for looking accounts up. The hand-typed fallback is a
+      // credential like the others and sits with them.
+      const wrapper = createWrapper()
+
+      expect(field(wrapper, 'ctrader-account-id').exists()).toBe(true)
+      const box = wrapper.find('[data-testid="ctrader-account-box"]')
+      expect(box.exists()).toBe(true)
+      expect(box.find('[data-name="ctrader-account-id"]').exists()).toBe(false)
+    })
+
     it('cannot load accounts before the app credentials are filled', () => {
       const wrapper = createWrapper()
 
@@ -233,40 +244,106 @@ describe('CtraderConnectDialog', () => {
       expect(label).not.toContain('null')
     })
 
-    it('marks accounts the broker refused and stops them being picked', async () => {
-      // The list includes archived accounts; picking one used to fail only
-      // after saving, with RET_ACCOUNT_DISABLED. Account auth already told us
-      // during discovery, so say it here instead.
-      const withArchived = [
-        { ...accounts[0], is_disabled: true, disabled_reason: 'RET_ACCOUNT_DISABLED' },
-        accounts[1],
-      ]
+    const withArchived = () => [
+      { ...accounts[0], is_disabled: true, disabled_reason: 'RET_ACCOUNT_DISABLED' },
+      accounts[1],
+    ]
+
+    it('leaves refused accounts out of the list entirely', async () => {
+      // An option that cannot be chosen is noise: the user asked not to see
+      // them at all rather than see them greyed out.
       brokerSyncService.fetchCtraderAccounts.mockResolvedValue({
-        data: { accounts: withArchived, error: null },
+        data: { accounts: withArchived(), error: null },
       })
       const wrapper = createWrapper()
       await fillAppCredentials(wrapper)
       await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
       await flushPromises()
 
-      const archived = wrapper.find('[data-name="ctrader-account-picker"] [data-value="42111"]')
-      expect(archived.text()).toContain('RET_ACCOUNT_DISABLED')
-      expect(archived.attributes('disabled')).toBeDefined()
+      expect(wrapper.find('[data-name="ctrader-account-picker"] [data-value="42111"]').exists()).toBe(false)
+      expect(wrapper.find('[data-name="ctrader-account-picker"] [data-value="42112"]').exists()).toBe(true)
     })
 
-    it('shows every field the API returned for the selected account', async () => {
+    it('accounts for the hidden ones so the list is not silently short', async () => {
+      // Without this, someone who knows they have four accounts sees three and
+      // wonders what broke — worse, hiding all of them would show an empty
+      // picker with no explanation at all.
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({
+        data: { accounts: withArchived(), error: null },
+      })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      const hidden = wrapper.find('[data-testid="ctrader-account-hidden"]')
+      expect(hidden.exists()).toBe(true)
+      expect(hidden.text()).toContain('1')
+    })
+
+    it('hides the id and server inputs once an account is picked', async () => {
+      // Picking fills both, so the inputs are redundant — and the id is a
+      // number the platform never shows, so offering it for editing invites
+      // exactly the mistake the picker exists to remove.
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      expect(field(wrapper, 'ctrader-account-id').exists()).toBe(true)
+      expect(wrapper.find('[data-name="ctrader-environment"]').exists()).toBe(true)
+
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-name="ctrader-account-picker"] [data-value="42112"]').trigger('click')
+
+      expect(field(wrapper, 'ctrader-account-id').exists()).toBe(false)
+      expect(wrapper.find('[data-name="ctrader-environment"]').exists()).toBe(false)
+    })
+
+    it('keeps the id and server inputs usable when discovery finds nothing', async () => {
+      // Discovery can fail or come back empty; the connection must still be
+      // creatable by hand, and then the server has to be asked for.
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({
+        data: { accounts: [], error: 'cTrader API error: CH_CLIENT_AUTH_FAILURE' },
+      })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+
+      await field(wrapper, 'ctrader-account-id').setValue('99999')
+
+      expect(wrapper.find('[data-name="ctrader-environment"]').exists()).toBe(true)
+      expect(submit(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('keeps the raw cTrader fields behind an (i) instead of on the form', async () => {
+      // Fifteen key/value pairs permanently open pushed the actual controls
+      // off screen. They stay one click away, not gone.
+      brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
+      const wrapper = createWrapper()
+      await fillAppCredentials(wrapper)
+      await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-name="ctrader-account-picker"] [data-value="42111"]').trigger('click')
+
+      expect(wrapper.find('[data-testid="ctrader-account-details"]').exists()).toBe(false)
+
+      await wrapper.find('[data-testid="ctrader-account-details-toggle"]').trigger('click')
+
+      const details = wrapper.find('[data-testid="ctrader-account-details"]')
+      expect(details.exists()).toBe(true)
+      expect(details.text()).toContain('brokerTitleShort')
+      expect(details.text()).toContain('FTMO')
+    })
+
+    it('offers no (i) until an account is selected', async () => {
       brokerSyncService.fetchCtraderAccounts.mockResolvedValue({ data: { accounts, error: null } })
       const wrapper = createWrapper()
       await fillAppCredentials(wrapper)
       await wrapper.find('[data-testid="ctrader-load-accounts"]').trigger('click')
       await flushPromises()
 
-      await wrapper.find('[data-name="ctrader-account-picker"] [data-value="42111"]').trigger('click')
-
-      const details = wrapper.find('[data-testid="ctrader-account-details"]')
-      expect(details.exists()).toBe(true)
-      expect(details.text()).toContain('brokerTitleShort')
-      expect(details.text()).toContain('FTMO')
+      expect(wrapper.find('[data-testid="ctrader-account-details-toggle"]').exists()).toBe(false)
     })
 
     it('reports how many accounts came back so a long list is not a surprise', async () => {
@@ -360,6 +437,36 @@ describe('CtraderConnectDialog', () => {
       expect(field(wrapper, 'ctrader-client-secret').attributes('placeholder')).toBe(
         fr.broker.credential_unchanged_placeholder,
       )
+    })
+
+    it('collects an optional refresh token and sends it on', async () => {
+      // Without one, refreshCredentials() returns early and the connection
+      // dies the day the access token expires.
+      const wrapper = createWrapper()
+      await field(wrapper, 'ctrader-client-id').setValue('30528')
+      await field(wrapper, 'ctrader-client-secret').setValue('sec')
+      await field(wrapper, 'ctrader-access-token').setValue('tok')
+      await field(wrapper, 'ctrader-refresh-token').setValue('refresh')
+      await field(wrapper, 'ctrader-account-id').setValue('42111')
+
+      await submit(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(brokerSyncService.createCtraderConnection).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ refresh_token: 'refresh' }),
+      )
+    })
+
+    it('still connects without a refresh token', async () => {
+      // Optional: it must not become a fourth mandatory field to paste.
+      const wrapper = createWrapper()
+      await field(wrapper, 'ctrader-client-id').setValue('30528')
+      await field(wrapper, 'ctrader-client-secret').setValue('sec')
+      await field(wrapper, 'ctrader-access-token').setValue('tok')
+      await field(wrapper, 'ctrader-account-id').setValue('42111')
+
+      expect(submit(wrapper).attributes('disabled')).toBeUndefined()
     })
 
     it('enables submit as soon as one field is edited', async () => {

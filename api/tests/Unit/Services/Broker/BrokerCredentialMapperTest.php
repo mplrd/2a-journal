@@ -43,6 +43,70 @@ class BrokerCredentialMapperTest extends TestCase
         $this->assertSame(12345678, $credentials['ctid_trader_account_id']);
     }
 
+    public function testBuildCtraderStoresAnOptionalRefreshToken(): void
+    {
+        // CtraderConnector::refreshCredentials() was fully implemented but
+        // could never fire: it returns early without a refresh_token, and the
+        // dialog never collected one. So an expired access token killed the
+        // connection for good, with the fix already written but unreachable.
+        $credentials = $this->mapper->build('CTRADER', [
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'refresh_token' => 'refresh',
+            'account_id_ctrader' => '12345678',
+        ]);
+
+        $this->assertSame('refresh', $credentials['refresh_token']);
+    }
+
+    public function testBuildCtraderWorksWithoutARefreshToken(): void
+    {
+        // Optional: connections created before this existed, and tokens minted
+        // without one, must keep working exactly as before.
+        $credentials = $this->mapper->build('CTRADER', [
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'account_id_ctrader' => '12345678',
+        ]);
+
+        $this->assertArrayNotHasKey('refresh_token', $credentials);
+    }
+
+    public function testMergeKeepsAStoredRefreshTokenWhenTheInputIsBlank(): void
+    {
+        // Same rule as the other secrets: never sent back to the client, so an
+        // untouched input arrives empty and must not wipe what is stored.
+        $credentials = $this->mapper->merge(
+            'CTRADER',
+            [
+                'client_id' => '30528',
+                'client_secret' => 'stored',
+                'access_token' => 'stored-tok',
+                'refresh_token' => 'stored-refresh',
+                'ctid_trader_account_id' => 12345678,
+            ],
+            ['refresh_token' => ''],
+        );
+
+        $this->assertSame('stored-refresh', $credentials['refresh_token']);
+    }
+
+    public function testPublicViewFlagsTheRefreshTokenWithoutRevealingIt(): void
+    {
+        $view = $this->mapper->publicView('CTRADER', [
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'refresh_token' => 'refresh',
+            'ctid_trader_account_id' => 12345678,
+        ]);
+
+        $this->assertTrue($view['credentials_set']['refresh_token']);
+        $this->assertArrayNotHasKey('refresh_token', $view['credentials_public']);
+    }
+
     public function testBuildCtraderDefaultsToLiveEnvironment(): void
     {
         $credentials = $this->mapper->build('CTRADER', [
@@ -245,8 +309,13 @@ class BrokerCredentialMapperTest extends TestCase
             'environment' => 'DEMO',
         ], $view['credentials_public']);
 
-        // Secrets are reported as set/unset only — never echoed.
-        $this->assertSame(['client_secret' => true, 'access_token' => true], $view['credentials_set']);
+        // Secrets are reported as set/unset only — never echoed. refresh_token
+        // is optional, so an older connection reports it as simply unset.
+        $this->assertSame([
+            'client_secret' => true,
+            'access_token' => true,
+            'refresh_token' => false,
+        ], $view['credentials_set']);
 
         $flat = json_encode($view);
         $this->assertStringNotContainsString('sEcReT', $flat);

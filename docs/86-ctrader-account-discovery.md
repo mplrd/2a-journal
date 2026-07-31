@@ -148,3 +148,58 @@ Le passe-plat `is_scalar()` laissera par ailleurs passer tout champ que cTrader 
 - **Le champ qui marque l'archivage n'est toujours pas identifié** — mais il n'est plus nécessaire : l'auth de compte tranche directement. Le panneau de détails reste le moyen de le découvrir s'il apparaît un jour.
 - **Non testé en réel.** Comme toute la feature broker, ça n'est pas vérifiable en local (flag + vrais identifiants). Le prochain test réel doit confirmer que `brokerTitleShort` et les soldes remontent bien, et que les comptes FTMO archivés sont effectivement refusés à l'auth.
 - Le rendu du libellé s'appuie sur `Intl.NumberFormat` : les stubs Vitest valident la présence du montant et de la devise, pas le rendu exact — à vérifier à l'œil dans le navigateur.
+
+---
+
+# Suite 2 — ergonomie du dialogue et survie de la connexion (2026-08-01)
+
+Le test réel de la passe précédente est **concluant** : les soldes remontent, et les comptes archivés sont bien refusés à l'auth de compte. L'hypothèse centrale est donc validée. Retour utilisateur dans la foulée, six points, tous d'ergonomie sauf un.
+
+## 1. Le refresh token n'était jamais collecté
+
+`CtraderConnector::refreshCredentials()` était **entièrement écrit** — appel `/apps/token` en `grant_type=refresh_token`, remplacement de l'access token, rotation du refresh token — et `BrokerSyncService:70-78` le rappelle à chaque sync en re-chiffrant le résultat s'il a changé. Toute la chaîne était en place sauf un maillon : `BrokerCredentialMapper::SPEC` ne déclarait pas de champ `refresh_token`, et le dialogue ne le demandait pas. La méthode sortait donc systématiquement sur son premier `if`.
+
+Effet concret : à l'expiration de l'access token, la connexion mourait définitivement, alors que le code pour l'éviter existait depuis le début.
+
+- `BrokerCredentialMapper` : `refresh_token` ajouté à la spec cTrader, `secret => true, required => false`.
+- `useBrokerCredentialForm` : nouveau paramètre `optionalFields`. **Le secret et l'obligation sont deux propriétés indépendantes** — un refresh token est secret mais facultatif — exactement la distinction que le mapper backend faisait déjà avec ses drapeaux `secret`/`required`. Le composable ne connaissait que « tous les champs sont requis ».
+- Champ facultatif dans le dialogue, avec l'aide qui dit **pourquoi** le remplir.
+
+## 2. Fuite de credentials dans les erreurs remontées
+
+Trouvée en auditant le point précédent : activer le refresh rendait ce chemin atteignable.
+
+`sanitizeTestError()` expurge les paramètres porteurs de secret d'un message d'erreur brut avant de le renvoyer au client. Son motif s'appuyait sur `\bsecret\b` et `\btoken\b` — qui **ne matchent ni dans `client_secret` ni dans `refresh_token`** : l'underscore est un caractère de mot, il n'y a donc pas de frontière devant. Et ces deux valeurs ne sont pas de l'hexadécimal long, donc la règle de repli ne les rattrapait pas non plus.
+
+Or le refresh cTrader est un **GET qui porte `client_secret` et `refresh_token` en query string** : une erreur de transport Guzzle embarque l'URI complète. Le test ajouté le montre — avant correction, *rien* n'était expurgé de ce message.
+
+Correction : le motif tolère désormais jusqu'à trois segments de préfixe (`client_`, `refresh_`, …) devant le mot-clé. `client_id` reste lisible, le code HTTP et l'endpoint aussi — seule la valeur sensible devient `[redacted]`.
+
+C'est la même classe de fuite que celle notée dans `evolutions.md` pour BingX ; le sanitizer lui-même est maintenant correct, il reste à l'appliquer à `sync_logs.error_message`.
+
+## 3. Ce que le dialogue montre, et quand
+
+| Avant | Maintenant |
+|---|---|
+| Comptes archivés listés, grisés | **Retirés de la liste** — une option non sélectionnable est du bruit. Leur nombre est annoncé, pour qu'une liste courte ne passe pas pour un bug (et qu'une liste vide s'explique). |
+| Champs « Account ID » et « Live/Démo » toujours visibles, en bas du bloc de recherche | **Masqués** dès qu'un compte est choisi : la dropdown alimente les deux. Ils réapparaissent si la découverte n'a rien donné — c'est le seul cas où il faut les saisir. |
+| Panneau des champs bruts cTrader déplié en permanence | **Derrière un (i)**, replié par défaut. Quinze paires clé/valeur ouvertes poussaient les contrôles hors écran. Volontairement laissé ouvert d'un compte à l'autre, pour comparer champ à champ. |
+| Placeholder « Inchangé — laisser vide pour conserver » | **`*******`** — l'affordance d'un champ masqué se lit d'un coup d'œil. Clé partagée : les 4 dialogues broker en bénéficient. |
+
+Le champ ID manuel remonte **au-dessus** du bloc de recherche : ce bloc sert à *chercher* un compte, l'ID est un identifiant comme les autres.
+
+## Tests
+
+| Fichier | Portée |
+|---|---|
+| `BrokerCredentialMapperTest.php` | +4 : refresh token stocké, absence tolérée, valeur conservée quand l'input est vide, exposé en drapeau sans jamais être renvoyé. |
+| `BrokerConnectionServiceTest.php` | +1 : `client_secret` et `refresh_token` expurgés d'une URI de refresh en erreur, code HTTP préservé. |
+| `CtraderConnectDialog.spec.js` | +7 : refresh token collecté et transmis, connexion possible sans lui, comptes refusés absents de la liste, comptage des masqués, ID + serveur masqués après sélection et utilisables sinon, détails repliés derrière l'(i), ID manuel hors du bloc de recherche. |
+
+1578 tests backend et 475 frontend verts, build front OK.
+
+## Notes
+
+- **Aucune migration.** Le `refresh_token` rejoint le blob de credentials déjà chiffré ; les connexions existantes le rapportent simplement comme non renseigné.
+- `optionalFields` est ajouté au composable partagé mais n'est utilisé que par cTrader : les 3 autres dialogues gardent leur comportement à l'identique.
+- Un compte choisi dans la liste ne peut plus être corrigé à la main sans relancer la découverte. Assumé : pour changer de compte on rechoisit dans la liste, et la saisie manuelle existe pour le cas où la découverte échoue, pas pour amender son résultat.
