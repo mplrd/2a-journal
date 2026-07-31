@@ -26,7 +26,10 @@ const emit = defineEmits(['update:visible', 'connected'])
 const { values, isEditing, canSubmit, changed, full, reset } = useBrokerCredentialForm({
   connection: toRef(props, 'connection'),
   publicFields: ['client_id', 'account_id_ctrader', 'environment'],
-  secretFields: ['client_secret', 'access_token'],
+  secretFields: ['client_secret', 'access_token', 'refresh_token'],
+  // Secret, but not required: a connection without one simply stops working at
+  // token expiry instead of renewing itself.
+  optionalFields: ['refresh_token'],
   defaults: { environment: CtraderEnvironment.LIVE },
 })
 
@@ -83,32 +86,60 @@ function formatBalance(account) {
   }
 }
 
+/**
+ * Only the accounts that can actually be connected. The broker refused the
+ * others during discovery (archived accounts fail account auth with
+ * RET_ACCOUNT_DISABLED), and an option that cannot be chosen is just noise.
+ */
+const selectableAccounts = computed(() => discoveredAccounts.value.filter((a) => !a.is_disabled))
+
 const accountOptions = computed(() =>
-  discoveredAccounts.value.map((a) => ({
+  selectableAccounts.value.map((a) => ({
     label: [
       a.broker_name,
       formatBalance(a),
       a.trader_login || a.ctid_trader_account_id,
       a.is_live ? t('broker.ctrader_env_live') : t('broker.ctrader_env_demo'),
-      // Say it in the list rather than letting the user find out after saving.
-      a.is_disabled ? t('broker.ctrader_account_archived', { reason: a.disabled_reason }) : null,
     ]
       .filter(Boolean)
       .join(' — '),
     value: String(a.ctid_trader_account_id),
-    // The broker already refused this one during discovery: picking it could
-    // only produce the same failure again, later and with less context.
-    disabled: Boolean(a.is_disabled),
   })),
 )
 
-/** Everything the API returned for the picked account, for identification. */
-const selectedAccountDetails = computed(() => {
-  const picked = discoveredAccounts.value.find(
+/**
+ * Hidden accounts are counted out loud. Someone who knows they have four
+ * accounts and sees three would otherwise assume the lookup is broken — and if
+ * every account is archived, an unexplained empty picker is the worst outcome
+ * of all.
+ */
+const hiddenAccountCount = computed(
+  () => discoveredAccounts.value.length - selectableAccounts.value.length,
+)
+
+/** The picked account, when it came from discovery rather than being typed. */
+const selectedAccount = computed(() =>
+  selectableAccounts.value.find(
     (a) => String(a.ctid_trader_account_id) === String(values.value.account_id_ctrader),
-  )
-  return Object.entries(picked?.details || {})
-})
+  ),
+)
+
+/**
+ * Picking from the list fills both the id and the server, so showing either
+ * input is redundant — the id in particular is a number the cTrader platform
+ * never displays, and offering it for editing invites the mistake this dialog
+ * was built to remove. They come back when discovery has not answered, which
+ * is the only case where they have to be typed.
+ */
+const accountFromDiscovery = computed(() => Boolean(selectedAccount.value))
+
+/** Everything the API returned for the picked account, for identification. */
+const selectedAccountDetails = computed(() => Object.entries(selectedAccount.value?.details || {}))
+
+// Folded away by default: fifteen key/value pairs permanently open pushed the
+// actual controls off screen. Kept open across selections on purpose, so two
+// accounts can be compared field by field.
+const showAccountDetails = ref(false)
 
 async function loadAccounts() {
   if (!canDiscover.value) return
@@ -240,15 +271,67 @@ async function submit() {
         />
       </div>
 
-      <!-- Account selection. The user must never have to know their
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {{ t('broker.ctrader_refresh_token') }}
+          <FieldHelpIcon :text="t('broker.ctrader_refresh_token_help')" testid="ctrader-refresh-token-help" />
+        </label>
+        <InputText
+          v-model="values.refresh_token"
+          class="w-full"
+          type="password"
+          :placeholder="secretPlaceholder('broker.ctrader_refresh_token_placeholder')"
+          autocomplete="new-password"
+          name="ctrader-refresh-token"
+          spellcheck="false"
+        />
+      </div>
+
+      <!-- Manual fallback, shown only while discovery has not answered. Both
+           values come from the picked account otherwise. -->
+      <template v-if="!accountFromDiscovery">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_account_id') }}
+            <FieldHelpIcon :text="t('broker.ctrader_account_id_help')" testid="ctrader-account-id-help" />
+          </label>
+          <InputText
+            v-model="values.account_id_ctrader"
+            class="w-full"
+            :placeholder="t('broker.ctrader_account_id_placeholder')"
+            autocomplete="off"
+            name="ctrader-account-id"
+            spellcheck="false"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_environment') }}
+            <FieldHelpIcon :text="t('broker.ctrader_environment_help')" testid="ctrader-environment-help" />
+          </label>
+          <SelectButton
+            v-model="values.environment"
+            :options="environmentOptions"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            name="ctrader-environment"
+          />
+        </div>
+      </template>
+
+      <!-- Account lookup. The user must never have to know their
            ctidTraderAccountId: the cTrader platform never displays it (it shows
            traderLogin instead), so we look it up from the access token and let
            them pick by the login they recognise. -->
-      <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+      <div
+        class="rounded-md border border-gray-200 dark:border-gray-700 p-3 space-y-3"
+        data-testid="ctrader-account-box"
+      >
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
             {{ t('broker.ctrader_account') }}
-            <FieldHelpIcon :text="t('broker.ctrader_account_id_help')" testid="ctrader-account-id-help" />
           </label>
           <Button
             :label="t('broker.ctrader_load_accounts')"
@@ -269,28 +352,38 @@ async function submit() {
           :options="accountOptions"
           option-label="label"
           option-value="value"
-          option-disabled="disabled"
           class="w-full"
           filter
           name="ctrader-account-picker"
           :placeholder="t('broker.ctrader_account_pick')"
         />
 
-        <p
-          v-if="accountOptions.length"
-          class="text-xs text-gray-500 dark:text-gray-400"
-          data-testid="ctrader-account-count"
-        >
-          {{ t('broker.ctrader_account_count', { count: accountOptions.length }) }}
-        </p>
+        <div v-if="accountOptions.length" class="flex items-start justify-between gap-2">
+          <div class="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+            <p data-testid="ctrader-account-count">
+              {{ t('broker.ctrader_account_count', { count: accountOptions.length }) }}
+            </p>
+            <p v-if="hiddenAccountCount" data-testid="ctrader-account-hidden">
+              {{ t('broker.ctrader_account_hidden', { count: hiddenAccountCount }) }}
+            </p>
+          </div>
 
-        <!-- Everything cTrader returned for this account. A user with a long
-             list could not tell which entries were their live accounts — the
-             list also contains archived ones, which fail account auth with
-             RET_ACCOUNT_DISABLED. Showing the raw metadata lets them identify
-             the right one instead of guessing. -->
+          <!-- Everything cTrader returned for the picked account, one click
+               away. It is what lets a user tell two same-sized accounts apart,
+               and the only place an undocumented field would ever show up. -->
+          <button
+            v-if="selectedAccountDetails.length"
+            type="button"
+            class="pi pi-info-circle text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs shrink-0"
+            data-testid="ctrader-account-details-toggle"
+            :aria-label="t('broker.ctrader_account_details')"
+            :aria-expanded="showAccountDetails"
+            @click="showAccountDetails = !showAccountDetails"
+          />
+        </div>
+
         <div
-          v-if="selectedAccountDetails.length"
+          v-if="showAccountDetails && selectedAccountDetails.length"
           class="rounded bg-gray-50 dark:bg-gray-800/50 p-2"
           data-testid="ctrader-account-details"
         >
@@ -308,35 +401,6 @@ async function submit() {
         <Message v-if="discoveryError" severity="warn" :closable="false" class="text-sm">
           {{ discoveryError }}
         </Message>
-
-        <!-- Manual fallback: the value can still be typed if discovery is
-             unavailable. -->
-        <div>
-          <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">{{ t('broker.ctrader_account_id') }}</label>
-          <InputText
-            v-model="values.account_id_ctrader"
-            class="w-full"
-            :placeholder="t('broker.ctrader_account_id_placeholder')"
-            autocomplete="off"
-            name="ctrader-account-id"
-            spellcheck="false"
-          />
-        </div>
-
-        <div>
-          <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-            {{ t('broker.ctrader_environment') }}
-            <FieldHelpIcon :text="t('broker.ctrader_environment_help')" testid="ctrader-environment-help" />
-          </label>
-          <SelectButton
-            v-model="values.environment"
-            :options="environmentOptions"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-            name="ctrader-environment"
-          />
-        </div>
       </div>
 
       <Message v-if="error" severity="error" :closable="false">{{ t(error) }}</Message>

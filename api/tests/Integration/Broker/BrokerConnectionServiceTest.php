@@ -221,6 +221,36 @@ class BrokerConnectionServiceTest extends TestCase
         $this->assertStringContainsString('401', $error);
     }
 
+    public function testUpdateRedactsUnderscoredCredentialParameters(): void
+    {
+        // cTrader refreshes its access token with a GET whose query string
+        // carries client_secret and refresh_token, so a transport error hands
+        // both to the client verbatim. \bsecret\b and \btoken\b do not match
+        // inside "client_secret"/"refresh_token" — the underscore is a word
+        // character, so there is no boundary there — and neither value is long
+        // hex, so the fallback rule misses them too.
+        $leaky = new FakeConnector(
+            false,
+            'cTrader HTTP error: GET https://openapi.ctrader.com/apps/token'
+                . '?grant_type=refresh_token&refresh_token=rt-SHOULD-NOT-LEAK'
+                . '&client_id=30528&client_secret=cs-SHOULD-NOT-LEAK resulted in a 400 response',
+        );
+        $service = new BrokerConnectionService(
+            $this->repo,
+            $this->crypto,
+            new BrokerCredentialMapper(),
+            new ConnectorRegistry($leaky, $leaky, $leaky, $leaky),
+        );
+        $id = $this->seedConnection('CTRADER', $this->ctraderCredentials());
+
+        $error = $service->updateCredentials($id, $this->userId, ['client_secret' => 'x'])['connection_test']['error'];
+
+        $this->assertStringNotContainsString('rt-SHOULD-NOT-LEAK', $error);
+        $this->assertStringNotContainsString('cs-SHOULD-NOT-LEAK', $error);
+        // Still useful: the status code and the endpoint that failed remain.
+        $this->assertStringContainsString('400', $error);
+    }
+
     public function testUpdateKeepsAShortBrokerMessageIntact(): void
     {
         $failing = new FakeConnector(false, 'cTrader API error: CH_CLIENT_AUTH_FAILURE - wrong clientSecret');
@@ -418,7 +448,11 @@ class BrokerConnectionServiceTest extends TestCase
         $this->assertSame([], $view['credentials_public']);
         // Every secret reads as unset, which is exactly what the dialog needs
         // to know: nothing can be prefilled, retype everything.
-        $this->assertSame(['client_secret' => false, 'access_token' => false], $view['credentials_set']);
+        $this->assertSame([
+            'client_secret' => false,
+            'access_token' => false,
+            'refresh_token' => false,
+        ], $view['credentials_set']);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────

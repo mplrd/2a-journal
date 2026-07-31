@@ -227,10 +227,11 @@ class BrokerConnectionService
      *
      * The broker's own wording is the whole point ("wrong clientSecret" names
      * the field to fix), but the raw message is not always just that: BingX
-     * signs in the query string, and a Guzzle transport error embeds the full
-     * request URI — so the message can carry an HMAC signature and the internal
-     * endpoint. Redact the credential-bearing parameters and any long hex run,
-     * then cap the length. A short broker message passes through untouched.
+     * signs in the query string, and cTrader refreshes its access token with a
+     * GET carrying client_secret and refresh_token. A Guzzle transport error
+     * embeds the full request URI, so the message can hand a client every
+     * credential in it. Redact the credential-bearing parameters and any long
+     * hex run, then cap the length. A short broker message passes untouched.
      */
     private function sanitizeTestError(?string $message): ?string
     {
@@ -239,8 +240,17 @@ class BrokerConnectionService
         }
 
         // Query/JSON parameters that carry a credential or a signature.
+        //
+        // The leading `(?:[a-z0-9]+[_-]){0,3}` is what makes this work on real
+        // parameter names: `\bsecret\b` never matched inside `client_secret`,
+        // because the underscore is a word character and so there is no
+        // boundary in front of it. Same for `token` in `refresh_token`. Both
+        // values are opaque strings rather than long hex, so the fallback rule
+        // below did not catch them either — they went out verbatim.
         $message = preg_replace(
-            '/\b(signature|api[_-]?key|apikey|secret|access[_-]?token|token|password)\b(\s*[=:]\s*"?)[^\s&"\',]+/i',
+            '/(?<![a-z0-9_-])((?:[a-z0-9]+[_-]){0,3}'
+                . '(?:signature|api[_-]?key|apikey|secret|access[_-]?token|refresh[_-]?token|token|password))'
+                . '(\s*[=:]\s*"?)[^\s&"\',]+/i',
             '$1$2[redacted]',
             $message,
         );
