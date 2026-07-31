@@ -80,6 +80,24 @@ Côté réception, `sendAndReceive()` : ignore les heartbeats (`payloadType 51`)
 
 Les `symbolId` numériques sont résolus en noms via `ProtoOASymbolByIdReq`. Les normalizers (`normalizeCtraderOpenPosition` / `OpenOrder` / `ClosedOrder`) préservent l'invariant `external_id` = `ctrader_<positionId>` / `ctrader_order_<orderId>`, indispensable aux transitions OPEN→CLOSED et au diff d'ordres. La tolérance enum (nom `'BUY'` **ou** code `1`) couvre l'incertitude sur la sérialisation JSON des enums, à figer au premier run live.
 
+**Piège des champs répétés : `array_values()` est obligatoire.** Corrigé le 2026-08-01, au premier vrai run de synchro cTrader. `fetchDeals` dédoublonnait les identifiants de symbole avec `array_unique(array_column($deals, 'symbolId'))` — or `array_unique()` **conserve les clés d'origine**. Dès que deux deals partagent un symbole, les clés deviennent trouées (`0, 2, 4`), et `json_encode()` sérialise alors un tableau troué en **objet** :
+
+```json
+"symbolId": {"0":1,"2":22,"4":41}     // ← ce qu'on envoyait
+"symbolId": [1,22,41]                 // ← ce que ProtoOASymbolByIdReq attend
+```
+
+cTrader lit `symbolId` comme un `repeated int64` et rejette la requête entière :
+
+```
+cTrader API error: INVALID_REQUEST - Unexpected IOException
+(of type …JsonFormat$ParseException): 1:44: Couldn't parse integer: For input string: "{"
+```
+
+La colonne 44 désigne exactement l'accolade ouvrante de `symbolId` pour un `ctidTraderAccountId` à 8 chiffres. Le bug ne se déclenche **que** s'il y a un doublon de symbole — donc jamais en test unitaire sur un jeu de symboles distincts, et systématiquement en réel.
+
+Règle générale : **tout tableau destiné à un champ répété doit passer par `array_values()`**. Les autres occurrences du connecteur (`fetchOpenOrders:184`, `:250`) l'appliquaient déjà ; c'était la seule oubliée. Audit fait sur `api/src/` — aucune autre instance n'atteint un format de fil (`ImportService:97` est réindexé par le `sort()` qui suit, les `account_ids` partent en SQL).
+
 ### Chiffrement des credentials
 
 AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'environnement `BROKER_ENCRYPTION_KEY`. Chaque connexion a son propre IV. Les credentials ne sont jamais exposés dans les réponses API.
