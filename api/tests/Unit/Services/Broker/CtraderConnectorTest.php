@@ -30,6 +30,7 @@ class CtraderConnectorTest extends TestCase
     private const SYMBOL_BY_ID_RES = 2117;
     private const ACCOUNT_LIST_RES = 2150;
     private const ASSET_LIST_RES   = 2113;
+    private const DEAL_LIST_RES    = 2134;
     private const EXECUTION_EVENT  = 2126;
 
     private array $config;
@@ -646,6 +647,37 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('USD', $accounts[1]['currency']);
     }
 
+    public function testFetchAccountsKeepsAnAccountWhoseAuthFailedForANonAccountReason(): void
+    {
+        // Not every broker error means "this account is unusable".
+        // INVALID_REQUEST means we sent something malformed — and since a
+        // disabled account is now hidden from the picker, treating it as a
+        // refusal makes perfectly good accounts vanish with no explanation.
+        // Fail safe: only account-scoped codes hide an account, anything else
+        // leaves it listed so the user can still try it.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_LIST_RES, [
+                'ctidTraderAccount' => [
+                    ['ctidTraderAccountId' => 42111, 'traderLogin' => 1234567, 'isLive' => true],
+                    ['ctidTraderAccountId' => 42112, 'traderLogin' => 7654321, 'isLive' => true],
+                ],
+            ]),
+            self::frame(self::ERROR_RES, ['errorCode' => 'INVALID_REQUEST', 'description' => 'Unexpected IOException']),
+            self::frame(self::ERROR_RES, ['errorCode' => 'RET_ACCOUNT_DISABLED', 'description' => 'Account is disabled']),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $accounts = $connector->fetchAccounts(['access_token' => 'tok']);
+
+        // Malformed request: nothing learned about the account, keep it.
+        $this->assertFalse($accounts[0]['is_disabled']);
+        $this->assertNull($accounts[0]['disabled_reason']);
+        // Account-scoped refusal: that one really is unusable.
+        $this->assertTrue($accounts[1]['is_disabled']);
+        $this->assertSame('RET_ACCOUNT_DISABLED', $accounts[1]['disabled_reason']);
+    }
+
     public function testFetchAccountsRequestsTheAssetListOncePerBroker(): void
     {
         // Asset ids are broker-scoped, so two accounts at the same broker share
@@ -702,6 +734,59 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('FTMO', $accounts[0]['broker_name']);
         $this->assertNull($accounts[0]['balance']);
         $this->assertFalse($accounts[0]['is_disabled']);
+    }
+
+    // ── fetchDeals ──────────────────────────────────────────────────
+
+    public function testFetchDealsSendsSymbolIdsAsAJsonArrayNotAnObject(): void
+    {
+        // array_unique() preserves keys, so deduplicating symbol ids from deals
+        // that repeat a symbol leaves gaps (0, 2, 4). json_encode turns a
+        // gapped array into an OBJECT, and cTrader's repeated int64 field then
+        // fails with "Couldn't parse integer: For input string: {". It only
+        // bites once two deals share a symbol, which is the normal case — hence
+        // a first real sync blowing up on code that looked fine.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    ['dealId' => 1, 'symbolId' => 1, 'executionTimestamp' => 1750000000000],
+                    ['dealId' => 2, 'symbolId' => 1, 'executionTimestamp' => 1750000001000],
+                    ['dealId' => 3, 'symbolId' => 22, 'executionTimestamp' => 1750000002000],
+                    ['dealId' => 4, 'symbolId' => 1, 'executionTimestamp' => 1750000003000],
+                    ['dealId' => 5, 'symbolId' => 41, 'executionTimestamp' => 1750000004000],
+                ],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+                ['symbolId' => 1, 'symbolName' => 'EURUSD'],
+                ['symbolId' => 22, 'symbolName' => 'GBPUSD'],
+                ['symbolId' => 41, 'symbolName' => 'XAUUSD'],
+            ]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchDeals([
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 'tok',
+            'ctid_trader_account_id' => 43210987,
+        ]);
+
+        $symbolRequest = null;
+        foreach ($ws->sentMessages as $message) {
+            // Decoded as objects, so a JSON array stays a PHP array and a JSON
+            // object becomes stdClass — the whole point of this assertion.
+            $decoded = json_decode($message);
+            if (($decoded->payloadType ?? null) === 2116) {
+                $symbolRequest = $decoded;
+            }
+        }
+
+        $this->assertNotNull($symbolRequest, 'no ProtoOASymbolByIdReq was sent');
+        $this->assertIsArray($symbolRequest->payload->symbolId);
+        $this->assertSame([1, 22, 41], $symbolRequest->payload->symbolId);
     }
 
     public function testFetchAccountsToleratesAMissingIsLiveFlag(): void

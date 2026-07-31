@@ -203,3 +203,17 @@ Le champ ID manuel remonte **au-dessus** du bloc de recherche : ce bloc sert à 
 - **Aucune migration.** Le `refresh_token` rejoint le blob de credentials déjà chiffré ; les connexions existantes le rapportent simplement comme non renseigné.
 - `optionalFields` est ajouté au composable partagé mais n'est utilisé que par cTrader : les 3 autres dialogues gardent leur comportement à l'identique.
 - Un compte choisi dans la liste ne peut plus être corrigé à la main sans relancer la découverte. Assumé : pour changer de compte on rechoisit dans la liste, et la saisie manuelle existe pour le cas où la découverte échoue, pas pour amender son résultat.
+
+---
+
+# Correctif — tout code d'erreur n'est pas un compte désactivé (2026-08-01)
+
+Défaut introduit par la passe 1, révélé en cherchant l'origine d'un `INVALID_REQUEST` en synchro (le vrai coupable était ailleurs, cf. doc 22).
+
+`enrichAccounts()` marquait `is_disabled` dès que l'auth de compte renvoyait **n'importe quel** code d'erreur cTrader. Or seuls certains codes parlent du compte. `INVALID_REQUEST` signifie « requête malformée », `CH_CLIENT_AUTH_FAILURE` « problème applicatif » — aucun ne dit quoi que ce soit du compte, mais tous deux arrivent **une fois par compte** dans la boucle et les auraient donc tous marqués.
+
+Combiné à la passe 2, où un compte désactivé est **retiré de la liste**, ça transforme un bug de requête en « tous mes comptes ont disparu », sans le moindre message.
+
+Le filtre exige maintenant que le code soit **relatif au compte** (`ACCOUNT` dans le code : `RET_ACCOUNT_DISABLED`, `CH_CTID_TRADER_ACCOUNT_NOT_FOUND`, …). C'est une heuristique, volontairement biaisée : un code non reconnu **laisse le compte affiché**. Le pire cas devient donc « l'utilisateur choisit un compte mort et l'apprend à l'enregistrement » — l'ancien comportement, agaçant mais récupérable — plutôt que la perte silencieuse d'un compte valide.
+
+Test : deux comptes, l'un refusé en `INVALID_REQUEST` (reste listé), l'autre en `RET_ACCOUNT_DISABLED` (marqué).

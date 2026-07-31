@@ -98,7 +98,12 @@ class CtraderConnector implements ConnectorInterface
             } while ($hasMore);
 
             // 4. Resolve symbol IDs to names
-            $symbolIds = array_unique(array_column($allDeals, 'symbolId'));
+            // array_values() is load-bearing: array_unique() keeps the original
+            // keys, so deduplicating repeated symbols leaves gaps (0, 2, 4) and
+            // json_encode then emits an OBJECT instead of an array. cTrader
+            // reads symbolId as a repeated int64 and rejects the whole request
+            // with "Couldn't parse integer: For input string: {".
+            $symbolIds = array_values(array_unique(array_column($allDeals, 'symbolId')));
             $symbolMap = $this->resolveSymbolNames($ws, $credentials['ctid_trader_account_id'], $symbolIds);
 
             foreach ($allDeals as &$deal) {
@@ -369,9 +374,7 @@ class CtraderConnector implements ConnectorInterface
                     'accessToken' => $accessToken,
                 ]);
             } catch (\Throwable $e) {
-                // Only a refusal from the broker means "you cannot use this
-                // account". A dead socket says nothing about the account.
-                if ($code = $this->brokerErrorCode($e)) {
+                if ($code = $this->accountRefusalCode($e)) {
                     $accounts[$i]['is_disabled'] = true;
                     $accounts[$i]['disabled_reason'] = $code;
                 }
@@ -443,18 +446,33 @@ class CtraderConnector implements ConnectorInterface
     }
 
     /**
-     * The broker's own error code, or null when the failure was not a refusal.
+     * The broker's error code when it says *this account* cannot be used, null
+     * otherwise.
      *
-     * sendAndReceive() renders a ProtoOAErrorRes as "cTrader API error: CODE -
-     * description" and leaves every other failure (closed socket, malformed
-     * frame) with its own wording. Telling them apart is what keeps a transport
-     * glitch from being reported to the user as an archived account.
+     * Two filters, and both matter. sendAndReceive() renders a ProtoOAErrorRes
+     * as "cTrader API error: CODE - description" and leaves every other failure
+     * (closed socket, malformed frame) with its own wording, so a transport
+     * glitch is never reported as an archived account.
+     *
+     * Then the code has to be account-scoped. A malformed request comes back as
+     * INVALID_REQUEST, an app-level problem as CH_CLIENT_AUTH_FAILURE — neither
+     * says anything about the account, yet both arrive here once per account
+     * and would flag every single one. Since a disabled account is hidden from
+     * the picker, that turns a request bug into "all my accounts vanished".
+     *
+     * Hence matching on ACCOUNT in the code (RET_ACCOUNT_DISABLED,
+     * CH_CTID_TRADER_ACCOUNT_NOT_FOUND, …). It is a heuristic, deliberately
+     * biased: an unrecognised code leaves the account listed, so the worst case
+     * is the user picking a dud and being told at save time — the old
+     * behaviour — rather than losing a working account with no explanation.
      */
-    private function brokerErrorCode(\Throwable $e): ?string
+    private function accountRefusalCode(\Throwable $e): ?string
     {
-        return preg_match('/^cTrader API error: ([A-Z0-9_]+)/', $e->getMessage(), $m)
-            ? $m[1]
-            : null;
+        if (!preg_match('/^cTrader API error: ([A-Z0-9_]+)/', $e->getMessage(), $m)) {
+            return null;
+        }
+
+        return str_contains($m[1], 'ACCOUNT') ? $m[1] : null;
     }
 
     /**
