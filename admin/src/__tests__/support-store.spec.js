@@ -10,6 +10,7 @@ vi.mock('@/services/support', () => ({
     reply: vi.fn(),
     updateStatus: vi.fn(),
     updatePriority: vi.fn(),
+    updateType: vi.fn(),
     attachmentUrl: vi.fn(),
   },
 }))
@@ -75,6 +76,20 @@ describe('admin support store', () => {
     await store.updatePriority(5, 'HIGH')
 
     expect(store.tickets[0].priority).toBe('HIGH')
+  })
+
+  it('updateType syncs the list row badge', async () => {
+    store.tickets = [{ id: 5, type: 'BUG', status: 'OPEN', priority: 'NORMAL' }]
+    supportService.updateType.mockResolvedValue({
+      success: true,
+      data: { id: 5, type: 'FEATURE', status: 'OPEN', priority: 'NORMAL', messages: [] },
+    })
+
+    await store.updateType(5, 'FEATURE')
+
+    expect(supportService.updateType).toHaveBeenCalledWith(5, 'FEATURE')
+    expect(store.current.type).toBe('FEATURE')
+    expect(store.tickets[0].type).toBe('FEATURE')
   })
 
   it('reply updates the current ticket thread', async () => {

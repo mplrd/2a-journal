@@ -46,6 +46,7 @@ class CtraderConnector implements ConnectorInterface
     private ?WsClient $wsClient;
     private ?HttpClient $httpClient;
     private int $msgCounter = 0;
+    private ?string $lastBalanceCurrency = null;
 
     public function __construct(array $config, ?WsClient $wsClient = null, ?HttpClient $httpClient = null)
     {
@@ -572,9 +573,14 @@ class CtraderConnector implements ConnectorInterface
      * as an integer scaled by moneyDigits (e.g. balance 10053099944 with
      * moneyDigits 8 → 100.53099944). Best-effort: any failure returns null so
      * the sync leaves the previous balance alone.
+     *
+     * Also resolves the deposit currency, exposed through getBalanceCurrency()
+     * — see there for why the figure alone was not enough.
      */
     public function fetchBalance(array $credentials): ?float
     {
+        $this->lastBalanceCurrency = null;
+
         if (empty($credentials['ctid_trader_account_id']) || empty($credentials['access_token'])) {
             return null;
         }
@@ -586,16 +592,43 @@ class CtraderConnector implements ConnectorInterface
                 ]);
                 $trader = $response['trader'] ?? [];
                 if (!isset($trader['balance'])) {
-                    return ['balance' => null];
+                    return ['balance' => null, 'currency' => null];
                 }
                 $moneyDigits = (int) ($trader['moneyDigits'] ?? 2);
-                return ['balance' => ((float) $trader['balance']) / (10 ** $moneyDigits)];
+
+                // depositAssetId is a number; only the asset list names it.
+                $currency = null;
+                if (isset($trader['depositAssetId'])) {
+                    $currency = $this->fetchAssetNames($ws, $accountId)[(int) $trader['depositAssetId']] ?? null;
+                }
+
+                return [
+                    'balance' => ((float) $trader['balance']) / (10 ** $moneyDigits),
+                    'currency' => $currency,
+                ];
             });
+
+            $this->lastBalanceCurrency = $result['currency'];
 
             return $result['balance'];
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Currency the last fetchBalance() figure is denominated in, null when no
+     * balance was read or the asset list could not be resolved.
+     *
+     * BrokerSyncService looks this method up by name and stores the result
+     * next to the balance, so the UI can flag an account whose own currency
+     * differs from the one its broker actually reports. Only BingX implemented
+     * it, so a cTrader sync always recorded a null currency — an account set
+     * up in EUR against a USD broker account had no way to show the mismatch.
+     */
+    public function getBalanceCurrency(): ?string
+    {
+        return $this->lastBalanceCurrency;
     }
 
     public function placeOrder(array $credentials, array $order): array

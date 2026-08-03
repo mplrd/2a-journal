@@ -566,6 +566,8 @@ Correction : ajouter les 6 clés dans les deux locales. Aucun changement de code
 
 **Repéré le** : 2026-07-31. **Priorité** : basse (chemins d'erreur admin uniquement), mais le correctif est trivial.
 
+**Complément (2026-08-03, `/check-i18n` de la doc 88)** : même famille pour le module support — `support.error.invalid_type`, `invalid_status` et `invalid_priority` sont levées par `SupportTicketService` mais absentes des locales admin. Différence : ces trois-là sont **inatteignables depuis l'UI** (les `Select` d'`AdminTicketDialog` et le CLI contraignent les valeurs à l'enum), donc à ajouter avec les 6 autres ou pas du tout — pas séparément, sous peine d'asymétrie.
+
 ---
 
 ## Dépendances — 2 alertes ouvertes, non exploitables en l'état
@@ -580,6 +582,24 @@ Relevé par `/audit-security` le 2026-07-31. **Aucune n'est exploitable dans ce 
 **Repéré le** : 2026-07-31. **Priorité** : basse.
 
 *Note* : le reste de l'audit est vert — `fr.json` et `en.json` ont exactement les mêmes 1181 clés. Les deux « clés manquantes » côté Vue (`robot.events.status_`, `webhook.tradingview.reject_reason.`) sont des **faux positifs** : ce sont des préfixes de concaténation (`t('robot.events.status_' + data.status.toLowerCase())`, `RobotsView.vue:488` et `:493`), pas des clés littérales.
+
+---
+
+## cTrader — le P&L importé est brut, les frais sont ignorés
+
+**Contexte** : relevé le 2026-08-03 en corrigeant la mise à l'échelle `moneyDigits` (cf. doc 22). Constat seulement, aucun code touché — décision reportée.
+
+`DealNormalizer::normalizeCtraderDeal()` construit le P&L à partir du seul `closePositionDetail.grossProfit`. Or `ProtoOAClosePositionDetail` fournit aussi **`swap`, `commission` et `pnlConversionFee`**, que cTrader documente explicitement comme soumis au même `moneyDigits` (« Affects grossProfit, swap, commission, balance, pnlConversionFee »). `ProtoOADeal` porte en plus sa propre `commission`.
+
+Chaque trade importé omet donc ses frais. L'écart est invisible trade par trade mais cumulatif : c'est un candidat sérieux à l'écart constaté entre le solde courtier et le capital recalculé depuis les trades du journal.
+
+**À trancher avant de corriger** — ce n'est pas qu'un changement de formule :
+
+1. **Brut ou net ?** Les autres connecteurs doivent être vérifiés pour rester cohérents (BingX reconstruit depuis les fills, Ouinex renvoie un `pnl` dont il faut vérifier s'il est net).
+2. **Que faire des trades déjà importés ?** Ils gardent leur valeur brute. Soit on les laisse (historique incohérent avec les imports futurs), soit on réimporte, soit on migre — et un recalcul rétroactif du P&L touche les stats, le R:R et le capital courant.
+3. Le champ `swap` est négatif ou positif selon le sens : additionner, ne pas soustraire (`grossProfit + swap + commission + pnlConversionFee`, chacun déjà signé).
+
+**Repéré le** : 2026-08-03. **Priorité** : moyenne — fausse le rapprochement avec le solde courtier, mais sans casser de fonctionnement.
 
 ---
 
@@ -727,6 +747,22 @@ entrée ci-dessus).
 
 **À faire** : une règle Cloudflare (WAF ou rate limiting) sur les chemins
 `*.php` et `/wp-*`, qui n'existent pas dans cette API.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse.
+
+---
+
+## API — un body malformé donne un 500 au lieu d'un 422
+
+**Contexte** : relevé par `/audit-security` en livrant `docs/88-support-ticket-reclassify.md` (2026-08-03). Pré-existant, pas introduit par cette branche.
+
+Les contrôleurs passent `$request->getBody('champ')` (type `mixed`) à des paramètres de service typés `?string`. Si le client envoie un tableau plutôt qu'une chaîne (`type[]=x`, `status[]=y`), PHP lève un `TypeError` **avant** toute validation métier → 500 générique au lieu du 422 attendu.
+
+Constaté sur `AdminSupportTicketController::updateStatus/updatePriority/updateType`, mais le motif est général à tous les contrôleurs.
+
+**Pas de fuite** : le handler global (`api/public/index.php:78`) renvoie `error.internal` sans trace hors mode debug, et ces routes sont admin-only. C'est un défaut de propreté (mauvais code HTTP), pas une faille.
+
+**À faire** : un garde partagé — soit `Request::getBody()` qui aplatit/rejette les valeurs non scalaires, soit un `getBodyString()` dédié. Correctif transverse, à ne pas faire endpoint par endpoint.
 
 **Repéré le** : 2026-08-03. **Priorité** : basse.
 

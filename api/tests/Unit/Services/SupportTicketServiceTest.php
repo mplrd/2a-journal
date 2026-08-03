@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Enums\TicketStatus;
+use App\Enums\TicketType;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\SupportTicketAttachmentRepository;
@@ -268,6 +269,37 @@ class SupportTicketServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $this->service->changePriority(1, 7, 'URGENT');
+    }
+
+    public function testChangeTypeReclassifiesWithoutNotifyingCreator(): void
+    {
+        $this->ticketRepo->method('findById')->willReturn($this->fakeTicket(['type' => 'BUG']));
+        $this->messageRepo->method('findByTicketId')->willReturn([]);
+        $this->attachmentRepo->method('findByTicketId')->willReturn([]);
+
+        $this->ticketRepo->expects($this->once())
+            ->method('updateType')
+            ->with(7, TicketType::FEATURE->value);
+        // Reclassification is an internal triage action: no e-mail to the author.
+        $this->email->expects($this->never())->method('sendTicketStatusChangedEmail');
+
+        $this->service->changeType(1, 7, 'FEATURE');
+    }
+
+    public function testChangeTypeRejectsInvalidValue(): void
+    {
+        $this->ticketRepo->method('findById')->willReturn($this->fakeTicket());
+
+        $this->expectException(ValidationException::class);
+        $this->service->changeType(1, 7, 'QUESTION');
+    }
+
+    public function testChangeTypeUnknownTicketThrowsNotFound(): void
+    {
+        $this->ticketRepo->method('findById')->willReturn(null);
+
+        $this->expectException(NotFoundException::class);
+        $this->service->changeType(1, 999, 'BUG');
     }
 
     public function testGetDetailForUserNotFound(): void

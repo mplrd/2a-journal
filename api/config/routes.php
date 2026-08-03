@@ -598,4 +598,5 @@ $router->get('/admin/support/tickets/{id}', [$adminSupportTicketController, 'sho
 $router->post('/admin/support/tickets/{id}/messages', [$adminSupportTicketController, 'reply'], [$authMiddleware, $requireAdmin]);
 $router->patch('/admin/support/tickets/{id}/status', [$adminSupportTicketController, 'updateStatus'], [$authMiddleware, $requireAdmin]);
 $router->patch('/admin/support/tickets/{id}/priority', [$adminSupportTicketController, 'updatePriority'], [$authMiddleware, $requireAdmin]);
+$router->patch('/admin/support/tickets/{id}/type', [$adminSupportTicketController, 'updateType'], [$authMiddleware, $requireAdmin]);
 $router->get('/admin/support/tickets/{id}/attachments/{attId}', [$adminSupportTicketController, 'downloadAttachment'], [$authMiddleware, $requireAdmin]);

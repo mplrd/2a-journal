@@ -13,10 +13,10 @@ all in one session. Backed by `tools/support-cli/support-cli.php` (admin support
 `$ARGUMENTS` = an optional ticket id. No id → list open tickets first.
 
 ## Core rules (non-negotiable)
-- **Writes are gated.** `reply`, `set-status`, `set-priority` send a **real e-mail**
-  to the ticket author. NEVER run them with `--confirm` until the user has seen the
-  exact text/status and explicitly approved. Default to the DRY-RUN (no `--confirm`)
-  to show the user what would be sent.
+- **Writes are gated.** `reply` and `set-status` send a **real e-mail** to the ticket
+  author; `set-priority` and `set-type` are silent but still writes. NEVER run any of
+  them with `--confirm` until the user has seen the exact text/value and explicitly
+  approved. Default to the DRY-RUN (no `--confirm`) to show what would be sent.
 - **One approval = one action.** Approval to send a reply does not authorize a status
   change, and vice-versa. Ask again for each write.
 - **Privacy.** Tickets contain other users' data. Don't persist any ticket content
@@ -32,6 +32,9 @@ all in one session. Backed by `tools/support-cli/support-cli.php` (admin support
 
 ## Step 2 — Triage
 Summarize the ticket and classify it: **SUPPORT**, **BUG**, or **FEATURE**.
+Reporters are not consistent — if the ticket's own type is wrong, propose fixing it
+(no e-mail to the author, but still a gated write):
+`php tools/support-cli/support-cli.php set-type <id> <TYPE> --confirm`
 Then propose the next action and **wait for the user's decision**:
 - *Answer directly* (a support question, no code) → go to Step 4.
 - *Implement* (actionable bug/feature) → go to Step 3.
@@ -59,4 +62,4 @@ The user controls all git operations and each merge gate (local → develop, tes
 - Config lives in `tools/support-cli/.env` (gitignored). If it's missing, tell the
   user to copy `.env.example` and fill in an ADMIN account — don't invent credentials.
 - Statuses: `OPEN | IN_PROGRESS | WAITING_USER | RESOLVED | CLOSED`.
-  Priorities: `LOW | NORMAL | HIGH`.
+  Priorities: `LOW | NORMAL | HIGH`. Types: `SUPPORT | BUG | FEATURE`.
