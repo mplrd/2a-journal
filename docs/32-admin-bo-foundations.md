@@ -196,8 +196,23 @@ Une fois validé en test, même procédure pour le prod (branch `main`).
 | Auth store : login admin OK, login non-admin rejected, logout | Unit (Vitest) | `auth-store.spec.js` |
 | Users store : fetch, suspend update, remove | Unit (Vitest) | `users-store.spec.js` |
 | Settings store : fetch, update | Unit (Vitest) | `settings-store.spec.js` |
+| Clés i18n émises par l'API traduites par un SPA (fr + en) | Unit | `I18nMessageKeysTest` |
+| Symétrie fr/en de chaque jeu de locales (frontend + admin) | Unit | id |
 
 **Suite complète backend** : 1015 tests verts. **Suite complète admin SPA** : 11 tests verts.
+
+### Contrat i18n entre l'API et les deux SPA
+
+L'API ne renvoie jamais de texte, seulement des clés (`message_key`, `description` des settings). Ces clés sont traduites **côté client**, et il y a **deux jeux de locales indépendants** :
+
+| Jeu | Fichiers | Porte notamment |
+|---|---|---|
+| SPA user | `frontend/src/locales/{fr,en}.json` | tous les namespaces métier |
+| SPA admin | `admin/src/locales/{fr,en}.json` | `admin.*` (+ sa propre copie des `auth.*` utiles au login) |
+
+**Conséquence pratique** : les clés `admin.error.*` et `admin.settings.*` n'ont rien à faire dans `frontend/src/locales/` — le SPA user ne reçoit jamais ces réponses. Auditer les clés backend contre les seules locales du SPA user donne un faux « trou » d'une quinzaine de clés qui sont en réalité bien traduites côté admin.
+
+`I18nMessageKeysTest` (2026-08-03) encode ce contrat côté backend : il scanne `api/src` pour tout `throw new XxxException('cle')` et tout `'message_key' => 'cle'`, ajoute les `description` de `PlatformSettingsService::knownSettings()`, puis exige que **chaque clé soit traduite intégralement (fr + en) par au moins un des deux SPA**. Une clé présente dans une seule des deux langues est signalée (`only partially defined by admin (en only)`) car elle retomberait en clé brute pour l'autre langue. Le message d'erreur cite le fichier PHP émetteur pour aller droit au but.
 
 ## Choix d'implémentation
 
