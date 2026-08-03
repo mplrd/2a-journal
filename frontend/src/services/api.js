@@ -14,21 +14,78 @@ function clearTokens() {
   accessToken = null
 }
 
-async function refreshAccessToken() {
-  const response = await fetch(`${BASE_URL}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-  })
+// Rotating the refresh token deletes the previous one server-side, so two
+// concurrent refreshes would leave the loser holding a revoked token — and a
+// revoked token logs the user out. Every caller shares the in-flight promise.
+let refreshPromise = null
 
-  if (!response.ok) {
-    clearTokens()
-    throw new Error('Refresh failed')
+async function refreshAccessToken() {
+  if (refreshPromise) {
+    return refreshPromise
   }
 
-  const data = await response.json()
-  setTokens(data.data.access_token)
-  return data.data.access_token
+  refreshPromise = (async () => {
+    const response = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    })
+
+    if (!response.ok) {
+      clearTokens()
+      throw new Error('Refresh failed')
+    }
+
+    const data = await response.json()
+    setTokens(data.data.access_token)
+    return data.data.access_token
+  })()
+
+  try {
+    return await refreshPromise
+  } finally {
+    refreshPromise = null
+  }
+}
+
+// Shared by request(), upload() and getBlob(). The access token lives 15 minutes
+// and is only renewed on rejection, so any call can hit a 401 mid-session —
+// typically on submitting a form the user spent that long filling in.
+// Returns a fresh token when the caller must replay its request, or null when the
+// 401 is not recoverable and has to be surfaced as-is.
+async function recoverExpiredToken(errorData) {
+  if (errorData?.error?.code !== 'TOKEN_EXPIRED') {
+    return null
+  }
+
+  try {
+    return await refreshAccessToken()
+  } catch {
+    clearTokens()
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+}
+
+// Reads a JSON envelope defensively: an edge proxy rejecting an oversized upload
+// (HTTP 413) or a gateway error answers with HTML, not our envelope, and a bare
+// response.json() would surface as a misleading "internal error".
+async function readJson(response) {
+  const raw = await response.text().catch(() => '')
+  try {
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function buildError(status, data, fallbackKey) {
+  const error = new Error(data?.error?.message_key || fallbackKey)
+  error.status = status
+  error.code = data?.error?.code
+  error.field = data?.error?.field
+  error.messageKey = data?.error?.message_key || fallbackKey
+  return error
 }
 
 async function request(method, path, body = null, { auth = true, retry = true } = {}) {
@@ -51,27 +108,16 @@ async function request(method, path, body = null, { auth = true, retry = true } 
   // Auto-refresh on 401 with TOKEN_EXPIRED
   if (response.status === 401 && auth && retry) {
     const errorData = await response.json().catch(() => null)
-    if (errorData?.error?.code === 'TOKEN_EXPIRED') {
-      try {
-        const newToken = await refreshAccessToken()
-        headers['Authorization'] = `Bearer ${newToken}`
-        response = await fetch(`${BASE_URL}${path}`, { method, headers, body: options.body, credentials: 'include' })
-      } catch {
-        clearTokens()
-        window.location.href = '/login'
-        throw new Error('Session expired')
-      }
+    const newToken = await recoverExpiredToken(errorData)
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`
+      response = await fetch(`${BASE_URL}${path}`, { method, headers, body: options.body, credentials: 'include' })
     } else {
       // Body already consumed — throw directly with parsed data
       if (response.status === 402 && !path.startsWith('/billing')) {
         redirectToSubscribe()
       }
-      const error = new Error(errorData?.error?.message_key || 'error.internal')
-      error.status = response.status
-      error.code = errorData?.error?.code
-      error.field = errorData?.error?.field
-      error.messageKey = errorData?.error?.message_key
-      throw error
+      throw buildError(response.status, errorData, 'error.internal')
     }
   }
 
@@ -81,12 +127,7 @@ async function request(method, path, body = null, { auth = true, retry = true } 
     if (response.status === 402 && !path.startsWith('/billing')) {
       redirectToSubscribe()
     }
-    const error = new Error(data.error?.message_key || 'error.internal')
-    error.status = response.status
-    error.code = data.error?.code
-    error.field = data.error?.field
-    error.messageKey = data.error?.message_key
-    throw error
+    throw buildError(response.status, data, 'error.internal')
   }
 
   return data
@@ -107,43 +148,41 @@ async function upload(path, formData) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  let response
-  try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      method: 'POST',
-      headers,
-      body: formData,
-      credentials: 'include',
-    })
-  } catch {
-    // fetch() itself rejected: offline, DNS, or — most often for uploads — the
-    // connection was cut by an upstream proxy that refused an oversized body
-    // before sending any HTTP response. Never reaches our PHP logs.
-    const error = new Error('error.network')
-    error.status = 0
-    error.messageKey = 'error.network'
-    throw error
+  // FormData can be replayed as-is: fetch re-serialises it on each call.
+  async function send() {
+    try {
+      return await fetch(`${BASE_URL}${path}`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include',
+      })
+    } catch {
+      // fetch() itself rejected: offline, DNS, or — most often for uploads — the
+      // connection was cut by an upstream proxy that refused an oversized body
+      // before sending any HTTP response. Never reaches our PHP logs.
+      const error = new Error('error.network')
+      error.status = 0
+      error.messageKey = 'error.network'
+      throw error
+    }
   }
 
-  // Read the body defensively. An edge proxy rejecting an oversized upload
-  // (HTTP 413) answers with HTML, not our JSON envelope — a bare
-  // response.json() would throw and surface as a misleading "internal error".
-  const raw = await response.text().catch(() => '')
-  let data = null
-  try {
-    data = raw ? JSON.parse(raw) : null
-  } catch {
-    data = null
+  let response = await send()
+  let data = await readJson(response)
+
+  if (response.status === 401) {
+    const newToken = await recoverExpiredToken(data)
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`
+      response = await send()
+      data = await readJson(response)
+    }
   }
 
   if (!response.ok) {
     const fallback = response.status === 413 ? 'upload.error.too_large' : 'error.internal'
-    const error = new Error(data?.error?.message_key || fallback)
-    error.status = response.status
-    error.code = data?.error?.code
-    error.field = data?.error?.field
-    error.messageKey = data?.error?.message_key || fallback
-    throw error
+    throw buildError(response.status, data, fallback)
   }
 
   return data
@@ -156,39 +195,44 @@ async function getBlob(path) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  let response
-  try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      method: 'GET',
-      headers,
-      credentials: 'include',
-    })
-  } catch {
-    // fetch() rejected before any response: offline, DNS, dropped connection.
-    const error = new Error('error.network')
-    error.status = 0
-    error.messageKey = 'error.network'
-    throw error
+  async function send() {
+    try {
+      return await fetch(`${BASE_URL}${path}`, {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      })
+    } catch {
+      // fetch() rejected before any response: offline, DNS, dropped connection.
+      const error = new Error('error.network')
+      error.status = 0
+      error.messageKey = 'error.network'
+      throw error
+    }
+  }
+
+  let response = await send()
+  // Undefined until read: the body can only be consumed once, so a 401 we could
+  // not recover from must reuse what we already parsed.
+  let errorBody
+
+  if (response.status === 401) {
+    errorBody = await readJson(response)
+    const newToken = await recoverExpiredToken(errorBody)
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`
+      response = await send()
+      errorBody = undefined
+    }
   }
 
   if (!response.ok) {
     // The endpoint may answer with our JSON error envelope (e.g. a 404 with
-    // support.error.attachment_not_found). Read it defensively — the body can
-    // also be a non-JSON proxy/HTML page — and surface a real message_key
-    // instead of a blanket "internal error".
-    const raw = await response.text().catch(() => '')
-    let data = null
-    try {
-      data = raw ? JSON.parse(raw) : null
-    } catch {
-      data = null
+    // support.error.attachment_not_found), or with a non-JSON proxy/HTML page.
+    if (errorBody === undefined) {
+      errorBody = await readJson(response)
     }
-    const error = new Error(data?.error?.message_key || 'error.internal')
-    error.status = response.status
-    error.code = data?.error?.code
-    error.field = data?.error?.field
-    error.messageKey = data?.error?.message_key || 'error.internal'
-    throw error
+    throw buildError(response.status, errorBody, 'error.internal')
   }
 
   return response.blob()
