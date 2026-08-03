@@ -17,13 +17,21 @@ class DealNormalizer
         $close = $deal['closePositionDetail'];
         $volume = ($deal['volume'] ?? 0) / 100000; // cTrader volume is in cents of lots
 
+        // cTrader does NOT express money in cents. moneyDigits is the exponent,
+        // and cTrader documents it as affecting "grossProfit, swap, commission,
+        // balance, pnlConversionFee". A hardcoded /100 is only correct when it
+        // happens to be 2; on a broker reporting 8 every P&L lands a million
+        // times too high. Both the closing detail and the deal carry the field
+        // — prefer the detail's, since that is what grossProfit belongs to.
+        $moneyDigits = (int) ($close['moneyDigits'] ?? $deal['moneyDigits'] ?? 2);
+
         return [
             'symbol' => $deal['symbolName'] ?? null,
             'direction' => $deal['tradeSide'] ?? null,
             'entry_price' => (float) ($close['entryPrice'] ?? 0),
             'exit_price' => (float) ($deal['executionPrice'] ?? 0),
             'size' => round($volume, 5),
-            'pnl' => round(($close['grossProfit'] ?? 0) / 100, 2), // cents → units
+            'pnl' => round(($close['grossProfit'] ?? 0) / (10 ** $moneyDigits), 2),
             'opened_at' => $this->msTimestampToDatetime($deal['createTimestamp'] ?? 0),
             'closed_at' => $this->msTimestampToDatetime($deal['executionTimestamp'] ?? 0),
             'external_id' => 'ctrader_' . ($deal['positionId'] ?? $deal['dealId']),

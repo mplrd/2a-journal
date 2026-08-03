@@ -98,6 +98,23 @@ La colonne 44 désigne exactement l'accolade ouvrante de `symbolId` pour un `cti
 
 Règle générale : **tout tableau destiné à un champ répété doit passer par `array_values()`**. Les autres occurrences du connecteur (`fetchOpenOrders:184`, `:250`) l'appliquaient déjà ; c'était la seule oubliée. Audit fait sur `api/src/` — aucune autre instance n'atteint un format de fil (`ImportService:97` est réindexé par le `sort()` qui suit, les `account_ids` partent en SQL).
 
+**`moneyDigits`, pas des centimes.** Corrigé le 2026-08-03. cTrader n'exprime pas les montants en centimes : chaque message porte un `moneyDigits` qui est l'**exposant** à appliquer, et la doc du champ est explicite — « Affects grossProfit, swap, commission, balance, pnlConversionFee ».
+
+Deux endroits convertissaient, et pas de la même façon :
+
+| Endroit | Avant | Après |
+|---|---|---|
+| `CtraderConnector::fetchBalance` | `balance / 10^moneyDigits` | inchangé, déjà correct |
+| `DealNormalizer::normalizeCtraderDeal` | `grossProfit / 100` **en dur** | `grossProfit / 10^moneyDigits` |
+
+Le `/100` n'est juste que si `moneyDigits` vaut 2. Chez un broker qui renvoie 8, tous les P&L importés sont **un million de fois trop grands**. `moneyDigits` est lu sur `closePositionDetail` en priorité (c'est à lui qu'appartient `grossProfit`), avec repli sur celui du deal, puis sur 2 — ce dernier cas préservant à l'identique le comportement des comptes déjà synchronisés.
+
+**Devise du solde (`getBalanceCurrency`).** `BrokerSyncService` persiste, à côté du solde, la devise dans laquelle il est libellé — via une méthode optionnelle `getBalanceCurrency()` qu'il résout par `method_exists()`. Seul BingX l'implémentait : une synchro cTrader enregistrait donc toujours une devise nulle, et le rapprochement avec `accounts.currency` (`AccountsView::hasCurrencyMismatch`) ne pouvait jamais se déclencher.
+
+`CtraderConnector` l'implémente désormais : `fetchBalance` résout `trader.depositAssetId` en nom lisible via `ProtoOAAssetListReq`, sur la session déjà authentifiée. Échec toléré — pas de devise plutôt qu'une devise inventée, car une valeur fausse ferait croire à une concordance.
+
+**Le comportement reste « signaler, pas convertir »** : `accounts.currency` est déclarée par l'utilisateur et sert à afficher tout l'historique. La synchro ne l'écrase pas ; elle affiche un avertissement quand les deux diffèrent, sans appliquer de conversion.
+
 ### Chiffrement des credentials
 
 AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'environnement `BROKER_ENCRYPTION_KEY`. Chaque connexion a son propre IV. Les credentials ne sont jamais exposés dans les réponses API.

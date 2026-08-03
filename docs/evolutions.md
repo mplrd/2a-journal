@@ -583,4 +583,22 @@ Relevé par `/audit-security` le 2026-07-31. **Aucune n'est exploitable dans ce 
 
 ---
 
+## cTrader — le P&L importé est brut, les frais sont ignorés
+
+**Contexte** : relevé le 2026-08-03 en corrigeant la mise à l'échelle `moneyDigits` (cf. doc 22). Constat seulement, aucun code touché — décision reportée.
+
+`DealNormalizer::normalizeCtraderDeal()` construit le P&L à partir du seul `closePositionDetail.grossProfit`. Or `ProtoOAClosePositionDetail` fournit aussi **`swap`, `commission` et `pnlConversionFee`**, que cTrader documente explicitement comme soumis au même `moneyDigits` (« Affects grossProfit, swap, commission, balance, pnlConversionFee »). `ProtoOADeal` porte en plus sa propre `commission`.
+
+Chaque trade importé omet donc ses frais. L'écart est invisible trade par trade mais cumulatif : c'est un candidat sérieux à l'écart constaté entre le solde courtier et le capital recalculé depuis les trades du journal.
+
+**À trancher avant de corriger** — ce n'est pas qu'un changement de formule :
+
+1. **Brut ou net ?** Les autres connecteurs doivent être vérifiés pour rester cohérents (BingX reconstruit depuis les fills, Ouinex renvoie un `pnl` dont il faut vérifier s'il est net).
+2. **Que faire des trades déjà importés ?** Ils gardent leur valeur brute. Soit on les laisse (historique incohérent avec les imports futurs), soit on réimporte, soit on migre — et un recalcul rétroactif du P&L touche les stats, le R:R et le capital courant.
+3. Le champ `swap` est négatif ou positif selon le sens : additionner, ne pas soustraire (`grossProfit + swap + commission + pnlConversionFee`, chacun déjà signé).
+
+**Repéré le** : 2026-08-03. **Priorité** : moyenne — fausse le rapprochement avec le solde courtier, mais sans casser de fonctionnement.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

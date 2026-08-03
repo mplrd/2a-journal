@@ -736,6 +736,58 @@ class CtraderConnectorTest extends TestCase
         $this->assertFalse($accounts[0]['is_disabled']);
     }
 
+    // ── fetchBalance currency ───────────────────────────────────────
+
+    public function testFetchBalanceReportsTheCurrencyItIsDenominatedIn(): void
+    {
+        // BrokerSyncService reads the balance currency through an optional
+        // getBalanceCurrency(), which only BingX implemented — so a cTrader
+        // sync always stored a null currency and the account could never be
+        // told its balance was in a different one from its own setting.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::TRADER_RES, ['trader' => [
+                'balance' => 8000000,
+                'moneyDigits' => 2,
+                'depositAssetId' => 3,
+            ]]),
+            self::frame(self::ASSET_LIST_RES, ['asset' => [
+                ['assetId' => 3, 'name' => 'USD'],
+                ['assetId' => 4, 'name' => 'EUR'],
+            ]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $balance = $connector->fetchBalance([
+            'ctid_trader_account_id' => 42111,
+            'access_token' => 'tok',
+        ]);
+
+        $this->assertSame(80000.0, $balance);
+        $this->assertSame('USD', $connector->getBalanceCurrency());
+    }
+
+    public function testFetchBalanceLeavesTheCurrencyNullWhenItCannotBeResolved(): void
+    {
+        // A missing asset list must not cost the balance: reporting no currency
+        // is honest, inventing one would let the UI claim a false match.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::TRADER_RES, ['trader' => ['balance' => 8000000, 'moneyDigits' => 2]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $balance = $connector->fetchBalance([
+            'ctid_trader_account_id' => 42111,
+            'access_token' => 'tok',
+        ]);
+
+        $this->assertSame(80000.0, $balance);
+        $this->assertNull($connector->getBalanceCurrency());
+    }
+
     // ── fetchDeals ──────────────────────────────────────────────────
 
     public function testFetchDealsSendsSymbolIdsAsAJsonArrayNotAnObject(): void
