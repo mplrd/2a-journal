@@ -40,7 +40,7 @@ connecte via `POST /auth/login` (credentials dans `tools/support-cli/.env`), vé
 compte est bien `ADMIN`, puis appelle les endpoints admin avec le token en `Bearer`. Aucun
 token persisté.
 
-Commandes : `list`, `show`, `reply`, `set-status`, `set-priority`. Mapping sur l'API admin :
+Commandes : `list`, `show`, `reply`, `set-status`, `set-priority`, `set-type`. Mapping sur l'API admin :
 
 | Commande CLI | Endpoint |
 |---|---|
@@ -49,11 +49,13 @@ Commandes : `list`, `show`, `reply`, `set-status`, `set-priority`. Mapping sur l
 | `reply <id> --body=…` | `POST /admin/support/tickets/{id}/messages` |
 | `set-status <id> <STATUS>` | `PATCH /admin/support/tickets/{id}/status` |
 | `set-priority <id> <PRIORITY>` | `PATCH /admin/support/tickets/{id}/priority` |
+| `set-type <id> <TYPE>` | `PATCH /admin/support/tickets/{id}/type` (reclassement, cf. doc 88) |
 
-**Écritures = dry-run par défaut.** `reply`, `set-status`, `set-priority` déclenchent un
-e-mail réel au demandeur (via les notifications du module support). Sans `--confirm`, elles
-n'affichent que ce qu'elles feraient. Le `--confirm` est requis pour exécuter — garde-fou au
-niveau de l'outil, en plus du gating au niveau de la skill.
+**Écritures = dry-run par défaut.** `reply` et `set-status` déclenchent un e-mail réel au
+demandeur (via les notifications du module support) ; `set-priority` et `set-type` sont
+silencieux mais restent des écritures. Sans `--confirm`, toutes n'affichent que ce qu'elles
+feraient. Le `--confirm` est requis pour exécuter — garde-fou au niveau de l'outil, en plus
+du gating au niveau de la skill.
 
 ### Skill `/ticket`
 

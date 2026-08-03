@@ -26,4 +26,10 @@ describe('admin support service — multi-value filters', () => {
     await supportService.list({ page: 2, per_page: 50, empty: '' })
     expect(api.get).toHaveBeenCalledWith('/admin/support/tickets?page=2&per_page=50')
   })
+
+  it('patches the type endpoint when reclassifying', async () => {
+    api.patch.mockResolvedValue({ success: true, data: { id: 7, type: 'FEATURE' } })
+    await supportService.updateType(7, 'FEATURE')
+    expect(api.patch).toHaveBeenCalledWith('/admin/support/tickets/7/type', { type: 'FEATURE' })
+  })
 })

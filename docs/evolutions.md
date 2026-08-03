@@ -566,6 +566,8 @@ Correction : ajouter les 6 clés dans les deux locales. Aucun changement de code
 
 **Repéré le** : 2026-07-31. **Priorité** : basse (chemins d'erreur admin uniquement), mais le correctif est trivial.
 
+**Complément (2026-08-03, `/check-i18n` de la doc 88)** : même famille pour le module support — `support.error.invalid_type`, `invalid_status` et `invalid_priority` sont levées par `SupportTicketService` mais absentes des locales admin. Différence : ces trois-là sont **inatteignables depuis l'UI** (les `Select` d'`AdminTicketDialog` et le CLI contraignent les valeurs à l'enum), donc à ajouter avec les 6 autres ou pas du tout — pas séparément, sous peine d'asymétrie.
+
 ---
 
 ## Dépendances — 2 alertes ouvertes, non exploitables en l'état
@@ -745,6 +747,22 @@ entrée ci-dessus).
 
 **À faire** : une règle Cloudflare (WAF ou rate limiting) sur les chemins
 `*.php` et `/wp-*`, qui n'existent pas dans cette API.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse.
+
+---
+
+## API — un body malformé donne un 500 au lieu d'un 422
+
+**Contexte** : relevé par `/audit-security` en livrant `docs/88-support-ticket-reclassify.md` (2026-08-03). Pré-existant, pas introduit par cette branche.
+
+Les contrôleurs passent `$request->getBody('champ')` (type `mixed`) à des paramètres de service typés `?string`. Si le client envoie un tableau plutôt qu'une chaîne (`type[]=x`, `status[]=y`), PHP lève un `TypeError` **avant** toute validation métier → 500 générique au lieu du 422 attendu.
+
+Constaté sur `AdminSupportTicketController::updateStatus/updatePriority/updateType`, mais le motif est général à tous les contrôleurs.
+
+**Pas de fuite** : le handler global (`api/public/index.php:78`) renvoie `error.internal` sans trace hors mode debug, et ces routes sont admin-only. C'est un défaut de propreté (mauvais code HTTP), pas une faille.
+
+**À faire** : un garde partagé — soit `Request::getBody()` qui aplatit/rejette les valeurs non scalaires, soit un `getBodyString()` dédié. Correctif transverse, à ne pas faire endpoint par endpoint.
 
 **Repéré le** : 2026-08-03. **Priorité** : basse.
 

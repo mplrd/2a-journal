@@ -88,6 +88,19 @@ class SupportTicketRepository
         return $this->findById($id);
     }
 
+    /**
+     * Reclassify a ticket (admin triage). `details` is deliberately left
+     * untouched: it holds what the reporter actually wrote, and keeping it is
+     * worth more than matching the new type's key whitelist.
+     */
+    public function updateType(int $id, string $type): ?array
+    {
+        $stmt = $this->pdo->prepare('UPDATE support_tickets SET type = :type WHERE id = :id');
+        $stmt->execute(['type' => $type, 'id' => $id]);
+
+        return $this->findById($id);
+    }
+
     /** Bump updated_at so a new message lifts the ticket in activity ordering. */
     public function touch(int $id): void
     {

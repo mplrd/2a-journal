@@ -181,7 +181,8 @@
     },
     "toast": {
       "status_updated": "Statut mis à jour",
-      "priority_updated": "Priorité mise à jour"
+      "priority_updated": "Priorité mise à jour",
+      "type_updated": "Type mis à jour"
     },
     "error": {
       "not_found": "Demande introuvable.",
