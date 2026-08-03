@@ -711,10 +711,11 @@
       "change_password": "Change password",
       "change_password_description": "Update your account password. Your other sessions remain signed in."
     },
-    "danger_zone": {
-      "title": "Danger zone",
+    "account_data": {
+      "title": "Account & data",
+      "irreversible_warning": "Irreversible action",
       "delete_account": "Delete my account",
-      "delete_account_description": "Permanently revoke access to this account. This cannot be undone."
+      "delete_account_description": "Permanently revoke access to this account."
     },
     "change_password": {
       "title": "Change password",
