@@ -55,6 +55,77 @@ class DealNormalizerTest extends TestCase
         $this->assertNotNull($normalized['closed_at']);
     }
 
+    public function testNormalizeCtraderDealScalesProfitByMoneyDigits(): void
+    {
+        // cTrader does not express money in cents: moneyDigits is the exponent,
+        // and its own docs say it "affects grossProfit, swap, commission,
+        // balance, pnlConversionFee". Dividing by a hardcoded 100 is only right
+        // when moneyDigits happens to be 2 — on a broker reporting 8 every
+        // imported P&L is out by a factor of a million.
+        $deal = [
+            'positionId' => 999,
+            'volume' => 50000,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'SELL',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 19226.05,
+            'closePositionDetail' => [
+                'entryPrice' => 19200.00,
+                'grossProfit' => 2605000000,
+                'moneyDigits' => 8,
+            ],
+        ];
+
+        $normalized = $this->normalizer->normalizeCtraderDeal($deal);
+
+        $this->assertEquals(26.05, $normalized['pnl']);
+    }
+
+    public function testNormalizeCtraderDealFallsBackToTheDealsOwnMoneyDigits(): void
+    {
+        // ProtoOADeal carries moneyDigits too. Prefer the closing detail's own
+        // value, but a payload that only sets it on the deal must still scale.
+        $deal = [
+            'positionId' => 999,
+            'volume' => 50000,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 19226.05,
+            'moneyDigits' => 3,
+            'closePositionDetail' => [
+                'entryPrice' => 19200.00,
+                'grossProfit' => 26050,
+            ],
+        ];
+
+        $normalized = $this->normalizer->normalizeCtraderDeal($deal);
+
+        $this->assertEquals(26.05, $normalized['pnl']);
+    }
+
+    public function testNormalizeCtraderDealDefaultsToTwoDigitsWhenUnstated(): void
+    {
+        // Guards the common case: nothing changes for a broker that omits the
+        // field or reports 2, which is what every account seen so far does.
+        $deal = [
+            'positionId' => 999,
+            'volume' => 50000,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'SELL',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 19226.05,
+            'closePositionDetail' => ['entryPrice' => 19200.00, 'grossProfit' => 2605],
+        ];
+
+        $normalized = $this->normalizer->normalizeCtraderDeal($deal);
+
+        $this->assertEquals(26.05, $normalized['pnl']);
+    }
+
     public function testNormalizeCtraderDealConvertsTimestamps(): void
     {
         $deal = [
