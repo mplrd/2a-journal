@@ -28,7 +28,7 @@ Tickets résolus (code mergé sur `develop` + doc rédigée, ou réponse formul�
 |----|-------|------|-----------|
 | [E-01](#e-01) | Édition des setups (au lieu de supprimer/recréer) | Évol | `docs/53-setup-inline-edit.md` |
 | [E-05](#e-05) | DD proposé sur compte non-propfirm (UX) | Évol | `docs/54-account-risk-params-toggle.md` |
-| [D-02](#d-02) | Renommer "Zone dangereuse" sur Profil | Doc/UX | MAJ `docs/27-account-danger-zone.md` |
+| [D-02](#d-02) | Renommer "Zone dangereuse" sur Profil | Doc/UX | MAJ `docs/27-account-data-section.md` |
 | [D-07](#d-07) | Liste des comptes : badge "étape" fusionné dans la colonne "type" | Doc/UX | inline (cf. `AccountsView.vue`) |
 | [Q-01](#q-01) | Comment est calculé le R:R ? | Assistance | Réponse formulée (2026-05-04) |
 | [Q-02](#q-02) | Une alerte est-elle déclenchée si le DD est dépassé ? | Assistance | Réponse formulée (2026-05-04) |
@@ -207,6 +207,7 @@ Tickets restants à traiter / arbitrer / clarifier.
 > "Onglet Profil : pour changer ses mdp c'est marqué 'zone dangereuse'… à terme ce sera différent ? Plutôt mettre 'Mes données' ou un truc dans le genre ?"
 
 - **Livré** : split en deux composants distincts. `SecuritySection.vue` (bordure neutre) accueille le changement de mot de passe ; `DangerZone.vue` (bordure rouge) ne contient plus que la suppression de compte. Doc 27 mise à jour avec un encart en tête expliquant l'évolution.
+- **Suite (2026-08-03, ticket support #12)** : le terme lui-même a finalement été abandonné. Titre neutre « Compte et données », avertissement « ACTION IRRÉVERSIBLE » en rouge gras, bordure rouge conservée ; `DangerZone.vue` renommé `AccountDataSection.vue`. Cf. encart MAJ 2026-08-03 du doc 27.
 
 <a id="d-03"></a>
 #### D-03. Rappel "renseigne tes setups" dans l'import FTMO — 🟢

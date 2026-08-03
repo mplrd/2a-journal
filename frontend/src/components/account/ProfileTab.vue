@@ -6,7 +6,7 @@ import { useToast } from 'primevue/usetoast'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import SecuritySection from './SecuritySection.vue'
-import DangerZone from './DangerZone.vue'
+import AccountDataSection from './AccountDataSection.vue'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost/api'
 
@@ -177,6 +177,6 @@ async function handleSave() {
     </form>
 
     <SecuritySection />
-    <DangerZone />
+    <AccountDataSection />
   </div>
 </template>

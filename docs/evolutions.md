@@ -768,4 +768,42 @@ Constaté sur `AdminSupportTicketController::updateStatus/updatePriority/updateT
 
 ---
 
+## `billing_grace_days` — la description admin ne correspond pas à l'usage réel
+
+**Contexte** : relevé en livrant le ticket support #12 (2026-08-03), en vérifiant le sens de chaque réglage plateforme.
+
+`admin/src/locales/fr.json` décrit `admin.settings.desc.billing_grace_days` comme le « Délai de grâce après échec de paiement Stripe (jours) ». Le seul usage du réglage dans le code est `AuthService::register()` (`api/src/Services/AuthService.php:94`) : il fixe `grace_period_end` **à la création du compte** (14 jours par défaut), c'est-à-dire la période d'essai du nouvel inscrit. Aucun usage côté `BillingService` / webhooks Stripe.
+
+L'admin qui règle ce paramètre depuis le BO croit donc agir sur la tolérance après impayé alors qu'il change la durée d'essai des nouveaux comptes.
+
+**À faire** : trancher lequel des deux est faux — soit corriger la description (fr + en) dans `admin/src/locales/`, soit implémenter réellement la grâce post-échec de paiement si c'était l'intention. Vérifier au passage l'affichage « Fin grâce » de la liste utilisateurs du BO, qui hérite de la même ambiguïté.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse (cosmétique tant que personne ne modifie le réglage), moyenne si le BO est ouvert à d'autres admins.
+
+---
+
+## Locales : tutoiement et vouvoiement se mélangent dans un même écran
+
+**Contexte** : relevé en livrant le ticket support #12 (2026-08-03) sur la section « Compte et données » du profil.
+
+Dans le même bloc UI : `account.account_data.delete_account_description` vouvoie (« Supprime définitivement **votre** accès au compte ») tandis que `account.delete_account.warning_line2` tutoie (« **tape ton** email ci-dessous »). Le mélange existe ailleurs (`billing.*` tutoie, `auth.error.*` vouvoie).
+
+**À faire** : choisir une adresse unique (le produit penche vers le tutoiement) et passer les locales `fr.json` en revue d'un bloc. Chantier transverse à faire d'un seul coup, pas au fil des features, sinon l'incohérence se déplace.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse.
+
+---
+
+## `npm audit` frontend : 6 vulnérabilités sur les dépendances de build
+
+**Contexte** : relevé par `/audit-security` en livrant le ticket support #12 (2026-08-03). Pré-existant.
+
+`npm audit --omit=dev` dans `frontend/` remonte 6 vulnérabilités (1 low, 1 moderate, 4 high) sur la chaîne de build — notamment `vite` et `yaml` (`GHSA-48c2-rrv3-qjmp`, stack overflow sur YAML profondément imbriqué). Ce sont des outils de compilation, pas du code expédié au navigateur : la surface d'exploitation suppose déjà un accès à la machine de build.
+
+**À faire** : passer `npm audit fix` sur une branche dédiée puis rejouer build + suite Vitest — la montée de `vite` est susceptible de casser la config. À ne pas glisser dans une branche de feature.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
