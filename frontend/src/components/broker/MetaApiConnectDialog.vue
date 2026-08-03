@@ -3,6 +3,7 @@ import { ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { brokerSyncService } from '@/services/brokerSync'
 import { useBrokerCredentialForm } from '@/composables/useBrokerCredentialForm'
+import FieldHelpIcon from '@/components/common/FieldHelpIcon.vue'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
@@ -69,7 +70,9 @@ async function submit() {
       </p>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.metaapi_token') }}</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.metaapi_token') }}
+          <FieldHelpIcon :text="t('broker.metaapi_token_help')" testid="metaapi-api-token-help" />
+        </label>
         <InputText
           v-model="values.api_token"
           class="w-full"
@@ -81,7 +84,9 @@ async function submit() {
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.metaapi_account_id') }}</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.metaapi_account_id') }}
+          <FieldHelpIcon :text="t('broker.metaapi_account_id_help')" testid="metaapi-account-id-help" />
+        </label>
         <InputText
           v-model="values.metaapi_account_id"
           class="w-full"

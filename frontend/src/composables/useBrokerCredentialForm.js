@@ -14,10 +14,22 @@ import { computed, ref, watch } from 'vue'
  * @param {string[]} options.publicFields  Non-secret fields, prefilled from
  *   connection.credentials_public (keyed by request-body field name)
  * @param {string[]} options.secretFields  Secret fields, never prefilled
+ * @param {string[]} [options.optionalFields]  Fields that may stay empty on
+ *   create. Secrecy and requiredness are independent — a refresh token is
+ *   secret but optional — so this is listed separately rather than carved out
+ *   of secretFields, mirroring the `secret`/`required` split the backend
+ *   BrokerCredentialMapper already uses.
  * @param {object} [options.defaults]  Initial values in create mode
  */
-export function useBrokerCredentialForm({ connection, publicFields, secretFields, defaults = {} }) {
+export function useBrokerCredentialForm({
+  connection,
+  publicFields,
+  secretFields,
+  optionalFields = [],
+  defaults = {},
+}) {
   const allFields = [...publicFields, ...secretFields]
+  const requiredFields = allFields.filter((field) => !optionalFields.includes(field))
 
   const values = ref({})
   const initial = ref({})
@@ -68,7 +80,7 @@ export function useBrokerCredentialForm({ connection, publicFields, secretFields
     if (isEditing.value) {
       return Object.keys(changed.value).length > 0
     }
-    return allFields.every((field) => (values.value[field] ?? '').toString().trim() !== '')
+    return requiredFields.every((field) => (values.value[field] ?? '').toString().trim() !== '')
   })
 
   return { values, isEditing, canSubmit, changed, full, reset }

@@ -502,6 +502,14 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 **Repéré le** : 2026-07-24.
 **Priorité** : moyenne — masque de vraies erreurs (exit 1 permanent du run complet) et fait échouer toute CI stricte.
 
+**Mise à jour 2026-07-31** (relevé sur `fix/ctrader-account-picker-details`, fichiers en cause non touchés par la branche) — le diagnostic « pollution inter-suites » est **faux, ou au moins incomplet** :
+
+- Les 10 erreurs se reproduisent en lançant **`src/__tests__/account-view.spec.js` seul** (exit 255). Ce n'est donc pas seulement un effet de run complet : ce spec est cassé en isolation.
+- La pile pointe `src/stores/customFields.js:20` (le **store**, pas le service comme noté au 2026-07-24) : `fetchDefinitions()` → `await customFieldsService.list()` échoue, et le `catch` **relance** (`throw err`, l.25) sans que le `onMounted` de `CustomFieldsTab.vue:23` n'attrape quoi que ce soit → rejet non géré.
+- Volumétrie au 2026-07-31 : 52 fichiers, 466 tests passés, 10 erreurs, exit 1.
+
+→ Chercher le mock manquant dans `account-view.spec.js` en premier (piste la plus courte), avant de traquer une pollution croisée. Question de fond derrière : `fetchDefinitions` doit-il relancer alors qu'il stocke déjà `error.value` ? Un appelant `onMounted` non-`await`é ne peut pas l'attraper.
+
 ---
 
 ## cTrader — suites de la lecture live (branche `feat/ctrader-live-read`)
@@ -536,6 +544,191 @@ Enjeu : ne pas alourdir le dashboard (memory `feedback_dashboard_simple`) — pr
 - **Changement de provider sur un compte existant.** Hors périmètre volontairement : la reconfiguration ne touche pas au provider. Basculer un compte de cTrader vers BingX impose toujours supprimer/recréer, car les données importées sont préfixées par provider (`ctrader_`, `bingx_`…) et le curseur n'a plus de sens. À traiter si le besoin se présente.
 
 **Repéré le** : 2026-07-29. **Priorité** : basse pour les trois.
+
+---
+
+## Admin — 6 `message_key` sans traduction
+
+**Contexte** : relevé par `/check-i18n` en livrant la suite de `docs/86-ctrader-account-discovery.md` (2026-07-31). Hors périmètre de la branche cTrader, pas corrigé pour ne pas mélanger deux sujets dans un même diff.
+
+Six clés sont levées par le back mais absentes de `fr.json` **et** de `en.json` — l'admin voit donc la clé brute (`admin.error.user_not_found`) au lieu d'un message :
+
+| Clé | Levée dans |
+|---|---|
+| `admin.error.user_not_found` | `AdminUserService.php:94,106` |
+| `admin.error.cannot_self_suspend` | `AdminUserService.php:102` |
+| `admin.error.cannot_self_delete` | `AdminUserService.php:142` |
+| `admin.settings.error.unknown_key` | `PlatformSettingsService.php:203` |
+| `admin.settings.error.invalid_type` | `PlatformSettingsService.php:227,235` |
+| `admin.settings.error.value_required` | `AdminSettingsController.php:25` |
+
+Correction : ajouter les 6 clés dans les deux locales. Aucun changement de code.
+
+**Repéré le** : 2026-07-31. **Priorité** : basse (chemins d'erreur admin uniquement), mais le correctif est trivial.
+
+---
+
+## Dépendances — 2 alertes ouvertes, non exploitables en l'état
+
+Relevé par `/audit-security` le 2026-07-31. **Aucune n'est exploitable dans ce codebase** — noté ici pour éviter d'avoir à refaire l'analyse à chaque audit :
+
+- **`phpoffice/phpspreadsheet`** — CVE-2026-40296 et CVE-2026-35453 (medium), XSS via le **writer HTML**. On n'instancie que `Writer\Xlsx` et `Writer\Ods` (`ImportController.php:146` et `:150`) ; le writer HTML n'est utilisé nulle part. Vecteur absent.
+- **`vite`** — 4 advisories high (path traversal, lecture de fichier arbitraire, bypass `server.fs.deny`). C'est une **devDependency** : les failles visent le serveur de dev, alors que la prod sert le build statique de `dist/`. Non exposé.
+
+À faire quand même à l'occasion : `npm audit fix` et bump de PhpSpreadsheet, pour ne pas garder un audit rouge en permanence (ça finit par masquer une vraie alerte).
+
+**Repéré le** : 2026-07-31. **Priorité** : basse.
+
+*Note* : le reste de l'audit est vert — `fr.json` et `en.json` ont exactement les mêmes 1181 clés. Les deux « clés manquantes » côté Vue (`robot.events.status_`, `webhook.tradingview.reject_reason.`) sont des **faux positifs** : ce sont des préfixes de concaténation (`t('robot.events.status_' + data.status.toLowerCase())`, `RobotsView.vue:488` et `:493`), pas des clés littérales.
+
+---
+
+## Rate limiting — l'API ne voit jamais l'IP réelle du visiteur
+
+**Signalé à traiter en priorité le 2026-08-03.**
+
+**Contexte** : découvert en diagnostiquant le ticket support #34 (cf.
+`docs/87-upload-token-refresh.md`). `RateLimitMiddleware.php:27` indexe ses
+compteurs sur `Request::getClientIp()`, qui renvoie `$_SERVER['REMOTE_ADDR']`
+(`Request.php:85`). Aucune gestion de `X-Forwarded-For` ni de `CF-Connecting-IP`
+nulle part dans le repo.
+
+Or la prod est derrière Cloudflare puis l'edge Railway. **Vérifié en production**
+sur 1000 lignes de logs : PHP ne voit que `100.64.0.2` à `100.64.0.22`, soit 21
+adresses internes Railway attribuées au hasard, jamais l'IP du visiteur.
+
+Les quotas de `config/security.php` sont donc mutualisés entre tous les
+utilisateurs au lieu d'être individuels :
+
+| Endpoint | Quota annoncé | Quota réel |
+|---|---|---|
+| `/auth/login` | 10 / 15 min / IP | ~210 / 15 min, partagés |
+| `/auth/refresh` | 10 / 15 min / IP | ~210 / 15 min, partagés |
+| `/auth/register` | 5 / 15 min / IP | ~105 / 15 min, partagés |
+| `/auth/forgot-password` | 3 / 15 min / IP | ~63 / 15 min, partagés |
+
+**Conséquences** :
+1. Un attaquant n'est pas limitable individuellement — en tombant au hasard sur
+   les 21 adresses du pool, il dispose de ~21× le quota prévu.
+2. Symétriquement, il peut saturer volontairement les seaux partagés : ~210
+   appels à `/auth/refresh` en 15 min déconnecteraient tous les utilisateurs
+   actifs. Déni de service à très bas coût.
+3. `forgot_password` et `register` sont les plus fragiles : quelques dizaines de
+   requêtes bloquent la fonction pour toute la plateforme.
+
+**À décharge** : le vrai rempart anti-force-brute reste le verrouillage de compte
+(5 échecs → 15 min, `AuthService.php:624-641`), correctement indexé par
+utilisateur. Le limiteur par IP n'est qu'une seconde couche, aujourd'hui
+dégradée. **Aucune exploitation constatée** : 0 réponse 429 sur 59 h de logs de
+production.
+
+**À faire** : dériver l'IP client de `CF-Connecting-IP` (Cloudflare est le front),
+avec repli sur `X-Forwarded-For`, et **une liste blanche de proxys de confiance** —
+sans elle, n'importe qui peut forger l'en-tête et contourner le limiteur, ce qui
+serait pire que la situation actuelle. En TDD sur `Request::capture()`.
+
+**Repéré le** : 2026-08-03. **Priorité** : haute (latent, non déclenché).
+
+---
+
+## Production — l'API tourne sur le serveur de développement de PHP
+
+**Signalé à traiter en priorité le 2026-08-03.**
+
+**Contexte** : `api/Dockerfile` part de `php:8.4-cli` et `api/docker/entrypoint.sh`
+lance `php -S 0.0.0.0:${PORT}`. La documentation PHP qualifie ce serveur de
+serveur de développement et le déconseille explicitement sur un réseau public.
+`PHP_CLI_SERVER_WORKERS` n'est défini ni dans le repo ni dans les variables
+Railway → **un seul worker**, traitement séquentiel.
+
+`api/docker/nginx.conf` **n'est jamais copié** par le Dockerfile et nginx n'est
+pas installé dans l'image : c'est du code mort, qui donne une fausse impression de
+configuration en place. Il est par ailleurs correctement écrit (`127.0.0.1:9000`,
+`${PORT}`) et directement réutilisable.
+
+**Ce que ça coûte** :
+1. **Aucune observabilité applicative** — les logs du conteneur ne contiennent que
+   `Accepted`/`Closing`, sans chemin ni code retour. Le diagnostic du ticket #34 a
+   dû passer par les logs de l'edge Railway, qui ne donnent ni la query string, ni
+   le corps, ni l'IP vue par PHP.
+2. **Une requête lente bloque toutes les autres** — `max_execution_time = 60` : une
+   synchronisation broker ou un import volumineux peut monopoliser l'unique worker
+   pendant une minute.
+3. Un worker unique qui plante coupe le service jusqu'au redémarrage du conteneur.
+
+**À faire, par effort croissant** :
+- **A (immédiat, réversible)** : poser `PHP_CLI_SERVER_WORKERS=4` en variable
+  d'environnement sur le service `api`. Zéro code, règle la sérialisation. Ne
+  règle ni l'observabilité ni la robustesse.
+- **B (le vrai correctif)** : basculer l'image sur `php:8.4-fpm`, installer nginx,
+  lancer les deux processus depuis l'entrypoint. `nginx.conf` est déjà écrit. Rend
+  les logs d'accès (chemin + code + IP source), des timeouts configurables et un
+  pool de workers.
+
+**Repéré le** : 2026-08-03. **Priorité** : haute.
+
+---
+
+## Auth — course entre le logout et un renouvellement de token en cours
+
+**Contexte** : relevé par `/audit-privacy` pendant le correctif du ticket #34.
+`clearTokens()` (`services/api.js`) remet le token à `null` mais n'annule pas un
+`refreshPromise` en vol. Si l'utilisateur se déconnecte pendant qu'un
+renouvellement est en cours (typiquement le rejeu d'un upload), la promesse se
+résout **après** le logout et rappelle `setTokens()` : un token d'accès valide
+réapparaît en mémoire alors que la session est censée être fermée.
+
+Comme `isAuthenticated` se calcule sur `api.getAccessToken()` (`stores/auth.js:32`),
+l'application peut reconsidérer l'utilisateur comme connecté à la navigation
+suivante. Les stores Pinia sont vidés et `user` est à `null`, donc rien ne
+s'affiche dans l'immédiat, mais un jeton porteur survit à une déconnexion
+explicite.
+
+**Préexistant** au correctif du ticket #34 : `refreshAccessToken()` appelait déjà
+`setTokens()` de façon asynchrone. Le verrou anti-concurrence introduit par ce
+correctif ne change pas la taille de la fenêtre.
+
+**À faire** : invalider la promesse en vol dans `clearTokens()` et ignorer une
+résolution tardive (compteur de session capturé à l'entrée du renouvellement).
+~3 lignes + 1 test.
+
+**Repéré le** : 2026-08-03. **Priorité** : moyenne (fenêtre étroite, exploitation
+fortuite uniquement).
+
+---
+
+## Infra — connexion MySQL ouverte à chaque requête, y compris `/health`
+
+**Contexte** : `config/routes.php:122` appelle `Database::getConnection()` au
+chargement du fichier, donc pour **toutes** les routes — y compris `/health`, qui
+ne lit aucune donnée. Visible dans les logs réseau Railway : chaque requête HTTP
+déclenche une résolution DNS puis une poignée de main MySQL d'environ 7,8 Ko.
+
+Corollaire relevé au passage : `api/docker/entrypoint.sh` rejoue `seed-demo.php` à
+**chaque démarrage** du conteneur, y compris en production.
+
+**À faire** : différer la connexion PDO jusqu'au premier usage réel (connexion
+paresseuse), et conditionner le seed de démo à l'environnement.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse (gaspillage, pas de bug).
+
+---
+
+## Sécurité — scanner de vulnérabilités permanent sur l'API
+
+**Contexte** : les logs HTTP de production montrent un balayage continu depuis
+`20.215.189.213` (Microsoft Azure, bloc `20.192.0.0/10`, pas de reverse DNS) :
+`/wp-content/plugins/hellopress/wp_filemanager.php`, `/.env`, et des dizaines de
+webshells `.php`. Environ 8 requêtes/seconde par rafales.
+
+**Rien n'est exposé** — que des 404, et `.env` est hors du `document root`. Mais
+chaque requête consomme l'unique worker PHP et ouvre une connexion MySQL (cf.
+entrée ci-dessus).
+
+**À faire** : une règle Cloudflare (WAF ou rate limiting) sur les chemins
+`*.php` et `/wp-*`, qui n'existent pas dans cette API.
+
+**Repéré le** : 2026-08-03. **Priorité** : basse.
 
 ---
 

@@ -3,6 +3,7 @@ import { ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { brokerSyncService } from '@/services/brokerSync'
 import { useBrokerCredentialForm } from '@/composables/useBrokerCredentialForm'
+import FieldHelpIcon from '@/components/common/FieldHelpIcon.vue'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
@@ -65,7 +66,9 @@ async function submit() {
       </p>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.bingx_api_key') }}</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.bingx_api_key') }}
+          <FieldHelpIcon :text="t('broker.bingx_api_key_help')" testid="bingx-api-key-help" />
+        </label>
         <InputText
           v-model="values.api_key"
           class="w-full"
@@ -77,7 +80,9 @@ async function submit() {
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.bingx_api_secret') }}</label>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('broker.bingx_api_secret') }}
+          <FieldHelpIcon :text="t('broker.bingx_api_secret_help')" testid="bingx-api-secret-help" />
+        </label>
         <InputText
           v-model="values.api_secret"
           class="w-full"

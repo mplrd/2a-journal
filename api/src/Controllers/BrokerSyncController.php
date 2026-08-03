@@ -56,6 +56,19 @@ class BrokerSyncController extends Controller
     }
 
     /**
+     * List the cTrader accounts reachable with the supplied app credentials, so
+     * the user picks one instead of typing ctidTraderAccountId by hand.
+     */
+    public function ctraderAccounts(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+
+        return $this->jsonSuccess(
+            $this->connectionService->discoverCtraderAccounts($userId, $request->getBody()),
+        );
+    }
+
+    /**
      * Get connection for an account, or every connection of the user.
      */
     public function connections(Request $request): Response

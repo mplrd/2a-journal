@@ -454,6 +454,7 @@ $brokerSyncController = new BrokerSyncController(
 
 $router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->put('/broker/connections/{id}', [$brokerSyncController, 'updateConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->post('/broker/ctrader/accounts', [$brokerSyncController, 'ctraderAccounts'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);

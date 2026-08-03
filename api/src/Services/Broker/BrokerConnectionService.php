@@ -128,6 +128,60 @@ class BrokerConnectionService
         );
     }
 
+    /**
+     * List the cTrader accounts reachable with a set of app credentials, so the
+     * user picks one instead of typing `ctidTraderAccountId` by hand — a number
+     * the cTrader platform never displays (it shows `traderLogin`, a different
+     * number, which is what a real user entered before getting "account not
+     * found").
+     *
+     * Credentials come from the request body, overlaid on the stored ones when
+     * `connection_id` is supplied — that way the reconfigure dialog can list
+     * accounts without the user retyping a secret that is already stored.
+     *
+     * Broker-side failures are reported, not thrown: the reason ("wrong
+     * clientSecret") is the actionable part and must reach the user, so it
+     * comes back in `error` — redacted — alongside an empty list. Only a
+     * caller mistake (missing credential, someone else's connection) throws.
+     *
+     * @return array{accounts: list<array{ctid_trader_account_id: int, trader_login: string, is_live: bool, broker_name: ?string, balance: ?float, currency: ?string, is_disabled: bool, disabled_reason: ?string, details: array<string, string|int|float|bool>}>, error: ?string}
+     */
+    public function discoverCtraderAccounts(int $userId, array $body): array
+    {
+        $existing = [];
+        if (!empty($body['connection_id'])) {
+            $connection = $this->requireOwnedConnection((int) $body['connection_id'], $userId);
+            $existing = $this->decryptOrEmpty($connection);
+        }
+
+        // The account list is keyed by access token, not by account, so the
+        // account id is not required here — merge() would demand it.
+        $credentials = [];
+        foreach (['client_id', 'client_secret', 'access_token'] as $field) {
+            $value = trim((string) ($body[$field] ?? ''));
+            $credentials[$field] = $value !== '' ? $value : ($existing[$field] ?? '');
+            if ($credentials[$field] === '') {
+                throw new ValidationException('broker.error.credentials_required', $field);
+            }
+        }
+        if (!empty($body['environment'])) {
+            $credentials['environment'] = strtoupper((string) $body['environment']);
+        } elseif (!empty($existing['environment'])) {
+            $credentials['environment'] = $existing['environment'];
+        }
+
+        $connector = $this->connectors->get(BrokerProvider::CTRADER->value);
+        if (!method_exists($connector, 'fetchAccounts')) {
+            throw new ValidationException('broker.error.account_discovery_failed', 'provider');
+        }
+
+        try {
+            return ['accounts' => $connector->fetchAccounts($credentials), 'error' => null];
+        } catch (\Throwable $e) {
+            return ['accounts' => [], 'error' => $this->sanitizeTestError($e->getMessage())];
+        }
+    }
+
     public function deleteConnection(int $connectionId): void
     {
         $this->connectionRepo->delete($connectionId);
@@ -173,10 +227,11 @@ class BrokerConnectionService
      *
      * The broker's own wording is the whole point ("wrong clientSecret" names
      * the field to fix), but the raw message is not always just that: BingX
-     * signs in the query string, and a Guzzle transport error embeds the full
-     * request URI — so the message can carry an HMAC signature and the internal
-     * endpoint. Redact the credential-bearing parameters and any long hex run,
-     * then cap the length. A short broker message passes through untouched.
+     * signs in the query string, and cTrader refreshes its access token with a
+     * GET carrying client_secret and refresh_token. A Guzzle transport error
+     * embeds the full request URI, so the message can hand a client every
+     * credential in it. Redact the credential-bearing parameters and any long
+     * hex run, then cap the length. A short broker message passes untouched.
      */
     private function sanitizeTestError(?string $message): ?string
     {
@@ -185,8 +240,17 @@ class BrokerConnectionService
         }
 
         // Query/JSON parameters that carry a credential or a signature.
+        //
+        // The leading `(?:[a-z0-9]+[_-]){0,3}` is what makes this work on real
+        // parameter names: `\bsecret\b` never matched inside `client_secret`,
+        // because the underscore is a word character and so there is no
+        // boundary in front of it. Same for `token` in `refresh_token`. Both
+        // values are opaque strings rather than long hex, so the fallback rule
+        // below did not catch them either — they went out verbatim.
         $message = preg_replace(
-            '/\b(signature|api[_-]?key|apikey|secret|access[_-]?token|token|password)\b(\s*[=:]\s*"?)[^\s&"\',]+/i',
+            '/(?<![a-z0-9_-])((?:[a-z0-9]+[_-]){0,3}'
+                . '(?:signature|api[_-]?key|apikey|secret|access[_-]?token|refresh[_-]?token|token|password))'
+                . '(\s*[=:]\s*"?)[^\s&"\',]+/i',
             '$1$2[redacted]',
             $message,
         );
