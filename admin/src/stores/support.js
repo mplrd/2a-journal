@@ -68,11 +68,23 @@ export const useSupportStore = defineStore('support', () => {
     return response
   }
 
-  // Keep the row in the list aligned with the detail (status/priority badges)
+  async function updateType(id, type) {
+    const response = await supportService.updateType(id, type)
+    current.value = response.data
+    syncListFrom(response.data)
+    return response
+  }
+
+  // Keep the row in the list aligned with the detail (type/status/priority badges)
   function syncListFrom(detail) {
     const idx = tickets.value.findIndex((tk) => tk.id === detail.id)
     if (idx !== -1) {
-      tickets.value[idx] = { ...tickets.value[idx], status: detail.status, priority: detail.priority }
+      tickets.value[idx] = {
+        ...tickets.value[idx],
+        type: detail.type,
+        status: detail.status,
+        priority: detail.priority,
+      }
     }
   }
 
@@ -82,6 +94,6 @@ export const useSupportStore = defineStore('support', () => {
 
   return {
     tickets, current, total, loading, error, filters, page, perPage,
-    fetchTickets, fetchTicket, reply, updateStatus, updatePriority, setFilters,
+    fetchTickets, fetchTicket, reply, updateStatus, updatePriority, updateType, setFilters,
   }
 })

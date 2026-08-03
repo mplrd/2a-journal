@@ -292,6 +292,48 @@ class SupportFlowTest extends TestCase
         $this->assertSame('HIGH', $res->getBody()['data']['priority']);
     }
 
+    public function testAdminReclassifiesTicketType(): void
+    {
+        $ticket = $this->createTicket($this->userToken)['data'];
+
+        $res = $this->router->dispatch($this->req($this->adminToken, 'PATCH', "/admin/support/tickets/{$ticket['id']}/type", [
+            'type' => 'FEATURE',
+        ]));
+        $this->assertSame('FEATURE', $res->getBody()['data']['type']);
+
+        // The owner sees the new classification on their own ticket.
+        $detail = $this->router->dispatch($this->req($this->userToken, 'GET', "/support/tickets/{$ticket['id']}"))->getBody();
+        $this->assertSame('FEATURE', $detail['data']['type']);
+    }
+
+    public function testAdminReclassifyRejectsUnknownType(): void
+    {
+        $ticket = $this->createTicket($this->userToken)['data'];
+
+        try {
+            $this->router->dispatch($this->req($this->adminToken, 'PATCH', "/admin/support/tickets/{$ticket['id']}/type", [
+                'type' => 'QUESTION',
+            ]));
+            $this->fail('Expected 422');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+        }
+    }
+
+    public function testUserCannotReclassifyTicketType(): void
+    {
+        $ticket = $this->createTicket($this->userToken)['data'];
+
+        try {
+            $this->router->dispatch($this->req($this->userToken, 'PATCH', "/admin/support/tickets/{$ticket['id']}/type", [
+                'type' => 'FEATURE',
+            ]));
+            $this->fail('Expected 403');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+    }
+
     public function testUserCannotReplyToClosedTicket(): void
     {
         $ticket = $this->createTicket($this->userToken)['data'];

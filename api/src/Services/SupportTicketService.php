@@ -207,6 +207,21 @@ class SupportTicketService
         return $this->getDetailForAdmin($ticketId);
     }
 
+    /**
+     * Reclassify a ticket between SUPPORT / BUG / FEATURE. Reporters are not
+     * consistent about the type they pick at creation, so triage needs to fix
+     * it afterwards. Silent on purpose (no e-mail): it is an internal
+     * bookkeeping change, unlike a status transition.
+     */
+    public function changeType(int $adminId, int $ticketId, ?string $type): array
+    {
+        $this->requireTicket($ticketId);
+        $newType = $this->validateType($type);
+        $this->ticketRepo->updateType($ticketId, $newType->value);
+
+        return $this->getDetailForAdmin($ticketId);
+    }
+
     public function listForAdmin(array $filters): array
     {
         [$page, $perPage, $offset] = $this->paginationFrom($filters);

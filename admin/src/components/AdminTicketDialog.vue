@@ -13,6 +13,7 @@ import { supportService } from '@/services/support'
 
 const TICKET_STATUS = ['OPEN', 'IN_PROGRESS', 'WAITING_USER', 'RESOLVED', 'CLOSED']
 const TICKET_PRIORITY = ['LOW', 'NORMAL', 'HIGH']
+const TICKET_TYPE = ['SUPPORT', 'BUG', 'FEATURE']
 const STATUS_SEVERITY = {
   OPEN: 'info', IN_PROGRESS: 'warn', WAITING_USER: 'secondary', RESOLVED: 'success', CLOSED: 'contrast',
 }
@@ -35,6 +36,7 @@ const clientError = ref(null)
 const fileInput = ref(null)
 const statusModel = ref(null)
 const priorityModel = ref(null)
+const typeModel = ref(null)
 
 const ticket = computed(() => store.current)
 
@@ -49,6 +51,7 @@ const detailEntries = computed(() => {
 
 const statusOptions = computed(() => TICKET_STATUS.map((value) => ({ value, label: t(`support.status.${value}`) })))
 const priorityOptions = computed(() => TICKET_PRIORITY.map((value) => ({ value, label: t(`support.priority.${value}`) })))
+const typeOptions = computed(() => TICKET_TYPE.map((value) => ({ value, label: t(`support.type.${value}`) })))
 
 watch(
   () => [props.visible, props.ticketId],
@@ -61,6 +64,7 @@ watch(
         await store.fetchTicket(id)
         statusModel.value = ticket.value?.status
         priorityModel.value = ticket.value?.priority
+        typeModel.value = ticket.value?.type
       } catch {
         toast.add({ severity: 'error', summary: t('error.internal'), detail: t('support.error.not_found'), life: 4000 })
         emit('update:visible', false)
@@ -95,6 +99,16 @@ async function applyPriority() {
   try {
     await store.updatePriority(ticket.value.id, priorityModel.value)
     toast.add({ severity: 'success', summary: t('common.confirm'), detail: t('support.toast.priority_updated'), life: 3000 })
+    emit('updated')
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('error.internal'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  }
+}
+
+async function applyType() {
+  try {
+    await store.updateType(ticket.value.id, typeModel.value)
+    toast.add({ severity: 'success', summary: t('common.confirm'), detail: t('support.toast.type_updated'), life: 3000 })
     emit('updated')
   } catch (err) {
     toast.add({ severity: 'error', summary: t('error.internal'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
@@ -159,12 +173,24 @@ function handleClose() {
     <div v-if="ticket" class="flex flex-col gap-4" data-testid="admin-ticket-detail">
       <!-- Header meta -->
       <div class="flex flex-wrap items-center gap-3 text-sm">
-        <Tag :value="t(`support.type.${ticket.type}`)" severity="secondary" />
         <span class="text-gray-500">{{ ticket.user_email }}</span>
       </div>
 
-      <!-- Status / priority controls -->
+      <!-- Type / status / priority controls -->
       <div class="flex flex-wrap gap-4">
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-600 dark:text-gray-300">{{ t('support.field.type') }}</label>
+          <Select
+            v-model="typeModel"
+            :options="typeOptions"
+            option-label="label"
+            option-value="value"
+            class="w-40"
+            data-testid="admin-type-select"
+            @change="applyType"
+          />
+          <Tag :value="t(`support.type.${ticket.type}`)" severity="secondary" />
+        </div>
         <div class="flex items-center gap-2">
           <label class="text-sm text-gray-600 dark:text-gray-300">{{ t('support.field.status') }}</label>
           <Select

@@ -79,6 +79,7 @@ GET    /api/admin/support/tickets/{id}
 POST   /api/admin/support/tickets/{id}/messages
 PATCH  /api/admin/support/tickets/{id}/status
 PATCH  /api/admin/support/tickets/{id}/priority
+PATCH  /api/admin/support/tickets/{id}/type
 GET    /api/admin/support/tickets/{id}/attachments/{attId}
 ```
 
@@ -93,6 +94,7 @@ Centralise la logique et les notifications :
 - `replyAsAdmin` → notifie le créateur.
 - `changeStatus` → horodate `closed_at` si `CLOSED`, notifie le créateur (si changement effectif).
 - `changePriority` → pas de mail (interne).
+- `changeType` → reclassement du ticket par l'admin, pas de mail, `details` conservés (cf. doc 88).
 - Listes paginées (`{ data, meta }`), détail assemblé (messages + PJ groupées par message).
 
 Validation serveur systématique (type/statut/priorité via enums, sujet ≤ 200, corps non vide, nb de PJ ≤ 5).
@@ -120,7 +122,7 @@ Envoi best-effort (try/catch + log, ne bloque jamais la requête). Lien `fronten
 - Route `/support` + lien nav (`AdminLayout.vue`).
 - `SupportView.vue` : `DataTable` de **tous** les tickets + filtres (type / statut / priorité / recherche email & sujet), e-mail du demandeur, badges, nombre de messages.
   - **Filtres multi-valeur** (2026-06-01) : type, statut et priorité sont des `MultiSelect` (plusieurs valeurs combinables, ex. statut `OPEN` + `IN_PROGRESS` + `WAITING_USER`). Une dimension vide = pas de filtre. La recherche reste un champ texte. Transport : les valeurs sont jointes en CSV dans la query (`?status=OPEN,IN_PROGRESS`). Côté back, `SupportTicketRepository::applyEnumFilter()` parse le CSV, **valide chaque valeur contre l'enum** (les inconnues sont ignorées) et génère un `IN (…)` à paramètres liés (mono-valeur → `=`, rétrocompatible). Tests : `SupportTicketRepositoryTest` (filtre IN, valeurs invalides ignorées), `SupportFlowTest` (`?status=OPEN,CLOSED` bout-en-bout), `admin/support-service.spec.js` (jointure CSV).
-- `AdminTicketDialog.vue` : édition statut & priorité (`Select` → `PATCH` instantané), fil de discussion, réponse avec PJ, téléchargement authentifié.
+- `AdminTicketDialog.vue` : édition type, statut & priorité (`Select` → `PATCH` instantané), fil de discussion, réponse avec PJ, téléchargement authentifié. Le **reclassement du type** (2026-08-03) est documenté en doc 88.
 - `services/support.js`, `stores/support.js`. `api.js` enrichi de `upload` + `getBlob`.
 
 ## i18n

@@ -181,7 +181,8 @@
     },
     "toast": {
       "status_updated": "Status updated",
-      "priority_updated": "Priority updated"
+      "priority_updated": "Priority updated",
+      "type_updated": "Type updated"
     },
     "error": {
       "not_found": "Request not found.",

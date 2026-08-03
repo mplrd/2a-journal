@@ -184,6 +184,20 @@ class SupportTicketRepositoryTest extends TestCase
         $this->assertSame(TicketPriority::HIGH->value, $updated['priority']);
     }
 
+    public function testUpdateTypeReclassifiesAndKeepsDetails(): void
+    {
+        $ticket = $this->makeTicket([
+            'type' => TicketType::BUG->value,
+            'details' => ['expected_behavior' => 'should open'],
+        ]);
+
+        $updated = $this->tickets->updateType((int) $ticket['id'], TicketType::FEATURE->value);
+
+        $this->assertSame(TicketType::FEATURE->value, $updated['type']);
+        // Details captured at creation survive the reclassification (see doc 88).
+        $this->assertStringContainsString('should open', (string) $updated['details']);
+    }
+
     public function testMessagesThreadOrderedAndCounted(): void
     {
         $ticket = $this->makeTicket();

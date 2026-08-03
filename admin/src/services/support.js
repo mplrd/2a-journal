@@ -37,6 +37,10 @@ export const supportService = {
     return api.patch(`/admin/support/tickets/${id}/priority`, { priority })
   },
 
+  async updateType(id, type) {
+    return api.patch(`/admin/support/tickets/${id}/type`, { type })
+  },
+
   async attachmentUrl(ticketId, attachmentId) {
     const blob = await api.getBlob(`/admin/support/tickets/${ticketId}/attachments/${attachmentId}`)
     return URL.createObjectURL(blob)

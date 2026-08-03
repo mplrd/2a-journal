@@ -7,9 +7,9 @@ declare(strict_types=1);
  *
  * Authenticates as an admin (credentials in tools/support-cli/.env), then calls
  * the admin support endpoints. Read commands are unrestricted; write commands
- * (reply / set-status / set-priority) are DRY-RUN by default and only hit the
- * API when --confirm is passed — because a write triggers a real e-mail to the
- * ticket author.
+ * (reply / set-status / set-priority / set-type) are DRY-RUN by default and only
+ * hit the API when --confirm is passed — because a write can trigger a real
+ * e-mail to the ticket author.
  *
  * Usage:
  *   php support-cli.php list [--status=OPEN,IN_PROGRESS] [--type=BUG] [--priority=HIGH] [--search=foo] [--page=1] [--per-page=20] [--json]
@@ -17,6 +17,7 @@ declare(strict_types=1);
  *   php support-cli.php reply <id> --body="..." [--confirm] [--json]
  *   php support-cli.php set-status <id> <STATUS> [--confirm] [--json]
  *   php support-cli.php set-priority <id> <PRIORITY> [--confirm] [--json]
+ *   php support-cli.php set-type <id> <TYPE> [--confirm] [--json]
  *
  * Exit codes: 0 ok, 1 usage error, 2 config error, 3 API/HTTP error.
  */
@@ -395,6 +396,29 @@ function cmdSetPriority(array $config, array $positional, array $flags): void
     }
 }
 
+/**
+ * Reclassify a ticket (SUPPORT / BUG / FEATURE). Unlike set-status this sends
+ * no e-mail, but it stays behind --confirm like every other write command.
+ */
+function cmdSetType(array $config, array $positional, array $flags): void
+{
+    $id = (int) ($positional[0] ?? 0);
+    $type = strtoupper((string) ($positional[1] ?? ''));
+    if ($id <= 0 || !in_array($type, TYPES, true)) {
+        fail(1, 'Usage: set-type <id> <' . implode('|', TYPES) . '> [--confirm]');
+    }
+    if (empty($flags['confirm'])) {
+        out("DRY-RUN — would set ticket #$id type to $type (no e-mail). Re-run with --confirm.");
+        return;
+    }
+    $token = authenticate($config);
+    $resp = adminCall($config, $token, 'PATCH', "/admin/support/tickets/$id/type", ['type' => $type]);
+    out("Ticket #$id type set to $type.");
+    if (!empty($flags['json'])) {
+        emitJson($resp);
+    }
+}
+
 function usage(): never
 {
     out(<<<TXT
@@ -406,8 +430,9 @@ Commands:
   reply <id> --body="…" [--confirm] [--json]
   set-status <id> <OPEN|IN_PROGRESS|WAITING_USER|RESOLVED|CLOSED> [--confirm] [--json]
   set-priority <id> <LOW|NORMAL|HIGH> [--confirm] [--json]
+  set-type <id> <SUPPORT|BUG|FEATURE> [--confirm] [--json]
 
-Write commands are DRY-RUN unless --confirm is given (writes trigger e-mails).
+Write commands are DRY-RUN unless --confirm is given (reply/set-status e-mail the author).
 Config: tools/support-cli/.env (copy from .env.example).
 TXT);
     exit(1);
@@ -436,6 +461,9 @@ if (PHP_SAPI === 'cli' && isset($argv) && realpath($argv[0]) === realpath(__FILE
             break;
         case 'set-priority':
             cmdSetPriority(loadConfig($dir), $positional, $flags);
+            break;
+        case 'set-type':
+            cmdSetType(loadConfig($dir), $positional, $flags);
             break;
         default:
             usage();

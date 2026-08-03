@@ -68,6 +68,15 @@ class AdminSupportTicketController extends Controller
         return $this->jsonSuccess($detail);
     }
 
+    public function updateType(Request $request): Response
+    {
+        $adminId = (int) $request->getAttribute('user_id');
+        $ticketId = (int) $request->getRouteParam('id');
+        $detail = $this->service->changeType($adminId, $ticketId, $request->getBody('type'));
+
+        return $this->jsonSuccess($detail);
+    }
+
     public function downloadAttachment(Request $request): never
     {
         $attachmentId = (int) $request->getRouteParam('attId');
