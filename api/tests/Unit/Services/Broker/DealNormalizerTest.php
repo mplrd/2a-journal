@@ -14,6 +14,106 @@ class DealNormalizerTest extends TestCase
         $this->normalizer = new DealNormalizer();
     }
 
+    // ── Timezone of the datetimes written to the journal ────────────
+
+    public function testTimestampsLandInTheUsersTimezoneNotUtc(): void
+    {
+        // The DATETIME columns hold LOCAL wall-clock time: that is what the
+        // manual trade form writes (a PrimeVue DatePicker value formatted as
+        // typed). Broker connectors were writing UTC into the same columns, so
+        // a trade opened at 07:29 in Paris was journalled as 05:29 and sat two
+        // hours off from every hand-entered trade beside it.
+        $normalizer = new DealNormalizer('Europe/Paris');
+
+        $row = $normalizer->normalizeCtraderDeal([
+            'positionId' => 331,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'positionOpenTimestamp' => 1785907740000, // 05:29:00 UTC
+            'executionTimestamp' => 1785916872000,    // 08:01:12 UTC
+            'executionPrice' => 26283.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327],
+        ]);
+
+        // CEST in August: UTC+2.
+        $this->assertSame('2026-08-05 07:29:00', $row['opened_at']);
+        $this->assertSame('2026-08-05 10:01:12', $row['closed_at']);
+    }
+
+    public function testTimestampsHonourDaylightSavingTime(): void
+    {
+        // A fixed +2 offset would be wrong for half the year. January is CET
+        // (UTC+1), so the same conversion has to shift by one hour only.
+        $normalizer = new DealNormalizer('Europe/Paris');
+
+        $row = $normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 1,
+            'price' => 100.0,
+            'symbolName' => 'X',
+            'lotSize' => 100,
+            'tradeData' => [
+                'symbolId' => 1, 'volume' => 100, 'tradeSide' => 'BUY',
+                'openTimestamp' => 1767261600000, // 2026-01-01 10:00:00 UTC
+            ],
+        ]);
+
+        $this->assertSame('2026-01-01 11:00:00', $row['opened_at']);
+    }
+
+    public function testIsoTimestampsAreConvertedToo(): void
+    {
+        // Ouinex/MetaApi hand over ISO-8601 strings rather than epoch ms.
+        // new DateTime() keeps the offset carried by the string, so formatting
+        // it straight back out preserved UTC just as gmdate() did.
+        $normalizer = new DealNormalizer('Europe/Paris');
+
+        $row = $normalizer->normalizeOuinexMarginPosition([
+            'instrument_id' => 'BTCUSDT',
+            'side' => 'BUY',
+            'entry_price' => 60000.0,
+            'exit_price' => 61000.0,
+            'amount' => 0.5,
+            'pnl' => 500.0,
+            'start_ts' => '2026-08-05T05:29:00Z',
+            'end_ts' => '2026-08-05T08:01:12Z',
+            'margin_position_id' => 'mp-1',
+        ]);
+
+        $this->assertSame('2026-08-05 07:29:00', $row['opened_at']);
+        $this->assertSame('2026-08-05 10:01:12', $row['closed_at']);
+    }
+
+    public function testDefaultsToUtcWhenNoTimezoneIsGiven(): void
+    {
+        // No timezone → unchanged behaviour, so a connector that never learns
+        // the user's timezone is no worse off than before.
+        $row = (new DealNormalizer())->normalizeCtraderOpenPosition([
+            'positionId' => 1,
+            'price' => 100.0,
+            'symbolName' => 'X',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 1, 'volume' => 100, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+        ]);
+
+        $this->assertSame('2026-08-05 05:29:00', $row['opened_at']);
+    }
+
+    public function testAnUnknownTimezoneFallsBackToUtcInsteadOfThrowing(): void
+    {
+        // users.timezone is free text. A typo must not abort the whole sync.
+        $row = (new DealNormalizer('Mars/Olympus_Mons'))->normalizeCtraderOpenPosition([
+            'positionId' => 1,
+            'price' => 100.0,
+            'symbolName' => 'X',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 1, 'volume' => 100, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+        ]);
+
+        $this->assertSame('2026-08-05 05:29:00', $row['opened_at']);
+    }
+
     // ── cTrader deals ───────────────────────────────────────────────
 
     public function testNormalizeCtraderClosingDeal(): void
@@ -22,14 +122,15 @@ class DealNormalizerTest extends TestCase
             'dealId' => 12345,
             'orderId' => 111,
             'positionId' => 999,
-            'volume' => 50000, // in cents → 500.00 units → 0.5 lots (volume/100000)
+            'volume' => 50000, // cents; lotSize 100000 cents → 0.5 lots
+            'lotSize' => 100000, // injected by the connector from ProtoOASymbol
             'filledVolume' => 50000,
             'symbolId' => 22,
             'symbolName' => 'GER40',
             'createTimestamp' => 1700000000000, // ms
             'executionTimestamp' => 1700003600000,
             'executionPrice' => 19226.05,
-            'tradeSide' => 'SELL',
+            'tradeSide' => 'BUY',
             'dealStatus' => 'FILLED',
             'commission' => -50, // cents
             'swap' => 0,
@@ -46,6 +147,7 @@ class DealNormalizerTest extends TestCase
         $normalized = $this->normalizer->normalizeCtraderDeal($deal);
 
         $this->assertSame('GER40', $normalized['symbol']);
+        // tradeSide BUY on a CLOSING deal → the position itself was a SELL.
         $this->assertSame('SELL', $normalized['direction']);
         $this->assertEquals(19200.00, $normalized['entry_price']);
         $this->assertEquals(19226.05, $normalized['exit_price']);
@@ -53,6 +155,172 @@ class DealNormalizerTest extends TestCase
         $this->assertEquals(26.05, $normalized['pnl']); // grossProfit/100
         $this->assertSame('ctrader_999', $normalized['external_id']);
         $this->assertNotNull($normalized['closed_at']);
+    }
+
+    public function testNormalizeCtraderDealInvertsTheClosingDealSide(): void
+    {
+        // ProtoOADeal.tradeSide is the side of THIS deal. On a deal carrying a
+        // closePositionDetail that deal is the one closing the position, so its
+        // side is the opposite of the position's own direction: a long is
+        // closed by a SELL, a short by a BUY. Copying it verbatim turned every
+        // synced cTrader trade upside down — a short taking profit showed up as
+        // a winning long.
+        $short = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 1,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY', // buying back → the position was SHORT
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 8634],
+        ]);
+
+        $long = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 2,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'SELL', // selling out → the position was LONG
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26400.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 1366],
+        ]);
+
+        $this->assertSame('SELL', $short['direction']);
+        $this->assertSame('BUY', $long['direction']);
+    }
+
+    public function testNormalizeCtraderDealAcceptsANumericClosingSide(): void
+    {
+        // Same tolerance as the open-position path: the JSON API may serialize
+        // tradeSide as its integer code (BUY=1, SELL=2).
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 3,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 1,
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 100],
+        ]);
+
+        $this->assertSame('SELL', $row['direction']);
+    }
+
+    public function testNormalizeCtraderDealConvertsVolumeWithTheSymbolLotSize(): void
+    {
+        // Both ProtoOADeal.volume and ProtoOASymbol.lotSize are expressed in
+        // cents, so volume / lotSize is the lot count cTrader itself displays.
+        // The old hardcoded /100000 was a pure invention: on a DAX CFD holding
+        // 1.5 contracts it reported 0.0015.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 331,
+            'volume' => 150,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960],
+        ]);
+
+        $this->assertEquals(1.5, $row['size']);
+    }
+
+    public function testNormalizeCtraderDealFallsBackToUnitsWithoutALotSize(): void
+    {
+        // When the symbol lookup failed we can still honour the documented
+        // meaning of the field — "volume in cents", i.e. hundredths of a unit —
+        // rather than the /100000 that matched no unit at all.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 4,
+            'volume' => 150,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 100],
+        ]);
+
+        $this->assertEquals(1.5, $row['size']);
+    }
+
+    public function testNormalizeCtraderDealPrefersTheClosedVolumeOverTheDealVolume(): void
+    {
+        // closedVolume is what this deal actually took off the position; the
+        // deal volume is the size of the closing order. They match on a full
+        // close, and closedVolume is the authority on a partial one.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 5,
+            'volume' => 250,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => [
+                'entryPrice' => 26386.34,
+                'grossProfit' => 100,
+                'closedVolume' => 100,
+            ],
+        ]);
+
+        $this->assertEquals(1.0, $row['size']);
+    }
+
+    public function testNormalizeCtraderDealCarriesAPerDealExitId(): void
+    {
+        // external_id identifies the POSITION and is shared by every closing
+        // deal taken against it, so it cannot dedup individual exits. The
+        // per-deal id is what the partial-exit dedup runs on, and it has to
+        // match the one used while the position was still open — otherwise the
+        // TP1 gets written a second time when the position finally closes.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'dealId' => 11,
+            'positionId' => 331,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327],
+        ]);
+
+        $this->assertSame('ctrader_331', $row['external_id']);
+        $this->assertSame('ctrader_deal_11', $row['exit_external_id']);
+    }
+
+    public function testNormalizeCtraderDealUsesThePositionOpenTimestampWhenKnown(): void
+    {
+        // createTimestamp belongs to the CLOSING deal, so using it as opened_at
+        // makes every trade look like it opened at the moment it closed. The
+        // connector injects the opening deal's execution timestamp under
+        // positionOpenTimestamp when it is inside the sync window.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 6,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'positionOpenTimestamp' => 1785907740000, // 05/08/2026 05:29:00 UTC
+            'createTimestamp' => 1785916872000,       // 08:01:12 — the TP1 fill
+            'executionTimestamp' => 1785916872000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327],
+        ]);
+
+        $this->assertSame('2026-08-05 05:29:00', $row['opened_at']);
+        $this->assertSame('2026-08-05 08:01:12', $row['closed_at']);
     }
 
     public function testNormalizeCtraderDealScalesProfitByMoneyDigits(): void
@@ -182,10 +450,10 @@ class DealNormalizerTest extends TestCase
 
     public function testNormalizeCtraderOpenPosition(): void
     {
-        // A live position from ProtoOAReconcileRes. symbolName is injected by
-        // the connector after resolving symbolId. Volume uses the same
-        // /100000 convention as normalizeCtraderDeal, and the entry price is
-        // the position's `price` field.
+        // A live position from ProtoOAReconcileRes. symbolName and lotSize are
+        // injected by the connector after resolving symbolId. Volume uses the
+        // same volume/lotSize convention as normalizeCtraderDeal, and the entry
+        // price is the position's `price` field.
         $position = [
             'positionId' => 999,
             'positionStatus' => 'POSITION_STATUS_OPEN',
@@ -193,9 +461,10 @@ class DealNormalizerTest extends TestCase
             'stopLoss' => 19000.0,
             'takeProfit' => 19500.0,
             'symbolName' => 'GER40',
+            'lotSize' => 100000,
             'tradeData' => [
                 'symbolId' => 22,
-                'volume' => 50000, // /100000 → 0.5 lots
+                'volume' => 50000, // /100000 cents → 0.5 lots
                 'tradeSide' => 'BUY',
                 'openTimestamp' => 1700000000000,
             ],
@@ -240,6 +509,51 @@ class DealNormalizerTest extends TestCase
         $this->assertSame($open['external_id'], $closed['external_id']);
     }
 
+    public function testNormalizeCtraderOpenPositionRebuildsTheOriginalSizeFromItsExits(): void
+    {
+        // ProtoOAPosition.tradeData.volume is what is LEFT on the position, not
+        // what was originally opened — it shrinks on every partial close. The
+        // journal wants the original size on the position row and the leftover
+        // on the trade, so the size has to be rebuilt by adding back whatever
+        // the partial closes took off.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 331,
+            'price' => 26386.34,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => [
+                'symbolId' => 331,
+                'volume' => 150, // 1.5 contracts still open
+                'tradeSide' => 'SELL',
+                'openTimestamp' => 1785907740000,
+            ],
+            'partialExits' => [
+                ['exit_price' => 26300.0, 'size' => 1.0, 'pnl' => 103.27, 'closed_at' => '2026-08-05 08:01:12', 'external_id' => 'ctrader_deal_77'],
+            ],
+        ]);
+
+        $this->assertEquals(2.5, $row['size']);           // 1.5 left + 1.0 taken
+        $this->assertEquals(1.5, $row['remaining_size']);
+        $this->assertCount(1, $row['exits']);
+        $this->assertSame('ctrader_deal_77', $row['exits'][0]['external_id']);
+        $this->assertEquals(103.27, $row['exits'][0]['pnl']);
+    }
+
+    public function testNormalizeCtraderOpenPositionWithoutExitsKeepsSizeAndRemainingEqual(): void
+    {
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 12,
+            'price' => 100.0,
+            'symbolName' => 'X',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 1, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1700000000000],
+        ]);
+
+        $this->assertEquals(2.5, $row['size']);
+        $this->assertEquals(2.5, $row['remaining_size']);
+        $this->assertSame([], $row['exits']);
+    }
+
     public function testNormalizeCtraderOpenPositionAcceptsNumericTradeSide(): void
     {
         // cTrader's JSON serialization may emit enum fields as their integer
@@ -277,6 +591,7 @@ class DealNormalizerTest extends TestCase
             'takeProfit' => 18500.0,
             'expirationTimestamp' => 1700100000000,
             'symbolName' => 'GER40',
+            'lotSize' => 100000,
             'tradeData' => ['symbolId' => 22, 'volume' => 10000, 'tradeSide' => 'BUY', 'openTimestamp' => 1700000000000],
         ];
 

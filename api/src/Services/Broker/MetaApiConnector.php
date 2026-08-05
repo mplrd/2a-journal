@@ -8,6 +8,7 @@ use GuzzleHttp\Exception\GuzzleException;
 class MetaApiConnector implements ConnectorInterface
 {
     use TracksLastTestError;
+    use NormalizesInUserTimezone;
 
     private Client $httpClient;
     private string $baseUrl;
@@ -32,7 +33,7 @@ class MetaApiConnector implements ConnectorInterface
         );
 
         $rawDeals = json_decode($response->getBody()->getContents(), true) ?: [];
-        $normalizer = new DealNormalizer();
+        $normalizer = $this->normalizer();
 
         $deals = [];
         $latestTime = null;

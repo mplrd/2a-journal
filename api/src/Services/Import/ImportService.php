@@ -492,9 +492,12 @@ class ImportService
 
     private function createPartialExit(int $tradeId, array $exit): void
     {
+        // external_id is the per-leg broker id when the row came from a
+        // connector, null for file imports. Persisting it is what lets a later
+        // sync recognise an exit it has already recorded.
         $stmt = $this->pdo->prepare(
-            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
-             VALUES (:trade_id, :exited_at, :exit_price, :size, :exit_type, :pnl)"
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl, external_id)
+             VALUES (:trade_id, :exited_at, :exit_price, :size, :exit_type, :pnl, :external_id)"
         );
         $stmt->execute([
             'trade_id' => $tradeId,
@@ -503,6 +506,7 @@ class ImportService
             'size' => $exit['size'],
             'exit_type' => ExitType::MANUAL->value,
             'pnl' => $exit['pnl'],
+            'external_id' => $exit['external_id'] ?? null,
         ]);
     }
 

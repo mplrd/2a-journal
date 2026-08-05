@@ -29,6 +29,7 @@ class BrokerSyncService
         private BrokerOpenSyncService $openSyncService,
         private BrokerOrderSyncService $orderSyncService,
         private ?AccountRepository $accountRepo = null,
+        private ?\App\Repositories\UserRepository $userRepo = null,
     ) {}
 
     /**
@@ -87,6 +88,14 @@ class BrokerSyncService
             }
             if (method_exists($connector, 'resetSyncCache')) {
                 $connector->resetSyncCache();
+            }
+
+            // The journal's DATETIME columns hold local wall-clock time — that
+            // is what the trade form writes. Brokers report instants, so
+            // without this the synced rows land in UTC and sit an hour or two
+            // away from the trades the user typed in by hand.
+            if (method_exists($connector, 'setTimezone')) {
+                $connector->setTimezone($this->resolveUserTimezone($userId));
             }
 
             // Fetch deals from broker
@@ -228,6 +237,18 @@ class BrokerSyncService
 
             throw $e;
         }
+    }
+
+    /**
+     * The timezone the journal's datetimes are written in for this user.
+     * Null — no repository injected, unknown user, blank column — leaves the
+     * connector on UTC, i.e. the behaviour that predates this.
+     */
+    private function resolveUserTimezone(int $userId): ?string
+    {
+        $timezone = $this->userRepo?->findById($userId)['timezone'] ?? null;
+
+        return is_string($timezone) && $timezone !== '' ? $timezone : null;
     }
 
     private function getConnector(string $provider): ConnectorInterface

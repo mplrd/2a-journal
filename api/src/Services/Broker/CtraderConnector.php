@@ -9,6 +9,7 @@ use WebSocket\Client as WsClient;
 class CtraderConnector implements ConnectorInterface
 {
     use TracksLastTestError;
+    use NormalizesInUserTimezone;
 
     /**
      * ProtoOAPayloadType numeric codes (OpenApiModelMessages.proto). The
@@ -48,6 +49,25 @@ class CtraderConnector implements ConnectorInterface
     private int $msgCounter = 0;
     private ?string $lastBalanceCurrency = null;
 
+    /**
+     * symbolId → symbolName per account, memoised for one sync run. The light
+     * symbol list covers the broker's whole universe and a single sync resolves
+     * symbols three times (deals, open positions, pending orders).
+     *
+     * @var array<int, array<int, string>>
+     */
+    private array $symbolNameCache = [];
+
+    /**
+     * Partial closes seen by fetchDeals on positions that are still open,
+     * keyed by positionId. Consumed by fetchOpenPositions in the same run so
+     * a TP1 lands as a partial exit on the live position rather than as a
+     * separate closed trade.
+     *
+     * @var array<int, list<array{exit_price: float, size: float, pnl: float, closed_at: string, external_id: string}>>
+     */
+    private array $pendingPartialExits = [];
+
     public function __construct(array $config, ?WsClient $wsClient = null, ?HttpClient $httpClient = null)
     {
         $this->config = $config;
@@ -72,11 +92,42 @@ class CtraderConnector implements ConnectorInterface
                 'accessToken' => $credentials['access_token'],
             ]);
 
-            // 3. Fetch deals with pagination
+            // 3. Live snapshot first. It answers two questions the deal list
+            //    alone cannot: which positions are still open (so a partial
+            //    close is not mistaken for a finished trade), and how far back
+            //    the window must reach to cover them.
+            $reconcile = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
+                'ctidTraderAccountId' => $credentials['ctid_trader_account_id'],
+            ]);
+            $openPositions = $reconcile['position'] ?? [];
+            $openPositionIds = [];
+            $oldestOpenTimestamp = null;
+            foreach ($openPositions as $position) {
+                if (!isset($position['positionId'])) {
+                    continue;
+                }
+                $openPositionIds[(int) $position['positionId']] = true;
+                $openedAt = (int) ($position['tradeData']['openTimestamp'] ?? 0);
+                if ($openedAt > 0 && ($oldestOpenTimestamp === null || $openedAt < $oldestOpenTimestamp)) {
+                    $oldestOpenTimestamp = $openedAt;
+                }
+            }
+
+            // 4. Fetch deals with pagination
             $allDeals = [];
             $fromTimestamp = $sinceCursor
                 ? (int) (strtotime($sinceCursor) * 1000)
                 : (int) ((time() - 90 * 86400) * 1000);
+
+            // The cursor only moves forward, so a position opened before it
+            // would have its partial closes fall outside every later window and
+            // the exits would be lost for good. Pull the window back to the
+            // oldest position still open; already-imported closed positions in
+            // the widened range are skipped downstream on external_id.
+            if ($oldestOpenTimestamp !== null && $oldestOpenTimestamp < $fromTimestamp) {
+                $fromTimestamp = $oldestOpenTimestamp;
+            }
+
             $toTimestamp = (int) (time() * 1000);
             $maxRows = 1000;
 
@@ -98,17 +149,38 @@ class CtraderConnector implements ConnectorInterface
                 }
             } while ($hasMore);
 
-            // 4. Resolve symbol IDs to names
+            // 5. Resolve symbol IDs to names and lot sizes
             // array_values() is load-bearing: array_unique() keeps the original
             // keys, so deduplicating repeated symbols leaves gaps (0, 2, 4) and
             // json_encode then emits an OBJECT instead of an array. cTrader
             // reads symbolId as a repeated int64 and rejects the whole request
             // with "Couldn't parse integer: For input string: {".
             $symbolIds = array_values(array_unique(array_column($allDeals, 'symbolId')));
-            $symbolMap = $this->resolveSymbolNames($ws, $credentials['ctid_trader_account_id'], $symbolIds);
+            $symbolMap = $this->resolveSymbols($ws, $credentials['ctid_trader_account_id'], $symbolIds);
+
+            // A position's open time is on its OPENING deal (the one without a
+            // closePositionDetail), never on the closing one. Pair them up here
+            // so the normalizer stops dating trades from the moment they closed.
+            $positionOpenTimestamps = [];
+            foreach ($allDeals as $deal) {
+                if (isset($deal['closePositionDetail']) || !isset($deal['positionId'])) {
+                    continue;
+                }
+                $positionId = (int) $deal['positionId'];
+                $openedAt = (int) ($deal['executionTimestamp'] ?? $deal['createTimestamp'] ?? 0);
+                if ($openedAt > 0 && ($positionOpenTimestamps[$positionId] ?? PHP_INT_MAX) > $openedAt) {
+                    $positionOpenTimestamps[$positionId] = $openedAt;
+                }
+            }
 
             foreach ($allDeals as &$deal) {
-                $deal['symbolName'] = $symbolMap[$deal['symbolId']] ?? 'UNKNOWN_' . $deal['symbolId'];
+                $symbolId = (int) ($deal['symbolId'] ?? 0);
+                $deal['symbolName'] = $symbolMap[$symbolId]['name'] ?? ('UNKNOWN_' . $symbolId);
+                $deal['lotSize'] = $symbolMap[$symbolId]['lot_size'] ?? 0;
+                $positionId = (int) ($deal['positionId'] ?? 0);
+                if (isset($positionOpenTimestamps[$positionId])) {
+                    $deal['positionOpenTimestamp'] = $positionOpenTimestamps[$positionId];
+                }
             }
             unset($deal);
 
@@ -118,7 +190,15 @@ class CtraderConnector implements ConnectorInterface
             throw $e;
         }
 
-        $normalized = $this->normalizeDeals($allDeals);
+        // 6. A closing deal on a position that is STILL open is a partial exit
+        //    (a TP1), not a finished trade. Emitting it as one created a
+        //    phantom position beside the live one — a "buy with an instant
+        //    profit" facing the short that was actually running. Hold those
+        //    deals back and hand them to fetchOpenPositions instead.
+        [$closedDeals, $stillOpenDeals] = $this->splitDealsByPositionState($allDeals, $openPositionIds);
+        $this->pendingPartialExits = $this->buildPartialExits($stillOpenDeals);
+
+        $normalized = $this->normalizeDeals($closedDeals);
 
         $latestTimestamp = null;
         foreach ($normalized as $deal) {
@@ -152,13 +232,16 @@ class CtraderConnector implements ConnectorInterface
             ]);
             $positions = $response['position'] ?? [];
 
-            $symbolMap = $this->resolveSymbolNames($ws, $accountId, $this->collectSymbolIds($positions));
+            $symbolMap = $this->resolveSymbols($ws, $accountId, $this->collectSymbolIds($positions));
 
-            $normalizer = new DealNormalizer();
+            $normalizer = $this->normalizer();
             $normalized = [];
             foreach ($positions as $position) {
-                $symbolId = $position['tradeData']['symbolId'] ?? null;
-                $position['symbolName'] = $symbolMap[$symbolId] ?? ('UNKNOWN_' . $symbolId);
+                $position = $this->withSymbol($position, $symbolMap);
+                // Partial closes fetchDeals held back earlier in this same sync
+                // run: attaching them here is what makes a TP1 a partial exit of
+                // the live position and lets the original size be rebuilt.
+                $position['partialExits'] = $this->pendingPartialExits[(int) ($position['positionId'] ?? 0)] ?? [];
                 $row = $normalizer->normalizeCtraderOpenPosition($position);
                 if ($row !== null) {
                     $normalized[] = $row;
@@ -189,13 +272,12 @@ class CtraderConnector implements ConnectorInterface
 
             $orders = array_values(array_filter($rawOrders, fn($o) => empty($o['closingOrder'])));
 
-            $symbolMap = $this->resolveSymbolNames($ws, $accountId, $this->collectSymbolIds($orders));
+            $symbolMap = $this->resolveSymbols($ws, $accountId, $this->collectSymbolIds($orders));
 
-            $normalizer = new DealNormalizer();
+            $normalizer = $this->normalizer();
             $normalized = [];
             foreach ($orders as $order) {
-                $symbolId = $order['tradeData']['symbolId'] ?? null;
-                $order['symbolName'] = $symbolMap[$symbolId] ?? ('UNKNOWN_' . $symbolId);
+                $order = $this->withSymbol($order, $symbolMap);
                 $row = $normalizer->normalizeCtraderOpenOrder($order);
                 if ($row !== null) {
                     $normalized[] = $row;
@@ -231,7 +313,7 @@ class CtraderConnector implements ConnectorInterface
             ]);
             $orders = $response['order'] ?? [];
 
-            $normalizer = new DealNormalizer();
+            $normalizer = $this->normalizer();
             $normalized = [];
             foreach ($orders as $order) {
                 $row = $normalizer->normalizeCtraderClosedOrder($order);
@@ -242,6 +324,72 @@ class CtraderConnector implements ConnectorInterface
 
             return ['orders' => $normalized, 'raw_count' => count($orders)];
         });
+    }
+
+    /**
+     * Drop the memoised state so the same connector instance can serve a
+     * second sync. Called by BrokerSyncService at the start of every run.
+     */
+    public function resetSyncCache(): void
+    {
+        $this->symbolNameCache = [];
+        $this->pendingPartialExits = [];
+    }
+
+    /**
+     * Split closing deals into those whose position has finished and those
+     * whose position is still open on the broker.
+     *
+     * @param array<int, true> $openPositionIds
+     * @return array{0: list<array>, 1: list<array>}
+     */
+    private function splitDealsByPositionState(array $deals, array $openPositionIds): array
+    {
+        $closed = [];
+        $stillOpen = [];
+
+        foreach ($deals as $deal) {
+            if (isset($deal['closePositionDetail'], $openPositionIds[(int) ($deal['positionId'] ?? 0)])) {
+                $stillOpen[] = $deal;
+                continue;
+            }
+            $closed[] = $deal;
+        }
+
+        return [$closed, $stillOpen];
+    }
+
+    /**
+     * Turn closing deals taken against still-open positions into the partial
+     * exit rows BrokerOpenSyncService inserts, keyed by positionId.
+     *
+     * external_id is per DEAL (`ctrader_deal_<dealId>`), not per position: the
+     * partial-exit dedup runs on it, and a position can be trimmed several
+     * times. It also has to stay distinct from the position's own
+     * `ctrader_<positionId>`.
+     *
+     * @return array<int, list<array>>
+     */
+    private function buildPartialExits(array $deals): array
+    {
+        $normalizer = $this->normalizer();
+        $exits = [];
+
+        foreach ($deals as $deal) {
+            $row = $normalizer->normalizeCtraderDeal($deal);
+            if ($row === null) {
+                continue;
+            }
+            $exits[(int) $deal['positionId']][] = [
+                'exit_price' => $row['exit_price'],
+                'size' => $row['size'],
+                'pnl' => $row['pnl'],
+                'closed_at' => $row['closed_at'],
+                'external_id' => 'ctrader_deal_' . ($deal['dealId'] ?? $deal['positionId']),
+            ];
+        }
+
+        return $exits;
     }
 
     /**
@@ -835,7 +983,7 @@ class CtraderConnector implements ConnectorInterface
      */
     public function normalizeDeals(array $rawDeals): array
     {
-        $normalizer = new DealNormalizer();
+        $normalizer = $this->normalizer();
         $deals = [];
 
         foreach ($rawDeals as $deal) {
@@ -933,23 +1081,89 @@ class CtraderConnector implements ConnectorInterface
         }
     }
 
-    private function resolveSymbolNames(WsClient $ws, int $accountId, array $symbolIds): array
+    /**
+     * Resolve a set of symbol ids to the two things the journal needs: the
+     * display name and the lot size used to scale volumes.
+     *
+     * It takes two messages because cTrader splits the symbol across two
+     * types. ProtoOASymbolByIdRes returns ProtoOASymbol, which has lotSize,
+     * digits, swap rates and schedules — but NO symbolName field at all. The
+     * name lives only on ProtoOALightSymbol, returned by ProtoOASymbolsListReq.
+     * Reading `symbolName` off the by-id response therefore always missed, and
+     * every synced trade was labelled with the `SYM_<id>` fallback.
+     *
+     * @param int[] $symbolIds
+     * @return array<int, array{name: string, lot_size: int}>
+     */
+    private function resolveSymbols(WsClient $ws, int $accountId, array $symbolIds): array
     {
         if (empty($symbolIds)) {
             return [];
         }
 
+        $names = $this->lightSymbolNames($ws, $accountId);
+
+        $lotSizes = [];
         $response = $this->sendAndReceive($ws, 'ProtoOASymbolByIdReq', [
             'ctidTraderAccountId' => $accountId,
             'symbolId' => $symbolIds,
         ]);
+        foreach ($response['symbol'] ?? [] as $symbol) {
+            if (isset($symbol['symbolId'])) {
+                $lotSizes[(int) $symbol['symbolId']] = (int) ($symbol['lotSize'] ?? 0);
+            }
+        }
 
         $map = [];
-        foreach ($response['symbol'] ?? [] as $symbol) {
-            $map[$symbol['symbolId']] = $symbol['symbolName'] ?? ('SYM_' . $symbol['symbolId']);
+        foreach ($symbolIds as $symbolId) {
+            $symbolId = (int) $symbolId;
+            $map[$symbolId] = [
+                'name' => $names[$symbolId] ?? ('SYM_' . $symbolId),
+                'lot_size' => $lotSizes[$symbolId] ?? 0,
+            ];
         }
 
         return $map;
+    }
+
+    /**
+     * symbolId → symbolName for every symbol on the account. Memoised for the
+     * whole sync run: the list covers the broker's entire universe, and a sync
+     * resolves symbols three times over (deals, positions, orders).
+     *
+     * @return array<int, string>
+     */
+    private function lightSymbolNames(WsClient $ws, int $accountId): array
+    {
+        if (isset($this->symbolNameCache[$accountId])) {
+            return $this->symbolNameCache[$accountId];
+        }
+
+        $response = $this->sendAndReceive($ws, 'ProtoOASymbolsListReq', [
+            'ctidTraderAccountId' => $accountId,
+        ]);
+
+        $names = [];
+        foreach ($response['symbol'] ?? [] as $symbol) {
+            if (isset($symbol['symbolId'], $symbol['symbolName'])) {
+                $names[(int) $symbol['symbolId']] = (string) $symbol['symbolName'];
+            }
+        }
+
+        return $this->symbolNameCache[$accountId] = $names;
+    }
+
+    /**
+     * Stamp a position/order entity with the resolved symbol name and lot size
+     * so the normalizer can label it and scale its volume.
+     */
+    private function withSymbol(array $entity, array $symbolMap): array
+    {
+        $symbolId = (int) ($entity['tradeData']['symbolId'] ?? 0);
+        $entity['symbolName'] = $symbolMap[$symbolId]['name'] ?? ('UNKNOWN_' . $symbolId);
+        $entity['lotSize'] = $symbolMap[$symbolId]['lot_size'] ?? 0;
+
+        return $entity;
     }
 
     /** Order modification not implemented for cTrader yet (docs/70 v1: BingX only). */
