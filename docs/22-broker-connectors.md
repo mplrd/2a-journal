@@ -174,6 +174,18 @@ Deux replis silencieux, tous deux vers le comportement UTC antérieur : pas de f
 - `BrokerOpenSyncService::updateBrokerFields` rafraîchissait `entry_price`, `size`, `direction`, `symbol` et `remaining_size` — mais **pas `opened_at`**. Une position déjà connue du journal gardait donc son horodatage d'origine indéfiniment : corrigée sur toutes les colonnes sauf celle qui avait changé. Rafraîchi désormais, et uniquement quand le snapshot en porte un (le snapshot live BingX n'a pas d'heure d'ouverture — écrire `null` effacerait ce qu'on détient déjà).
 - `cli/sync-brokers.php` construit sa propre instance de `BrokerSyncService` et ne recevait pas le `UserRepository` : l'auto-sync planifiée retombait sur UTC pendant qu'une synchro manuelle écrivait en heure locale, la même position dérivant selon le dernier chemin l'ayant touchée. Câblé.
 
+### Ordres synchronisés : date de placement et expiration
+
+Corrigé le 2026-08-05, même campagne. Deux trous, indépendants du fuseau mais rendus visibles par lui.
+
+**La date de placement était perdue.** Les connecteurs normalisent bien `created_at` — le moment où le broker a placé l'ordre — mais `OrderRepository::create` n'écrivait jamais la colonne. Le `DEFAULT CURRENT_TIMESTAMP` de MySQL horodatait donc chaque ordre synchronisé **à l'instant de la synchro**, et dans le fuseau de la session SQL par-dessus le marché. La valeur calculée était simplement jetée. `created_at` est désormais transmise, avec un `COALESCE(:created_at, CURRENT_TIMESTAMP)` qui préserve le défaut pour les ordres créés dans l'application.
+
+**L'expiration n'était jamais rafraîchie.** `BrokerOrderSyncService::updateBrokerFields` réécrivait les champs de la *position* (symbole, sens, taille, entrée, SL) mais rien sur la ligne `orders` — même angle mort que `opened_at` sur les positions. Une `expires_at` déjà en base restait figée, y compris après le passage en heure locale. `OrderRepository::updateExpiry()` a été ajouté pour ça, distinct de `updateStatus()` afin qu'une synchro corrige la date sans toucher au cycle de vie.
+
+### Taille affichée dans le bloc « En cours » du dashboard
+
+`positions.size` porte la taille **d'origine**, `trades.remaining_size` ce qu'il reste après les sorties partielles. Le panneau « En cours » du dashboard lisait `size` — il annonçait donc 2.5 contrats sur un short déjà à moitié soldé au TP1, alors qu'il n'en tournait plus que 1.5. Le défaut est ancien mais était invisible : avant la reconstruction de la taille d'origine, les deux colonnes étaient toujours égales sur les positions synchronisées. `remaining_size` était d'ailleurs déjà remontée par `StatsRepository::getOpenTrades()`, simplement jamais affichée.
+
 ### Chiffrement des credentials
 
 AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'environnement `BROKER_ENCRYPTION_KEY`. Chaque connexion a son propre IV. Les credentials ne sont jamais exposés dans les réponses API.

@@ -16,12 +16,17 @@ class OrderRepository
 
     public function create(array $data): array
     {
+        // created_at is written explicitly when the caller knows when the order
+        // was really placed — a broker sync does. Left to MySQL's
+        // CURRENT_TIMESTAMP default otherwise (orders created in the app),
+        // which is why COALESCE rather than a plain bind.
         $stmt = $this->pdo->prepare(
-            'INSERT INTO orders (position_id, expires_at, status)
-             VALUES (:position_id, :expires_at, :status)'
+            'INSERT INTO orders (position_id, created_at, expires_at, status)
+             VALUES (:position_id, COALESCE(:created_at, CURRENT_TIMESTAMP), :expires_at, :status)'
         );
         $stmt->execute([
             'position_id' => $data['position_id'],
+            'created_at' => $data['created_at'] ?? null,
             'expires_at' => $data['expires_at'] ?? null,
             'status' => $data['status'] ?? OrderStatus::PENDING->value,
         ]);
@@ -123,6 +128,19 @@ class OrderRepository
         $stmt->execute();
 
         return ['items' => $stmt->fetchAll(), 'total' => $total];
+    }
+
+    /**
+     * Refresh the broker-owned expiry of a pending order. Separate from
+     * updateStatus so a sync can correct the date without touching the
+     * lifecycle state.
+     */
+    public function updateExpiry(int $id, ?string $expiresAt): ?array
+    {
+        $stmt = $this->pdo->prepare('UPDATE orders SET expires_at = :expires_at WHERE id = :id');
+        $stmt->execute(['expires_at' => $expiresAt, 'id' => $id]);
+
+        return $this->findById($id);
     }
 
     public function updateStatus(int $id, string $newStatus): ?array
