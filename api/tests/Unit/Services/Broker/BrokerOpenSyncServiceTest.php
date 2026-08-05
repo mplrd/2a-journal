@@ -211,6 +211,117 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->assertSame(1, $stats['transitioned']);
     }
 
+    public function testTransitionSumsEveryClosingRowOfTheSamePosition(): void
+    {
+        // A position closed in several goes (TP1 then the rest) shows up as
+        // several rows sharing one external_id. Indexing them by id used to
+        // keep only the last, so the trade inherited the final leg's P&L alone
+        // and everything banked at TP1 silently vanished from the total.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ctrader_331' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ctrader_331',
+                    'entry_price' => '26386.34',
+                    'size' => '2.50000',
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(function ($data) {
+                // 103.27 banked at TP1 + 40.00 on the final leg.
+                return abs((float) $data['pnl'] - 143.27) < 0.001
+                    // Size-weighted across both legs: (1×26300 + 1.5×26350)/2.5
+                    && abs((float) $data['avg_exit_price'] - 26330.0) < 0.001
+                    // The position is done at the LAST fill, not the first.
+                    && $data['closed_at'] === '2026-08-05 11:14:00'
+                    && (float) $data['remaining_size'] === 0.0;
+            }));
+
+        $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::CTRADER,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [],
+            closedSnapshot: [
+                $this->makeClosedSnapshot([
+                    'external_id' => 'ctrader_331', 'symbol' => 'GER40', 'direction' => 'SELL',
+                    'entry_price' => 26386.34, 'exit_price' => 26300.0, 'size' => 1.0,
+                    'pnl' => 103.27, 'closed_at' => '2026-08-05 08:01:12',
+                ]),
+                $this->makeClosedSnapshot([
+                    'external_id' => 'ctrader_331', 'symbol' => 'GER40', 'direction' => 'SELL',
+                    'entry_price' => 26386.34, 'exit_price' => 26350.0, 'size' => 1.5,
+                    'pnl' => 40.0, 'closed_at' => '2026-08-05 11:14:00',
+                ]),
+            ],
+        );
+
+        $this->assertSame(1, $stats['transitioned']);
+    }
+
+    public function testTransitionRecordsEachClosingLegAsAPartialExit(): void
+    {
+        // The manual close path writes a partial_exits row for every exit, so
+        // the broker path has to as well — otherwise a trade closed in two legs
+        // keeps no trace of where the first one was taken. Dedup on
+        // external_id: the TP1 was already recorded while the position was
+        // still open, and must not be inserted twice.
+        $partialExitRepo = $this->createMock(\App\Repositories\PartialExitRepository::class);
+        $partialExitRepo->method('existingExternalIdsForTrade')
+            ->willReturn(['ctrader_deal_11' => true]); // TP1 already banked
+
+        $inserted = [];
+        $partialExitRepo->method('create')
+            ->willReturnCallback(function ($data) use (&$inserted) {
+                $inserted[] = $data;
+                return ['id' => count($inserted)];
+            });
+
+        $service = new BrokerOpenSyncService($this->positionRepo, $this->tradeRepo, $partialExitRepo);
+
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ctrader_331' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ctrader_331',
+                    'entry_price' => '26386.34',
+                    'size' => '2.50000',
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $service->apply(
+            provider: \App\Enums\BrokerProvider::CTRADER,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [],
+            closedSnapshot: [
+                $this->makeClosedSnapshot([
+                    'external_id' => 'ctrader_331', 'exit_external_id' => 'ctrader_deal_11',
+                    'exit_price' => 26300.0, 'size' => 1.0, 'pnl' => 103.27,
+                    'closed_at' => '2026-08-05 08:01:12',
+                ]),
+                $this->makeClosedSnapshot([
+                    'external_id' => 'ctrader_331', 'exit_external_id' => 'ctrader_deal_12',
+                    'exit_price' => 26350.0, 'size' => 1.5, 'pnl' => 40.0,
+                    'closed_at' => '2026-08-05 11:14:00',
+                ]),
+            ],
+        );
+
+        $this->assertCount(1, $inserted, 'only the leg not already recorded should be inserted');
+        $this->assertSame('ctrader_deal_12', $inserted[0]['external_id']);
+        $this->assertEquals(1.5, $inserted[0]['size']);
+        $this->assertEquals(40.0, $inserted[0]['pnl']);
+    }
+
     // ── DEFENSIVE: orphan in DB, not in any snapshot ───────────────
 
     public function testLeavesOrphanOpenAloneWhenNotInAnySnapshot(): void

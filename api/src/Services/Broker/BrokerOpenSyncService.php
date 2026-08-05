@@ -199,6 +199,11 @@ class BrokerOpenSyncService
      * In-place flip OPEN → CLOSED for an existing trade that just moved out
      * of the broker's live set. The position row and its user metadata
      * (setup, notes, custom_fields) are deliberately left alone.
+     *
+     * Every closing leg is also recorded as a partial exit, mirroring the
+     * manual close path (TradeService::exit writes one per exit, final leg
+     * included). Dedup on external_id means a leg already banked while the
+     * position was still open is not written twice.
      */
     private function transitionToClosed(array $existing, array $closed): void
     {
@@ -210,8 +215,19 @@ class BrokerOpenSyncService
             'remaining_size' => 0.0,
             'exit_type' => ExitType::MANUAL->value,
         ]);
+
+        $this->insertPartialExits((int) $existing['trade_id'], $closed['exits'] ?? []);
     }
 
+    /**
+     * Index closed rows by external_id, MERGING rows that share one instead of
+     * letting the last overwrite the rest.
+     *
+     * A position closed in several legs (a TP1 then the remainder) is reported
+     * as one row per leg, all carrying the position's external_id. Keeping only
+     * the last one credited the trade with the final leg's P&L alone and
+     * dropped everything banked earlier.
+     */
     private function indexByExternalId(array $rows): array
     {
         $indexed = [];
@@ -219,8 +235,73 @@ class BrokerOpenSyncService
             if (!isset($row['external_id'])) {
                 continue;
             }
-            $indexed[$row['external_id']] = $row;
+            $externalId = $row['external_id'];
+            $indexed[$externalId] = isset($indexed[$externalId])
+                ? $this->mergeClosedRows($indexed[$externalId], $row)
+                : $this->withOwnExit($row);
         }
         return $indexed;
+    }
+
+    /**
+     * Seed a closed row's exits[] with itself so a single-leg close carries the
+     * same shape as a merged multi-leg one. Connectors that already reconstruct
+     * their own exits (BingX) keep theirs untouched.
+     */
+    private function withOwnExit(array $row): array
+    {
+        if (isset($row['exits'])) {
+            return $row;
+        }
+        $row['exits'] = [$this->rowToExit($row)];
+
+        return $row;
+    }
+
+    /**
+     * Fold a second closing leg into the first: P&L and size add up, the exit
+     * price is re-averaged by size, and the position is closed at the LAST
+     * fill.
+     */
+    private function mergeClosedRows(array $merged, array $row): array
+    {
+        $mergedSize = (float) ($merged['size'] ?? 0);
+        $rowSize = (float) ($row['size'] ?? 0);
+        $totalSize = $mergedSize + $rowSize;
+
+        $mergedPrice = (float) ($merged['exit_price'] ?? $merged['avg_exit_price'] ?? 0);
+        $rowPrice = (float) ($row['exit_price'] ?? $row['avg_exit_price'] ?? 0);
+
+        $merged['size'] = $totalSize;
+        $merged['pnl'] = (float) ($merged['pnl'] ?? 0) + (float) ($row['pnl'] ?? 0);
+        $merged['exit_price'] = $totalSize > 0
+            ? ($mergedPrice * $mergedSize + $rowPrice * $rowSize) / $totalSize
+            : $rowPrice;
+
+        $rowClosedAt = $row['closed_at'] ?? null;
+        if ($rowClosedAt !== null && $rowClosedAt > ($merged['closed_at'] ?? '')) {
+            $merged['closed_at'] = $rowClosedAt;
+        }
+
+        $merged['exits'] = array_merge($merged['exits'] ?? [], $row['exits'] ?? [$this->rowToExit($row)]);
+
+        return $merged;
+    }
+
+    /**
+     * A closing row seen as one exit. `exit_external_id` is the per-leg id
+     * (a deal, a fill) — distinct from `external_id`, which identifies the
+     * position and is shared by every leg, so it is the only one usable for
+     * partial-exit dedup.
+     */
+    private function rowToExit(array $row): array
+    {
+        return [
+            'exit_price' => $row['exit_price'] ?? $row['avg_exit_price'] ?? null,
+            'size' => $row['size'] ?? 0,
+            'pnl' => $row['pnl'] ?? 0,
+            'closed_at' => $row['closed_at'] ?? null,
+            'external_id' => $row['exit_external_id'] ?? null,
+        ];
     }
 }

@@ -83,6 +83,10 @@ class RowGroupingService
                 'pnl' => $pnl,
                 'closed_at' => $closedAt,
                 'pips' => $row['pips'] ?? null,
+                // Per-leg broker id, distinct from the position's external_id
+                // that every row of the group shares. Null for file imports,
+                // which have nothing to dedup against.
+                'external_id' => $row['exit_external_id'] ?? null,
             ];
         }
 

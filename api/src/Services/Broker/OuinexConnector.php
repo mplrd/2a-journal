@@ -8,6 +8,7 @@ use GuzzleHttp\Exception\GuzzleException;
 class OuinexConnector implements ConnectorInterface
 {
     use TracksLastTestError;
+    use NormalizesInUserTimezone;
 
     /**
      * Refresh the JWT a minute before its real expiry — keeps a safety margin
@@ -29,13 +30,11 @@ class OuinexConnector implements ConnectorInterface
 
     private Client $httpClient;
     private string $graphqlUrl;
-    private DealNormalizer $normalizer;
 
     public function __construct(Client $httpClient, string $graphqlUrl)
     {
         $this->httpClient = $httpClient;
         $this->graphqlUrl = $graphqlUrl;
-        $this->normalizer = new DealNormalizer();
     }
 
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
@@ -73,7 +72,7 @@ class OuinexConnector implements ConnectorInterface
                     continue;
                 }
 
-                $normalized = $this->normalizer->normalizeOuinexMarginPosition($position);
+                $normalized = $this->normalizer()->normalizeOuinexMarginPosition($position);
                 if ($normalized !== null) {
                     $deals[] = $normalized;
                 }
@@ -110,7 +109,7 @@ class OuinexConnector implements ConnectorInterface
             $rawCount += count($page);
 
             foreach ($page as $raw) {
-                $normalized = $this->normalizer->normalizeOuinexOpenMarginPosition($raw);
+                $normalized = $this->normalizer()->normalizeOuinexOpenMarginPosition($raw);
                 if ($normalized !== null) {
                     $positions[] = $normalized;
                 }
@@ -146,7 +145,7 @@ class OuinexConnector implements ConnectorInterface
             $rawCount += count($page);
 
             foreach ($page as $raw) {
-                $normalized = $this->normalizer->normalizeOuinexOpenOrder($raw);
+                $normalized = $this->normalizer()->normalizeOuinexOpenOrder($raw);
                 if ($normalized !== null) {
                     $orders[] = $normalized;
                 }
@@ -182,7 +181,7 @@ class OuinexConnector implements ConnectorInterface
             $rawCount += count($page);
 
             foreach ($page as $raw) {
-                $normalized = $this->normalizer->normalizeOuinexClosedOrder($raw);
+                $normalized = $this->normalizer()->normalizeOuinexClosedOrder($raw);
                 if ($normalized !== null) {
                     $orders[] = $normalized;
                 }

@@ -806,4 +806,34 @@ Dans le même bloc UI : `account.account_data.delete_account_description` vouvoi
 
 ---
 
+## Une synchro cTrader ouvre quatre sessions WebSocket
+
+**Contexte** : repéré en corrigeant la fidélité des deals cTrader (2026-08-05). Pré-existant, aggravé de rien par le correctif.
+
+`BrokerSyncService` appelle successivement `fetchDeals`, `fetchOpenPositions`, `fetchOpenOrders`, `fetchClosedOrders` et `fetchBalance`. Chacune ouvre sa propre connexion WebSocket et rejoue `ProtoOAApplicationAuthReq` + `ProtoOAAccountAuthReq` — soit cinq poignées de main et cinq authentifications pour une synchro. `ProtoOAReconcileReq` est en plus émis trois fois (deals, positions, ordres) et renvoie à chaque fois le même snapshot.
+
+Le cache de noms de symboles introduit avec le correctif (`CtraderConnector::$symbolNameCache`) montre le chemin : une session unique portée sur toute la durée du run, purgée par `resetSyncCache()`.
+
+**À faire** : factoriser une session par run plutôt que par méthode. Chantier de connecteur, à ne pas mêler à une correction de données.
+
+**Fichiers** : `api/src/Services/Broker/CtraderConnector.php`, `api/src/Services/Broker/BrokerSyncService.php`.
+
+**Repéré le** : 2026-08-05. **Priorité** : basse (correctness non affectée, seulement la latence de synchro).
+
+---
+
+## `database/schema.sql` a dérivé des migrations
+
+**Contexte** : repéré en vérifiant, avant commit, que `partial_exits.external_id` existait bien (correctif fidélité cTrader, 2026-08-05).
+
+La colonne est ajoutée par la migration `023_partial_exits_external_id.sql` mais absente de `database/schema.sql`. Aucun script ne lit `schema.sql` — ni `migrate.php`, ni `entrypoint.sh` — c'est donc de la documentation, sans risque de déploiement. Mais elle décrit un schéma qui n'existe plus, et rien ne garantit que `023` soit la seule dérive : les migrations vont jusqu'à `034`.
+
+**À faire** : régénérer `schema.sql` depuis une base à jour (`mysqldump --no-data`) et le comparer au fichier actuel pour recenser l'écart complet. Décider ensuite s'il reste une référence utile ou s'il vaut mieux le supprimer au profit des seules migrations.
+
+**Fichiers** : `api/database/schema.sql`, `api/database/migrations/`.
+
+**Repéré le** : 2026-08-05. **Priorité** : basse.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

@@ -59,6 +59,37 @@ class RowGroupingServiceTest extends TestCase
         $this->assertCount(3, $pos['exits']);
     }
 
+    public function testCarriesThePerExitExternalIdIntoEachExit(): void
+    {
+        // Broker rows share one external_id per position, so the exits can only
+        // be told apart — and dedup'd across syncs — by the per-leg id the
+        // connector attaches.
+        $rows = [
+            ['symbol' => 'GER40', 'direction' => 'SELL', 'entry_price' => 26386.34, 'exit_price' => 26300.0, 'size' => 1.0, 'pnl' => 103.27, 'closed_at' => '2026-08-05 08:01:12', 'external_id' => 'ctrader_331', 'exit_external_id' => 'ctrader_deal_11'],
+            ['symbol' => 'GER40', 'direction' => 'SELL', 'entry_price' => 26386.34, 'exit_price' => 26350.0, 'size' => 1.5, 'pnl' => 40.0, 'closed_at' => '2026-08-05 11:14:00', 'external_id' => 'ctrader_331', 'exit_external_id' => 'ctrader_deal_12'],
+        ];
+
+        $groups = $this->grouper->group($rows, ['external_id']);
+
+        $this->assertCount(1, $groups);
+        $this->assertSame(
+            ['ctrader_deal_11', 'ctrader_deal_12'],
+            array_column($groups[0]['exits'], 'external_id'),
+        );
+    }
+
+    public function testLeavesTheExitExternalIdNullForFileImports(): void
+    {
+        // Spreadsheet rows carry no per-leg id — the key must simply be absent-
+        // safe rather than blowing up or inventing one.
+        $groups = $this->grouper->group(
+            [['symbol' => 'GER40', 'direction' => 'BUY', 'entry_price' => 23400, 'exit_price' => 23450, 'size' => 1.0, 'pnl' => 50, 'closed_at' => '2026-01-15 10:30:00']],
+            ['symbol', 'direction', 'entry_price'],
+        );
+
+        $this->assertNull($groups[0]['exits'][0]['external_id']);
+    }
+
     public function testCalculatesWeightedAvgExitPrice(): void
     {
         $rows = [

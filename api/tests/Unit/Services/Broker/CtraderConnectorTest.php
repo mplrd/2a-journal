@@ -149,7 +149,8 @@ class CtraderConnectorTest extends TestCase
                 'takeProfit' => 19500.0,
                 'tradeData' => ['symbolId' => 22, 'volume' => 50000, 'tradeSide' => 'BUY', 'openTimestamp' => 1700000000000],
             ]]]),
-            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'lotSize' => 100000]]]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
 
@@ -187,7 +188,8 @@ class CtraderConnectorTest extends TestCase
                     'tradeData' => ['symbolId' => 22, 'volume' => 10000, 'tradeSide' => 'SELL', 'openTimestamp' => 1700000000000],
                 ],
             ]]),
-            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'lotSize' => 100000]]]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
 
@@ -342,7 +344,8 @@ class CtraderConnectorTest extends TestCase
 
         $this->assertCount(1, $deals);
         $this->assertSame('GER40', $deals[0]['symbol']);
-        $this->assertSame('SELL', $deals[0]['direction']);
+        // The closing deal sold, so the position it closed was a BUY.
+        $this->assertSame('BUY', $deals[0]['direction']);
         $this->assertEquals(19200.00, $deals[0]['entry_price']);
         $this->assertEquals(19226.05, $deals[0]['exit_price']);
         $this->assertEquals(26.05, $deals[0]['pnl']);
@@ -801,6 +804,7 @@ class CtraderConnectorTest extends TestCase
         $ws = $this->makeWsStub([
             self::frame(self::APP_AUTH_RES),
             self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
             self::frame(self::DEAL_LIST_RES, [
                 'deal' => [
                     ['dealId' => 1, 'symbolId' => 1, 'executionTimestamp' => 1750000000000],
@@ -811,10 +815,15 @@ class CtraderConnectorTest extends TestCase
                 ],
                 'hasMore' => false,
             ]),
-            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
                 ['symbolId' => 1, 'symbolName' => 'EURUSD'],
                 ['symbolId' => 22, 'symbolName' => 'GBPUSD'],
                 ['symbolId' => 41, 'symbolName' => 'XAUUSD'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+                ['symbolId' => 1, 'lotSize' => 10000000],
+                ['symbolId' => 22, 'lotSize' => 10000000],
+                ['symbolId' => 41, 'lotSize' => 10000],
             ]]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
@@ -839,6 +848,240 @@ class CtraderConnectorTest extends TestCase
         $this->assertNotNull($symbolRequest, 'no ProtoOASymbolByIdReq was sent');
         $this->assertIsArray($symbolRequest->payload->symbolId);
         $this->assertSame([1, 22, 41], $symbolRequest->payload->symbolId);
+    }
+
+    public function testFetchDealsTakesSymbolNamesFromTheLightSymbolList(): void
+    {
+        // ProtoOASymbolByIdRes carries ProtoOASymbol, which has NO symbolName
+        // field at all — only ProtoOALightSymbol (ProtoOASymbolsListRes) does.
+        // Reading the name off the wrong message is why every synced trade came
+        // back labelled "SYM_331". The stub mirrors the real API: the by-id
+        // response has lotSize and no name.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [[
+                    'dealId' => 1,
+                    'positionId' => 90,
+                    'symbolId' => 331,
+                    'volume' => 150,
+                    'tradeSide' => 'BUY',
+                    'createTimestamp' => 1785916872000,
+                    'executionTimestamp' => 1785916872000,
+                    'executionPrice' => 26300.0,
+                    'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960, 'closedVolume' => 150],
+                ]],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
+                ['symbolId' => 331, 'symbolName' => 'GER40'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+                ['symbolId' => 331, 'lotSize' => 100, 'digits' => 2],
+            ]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 43210987,
+        ]);
+
+        $this->assertSame('GER40', $result['deals'][0]['symbol']);
+        // lotSize 100 cents → 150 cents of volume is 1.5 contracts, not 0.0015.
+        $this->assertEquals(1.5, $result['deals'][0]['size']);
+        // tradeSide BUY closed the position → it was a SELL.
+        $this->assertSame('SELL', $result['deals'][0]['direction']);
+    }
+
+    public function testFetchDealsDatesAPositionFromItsOpeningDeal(): void
+    {
+        // The deal list carries the opening deal (no closePositionDetail) as
+        // well as the closing one. Without wiring the two together, opened_at
+        // fell back to the closing deal's own createTimestamp and every trade
+        // looked like it had opened at the instant it closed.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    [
+                        'dealId' => 10, 'positionId' => 331, 'symbolId' => 5, 'volume' => 250,
+                        'tradeSide' => 'SELL',
+                        'createTimestamp' => 1785907740000, 'executionTimestamp' => 1785907740000,
+                        'executionPrice' => 26386.34,
+                    ],
+                    [
+                        'dealId' => 11, 'positionId' => 331, 'symbolId' => 5, 'volume' => 250,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                        'executionPrice' => 26300.0,
+                        'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960, 'closedVolume' => 250],
+                    ],
+                ],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        $this->assertCount(1, $result['deals']);
+        $this->assertSame('2026-08-05 05:29:00', $result['deals'][0]['opened_at']);
+        $this->assertSame('2026-08-05 08:01:12', $result['deals'][0]['closed_at']);
+    }
+
+    public function testFetchDealsHoldsBackClosuresOfStillOpenPositions(): void
+    {
+        // A TP1 is a partial close: the position stays open. Emitting its deal
+        // as a closed trade created a second, phantom position — a "BUY with an
+        // instant profit" sitting next to the still-open SELL. Those deals must
+        // leave fetchDeals as partial exits on the live position instead.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            ]]]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    // TP1 on the still-open position 331.
+                    [
+                        'dealId' => 11, 'positionId' => 331, 'symbolId' => 5, 'volume' => 100,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                        'executionPrice' => 26300.0,
+                        'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327, 'closedVolume' => 100],
+                    ],
+                    // A genuinely finished position — must still come through.
+                    [
+                        'dealId' => 12, 'positionId' => 400, 'symbolId' => 5, 'volume' => 100,
+                        'tradeSide' => 'SELL',
+                        'createTimestamp' => 1785917000000, 'executionTimestamp' => 1785917000000,
+                        'executionPrice' => 26500.0,
+                        'closePositionDetail' => ['entryPrice' => 26400.0, 'grossProfit' => 10000, 'closedVolume' => 100],
+                    ],
+                ],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        $externalIds = array_column($result['deals'], 'external_id');
+        $this->assertSame(['ctrader_400'], $externalIds);
+        // Both deals were still fetched — raw_count reports the wire truth.
+        $this->assertSame(2, $result['raw_count']);
+    }
+
+    public function testFetchOpenPositionsAttachesThePartialExitsSeenInTheSameSync(): void
+    {
+        // Companion to the test above: what fetchDeals held back has to
+        // resurface here, so the journal records the TP1 as a partial exit of
+        // the open position and rebuilds the original size (1.5 left + 1 taken).
+        $dealsWs = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            ]]]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [[
+                    'dealId' => 11, 'positionId' => 331, 'symbolId' => 5, 'volume' => 100,
+                    'tradeSide' => 'BUY',
+                    'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                    'executionPrice' => 26300.0,
+                    'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327, 'closedVolume' => 100],
+                ]],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+            // Second session (fetchOpenPositions). In production each fetch
+            // opens its own socket; the stub is shared, so its frames follow
+            // on. No symbols list this time round: the name map is memoised for
+            // the sync run rather than re-pulling the broker's whole universe.
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            ]]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $dealsWs);
+        $credentials = [
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ];
+
+        $connector->fetchDeals($credentials);
+        $open = $connector->fetchOpenPositions($credentials);
+
+        $position = $open['positions'][0];
+        $this->assertSame('ctrader_331', $position['external_id']);
+        $this->assertSame('SELL', $position['direction']);
+        $this->assertEquals(2.5, $position['size']);
+        $this->assertEquals(1.5, $position['remaining_size']);
+        $this->assertCount(1, $position['exits']);
+        $this->assertSame('ctrader_deal_11', $position['exits'][0]['external_id']);
+        $this->assertEquals(103.27, $position['exits'][0]['pnl']);
+        $this->assertEquals(1.0, $position['exits'][0]['size']);
+    }
+
+    public function testFetchDealsWidensTheWindowToCoverStillOpenPositions(): void
+    {
+        // The sync cursor only ever moves forward, so a position opened weeks
+        // before it would fall outside the window and its partial exits would
+        // be lost the next time round. The window is pulled back to the oldest
+        // still-open position instead.
+        $openedAtMs = 1751000000000; // well before the cursor below
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => $openedAtMs],
+            ]]]),
+            self::frame(self::DEAL_LIST_RES, ['deal' => [], 'hasMore' => false]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ], '2026-08-04 00:00:00');
+
+        $dealRequest = null;
+        foreach ($ws->sentMessages as $message) {
+            $decoded = json_decode($message, true);
+            if (($decoded['payloadType'] ?? null) === 2133) {
+                $dealRequest = $decoded;
+            }
+        }
+
+        $this->assertNotNull($dealRequest, 'no ProtoOADealListReq was sent');
+        $this->assertSame($openedAtMs, $dealRequest['payload']['fromTimestamp']);
     }
 
     public function testFetchAccountsToleratesAMissingIsLiveFlag(): void

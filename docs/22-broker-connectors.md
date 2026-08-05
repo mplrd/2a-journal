@@ -78,7 +78,7 @@ Côté réception, `sendAndReceive()` : ignore les heartbeats (`payloadType 51`)
 | `fetchClosedOrders` | `ProtoOAOrderListReq` | statuts terminaux (EXECUTED/CANCELLED/EXPIRED) pour désambiguïser une disparition d'ordre |
 | `fetchBalance` | `ProtoOATraderReq` → `trader` | balance (`balance / 10^moneyDigits`) |
 
-Les `symbolId` numériques sont résolus en noms via `ProtoOASymbolByIdReq`. Les normalizers (`normalizeCtraderOpenPosition` / `OpenOrder` / `ClosedOrder`) préservent l'invariant `external_id` = `ctrader_<positionId>` / `ctrader_order_<orderId>`, indispensable aux transitions OPEN→CLOSED et au diff d'ordres. La tolérance enum (nom `'BUY'` **ou** code `1`) couvre l'incertitude sur la sérialisation JSON des enums, à figer au premier run live.
+Les `symbolId` numériques sont résolus en noms via `ProtoOASymbolsListReq` (voir plus bas). Les normalizers (`normalizeCtraderOpenPosition` / `OpenOrder` / `ClosedOrder`) préservent l'invariant `external_id` = `ctrader_<positionId>` / `ctrader_order_<orderId>`, indispensable aux transitions OPEN→CLOSED et au diff d'ordres. La tolérance enum (nom `'BUY'` **ou** code `1`) couvre l'incertitude sur la sérialisation JSON des enums, à figer au premier run live.
 
 **Piège des champs répétés : `array_values()` est obligatoire.** Corrigé le 2026-08-01, au premier vrai run de synchro cTrader. `fetchDeals` dédoublonnait les identifiants de symbole avec `array_unique(array_column($deals, 'symbolId'))` — or `array_unique()` **conserve les clés d'origine**. Dès que deux deals partagent un symbole, les clés deviennent trouées (`0, 2, 4`), et `json_encode()` sérialise alors un tableau troué en **objet** :
 
@@ -114,6 +114,60 @@ Le `/100` n'est juste que si `moneyDigits` vaut 2. Chez un broker qui renvoie 8,
 `CtraderConnector` l'implémente désormais : `fetchBalance` résout `trader.depositAssetId` en nom lisible via `ProtoOAAssetListReq`, sur la session déjà authentifiée. Échec toléré — pas de devise plutôt qu'une devise inventée, car une valeur fausse ferait croire à une concordance.
 
 **Le comportement reste « signaler, pas convertir »** : `accounts.currency` est déclarée par l'utilisateur et sert à afficher tout l'historique. La synchro ne l'écrase pas ; elle affiche un avertissement quand les deux diffèrent, sans appliquer de conversion.
+
+### Fidélité des deals cTrader
+
+Corrigé le 2026-08-05, au premier run avec de vrais trades importés. Quatre défauts distincts faisaient que la donnée synchronisée ne correspondait pas à la réalité du compte. Ils sont indépendants mais se cumulaient sur le même trade.
+
+**1. Le nom du symbole n'est pas sur `ProtoOASymbol`.** Tous les trades arrivaient étiquetés `SYM_331` — le repli du code. cTrader éclate le symbole sur **deux** types :
+
+| Message | Type renvoyé | Contient |
+|---|---|---|
+| `ProtoOASymbolsListReq` (2114) | `ProtoOALightSymbol` | `symbolId`, **`symbolName`** |
+| `ProtoOASymbolByIdReq` (2116) | `ProtoOASymbol` | `symbolId`, `lotSize`, `digits`, swaps, horaires… — **pas de `symbolName`** |
+
+`resolveSymbolNames()` lisait `symbolName` sur la réponse *by-id* : le champ n'existe pas dans ce message, le `??` tombait donc systématiquement sur `'SYM_' . $id`. Le connecteur appelle désormais les deux (`resolveSymbols()`) : le nom vient de la liste light, le `lotSize` de la réponse by-id. La liste light couvre tout l'univers du broker, elle est donc **mémoïsée par compte pour la durée de la synchro** (`resetSyncCache()` la purge) — une synchro résout les symboles trois fois : deals, positions, ordres.
+
+**2. Le volume ne se divise pas par 100000.** Un DAX de 1,5 contrat était importé en `0.0015`. `volume` (deal et `tradeData`) comme `lotSize` sont exprimés **en cents** — centièmes d'unité — donc :
+
+```
+lots = volume / lotSize          // ce que cTrader affiche
+```
+
+Le `/100000` codé en dur ne correspondait à aucune unité. Repli sans `lotSize` : `/100`, soit la signification documentée du champ (unités).
+
+**3. `tradeSide` d'un deal de clôture est le sens de la clôture.** Un deal qui porte un `closePositionDetail` est celui qui **ferme** la position : son `tradeSide` est l'inverse du sens de la position (on solde un long en vendant). Le recopier tel quel inversait **tous** les trades cTrader importés — un short pris en TP apparaissait en achat gagnant. Idem pour la date : `createTimestamp` est celui du deal de clôture, donc chaque trade semblait ouvert à l'instant où il se fermait. Le connecteur apparie désormais la position à son deal d'**ouverture** (celui sans `closePositionDetail`) et injecte `positionOpenTimestamp`.
+
+**4. Une clôture partielle n'est pas un trade clos.** Un TP1 laisse la position ouverte. Le deal correspondant était pourtant importé comme un trade terminé : l'utilisateur voyait une position fantôme (« achat à profit instantané ») à côté du short qui tournait toujours. `fetchDeals` interroge maintenant `ProtoOAReconcileReq` **avant** la liste des deals et :
+
+- écarte les deals de clôture dont la position figure encore dans le snapshot live ;
+- les republie via `fetchOpenPositions` en `exits[]` sur la position vivante (même contrat que BingX, cf. `BrokerOpenSyncService`) ;
+- **élargit la fenêtre** jusqu'à la plus ancienne position ouverte. Le curseur n'avance que vers le futur : sans ça, les clôtures partielles d'une position ouverte de longue date sortiraient de la fenêtre et seraient perdues. Les positions déjà importées dans la plage élargie sont ignorées sur `external_id`.
+
+`tradeData.volume` d'une position ouverte est le volume **restant** (cTrader le décrémente à chaque clôture partielle). La taille d'origine est donc reconstruite : `size = restant + Σ sorties`, `remaining_size = restant`.
+
+**Deux identifiants, deux portées.** `external_id` (`ctrader_<positionId>`) nomme la **position** et est partagé par tous ses deals de clôture ; il ne peut donc pas dédoublonner les sorties. Chaque sortie porte en plus `exit_external_id` (`ctrader_deal_<dealId>`), et c'est lui qui sert au dédoublonnage des `partial_exits`. Même valeur émise pendant que la position est ouverte et une fois qu'elle est close : le TP1 n'est pas réécrit au moment de la clôture définitive.
+
+**Conséquence sur `BrokerOpenSyncService`.** L'indexation du snapshot clos par `external_id` gardait la **dernière** ligne. Une position soldée en plusieurs fois (TP1 puis le reste) n'héritait alors que du P&L de la dernière jambe. Les lignes partageant un `external_id` sont désormais **fusionnées** — P&L et taille additionnés, prix de sortie repondéré, clôture datée de la dernière jambe — et chaque jambe est écrite en `partial_exits`, comme le fait déjà la clôture manuelle (`TradeService::exit`).
+
+### Fuseau horaire des dates synchronisées
+
+Corrigé le 2026-08-05, repéré en comparant l'heure affichée à l'heure réelle d'ouverture d'un trade. Concerne **tous les connecteurs**, pas seulement cTrader.
+
+Les colonnes `DATETIME` du journal contiennent de l'**heure locale murale**, pas de l'UTC : le formulaire de trade enregistre littéralement ce que l'utilisateur tape dans le `DatePicker`. Les brokers, eux, renvoient tous des instants — epoch en millisecondes (cTrader, BingX) ou ISO-8601 avec offset (Ouinex, MetaApi) — et les connecteurs les rendaient en UTC :
+
+| | Ouverture réelle | En base | Affiché |
+|---|---|---|---|
+| Trade saisi à la main | 07:29 Paris | `07:29:00` | 07:29 ✅ |
+| Trade synchronisé (avant) | 07:29 Paris | `05:29:00` | 05:29 ❌ |
+
+Deux heures d'écart entre deux lignes voisines de la même liste, et un décalage variable selon l'heure d'été. `gmdate()` et `new DateTime($iso)->format()` produisaient tous deux de l'UTC — le second parce qu'un `DateTime` conserve l'offset porté par la chaîne (`Z` = UTC).
+
+`DealNormalizer` prend désormais un fuseau au constructeur et convertit dans `toJournalDatetime()`, DST comprise (`DateTimeZone`, pas un offset fixe). La valeur vient de **`users.timezone`** (colonne existante, défaut `Europe/Paris`), lue par `BrokerSyncService` et poussée aux connecteurs via le trait `NormalizesInUserTimezone`.
+
+Deux replis silencieux, tous deux vers le comportement UTC antérieur : pas de fuseau transmis, et fuseau illisible (`users.timezone` est du texte libre — une faute de frappe ne doit pas faire échouer une synchro entière).
+
+**Non traité** : les lignes déjà en base gardent leur heure UTC ; seules les synchros ultérieures écrivent en heure locale. Une resynchro depuis zéro les réaligne.
 
 ### Chiffrement des credentials
 

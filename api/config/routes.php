@@ -434,6 +434,7 @@ $brokerSyncService = new BrokerSyncService(
     $brokerOpenSyncService,
     $brokerOrderSyncService,
     $accountRepo,
+    $userRepo,
 );
 $brokerConnectionService = new BrokerConnectionService(
     $brokerConnectionRepo,

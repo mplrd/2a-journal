@@ -4,9 +4,41 @@ namespace App\Services\Broker;
 
 class DealNormalizer
 {
+    private ?\DateTimeZone $timezone;
+
+    /**
+     * @param string|null $timezone IANA name the journal's DATETIME columns are
+     *   expressed in — `users.timezone`. Null keeps UTC.
+     *
+     * The journal stores LOCAL wall-clock time, not UTC: the trade form writes
+     * whatever the user typed into the date picker. Connectors were writing
+     * true UTC into the very same columns, so a broker-synced trade sat one or
+     * two hours off from the hand-entered ones next to it. Handing the
+     * normalizer the user's timezone is what puts both on the same clock.
+     *
+     * An unparseable name degrades to UTC rather than throwing: `users.timezone`
+     * is free text and a typo must not abort a whole sync.
+     */
+    public function __construct(?string $timezone = null)
+    {
+        $this->timezone = null;
+
+        if ($timezone !== null && $timezone !== '') {
+            try {
+                $this->timezone = new \DateTimeZone($timezone);
+            } catch (\Throwable) {
+                $this->timezone = null;
+            }
+        }
+    }
+
     /**
      * Normalize a cTrader deal into the import row format.
      * Returns null for opening deals (no closePositionDetail).
+     *
+     * `symbolName`, `lotSize` and `positionOpenTimestamp` are injected by the
+     * connector — they belong to the symbol and to the position, not to the
+     * deal, so the raw ProtoOADeal carries none of them.
      */
     public function normalizeCtraderDeal(array $deal): ?array
     {
@@ -15,7 +47,14 @@ class DealNormalizer
         }
 
         $close = $deal['closePositionDetail'];
-        $volume = ($deal['volume'] ?? 0) / 100000; // cTrader volume is in cents of lots
+
+        // closedVolume is what this deal took off the position; the deal's own
+        // volume is the size of the closing order. Identical on a full close,
+        // and closedVolume is the authority on a partial one.
+        $volume = $this->ctraderVolumeToLots(
+            $close['closedVolume'] ?? $deal['volume'] ?? 0,
+            $deal['lotSize'] ?? null,
+        );
 
         // cTrader does NOT express money in cents. moneyDigits is the exponent,
         // and cTrader documents it as affecting "grossProfit, swap, commission,
@@ -25,19 +64,64 @@ class DealNormalizer
         // — prefer the detail's, since that is what grossProfit belongs to.
         $moneyDigits = (int) ($close['moneyDigits'] ?? $deal['moneyDigits'] ?? 2);
 
+        // A deal carrying a closePositionDetail is the deal that CLOSED the
+        // position, so its tradeSide is the closing side — the opposite of the
+        // position's own direction. Copying it through turned every synced
+        // cTrader trade upside down: a short taking profit was imported as a
+        // winning long. The opening timestamp has the mirror problem —
+        // createTimestamp is the closing deal's, so a trade appeared to open at
+        // the moment it closed until the connector resolved the real one.
         return [
             'symbol' => $deal['symbolName'] ?? null,
-            'direction' => $deal['tradeSide'] ?? null,
+            'direction' => $this->oppositeDirection(
+                $this->normalizeCtraderTradeSide($deal['tradeSide'] ?? null)
+            ),
             'entry_price' => (float) ($close['entryPrice'] ?? 0),
             'exit_price' => (float) ($deal['executionPrice'] ?? 0),
             'size' => round($volume, 5),
             'pnl' => round(($close['grossProfit'] ?? 0) / (10 ** $moneyDigits), 2),
-            'opened_at' => $this->msTimestampToDatetime($deal['createTimestamp'] ?? 0),
+            'opened_at' => $this->msTimestampToDatetime(
+                (int) ($deal['positionOpenTimestamp'] ?? $deal['createTimestamp'] ?? 0)
+            ),
             'closed_at' => $this->msTimestampToDatetime($deal['executionTimestamp'] ?? 0),
             'external_id' => 'ctrader_' . ($deal['positionId'] ?? $deal['dealId']),
+            // Per-LEG id. external_id names the position and is shared by every
+            // deal that closes part of it, so only this one can dedup exits —
+            // and it must match what the connector emits while the position is
+            // still open, or the TP1 is written twice once it finally closes.
+            'exit_external_id' => 'ctrader_deal_' . ($deal['dealId'] ?? $deal['positionId'] ?? ''),
             'pips' => null,
             'comment' => null,
         ];
+    }
+
+    /**
+     * Convert a cTrader volume into the lot count the platform displays.
+     *
+     * ProtoOADeal.volume, ProtoOATradeData.volume and ProtoOASymbol.lotSize are
+     * all "in cents" — hundredths of the base unit — so volume / lotSize is the
+     * lot count. The connector injects lotSize per symbol; when the lookup
+     * failed we fall back to plain units (volume / 100), which is the field's
+     * documented meaning. Neither is the /100000 this used to divide by: that
+     * matched no unit at all and reported 1.5 DAX contracts as 0.0015.
+     */
+    private function ctraderVolumeToLots(int|float $volumeInCents, int|float|null $lotSize): float
+    {
+        $lotSize = (float) ($lotSize ?? 0);
+
+        return $lotSize > 0
+            ? $volumeInCents / $lotSize
+            : $volumeInCents / 100;
+    }
+
+    /** BUY ↔ SELL, passing null (unmappable side) straight through. */
+    private function oppositeDirection(?string $direction): ?string
+    {
+        return match ($direction) {
+            'BUY' => 'SELL',
+            'SELL' => 'BUY',
+            default => null,
+        };
     }
 
     /**
@@ -49,9 +133,15 @@ class DealNormalizer
      * produces for the same positionId ('ctrader_<positionId>'), so the
      * OPEN→CLOSED transition re-targets the same row instead of duplicating.
      *
-     * `symbolName` is injected by the connector after resolving symbolId.
-     * Volume lives under tradeData and uses the same /100000 convention as
+     * `symbolName`, `lotSize` and `partialExits` are injected by the connector
+     * after resolving symbolId and walking the deal list. Volume lives under
+     * tradeData and uses the same volume/lotSize convention as
      * normalizeCtraderDeal. No closed_at key: this is an OPEN row.
+     *
+     * tradeData.volume is what REMAINS on the position — cTrader shrinks it on
+     * every partial close — so the original size has to be rebuilt by adding
+     * back what the exits took off. The journal keeps the original on the
+     * position row and the leftover on the trade (`remaining_size`).
      */
     public function normalizeCtraderOpenPosition(array $position): ?array
     {
@@ -60,13 +150,21 @@ class DealNormalizer
         }
 
         $trade = $position['tradeData'] ?? [];
-        $volume = ($trade['volume'] ?? 0) / 100000;
+        $remaining = $this->ctraderVolumeToLots(
+            $trade['volume'] ?? 0,
+            $position['lotSize'] ?? null,
+        );
+
+        $exits = $position['partialExits'] ?? [];
+        $closed = array_sum(array_map(fn($exit) => (float) ($exit['size'] ?? 0), $exits));
 
         return [
             'symbol' => $position['symbolName'] ?? null,
             'direction' => $this->normalizeCtraderTradeSide($trade['tradeSide'] ?? null),
             'entry_price' => (float) $position['price'],
-            'size' => round($volume, 5),
+            'size' => round($remaining + $closed, 5),
+            'remaining_size' => round($remaining, 5),
+            'exits' => $exits,
             'sl_price' => isset($position['stopLoss']) ? (float) $position['stopLoss'] : null,
             'tp_price' => isset($position['takeProfit']) ? (float) $position['takeProfit'] : null,
             'opened_at' => $this->msTimestampToDatetime((int) ($trade['openTimestamp'] ?? 0)),
@@ -93,7 +191,7 @@ class DealNormalizer
         }
 
         $trade = $order['tradeData'] ?? [];
-        $volume = ($trade['volume'] ?? 0) / 100000;
+        $volume = $this->ctraderVolumeToLots($trade['volume'] ?? 0, $order['lotSize'] ?? null);
         $expiration = (int) ($order['expirationTimestamp'] ?? 0);
 
         return [
@@ -494,13 +592,29 @@ class DealNormalizer
 
     private function msTimestampToDatetime(int $ms): string
     {
-        return gmdate('Y-m-d H:i:s', (int) ($ms / 1000));
+        return $this->toJournalDatetime(
+            (new \DateTimeImmutable('@' . (int) ($ms / 1000)))
+        );
     }
 
     private function isoToDatetime(string $iso): string
     {
-        $dt = new \DateTime($iso);
-        return $dt->format('Y-m-d H:i:s');
+        // new DateTime() keeps whatever offset the string carried (a trailing
+        // Z means UTC), so formatting it straight back out preserved UTC.
+        return $this->toJournalDatetime(new \DateTimeImmutable($iso));
+    }
+
+    /**
+     * Render an instant as the wall-clock string the journal stores, in the
+     * user's timezone when one was supplied.
+     */
+    private function toJournalDatetime(\DateTimeImmutable $instant): string
+    {
+        if ($this->timezone !== null) {
+            $instant = $instant->setTimezone($this->timezone);
+        }
+
+        return $instant->format('Y-m-d H:i:s');
     }
 
     private function extractMetaApiDirection(string $dealType): string

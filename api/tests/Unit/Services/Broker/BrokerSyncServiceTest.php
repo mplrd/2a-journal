@@ -443,4 +443,118 @@ class BrokerSyncServiceTest extends TestCase
         $this->assertSame(0, $result['pending_executed']);
         $this->assertSame(0, $result['pending_expired']);
     }
+
+    // ── Timezone handed to the connector ────────────────────────────
+
+    public function testSyncHandsTheUsersTimezoneToTheConnector(): void
+    {
+        // The journal's DATETIME columns hold local wall-clock time, so the
+        // connector has to know which clock to render broker instants on.
+        // Without it a trade opened at 07:29 in Paris is journalled as 05:29,
+        // two hours away from every hand-entered trade beside it.
+        $userRepo = $this->createMock(\App\Repositories\UserRepository::class);
+        $userRepo->method('findById')->willReturn(['id' => 10, 'timezone' => 'Europe/Paris']);
+
+        $spy = new TimezoneSpyConnector([]);
+        $this->primeSyncStubs();
+
+        $this->makeServiceWith($spy, $userRepo)->sync(1, 10);
+
+        $this->assertSame('Europe/Paris', $spy->spiedTimezone);
+    }
+
+    public function testSyncLeavesTheConnectorOnUtcWhenTheTimezoneIsUnknown(): void
+    {
+        // No repository injected → null, i.e. the UTC behaviour that predates
+        // this. A sync must never fail because a timezone could not be read.
+        $spy = new TimezoneSpyConnector([]);
+        $this->primeSyncStubs();
+
+        $this->makeServiceWith($spy, null)->sync(1, 10);
+
+        $this->assertNull($spy->spiedTimezone);
+    }
+
+    /** The collaborators a sync touches beyond the connector under test. */
+    private function primeSyncStubs(): void
+    {
+        $this->connectionRepo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+        $this->openSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+        $this->orderSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
+    }
+
+    private function makeServiceWith(
+        ConnectorInterface $ctrader,
+        ?\App\Repositories\UserRepository $userRepo,
+    ): BrokerSyncService {
+        return new BrokerSyncService(
+            $this->connectionRepo,
+            $this->syncLogRepo,
+            $this->importService,
+            new RowGroupingService(),
+            $this->crypto,
+            $ctrader,
+            $this->metaApiConnector,
+            $this->ouinexConnector,
+            $this->bingxConnector,
+            $this->openSyncService,
+            $this->orderSyncService,
+            null,
+            $userRepo,
+        );
+    }
+}
+
+/**
+ * A real connector — so it carries the NormalizesInUserTimezone trait — with
+ * its network calls stubbed out, recording the timezone the sync service hands
+ * it. A plain interface mock would not do: the point is that the wiring reaches
+ * a connector that actually implements setTimezone().
+ */
+class TimezoneSpyConnector extends \App\Services\Broker\CtraderConnector
+{
+    public ?string $spiedTimezone = null;
+
+    public function setTimezone(?string $timezone): void
+    {
+        $this->spiedTimezone = $timezone;
+        parent::setTimezone($timezone);
+    }
+
+    public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
+    {
+        return ['deals' => [], 'cursor' => null, 'raw_count' => 0];
+    }
+
+    public function fetchOpenPositions(array $credentials): array
+    {
+        return ['positions' => [], 'raw_count' => 0];
+    }
+
+    public function fetchOpenOrders(array $credentials): array
+    {
+        return ['orders' => [], 'raw_count' => 0];
+    }
+
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
+    {
+        return ['orders' => [], 'raw_count' => 0];
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        return null;
+    }
+
+    public function refreshCredentials(array $credentials): array
+    {
+        return $credentials;
+    }
 }
