@@ -169,6 +169,11 @@ Deux replis silencieux, tous deux vers le comportement UTC antérieur : pas de f
 
 **Non traité** : les lignes déjà en base gardent leur heure UTC ; seules les synchros ultérieures écrivent en heure locale. Une resynchro depuis zéro les réaligne.
 
+**Deux compléments (2026-08-05, au test de la correction précédente).** La conversion était juste mais n'atteignait pas les lignes attendues :
+
+- `BrokerOpenSyncService::updateBrokerFields` rafraîchissait `entry_price`, `size`, `direction`, `symbol` et `remaining_size` — mais **pas `opened_at`**. Une position déjà connue du journal gardait donc son horodatage d'origine indéfiniment : corrigée sur toutes les colonnes sauf celle qui avait changé. Rafraîchi désormais, et uniquement quand le snapshot en porte un (le snapshot live BingX n'a pas d'heure d'ouverture — écrire `null` effacerait ce qu'on détient déjà).
+- `cli/sync-brokers.php` construit sa propre instance de `BrokerSyncService` et ne recevait pas le `UserRepository` : l'auto-sync planifiée retombait sur UTC pendant qu'une synchro manuelle écrivait en heure locale, la même position dérivant selon le dernier chemin l'ayant touchée. Câblé.
+
 ### Chiffrement des credentials
 
 AES-256-CBC via `CredentialEncryptionService`. La clé vient de la variable d'environnement `BROKER_ENCRYPTION_KEY`. Chaque connexion a son propre IV. Les credentials ne sont jamais exposés dans les réponses API.

@@ -160,9 +160,20 @@ class BrokerOpenSyncService
             'symbol' => $snapshot['symbol'],
         ]);
 
-        $this->tradeRepo->update((int) $existing['trade_id'], [
-            'remaining_size' => $snapshot['remaining_size'] ?? $snapshot['size'],
-        ]);
+        $tradeFields = ['remaining_size' => $snapshot['remaining_size'] ?? $snapshot['size']];
+
+        // opened_at is broker-driven like every field above, and was the one
+        // this path never rewrote — so a position already on file kept its
+        // original timestamp forever. That is what left positions two hours off
+        // once the connectors switched from UTC to the user's own timezone:
+        // corrected on every column but the one that had changed.
+        // Only when the snapshot actually carries one: BingX's live snapshot
+        // has no open time, and writing null would erase what we already hold.
+        if (!empty($snapshot['opened_at'])) {
+            $tradeFields['opened_at'] = $snapshot['opened_at'];
+        }
+
+        $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
     }
