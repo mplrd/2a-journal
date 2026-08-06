@@ -161,23 +161,33 @@ class PositionRepository
      */
     public function findOpenByExternalIdPrefixInAccount(int $accountId, string $prefix): array
     {
-        // tp_price column doesn't exist (only the targets JSON does); the
-        // diff service doesn't need to read it back from DB to update —
-        // the snapshot is the source of truth for broker-side fields.
+        // "Open" here means NOT YET CLOSED, so SECURED belongs in the set just
+        // as much as OPEN — same semantics as StatsRepository::getOpenTrades.
+        // Restricting it to OPEN made the diff blind to any trade secured in
+        // the meantime: apply() inserts whatever it cannot find, so the very
+        // next sync duplicated the position, and its eventual close never
+        // transitioned. It bit any broker trade the user secured by hand, and
+        // would bite every one of them once the stop-at-entry detection
+        // promotes them automatically.
+        //
+        // targets is read back because a broker take profit must never
+        // overwrite an objective the user typed; the other broker-side fields
+        // are taken from the snapshot, which is authoritative for them.
         $stmt = $this->pdo->prepare(
             'SELECT p.id AS position_id, p.external_id, p.entry_price, p.size,
-                    p.sl_price, p.direction, p.symbol,
+                    p.sl_price, p.direction, p.symbol, p.targets,
                     t.id AS trade_id, t.status AS trade_status
              FROM positions p
              INNER JOIN trades t ON t.position_id = p.id
              WHERE p.account_id = :account_id
                AND p.external_id LIKE :prefix
-               AND t.status = :open_status'
+               AND t.status IN (:open_status, :secured_status)'
         );
         $stmt->execute([
             'account_id' => $accountId,
             'prefix' => $prefix . '%',
             'open_status' => TradeStatus::OPEN->value,
+            'secured_status' => TradeStatus::SECURED->value,
         ]);
 
         $result = [];

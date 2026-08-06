@@ -125,7 +125,9 @@ class BrokerOpenSyncServiceTest extends TestCase
             ->method('update')
             ->with(1001, $this->callback(function ($data) {
                 // Whitelist: only broker-driven fields. Setup/notes MUST be absent.
-                $allowed = ['entry_price', 'size', 'sl_price', 'tp_price', 'direction', 'symbol'];
+                // `targets` is on the list because a broker take profit fills
+                // it — but only while empty, which the dedicated tests cover.
+                $allowed = ['entry_price', 'size', 'sl_price', 'tp_price', 'direction', 'symbol', 'targets'];
                 foreach (array_keys($data) as $key) {
                     if (!in_array($key, $allowed, true)) {
                         return false;
@@ -227,6 +229,239 @@ class BrokerOpenSyncServiceTest extends TestCase
             accountId: 5,
             batchId: 99,
             openSnapshot: [$snapshot],
+            closedSnapshot: [],
+        );
+    }
+
+    // ── Broker take profit → positions.targets ──────────────────────
+
+    public function testInsertStoresTheBrokerTakeProfitAsATarget(): void
+    {
+        // The connectors normalize tp_price and nothing consumed it: there is
+        // no tp_price column, objectives live in the positions.targets JSON.
+        // The target keeps the shape the trade form writes — id, label, points,
+        // price, size — so the UI renders a synced objective like any other.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(function ($data) {
+                $targets = json_decode($data['targets'] ?? '[]', true);
+                return count($targets) === 1
+                    && (float) $targets[0]['price'] === 62000.0
+                    // Distance from entry, the unit the form edits in.
+                    && abs((float) $targets[0]['points'] - 2000.0) < 0.001
+                    && (float) $targets[0]['size'] === 0.5;
+            }))
+            ->willReturn(['id' => 1001]);
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()], // entry 60000, tp 62000, size 0.5
+            closedSnapshot: [],
+        );
+    }
+
+    public function testUpdateNeverOverwritesTargetsTheUserEntered(): void
+    {
+        // Same contract as setup and notes: what the user typed is theirs. A
+        // broker TP only fills the slot when it is empty.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00',
+                    'size' => '0.50000',
+                    'direction' => 'BUY',
+                    'targets' => '[{"id":"tp1","label":"TP1","points":1500,"price":61500,"size":0.25}]',
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(1001, $this->callback(fn($data) => !array_key_exists('targets', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testUpdateFillsEmptyTargetsFromTheBroker(): void
+    {
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00',
+                    'size' => '0.50000',
+                    'direction' => 'BUY',
+                    'targets' => null,
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(1001, $this->callback(function ($data) {
+                $targets = json_decode($data['targets'] ?? '[]', true);
+                return count($targets) === 1 && (float) $targets[0]['price'] === 62000.0;
+            }));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()],
+            closedSnapshot: [],
+        );
+    }
+
+    // ── Stop loss at break-even → SECURED ───────────────────────────
+
+    public function testPromotesToSecuredWhenTheStopReachesTheEntry(): void
+    {
+        // Moving the stop to entry is what actually takes the risk off, and the
+        // broker reports it as a level we already sync. Detecting it here saves
+        // the user from re-declaring on the journal what the platform knows.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00',
+                    'size' => '0.50000',
+                    'direction' => 'BUY',
+                    'targets' => null,
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => ($data['status'] ?? null) === TradeStatus::SECURED->value));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60000.0])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testPromotesToSecuredWhenTheStopLocksInProfit(): void
+    {
+        // A stop pushed past entry guarantees a gain — same single status, per
+        // the product call: "no more risk" is one state.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => ($data['status'] ?? null) === TradeStatus::SECURED->value));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60500.0])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testDoesNotSecureAShortWhoseStopIsStillAboveEntry(): void
+    {
+        // Direction inverts the comparison: a short is protected once its stop
+        // drops TO or BELOW the entry.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'SELL',
+                    'targets' => null, 'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => !array_key_exists('status', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['direction' => 'SELL', 'sl_price' => 60500.0])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testLeavesTheStatusAloneWithoutAStopLoss(): void
+    {
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => !array_key_exists('status', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => null])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testNeverDemotesATradeAlreadySecured(): void
+    {
+        // A trade can also be secured by hand, through a BE exit that recorded
+        // a partial. Pulling the stop back on the platform must not erase that
+        // decision — the sync only ever promotes.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001,
+                    'trade_status' => TradeStatus::SECURED->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => !array_key_exists('status', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 59000.0])],
             closedSnapshot: [],
         );
     }

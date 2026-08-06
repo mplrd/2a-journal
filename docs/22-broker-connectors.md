@@ -206,6 +206,20 @@ Conséquence : ce qui était encaissé au TP1 d'une position toujours en cours t
 
 Le défaut préexistait pour les sorties partielles saisies à la main ; la synchro des clôtures partielles cTrader l'a simplement rendu courant.
 
+### Objectifs synchronisés et mise à BE automatique
+
+Livré le 2026-08-06.
+
+**Le take profit du broker alimente `positions.targets`.** Il n'y a pas de colonne `tp_price` — les objectifs vivent dans ce JSON — et le `tp_price` normalisé par les connecteurs était donc jeté depuis toujours. L'entrée écrite reprend la forme que produit le formulaire de trade (`id`, `label`, `points`, `price`, `size`), pour qu'un objectif synchronisé s'affiche comme un objectif saisi. `points` est la distance à l'entrée, l'unité qu'édite le formulaire.
+
+**Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
+
+**Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.
+
+**Promotion uniquement, jamais de rétrogradation.** Un trade peut aussi avoir été sécurisé à la main via une sortie de type BE ; ramener le stop en arrière sur la plateforme ne doit pas effacer cette décision.
+
+**Prérequis corrigé au passage : `findOpenByExternalIdPrefixInAccount` ne voyait que les `OPEN`.** Or `apply()` **insère** toute ligne du snapshot qu'il ne retrouve pas. Un trade passé `SECURED` devenait donc invisible au diff : la synchro suivante créait un **doublon** de la position, et sa clôture ne transitionnait jamais. Le défaut existait déjà pour un trade broker sécurisé manuellement ; la détection automatique l'aurait rendu systématique. La requête couvre désormais `OPEN` **et** `SECURED` — « ouvert » y signifie « pas encore clos », la même sémantique que `StatsRepository::getOpenTrades`.
+
 ### Taille affichée dans le bloc « En cours » du dashboard
 
 `positions.size` porte la taille **d'origine**, `trades.remaining_size` ce qu'il reste après les sorties partielles. Le panneau « En cours » du dashboard lisait `size` — il annonçait donc 2.5 contrats sur un short déjà à moitié soldé au TP1, alors qu'il n'en tournait plus que 1.5. Le défaut est ancien mais était invisible : avant la reconstruction de la taille d'origine, les deux colonnes étaient toujours égales sur les positions synchronisées. `remaining_size` était d'ailleurs déjà remontée par `StatsRepository::getOpenTrades()`, simplement jamais affichée.

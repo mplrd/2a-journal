@@ -3,6 +3,7 @@
 namespace App\Services\Broker;
 
 use App\Enums\BrokerProvider;
+use App\Enums\Direction;
 use App\Enums\ExitType;
 use App\Enums\TradeStatus;
 use App\Repositories\PartialExitRepository;
@@ -114,6 +115,7 @@ class BrokerOpenSyncService
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
             'sl_price' => $row['sl_price'] ?? null,
+            'targets' => $this->brokerTargets($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
             'position_type' => 'TRADE',
@@ -152,15 +154,39 @@ class BrokerOpenSyncService
      */
     private function updateBrokerFields(array $existing, array $snapshot): void
     {
-        $this->positionRepo->update((int) $existing['position_id'], [
+        $positionFields = [
             'entry_price' => $snapshot['entry_price'],
             'size' => $snapshot['size'],
             'sl_price' => $snapshot['sl_price'] ?? null,
             'direction' => $snapshot['direction'],
             'symbol' => $snapshot['symbol'],
-        ]);
+        ];
+
+        // Objectives are the user's the moment they type one, same contract as
+        // setup and notes. A broker take profit only fills an empty slot.
+        if ($this->hasNoTargets($existing)) {
+            $brokerTargets = $this->brokerTargets($snapshot);
+            if ($brokerTargets !== null) {
+                $positionFields['targets'] = $brokerTargets;
+            }
+        }
+
+        $this->positionRepo->update((int) $existing['position_id'], $positionFields);
 
         $tradeFields = ['remaining_size' => $snapshot['remaining_size'] ?? $snapshot['size']];
+
+        // A stop moved to the entry — or past it — is what actually takes the
+        // risk off, and the broker reports it as a level we already sync.
+        // Promotion only: a trade can also have been secured by hand through a
+        // BE exit, and pulling the stop back on the platform must not erase
+        // that decision.
+        if (
+            $existing['trade_status'] === TradeStatus::OPEN->value
+            && $this->stopProtectsEntry($snapshot, (float) $existing['entry_price'])
+        ) {
+            $tradeFields['status'] = TradeStatus::SECURED->value;
+            $tradeFields['be_reached'] = 1;
+        }
 
         // opened_at is broker-driven like every field above, and was the one
         // this path never rewrote — so a position already on file kept its
@@ -176,6 +202,62 @@ class BrokerOpenSyncService
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
+    }
+
+    /**
+     * The broker's take profit as a positions.targets payload, or null when
+     * there is none.
+     *
+     * There is no tp_price column — objectives live in that JSON — so the entry
+     * mirrors what the trade form writes (id, label, points, price, size) and a
+     * synced objective renders like any other. `points` is the distance from
+     * entry, which is the unit the form edits in; the size is the whole
+     * position, since a broker take profit closes it outright.
+     */
+    private function brokerTargets(array $row): ?string
+    {
+        $takeProfit = $row['tp_price'] ?? null;
+        if ($takeProfit === null || (float) $takeProfit <= 0) {
+            return null;
+        }
+
+        return json_encode([[
+            'id' => 'tp1',
+            'label' => 'TP1',
+            'points' => round(abs((float) $takeProfit - (float) $row['entry_price']), 5),
+            'price' => (float) $takeProfit,
+            'size' => (float) $row['size'],
+        ]]);
+    }
+
+    /** True when the journal holds no objective for this position yet. */
+    private function hasNoTargets(array $existing): bool
+    {
+        $stored = $existing['targets'] ?? null;
+        if ($stored === null || $stored === '') {
+            return true;
+        }
+        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
+
+        return empty($decoded);
+    }
+
+    /**
+     * Whether the stop loss has reached the entry, or gone past it into
+     * profit — both count as "no risk left", per the product call. Direction
+     * inverts the comparison: a long is protected once its stop rises TO the
+     * entry, a short once its stop drops to it.
+     */
+    private function stopProtectsEntry(array $snapshot, float $entryPrice): bool
+    {
+        $stop = $snapshot['sl_price'] ?? null;
+        if ($stop === null || $entryPrice <= 0) {
+            return false;
+        }
+
+        return ($snapshot['direction'] ?? null) === Direction::SELL->value
+            ? (float) $stop <= $entryPrice
+            : (float) $stop >= $entryPrice;
     }
 
     /**
