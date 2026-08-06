@@ -118,7 +118,17 @@ function populateFromTrade(trade) {
   // a coherent price on open (the component keeps them in sync afterwards).
   const entry = Number(trade.entry_price)
   const isBuy = trade.direction === Direction.BUY
+
+  // A broker reports the stop loss as a LEVEL, never as a distance, so a
+  // synced trade arrives with sl_price set and sl_points null. Deriving
+  // everything from the points alone turned that into `entry - 0` — the stop
+  // loss showed up sitting exactly on the entry price while the real level was
+  // in the database all along. Whichever side is recorded now seeds the other.
+  const storedSlPrice = trade.sl_price != null ? Number(trade.sl_price) : null
   const slPts = Number(trade.sl_points)
+    || (storedSlPrice != null ? Math.abs(entry - storedSlPrice) : 0)
+  const slPrice = storedSlPrice ?? (slPts ? (isBuy ? entry - slPts : entry + slPts) : null)
+
   const bePts = trade.be_points != null ? Number(trade.be_points) : null
   const hydratedTargets = (targets || []).map((tp) => {
     const pts = tp.points != null ? Number(tp.points) : null
@@ -132,7 +142,7 @@ function populateFromTrade(trade) {
     entry_price: entry,
     size: Number(trade.size),
     sl_points: slPts,
-    sl_price: slPts ? (isBuy ? entry - slPts : entry + slPts) : null,
+    sl_price: slPrice,
     be_points: bePts,
     be_price: bePts != null ? (isBuy ? entry + bePts : entry - bePts) : null,
     be_size: trade.be_size != null ? Number(trade.be_size) : null,

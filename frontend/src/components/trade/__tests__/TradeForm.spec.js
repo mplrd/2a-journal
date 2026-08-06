@@ -104,6 +104,51 @@ describe('TradeForm — objectives price ⇄ points', () => {
     })
   })
 
+  describe('seeds from a stored SL price when no points are recorded', () => {
+    // A broker reports the stop loss as a LEVEL, never as a distance, so a
+    // synced trade lands with sl_price set and sl_points NULL. The form drove
+    // everything off the points, so Number(null) === 0 blanked the pair and the
+    // stop loss simply disappeared on edit — while sitting in the database all
+    // along.
+    const syncedBuy = {
+      id: 2,
+      account_id: 1,
+      symbol: 'GER40.cash',
+      direction: 'BUY',
+      status: 'OPEN',
+      entry_price: 26386.34,
+      size: 2.5,
+      sl_points: null,
+      sl_price: 26300,
+      targets: [],
+      opened_at: '2026-08-05 07:29:00',
+    }
+
+    it('shows the stored SL price as-is', async () => {
+      const w = await openWith(syncedBuy)
+      expect(val(input(w, 'sl_price'))).toBe(26300)
+    })
+
+    it('derives the points from it so both inputs agree', async () => {
+      const w = await openWith(syncedBuy)
+      expect(val(input(w, 'sl_points'))).toBeCloseTo(86.34, 2)
+    })
+
+    it('measures the distance the other way on a SELL', async () => {
+      const w = await openWith({ ...syncedBuy, direction: 'SELL', sl_price: 26450 })
+      expect(val(input(w, 'sl_price'))).toBe(26450)
+      expect(val(input(w, 'sl_points'))).toBeCloseTo(63.66, 2)
+    })
+
+    it('invents no stop when neither side is recorded', async () => {
+      // The displayed price still falls back to the entry here — that comes
+      // from PricePointsInput deriving it from zero points, and predates this.
+      // What matters is that the derivation above adds no distance of its own.
+      const w = await openWith({ ...syncedBuy, sl_price: null })
+      expect(val(input(w, 'sl_points'))).toBe(0)
+    })
+  })
+
   describe('editing a price updates the points side', () => {
     it('typing an SL price recomputes sl_points (magnitude)', async () => {
       const w = await openWith(buyTrade)

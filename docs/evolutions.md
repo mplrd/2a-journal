@@ -836,4 +836,18 @@ La colonne est ajoutée par la migration `023_partial_exits_external_id.sql` mai
 
 ---
 
+## Un trade sans stop loss affiche un SL au prix d'entrée
+
+**Contexte** : repéré en corrigeant l'affichage du SL des trades synchronisés (2026-08-06). Pré-existant, indépendant de la synchro.
+
+`PricePointsInput` calcule le prix compagnon à partir des points. Quand aucun stop n'est enregistré, les points valent 0 et le champ prix affiche donc `entrée - 0`, c'est-à-dire le **prix d'entrée** — au lieu de rester vide. Un trade sans stop paraît en avoir un, posé exactement à l'entrée.
+
+**À faire** : distinguer « zéro point » de « pas de stop » dans le composant — sans doute en laissant le prix à `null` quand les points sont nuls ET qu'aucun prix n'est stocké. Vérifier l'impact sur le BE et les TP, qui partagent le composant.
+
+**Fichiers** : `frontend/src/components/**/PricePointsInput.vue`, `frontend/src/components/trade/TradeForm.vue`.
+
+**Repéré le** : 2026-08-06. **Priorité** : basse.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
