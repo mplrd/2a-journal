@@ -474,8 +474,13 @@ class CtraderConnector implements ConnectorInterface
         $seen = [];
 
         foreach ($orders as $order) {
+            // positionId is the link that matters. Requiring `closingOrder` too
+            // was a guess that came back empty on a real account: the flag is
+            // documented for orders the USER places to close part of a
+            // position, and nothing promises the platform sets it on the
+            // protections returned by returnProtectionOrders.
             $positionId = (int) ($order['positionId'] ?? 0);
-            if ($positionId === 0 || empty($order['closingOrder'])) {
+            if ($positionId === 0) {
                 continue;
             }
 
@@ -516,23 +521,35 @@ class CtraderConnector implements ConnectorInterface
         }
 
         $positionId = (int) ($position['positionId'] ?? 0);
+        $boundToPosition = 0;
         $shapes = [];
+
+        // Every order in the payload, not just those bound to this position:
+        // three very different failures look alike from the outside, and only
+        // the counts tell them apart — an empty payload means the request flag
+        // brought nothing back, orders present but none bound means they arrive
+        // without a positionId, and orders bound but no level means the price
+        // sits in a field we are not reading. The shapes then say which.
         foreach ($orders as $order) {
-            if ((int) ($order['positionId'] ?? 0) !== $positionId) {
-                continue;
+            if ((int) ($order['positionId'] ?? 0) === $positionId) {
+                $boundToPosition++;
             }
             $shapes[] = implode('|', [
                 'type=' . (string) ($order['orderType'] ?? '?'),
+                'boundToPosition=' . ((int) ($order['positionId'] ?? 0) === $positionId ? '1' : '0'),
+                'hasPositionId=' . (isset($order['positionId']) ? '1' : '0'),
                 'closing=' . (empty($order['closingOrder']) ? '0' : '1'),
                 'limitPrice=' . (isset($order['limitPrice']) ? '1' : '0'),
+                'stopPrice=' . (isset($order['stopPrice']) ? '1' : '0'),
                 'takeProfit=' . (isset($order['takeProfit']) ? '1' : '0'),
                 'stopLoss=' . (isset($order['stopLoss']) ? '1' : '0'),
             ]);
         }
 
         BrokerLogger::failure('ctrader', 'take_profit_levels_unresolved', [
-            'order_shapes' => array_values(array_unique($shapes)),
-            'order_count' => count($shapes),
+            'orders_in_payload' => count($orders),
+            'orders_bound_to_position' => $boundToPosition,
+            'order_shapes' => array_slice(array_values(array_unique($shapes)), 0, 10),
         ]);
     }
 
