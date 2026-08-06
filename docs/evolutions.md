@@ -850,4 +850,20 @@ La colonne est ajoutée par la migration `023_partial_exits_external_id.sql` mai
 
 ---
 
+## cTrader — `placeOrder` convertit encore le volume en dur
+
+**Contexte** : repéré en corrigeant la conversion de volume côté **lecture** (2026-08-06). Le read path calcule désormais `lots = volume / lotSize`, la valeur exacte du symbole. `placeOrder` (`CtraderConnector:808`) fait toujours `size * 100` — les deux sens du connecteur ne parlent donc plus la même langue.
+
+Le `×100` n'est juste que pour un symbole dont le lot vaut une unité (indices CFD typiquement). Sur une paire FX où `lotSize` vaut 10 000 000 cents, envoyer 0.1 lot produit un volume de `10` au lieu de `1 000 000` — soit un ordre 100 000 fois trop petit, probablement rejeté sous le volume minimum. Le risque est donc plutôt le refus que l'exécution erronée, mais c'est à vérifier.
+
+Le point était déjà pressenti dans l'entrée « Connecteurs broker — validation sandbox avant activation prod » ; il est maintenant chiffrable et corrigeable en réutilisant `resolveSymbols()`, qui renvoie déjà le `lotSize`.
+
+**À faire** : résoudre le `lotSize` du symbole dans `placeOrder` (l'appel `ProtoOASymbolsListReq` y est déjà fait pour trouver le `symbolId`) et convertir par `size * lotSize`. Concerne les ordres sortants — robots TradingView —, pas la synchronisation.
+
+**Fichiers** : `api/src/Services/Broker/CtraderConnector.php`.
+
+**Repéré le** : 2026-08-06. **Priorité** : haute avant toute activation des robots sur cTrader, nulle tant qu'ils sont inactifs.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

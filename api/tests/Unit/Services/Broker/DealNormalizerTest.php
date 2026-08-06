@@ -152,7 +152,9 @@ class DealNormalizerTest extends TestCase
         $this->assertEquals(19200.00, $normalized['entry_price']);
         $this->assertEquals(19226.05, $normalized['exit_price']);
         $this->assertEquals(0.5, $normalized['size']);
-        $this->assertEquals(26.05, $normalized['pnl']); // grossProfit/100
+        // Net, not gross: 26.05 of price difference less the 0.50 commission
+        // the same message reports.
+        $this->assertEquals(25.55, $normalized['pnl']);
         $this->assertSame('ctrader_999', $normalized['external_id']);
         $this->assertNotNull($normalized['closed_at']);
     }
@@ -274,6 +276,81 @@ class DealNormalizerTest extends TestCase
         ]);
 
         $this->assertEquals(1.0, $row['size']);
+    }
+
+    public function testNormalizeCtraderDealReportsNetProfitNotGross(): void
+    {
+        // grossProfit is the raw price difference — cTrader states it plainly:
+        // "Amount of realized gross profit". The costs sit beside it in the
+        // same message, on the same moneyDigits scale: swap ("realized swap
+        // related to closed volume"), commission ("realized commission related
+        // to closed volume") and the conversion fee charged when the symbol is
+        // quoted in something other than the deposit currency. Importing the
+        // gross alone left every trade looking better than the broker
+        // statement, by the exact amount of its costs.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 7,
+            'volume' => 500,
+            'lotSize' => 100,
+            'symbolName' => 'US100.cash',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 20000.0,
+            'closePositionDetail' => [
+                'entryPrice' => 20100.0,
+                'grossProfit' => 50000,   // +500.00
+                'swap' => -350,           //   -3.50
+                'commission' => -1200,    //  -12.00
+                'pnlConversionFee' => -75, //  -0.75
+            ],
+        ]);
+
+        $this->assertEquals(483.75, $row['pnl']);
+    }
+
+    public function testNormalizeCtraderDealScalesCostsOnTheSameMoneyDigits(): void
+    {
+        // The costs share grossProfit's exponent — applying it to the profit
+        // alone would make them a million times too heavy on a broker
+        // reporting 8.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 8,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'US100.cash',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 20000.0,
+            'closePositionDetail' => [
+                'entryPrice' => 20100.0,
+                'grossProfit' => 50000000000, // +500.00
+                'commission' => -1200000000,  //  -12.00
+                'moneyDigits' => 8,
+            ],
+        ]);
+
+        $this->assertEquals(488.0, $row['pnl']);
+    }
+
+    public function testNormalizeCtraderDealToleratesAbsentCosts(): void
+    {
+        // A payload without swap/commission keeps behaving exactly as before —
+        // no cost invented, no crash.
+        $row = $this->normalizer->normalizeCtraderDeal([
+            'positionId' => 9,
+            'volume' => 100,
+            'lotSize' => 100,
+            'symbolName' => 'GER40',
+            'tradeSide' => 'BUY',
+            'createTimestamp' => 1700000000000,
+            'executionTimestamp' => 1700003600000,
+            'executionPrice' => 26300.0,
+            'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327],
+        ]);
+
+        $this->assertEquals(103.27, $row['pnl']);
     }
 
     public function testNormalizeCtraderDealCarriesAPerDealExitId(): void
