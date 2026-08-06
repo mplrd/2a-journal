@@ -59,6 +59,55 @@ class RowGroupingServiceTest extends TestCase
         $this->assertCount(3, $pos['exits']);
     }
 
+    public function testKeepsTheBrokerExternalIdInsteadOfHashingANewOne(): void
+    {
+        // A broker sync groups BY external_id, so the id is the position's
+        // identity — hashing a fresh one from symbol/entry/close/size threw it
+        // away and gave the same position two identities: ctrader_<positionId>
+        // when the live diff inserts it as open, a hash when the import creates
+        // it as closed. They never recognise each other, so a position seen
+        // open and then closed lands twice. Worse, the hash folds in the close
+        // date and total size, so a position closing in stages changes identity
+        // at every sync.
+        $rows = [
+            ['symbol' => 'NASDAQ', 'direction' => 'SELL', 'entry_price' => 29950.23, 'exit_price' => 29200.0, 'size' => 5.0, 'pnl' => 3568.65, 'closed_at' => '2026-08-05 18:20:00', 'external_id' => 'ctrader_442'],
+        ];
+
+        $groups = $this->grouper->group($rows, ['external_id']);
+
+        $this->assertSame('ctrader_442', $groups[0]['external_id']);
+    }
+
+    public function testKeepsOneIdentityWhenAPositionClosesInSeveralLegs(): void
+    {
+        // Same position, two closing legs: one row, one identity — and the
+        // identity must not depend on how far the close has progressed.
+        $rows = [
+            ['symbol' => 'GER40', 'direction' => 'SELL', 'entry_price' => 26386.34, 'exit_price' => 26300.0, 'size' => 1.0, 'pnl' => 103.27, 'closed_at' => '2026-08-05 10:01:12', 'external_id' => 'ctrader_331'],
+            ['symbol' => 'GER40', 'direction' => 'SELL', 'entry_price' => 26386.34, 'exit_price' => 26350.0, 'size' => 1.5, 'pnl' => 40.0, 'closed_at' => '2026-08-05 13:14:00', 'external_id' => 'ctrader_331'],
+        ];
+
+        $groups = $this->grouper->group($rows, ['external_id']);
+
+        $this->assertCount(1, $groups);
+        $this->assertSame('ctrader_331', $groups[0]['external_id']);
+    }
+
+    public function testStillSynthesizesAnIdForRowsThatCarryNone(): void
+    {
+        // Spreadsheet imports have no broker id: the deterministic hash stays
+        // their only way of being recognised across two imports of one file.
+        $rows = [
+            ['symbol' => 'GER40', 'direction' => 'BUY', 'entry_price' => 23400, 'exit_price' => 23450, 'size' => 1.0, 'pnl' => 50, 'closed_at' => '2026-01-15 10:30:00'],
+        ];
+
+        $first = $this->grouper->group($rows, ['symbol', 'direction', 'entry_price']);
+        $second = $this->grouper->group($rows, ['symbol', 'direction', 'entry_price']);
+
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $first[0]['external_id']);
+        $this->assertSame($first[0]['external_id'], $second[0]['external_id']);
+    }
+
     public function testCarriesThePerExitExternalIdIntoEachExit(): void
     {
         // Broker rows share one external_id per position, so the exits can only

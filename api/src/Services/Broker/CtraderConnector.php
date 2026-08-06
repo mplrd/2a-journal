@@ -217,8 +217,18 @@ class CtraderConnector implements ConnectorInterface
         }
 
         return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
+            // returnProtectionOrders is what makes a staged exit plan visible at
+            // all. The field is documented as: "If TRUE, then current protection
+            // orders are returned separately, otherwise you can use
+            // position.stopLoss and position.takeProfit fields." Left unset,
+            // cTrader COLLAPSES every protection into those two scalars — so a
+            // position with five take profit levels reports one, and no
+            // filtering of order[] can recover the rest because they were never
+            // sent. Only this read needs them: fetchOpenOrders discards closing
+            // orders by design, and fetchDeals only looks at position[].
             $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
                 'ctidTraderAccountId' => $accountId,
+                'returnProtectionOrders' => true,
             ]);
             $positions = $response['position'] ?? [];
             $takeProfitOrders = $this->collectStagedTakeProfits($response['order'] ?? []);
@@ -230,6 +240,7 @@ class CtraderConnector implements ConnectorInterface
             foreach ($positions as $position) {
                 $position = $this->withSymbol($position, $symbolMap);
                 $position['takeProfitOrders'] = $takeProfitOrders[(int) ($position['positionId'] ?? 0)] ?? [];
+                $this->reportUnresolvedTakeProfits($position, $response['order'] ?? []);
                 // Partial closes fetchDeals held back earlier in this same sync
                 // run: attaching them here is what makes a TP1 a partial exit of
                 // the live position and lets the original size be rebuilt.
@@ -445,36 +456,99 @@ class CtraderConnector implements ConnectorInterface
      * single level — and each carries the volume that comes off at that step,
      * which the position's own level cannot express.
      *
-     * Order type is the discriminator, and it matters: the position's own
-     * protective pair comes back as STOP_LOSS_TAKE_PROFIT, which is not an
-     * objective the user staged. Only LIMIT closing orders qualify.
+     * The platform stages up to five levels per position, each with its own
+     * quantity, and the public documentation never states how they come out on
+     * the Open API. Reading only LIMIT closing orders brought back nothing on a
+     * real account, so the collection is deliberately broad: an order counts as
+     * a level when it exposes a take profit price, whether as a LIMIT trigger
+     * (`limitPrice`) or as a protective order carrying `takeProfit`. A
+     * protective order holding only a stop loss is not an objective and stays
+     * out. Levels are deduplicated by price — the position's own `takeProfit`
+     * mirrors one of them, and two orders may report the same level.
      *
      * @return array<int, list<array{price: float, volume: int}>>
      */
     private function collectStagedTakeProfits(array $orders): array
     {
         $staged = [];
+        $seen = [];
 
         foreach ($orders as $order) {
             $positionId = (int) ($order['positionId'] ?? 0);
-            $limitPrice = $order['limitPrice'] ?? null;
-
-            if (
-                $positionId === 0
-                || empty($order['closingOrder'])
-                || !$this->isLimitOrder($order['orderType'] ?? null)
-                || $limitPrice === null
-            ) {
+            if ($positionId === 0 || empty($order['closingOrder'])) {
                 continue;
             }
 
+            $price = $this->takeProfitLevelOf($order);
+            if ($price === null) {
+                continue;
+            }
+
+            $key = $positionId . ':' . (string) $price;
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
             $staged[$positionId][] = [
-                'price' => (float) $limitPrice,
+                'price' => $price,
                 'volume' => (int) ($order['tradeData']['volume'] ?? 0),
             ];
         }
 
         return $staged;
+    }
+
+    /**
+     * Log the SHAPE of a position's closing orders when it advertises a take
+     * profit and yet no level could be read from them.
+     *
+     * The staged-level representation is not documented, so this is the only
+     * way to learn it without asking the user to resync blind. It records which
+     * order types are bound to the position and which price fields they carry —
+     * never a price, a volume or an identifier, so the line stays a structural
+     * hint and nothing more. Silent in the nominal case.
+     */
+    private function reportUnresolvedTakeProfits(array $position, array $orders): void
+    {
+        if (!empty($position['takeProfitOrders']) || empty($position['takeProfit'])) {
+            return;
+        }
+
+        $positionId = (int) ($position['positionId'] ?? 0);
+        $shapes = [];
+        foreach ($orders as $order) {
+            if ((int) ($order['positionId'] ?? 0) !== $positionId) {
+                continue;
+            }
+            $shapes[] = implode('|', [
+                'type=' . (string) ($order['orderType'] ?? '?'),
+                'closing=' . (empty($order['closingOrder']) ? '0' : '1'),
+                'limitPrice=' . (isset($order['limitPrice']) ? '1' : '0'),
+                'takeProfit=' . (isset($order['takeProfit']) ? '1' : '0'),
+                'stopLoss=' . (isset($order['stopLoss']) ? '1' : '0'),
+            ]);
+        }
+
+        BrokerLogger::failure('ctrader', 'take_profit_levels_unresolved', [
+            'order_shapes' => array_values(array_unique($shapes)),
+            'order_count' => count($shapes),
+        ]);
+    }
+
+    /**
+     * The take profit price an order defines, or null when it defines none.
+     * A LIMIT closing order triggers at `limitPrice`; a protective order states
+     * its objective in `takeProfit`, and holds only `stopLoss` when it is
+     * purely a stop.
+     */
+    private function takeProfitLevelOf(array $order): ?float
+    {
+        $price = $this->isLimitOrder($order['orderType'] ?? null)
+            ? ($order['limitPrice'] ?? null)
+            : ($order['takeProfit'] ?? null);
+
+        return $price !== null && (float) $price > 0 ? (float) $price : null;
     }
 
     /**

@@ -92,16 +92,25 @@ class RowGroupingService
 
         $avgExitPrice = $totalSize > 0 ? round($weightedExitPrice / $totalSize, 5) : 0;
 
-        // Generate deterministic external_id from position key data
-        $hashInput = implode(':', [
+        // A broker row already carries the position's identity, and a sync
+        // groups BY it — so it must survive. Hashing unconditionally gave the
+        // same position two identities: ctrader_<positionId> when the live diff
+        // inserts it as open, a hash when the import creates it as closed.
+        // Neither recognised the other, so a position seen open and then closed
+        // landed twice. The hash also folds in the close date and total size,
+        // so a position closing in stages changed identity at every sync.
+        //
+        // Spreadsheet rows have no such id: for them the deterministic hash
+        // stays the only way to recognise the same position across two imports
+        // of one file.
+        $externalId = $first['external_id'] ?? hash('sha256', implode(':', [
             $first['symbol'] ?? '',
             $first['direction'] ?? '',
             $first['entry_price'] ?? '',
             $earliestClose ?? '',
             $latestClose ?? '',
             (string) $totalSize,
-        ]);
-        $externalId = hash('sha256', $hashInput);
+        ]));
 
         return [
             'symbol' => $first['symbol'] ?? null,
