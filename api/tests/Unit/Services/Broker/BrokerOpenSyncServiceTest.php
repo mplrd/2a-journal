@@ -266,6 +266,43 @@ class BrokerOpenSyncServiceTest extends TestCase
         );
     }
 
+    public function testInsertNumbersStagedTakeProfitsInOrder(): void
+    {
+        // A connector that resolves a staged plan hands over `targets`, each
+        // level with its own size. They become TP1, TP2, TP3 in the order they
+        // arrive — the normalizer has already sorted them nearest-first.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(function ($data) {
+                $targets = json_decode($data['targets'] ?? '[]', true);
+                return array_column($targets, 'label') === ['TP1', 'TP2', 'TP3']
+                    && array_column($targets, 'id') === ['tp1', 'tp2', 'tp3']
+                    && array_column($targets, 'size') === [0.2, 0.2, 0.1]
+                    // Distance to entry, per level.
+                    && abs($targets[0]['points'] - 500.0) < 0.001
+                    && abs($targets[2]['points'] - 2500.0) < 0.001;
+            }))
+            ->willReturn(['id' => 1001]);
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'targets' => [
+                    ['price' => 60500.0, 'size' => 0.2],
+                    ['price' => 61500.0, 'size' => 0.2],
+                    ['price' => 62500.0, 'size' => 0.1],
+                ],
+            ])],
+            closedSnapshot: [],
+        );
+    }
+
     public function testUpdateNeverOverwritesTargetsTheUserEntered(): void
     {
         // Same contract as setup and notes: what the user typed is theirs. A

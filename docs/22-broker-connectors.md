@@ -212,6 +212,16 @@ Livré le 2026-08-06.
 
 **Le take profit du broker alimente `positions.targets`.** Il n'y a pas de colonne `tp_price` — les objectifs vivent dans ce JSON — et le `tp_price` normalisé par les connecteurs était donc jeté depuis toujours. L'entrée écrite reprend la forme que produit le formulaire de trade (`id`, `label`, `points`, `price`, `size`), pour qu'un objectif synchronisé s'affiche comme un objectif saisi. `points` est la distance à l'entrée, l'unité qu'édite le formulaire.
 
+**Les TP partiels serveur sont des ordres, pas un champ de la position.** `ProtoOAPosition.takeProfit` est un `double` **scalaire** : la position ne peut porter qu'**un** niveau. cTrader permettant désormais d'étager les prises de profit côté serveur, un plan TP1/TP2/TP3 n'existe que sous forme d'**ordres LIMIT de clôture** rattachés à la position (`closingOrder` vrai, `positionId` renseigné).
+
+Ces ordres portent d'ailleurs plus que le champ de la position : chacun indique **le volume qui sort à ce palier**, exactement ce que `positions.targets` modélise avec son `size`. La source la plus riche était donc celle que `fetchOpenOrders` écartait — à raison de son point de vue (ce ne sont pas des ordres d'entrée en attente), mais sans que personne ne les récupère ailleurs. `fetchOpenPositions` les collecte maintenant.
+
+**Le type d'ordre est le discriminant, et il est décisif** : la paire SL/TP propre à la position revient en `STOP_LOSS_TAKE_PROFIT` (code 4), ce n'est pas un objectif étagé par l'utilisateur. Seuls les `LIMIT` (code 2) de clôture comptent. La tolérance nom/code numérique s'applique comme partout ailleurs dans le connecteur.
+
+**Tri par distance à l'entrée**, ce qui couvre les deux sens d'un coup : un long prend ses profits au-dessus de son entrée, un short en dessous — « le plus proche d'abord » est croissant dans un cas, décroissant dans l'autre. Les paliers sont ensuite numérotés TP1..TPn dans cet ordre.
+
+Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors toute la taille.
+
 **Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
 
 **Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.

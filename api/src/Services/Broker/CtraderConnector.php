@@ -231,6 +231,7 @@ class CtraderConnector implements ConnectorInterface
                 'ctidTraderAccountId' => $accountId,
             ]);
             $positions = $response['position'] ?? [];
+            $takeProfitOrders = $this->collectStagedTakeProfits($response['order'] ?? []);
 
             $symbolMap = $this->resolveSymbols($ws, $accountId, $this->collectSymbolIds($positions));
 
@@ -238,6 +239,7 @@ class CtraderConnector implements ConnectorInterface
             $normalized = [];
             foreach ($positions as $position) {
                 $position = $this->withSymbol($position, $symbolMap);
+                $position['takeProfitOrders'] = $takeProfitOrders[(int) ($position['positionId'] ?? 0)] ?? [];
                 // Partial closes fetchDeals held back earlier in this same sync
                 // run: attaching them here is what makes a TP1 a partial exit of
                 // the live position and lets the original size be rebuilt.
@@ -390,6 +392,60 @@ class CtraderConnector implements ConnectorInterface
         }
 
         return $exits;
+    }
+
+    /**
+     * Staged take profit levels per positionId, from the reconcile order list.
+     *
+     * cTrader places partial take profits server-side as LIMIT orders bound to
+     * the position (`closingOrder` true, `positionId` set). They are the only
+     * record of a staged exit plan — `ProtoOAPosition.takeProfit` holds a
+     * single level — and each carries the volume that comes off at that step,
+     * which the position's own level cannot express.
+     *
+     * Order type is the discriminator, and it matters: the position's own
+     * protective pair comes back as STOP_LOSS_TAKE_PROFIT, which is not an
+     * objective the user staged. Only LIMIT closing orders qualify.
+     *
+     * @return array<int, list<array{price: float, volume: int}>>
+     */
+    private function collectStagedTakeProfits(array $orders): array
+    {
+        $staged = [];
+
+        foreach ($orders as $order) {
+            $positionId = (int) ($order['positionId'] ?? 0);
+            $limitPrice = $order['limitPrice'] ?? null;
+
+            if (
+                $positionId === 0
+                || empty($order['closingOrder'])
+                || !$this->isLimitOrder($order['orderType'] ?? null)
+                || $limitPrice === null
+            ) {
+                continue;
+            }
+
+            $staged[$positionId][] = [
+                'price' => (float) $limitPrice,
+                'volume' => (int) ($order['tradeData']['volume'] ?? 0),
+            ];
+        }
+
+        return $staged;
+    }
+
+    /**
+     * cTrader may serialize orderType as its enum name or its integer code
+     * (LIMIT = 2), same tolerance as everywhere else in this connector.
+     */
+    private function isLimitOrder(mixed $orderType): bool
+    {
+        if (is_int($orderType) || (is_string($orderType) && ctype_digit($orderType))) {
+            return (int) $orderType === 2;
+        }
+
+        return strtoupper(str_replace('ORDER_TYPE_', '', (string) $orderType)) === 'LIMIT';
     }
 
     /**

@@ -164,6 +164,91 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('ctrader_999', $result['positions'][0]['external_id']);
     }
 
+    public function testFetchOpenPositionsCollectsStagedTakeProfitOrders(): void
+    {
+        // cTrader now places partial take profits server-side, as LIMIT closing
+        // orders bound to the position. They are the ONLY record of a staged
+        // exit plan — ProtoOAPosition.takeProfit holds a single level — and the
+        // order path deliberately drops closing orders, so without this they
+        // vanished entirely. The STOP_LOSS_TAKE_PROFIT order below is the
+        // position's own protective pair, not an objective: it must be ignored.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        'orderId' => 900, 'positionId' => 331, 'orderType' => 'LIMIT',
+                        'closingOrder' => true, 'limitPrice' => 26600.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        'orderId' => 901, 'positionId' => 331, 'orderType' => 'LIMIT',
+                        'closingOrder' => true, 'limitPrice' => 26450.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        // The position's own SL/TP pair — not a staged objective.
+                        'orderId' => 902, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT',
+                        'closingOrder' => true, 'stopPrice' => 26200.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        // A standalone entry order on another symbol: untouched.
+                        'orderId' => 903, 'orderType' => 'LIMIT', 'limitPrice' => 20000.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'BUY'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets, 'only the LIMIT closing orders are objectives');
+        // Nearest to the entry first, with the volume each step takes off.
+        $this->assertSame(26450.0, $targets[0]['price']);
+        $this->assertSame(1.5, $targets[0]['size']);
+        $this->assertSame(26600.0, $targets[1]['price']);
+        $this->assertSame(1.0, $targets[1]['size']);
+    }
+
+    public function testFetchOpenPositionsIgnoresClosingOrdersOfOtherPositions(): void
+    {
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [[
+                    'orderId' => 950, 'positionId' => 999, 'orderType' => 'LIMIT',
+                    'closingOrder' => true, 'limitPrice' => 26600.0,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'SELL'],
+                ]],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $this->assertSame([], $result['positions'][0]['targets']);
+    }
+
     public function testFetchOpenOrdersFiltersProtectiveClosingOrders(): void
     {
         $ws = $this->makeWsStub([

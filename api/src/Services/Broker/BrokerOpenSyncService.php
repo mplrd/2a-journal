@@ -216,18 +216,33 @@ class BrokerOpenSyncService
      */
     private function brokerTargets(array $row): ?string
     {
-        $takeProfit = $row['tp_price'] ?? null;
-        if ($takeProfit === null || (float) $takeProfit <= 0) {
-            return null;
+        // A connector that resolves a staged exit plan hands over `targets`,
+        // one entry per level with its own size — cTrader's server-side partial
+        // take profits, for instance. Connectors reporting a single level fall
+        // back to tp_price, which then covers the whole position.
+        $levels = $row['targets'] ?? [];
+        if (empty($levels)) {
+            $takeProfit = $row['tp_price'] ?? null;
+            if ($takeProfit === null || (float) $takeProfit <= 0) {
+                return null;
+            }
+            $levels = [['price' => (float) $takeProfit, 'size' => (float) $row['size']]];
         }
 
-        return json_encode([[
-            'id' => 'tp1',
-            'label' => 'TP1',
-            'points' => round(abs((float) $takeProfit - (float) $row['entry_price']), 5),
-            'price' => (float) $takeProfit,
-            'size' => (float) $row['size'],
-        ]]);
+        $entryPrice = (float) $row['entry_price'];
+        $targets = [];
+        foreach ($levels as $index => $level) {
+            $rank = $index + 1;
+            $targets[] = [
+                'id' => 'tp' . $rank,
+                'label' => 'TP' . $rank,
+                'points' => round(abs((float) $level['price'] - $entryPrice), 5),
+                'price' => (float) $level['price'],
+                'size' => (float) ($level['size'] ?? $row['size']),
+            ];
+        }
+
+        return json_encode($targets);
     }
 
     /** True when the journal holds no objective for this position yet. */
