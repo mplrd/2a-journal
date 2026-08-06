@@ -224,31 +224,35 @@ class DealNormalizer
     private function ctraderTargets(array $position, float $positionSize): array
     {
         $entry = (float) ($position['price'] ?? 0);
-        $staged = $position['takeProfitOrders'] ?? [];
-
-        if (empty($staged)) {
-            $single = $position['takeProfit'] ?? null;
-            // Nothing staged, so the single objective covers the whole position.
-            return $single !== null && (float) $single > 0
-                ? [['price' => (float) $single, 'size' => $positionSize]]
-                : [];
-        }
 
         $targets = [];
-        foreach ($staged as $order) {
+        $stagedSize = 0.0;
+        foreach ($position['takeProfitOrders'] ?? [] as $order) {
             $price = (float) ($order['price'] ?? 0);
             if ($price <= 0) {
                 continue;
             }
-            $targets[] = [
-                'price' => $price,
-                'size' => round(
-                    $this->ctraderVolumeToLots($order['volume'] ?? 0, $position['lotSize'] ?? null),
-                    5,
-                ),
+            $size = round($this->ctraderVolumeToLots($order['volume'] ?? 0, $position['lotSize'] ?? null), 5);
+            $targets[(string) $price] = ['price' => $price, 'size' => $size];
+            $stagedSize += $size;
+        }
+
+        // The position's own takeProfit is NOT merely a fallback: when levels
+        // are staged it is the LAST of them, the one closing whatever the
+        // earlier steps leave behind. Treating it as an either/or reported a
+        // single objective on a position that had several. It is skipped when a
+        // staged order already sits at that price, and otherwise carries the
+        // leftover size — the whole position when nothing else is staged.
+        $own = $position['takeProfit'] ?? null;
+        if ($own !== null && (float) $own > 0 && !isset($targets[(string) (float) $own])) {
+            $leftover = round($positionSize - $stagedSize, 5);
+            $targets[(string) (float) $own] = [
+                'price' => (float) $own,
+                'size' => $leftover > 0 ? $leftover : $positionSize,
             ];
         }
 
+        $targets = array_values($targets);
         usort($targets, fn($a, $b) => abs($a['price'] - $entry) <=> abs($b['price'] - $entry));
 
         return $targets;

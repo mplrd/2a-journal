@@ -866,4 +866,38 @@ Le point était déjà pressenti dans l'entrée « Connecteurs broker — valida
 
 ---
 
+## Synchro broker — rien n'empêche une manuelle et une planifiée de se croiser
+
+**Contexte** : repéré sur question de l'utilisateur (2026-08-06), en documentant la fréquence de synchro. Pré-existant.
+
+`cli/sync-brokers.php` pose un `flock` : deux runs planifiés ne se superposent jamais, et toutes les connexions dues — tous utilisateurs confondus — sont traitées séquentiellement dans un seul processus. **Mais ce verrou ne couvre que le scheduler.** Une synchro manuelle (`POST /broker/connections/{id}/sync`) est une requête HTTP indépendante : elle peut tourner en même temps que le run planifié, sur la même connexion.
+
+Or `ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. Deux synchros concurrentes lisent donc le même état et peuvent insérer la même position deux fois. Et **`positions.external_id` n'a ni index ni contrainte d'unicité** : rien au niveau base ne rattrape la course.
+
+**À faire** : deux volets indépendants.
+- Un verrou par connexion (`GET_LOCK('broker_sync_<id>')` MySQL, ou une colonne `syncing_since` avec expiration) autour de `BrokerSyncService::sync()`.
+- Un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
+
+**Fichiers** : `api/src/Services/Broker/BrokerSyncService.php`, `api/database/schema.sql`, nouvelle migration.
+
+**Repéré le** : 2026-08-06. **Priorité** : moyenne — fenêtre étroite, mais c'est le mode d'échec qu'on vient de corriger côté logique.
+
+---
+
+## Synchro broker manuelle — bloquante côté utilisateur
+
+**Contexte** : repéré sur question de l'utilisateur (2026-08-06).
+
+`POST /broker/connections/{id}/sync` s'exécute dans la requête HTTP. Une synchro cTrader ouvre quatre à cinq sessions WebSocket successives (deals, positions ouvertes, ordres, ordres clos, solde) : l'utilisateur attend devant son écran, et un timeout de proxy peut couper au milieu.
+
+Le travail sait déjà tourner détaché — c'est ce que fait le scheduler. Ce qui manque est la mise en file et le suivi d'état côté IHM.
+
+**À faire** : marquer la connexion « synchronisation en cours » et rendre la main immédiatement, le run étant repris par le worker. Se combine naturellement avec le verrou par connexion ci-dessus. Prévoir l'affichage d'un état et d'une erreur éventuelle sans rechargement.
+
+**Fichiers** : `api/src/Controllers/BrokerSyncController.php`, `api/cli/sync-brokers.php`, `frontend/src/components/broker/`.
+
+**Repéré le** : 2026-08-06. **Priorité** : moyenne — confort, sauf sur un compte à gros historique où le timeout devient réel.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

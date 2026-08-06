@@ -309,6 +309,44 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame(1.5, $targets[1]['size']);
     }
 
+    public function testFetchOpenPositionsAcceptsAProtectionOrderWithoutTheClosingFlag(): void
+    {
+        // Requiring closingOrder was a guess, and returnProtectionOrders still
+        // brought back nothing usable on a real account. `closingOrder` is
+        // documented for orders the user places to close part of a position;
+        // nothing promises the platform sets it on the protections it returns
+        // separately. The link that genuinely matters is positionId — an order
+        // bound to a position and carrying a take profit price IS a level.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'takeProfit' => 22386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [[
+                    'orderId' => 930, 'positionId' => 331,
+                    'orderType' => 'STOP_LOSS_TAKE_PROFIT',
+                    // no closingOrder flag at all
+                    'takeProfit' => 25886.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'BUY'],
+                ]],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets);
+        $this->assertSame(25886.34, $targets[0]['price']);
+    }
+
     public function testFetchOpenPositionsDoesNotCountTheSameLevelTwice(): void
     {
         // The position's own takeProfit mirrors one of the staged levels. It is
