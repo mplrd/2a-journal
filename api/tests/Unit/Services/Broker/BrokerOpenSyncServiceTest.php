@@ -160,6 +160,77 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->assertSame(0, $stats['transitioned']);
     }
 
+    public function testUpdateRefreshesTheOpeningTimestampFromTheBroker(): void
+    {
+        // opened_at is broker-driven exactly like entry_price and size, but was
+        // the one such field the update path never rewrote. A position already
+        // known to the journal therefore kept its original timestamp forever —
+        // so when the connector started reporting the user's local time instead
+        // of UTC, every position already on file stayed two hours off, corrected
+        // on every other column but that one.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00',
+                    'size' => '0.50000',
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(function ($data) {
+                return $data['opened_at'] === '2026-08-05 07:29:00'
+                    // Still an update, not a close.
+                    && !array_key_exists('status', $data);
+            }));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['opened_at' => '2026-08-05 07:29:00'])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testUpdateLeavesTheOpeningTimestampAloneWhenTheSnapshotHasNone(): void
+    {
+        // BingX's live snapshot carries no open time. Writing null there would
+        // erase a timestamp the journal already holds.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001,
+                    'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00',
+                    'size' => '0.50000',
+                    'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => !array_key_exists('opened_at', $data)));
+
+        $snapshot = $this->makeOpenSnapshot();
+        unset($snapshot['opened_at']);
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openSnapshot: [$snapshot],
+            closedSnapshot: [],
+        );
+    }
+
     // ── TRANSITION path: position was open, now appears in closed ──
 
     public function testTransitionsOpenToClosedWhenPositionAppearsInClosedSnapshot(): void

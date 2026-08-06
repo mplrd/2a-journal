@@ -128,6 +128,10 @@ Corrigé le 2026-08-05, au premier run avec de vrais trades importés. Quatre d�
 
 `resolveSymbolNames()` lisait `symbolName` sur la réponse *by-id* : le champ n'existe pas dans ce message, le `??` tombait donc systématiquement sur `'SYM_' . $id`. Le connecteur appelle désormais les deux (`resolveSymbols()`) : le nom vient de la liste light, le `lotSize` de la réponse by-id. La liste light couvre tout l'univers du broker, elle est donc **mémoïsée par compte pour la durée de la synchro** (`resetSyncCache()` la purge) — une synchro résout les symboles trois fois : deals, positions, ordres.
 
+**1 bis. Les symboles archivés ne sont dans aucune des deux listes.** Complément du 2026-08-05 : `ProtoOASymbolsListReq` porte un champ `includeArchivedSymbols` et **n'inclut pas** les symboles retirés sans lui. Un instrument que le broker a archivé est donc absent de la liste light — un seul symbole reste bloqué sur `SYM_<id>` pendant que tous les autres du même compte se résolvent, ce qui ressemble à s'y méprendre à de la donnée périmée.
+
+Pas besoin de la requête supplémentaire : `ProtoOASymbolByIdRes` renvoie `archivedSymbol[]` **à côté** de `symbol[]`, et on l'appelle déjà pour le `lotSize`. Attention au nom du champ — `ProtoOAArchivedSymbol` expose `name`, pas `symbolName`. Le repli ne s'applique que si la liste light n'a rien pour cet id (`??=`), la liste light restant la source primaire.
+
 **2. Le volume ne se divise pas par 100000.** Un DAX de 1,5 contrat était importé en `0.0015`. `volume` (deal et `tradeData`) comme `lotSize` sont exprimés **en cents** — centièmes d'unité — donc :
 
 ```
@@ -168,6 +172,23 @@ Deux heures d'écart entre deux lignes voisines de la même liste, et un décala
 Deux replis silencieux, tous deux vers le comportement UTC antérieur : pas de fuseau transmis, et fuseau illisible (`users.timezone` est du texte libre — une faute de frappe ne doit pas faire échouer une synchro entière).
 
 **Non traité** : les lignes déjà en base gardent leur heure UTC ; seules les synchros ultérieures écrivent en heure locale. Une resynchro depuis zéro les réaligne.
+
+**Deux compléments (2026-08-05, au test de la correction précédente).** La conversion était juste mais n'atteignait pas les lignes attendues :
+
+- `BrokerOpenSyncService::updateBrokerFields` rafraîchissait `entry_price`, `size`, `direction`, `symbol` et `remaining_size` — mais **pas `opened_at`**. Une position déjà connue du journal gardait donc son horodatage d'origine indéfiniment : corrigée sur toutes les colonnes sauf celle qui avait changé. Rafraîchi désormais, et uniquement quand le snapshot en porte un (le snapshot live BingX n'a pas d'heure d'ouverture — écrire `null` effacerait ce qu'on détient déjà).
+- `cli/sync-brokers.php` construit sa propre instance de `BrokerSyncService` et ne recevait pas le `UserRepository` : l'auto-sync planifiée retombait sur UTC pendant qu'une synchro manuelle écrivait en heure locale, la même position dérivant selon le dernier chemin l'ayant touchée. Câblé.
+
+### Ordres synchronisés : date de placement et expiration
+
+Corrigé le 2026-08-05, même campagne. Deux trous, indépendants du fuseau mais rendus visibles par lui.
+
+**La date de placement était perdue.** Les connecteurs normalisent bien `created_at` — le moment où le broker a placé l'ordre — mais `OrderRepository::create` n'écrivait jamais la colonne. Le `DEFAULT CURRENT_TIMESTAMP` de MySQL horodatait donc chaque ordre synchronisé **à l'instant de la synchro**, et dans le fuseau de la session SQL par-dessus le marché. La valeur calculée était simplement jetée. `created_at` est désormais transmise, avec un `COALESCE(:created_at, CURRENT_TIMESTAMP)` qui préserve le défaut pour les ordres créés dans l'application.
+
+**L'expiration n'était jamais rafraîchie.** `BrokerOrderSyncService::updateBrokerFields` réécrivait les champs de la *position* (symbole, sens, taille, entrée, SL) mais rien sur la ligne `orders` — même angle mort que `opened_at` sur les positions. Une `expires_at` déjà en base restait figée, y compris après le passage en heure locale. `OrderRepository::updateExpiry()` a été ajouté pour ça, distinct de `updateStatus()` afin qu'une synchro corrige la date sans toucher au cycle de vie.
+
+### Taille affichée dans le bloc « En cours » du dashboard
+
+`positions.size` porte la taille **d'origine**, `trades.remaining_size` ce qu'il reste après les sorties partielles. Le panneau « En cours » du dashboard lisait `size` — il annonçait donc 2.5 contrats sur un short déjà à moitié soldé au TP1, alors qu'il n'en tournait plus que 1.5. Le défaut est ancien mais était invisible : avant la reconstruction de la taille d'origine, les deux colonnes étaient toujours égales sur les positions synchronisées. `remaining_size` était d'ailleurs déjà remontée par `StatsRepository::getOpenTrades()`, simplement jamais affichée.
 
 ### Chiffrement des credentials
 

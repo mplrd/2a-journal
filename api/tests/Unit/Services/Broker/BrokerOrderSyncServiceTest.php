@@ -84,6 +84,60 @@ class BrokerOrderSyncServiceTest extends TestCase
         $this->assertSame(0, $stats['cancelled']);
     }
 
+    public function testInsertKeepsTheBrokersOwnPlacementTime(): void
+    {
+        // The connectors normalize created_at — when the order was actually
+        // placed — and nobody consumed it: OrderRepository::create never wrote
+        // the column, so MySQL's CURRENT_TIMESTAMP default stamped it with the
+        // moment of the sync instead. Every synced pending order was therefore
+        // dated "now", in the DB session's timezone rather than the user's.
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->orderRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(fn($data) => $data['created_at'] === '2026-05-07 08:00:00'));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openOrdersSnapshot: [$this->makeOpenOrderSnapshot()],
+            closedOrdersSnapshot: [],
+        );
+    }
+
+    public function testUpdateRefreshesTheExpiryFromTheBroker(): void
+    {
+        // Same blind spot as opened_at on positions: the update path rewrote
+        // the position's broker fields but nothing on the order row, so an
+        // expiry already on file was never corrected — including when the
+        // connectors moved off UTC.
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_order_ord-1' => [
+                    'position_id' => 1001,
+                    'order_id' => 7001,
+                    'external_id' => 'ouinex_order_ord-1',
+                    'status' => OrderStatus::PENDING->value,
+                ],
+            ]);
+
+        $this->orderRepo->expects($this->once())
+            ->method('updateExpiry')
+            ->with(7001, '2026-07-01 12:00:00');
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10,
+            accountId: 5,
+            batchId: 99,
+            openOrdersSnapshot: [$this->makeOpenOrderSnapshot(['expires_at' => '2026-07-01 12:00:00'])],
+            closedOrdersSnapshot: [],
+        );
+    }
+
     // ── UPDATE path: order still pending, broker fields refresh ───
 
     public function testUpdatesBrokerFieldsOfExistingPendingOrderPreservingMeta(): void

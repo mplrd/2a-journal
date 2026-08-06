@@ -148,6 +148,10 @@ try {
         $brokerOpenSyncService,
         $brokerOrderSyncService,
         $accountRepo,
+        // Without it the scheduler writes broker timestamps in UTC while a
+        // manual sync writes them in the user's timezone — the same position
+        // would drift by the offset depending on which path last touched it.
+        new \App\Repositories\UserRepository($pdo),
     );
 
     // Live settings: prefer DB-backed values (admin BO override), fall back to
