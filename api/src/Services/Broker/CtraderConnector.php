@@ -115,9 +115,8 @@ class CtraderConnector implements ConnectorInterface
 
             // 4. Fetch deals with pagination
             $allDeals = [];
-            $fromTimestamp = $sinceCursor
-                ? (int) (strtotime($sinceCursor) * 1000)
-                : (int) ((time() - 90 * 86400) * 1000);
+            $toTimestamp = (int) (time() * 1000);
+            $fromTimestamp = $this->windowStart($sinceCursor, $toTimestamp);
 
             // The cursor only moves forward, so a position opened before it
             // would have its partial closes fall outside every later window and
@@ -127,8 +126,6 @@ class CtraderConnector implements ConnectorInterface
             if ($oldestOpenTimestamp !== null && $oldestOpenTimestamp < $fromTimestamp) {
                 $fromTimestamp = $oldestOpenTimestamp;
             }
-
-            $toTimestamp = (int) (time() * 1000);
             $maxRows = 1000;
 
             do {
@@ -200,16 +197,9 @@ class CtraderConnector implements ConnectorInterface
 
         $normalized = $this->normalizeDeals($closedDeals);
 
-        $latestTimestamp = null;
-        foreach ($normalized as $deal) {
-            if ($deal['closed_at'] > $latestTimestamp) {
-                $latestTimestamp = $deal['closed_at'];
-            }
-        }
-
         return [
             'deals' => $normalized,
-            'cursor' => $latestTimestamp,
+            'cursor' => $this->cursorFrom($closedDeals),
             'raw_count' => count($allDeals),
         ];
     }
@@ -303,10 +293,8 @@ class CtraderConnector implements ConnectorInterface
         }
 
         return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) use ($sinceCursor) {
-            $fromTimestamp = $sinceCursor
-                ? (int) (strtotime($sinceCursor) * 1000)
-                : (int) ((time() - 90 * 86400) * 1000);
             $toTimestamp = (int) (time() * 1000);
+            $fromTimestamp = $this->windowStart($sinceCursor, $toTimestamp);
 
             $response = $this->sendAndReceive($ws, 'ProtoOAOrderListReq', [
                 'ctidTraderAccountId' => $accountId,
@@ -326,6 +314,60 @@ class CtraderConnector implements ConnectorInterface
 
             return ['orders' => $normalized, 'raw_count' => count($orders)];
         });
+    }
+
+    /**
+     * Start of the deal window, in epoch ms.
+     *
+     * The stored cursor is a PROTOCOL value read back through strtotime(),
+     * which resolves it in the server's timezone. An unusable one — unparseable
+     * or landing after `now` — falls back to the default window rather than
+     * being sent as-is: cTrader answers INCORRECT_BOUNDARIES to a window that
+     * starts after it ends, the sync then fails, the cursor is never rewritten,
+     * and the connection stays broken for good. This is the way out of that.
+     */
+    private function windowStart(?string $sinceCursor, int $toTimestamp): int
+    {
+        $default = (int) ((time() - 90 * 86400) * 1000);
+
+        if ($sinceCursor === null || $sinceCursor === '') {
+            return $default;
+        }
+
+        $parsed = strtotime($sinceCursor);
+        if ($parsed === false) {
+            return $default;
+        }
+
+        $from = (int) ($parsed * 1000);
+
+        return $from > $toTimestamp ? $default : $from;
+    }
+
+    /**
+     * Sync cursor for the next run, as UTC.
+     *
+     * It is taken from the raw `executionTimestamp` and NOT from the normalized
+     * `closed_at`: since the journal stores local wall-clock time, reusing the
+     * display value made a deal closed at 16:30 in Paris come back as 16:30
+     * UTC — two hours into the future, and a window cTrader rejects outright.
+     * The other three connectors all track raw API values for the same reason.
+     *
+     * Only closing deals count, matching what the run actually emitted: a
+     * partial close held back for a still-open position must not push the
+     * cursor past its own future closes.
+     */
+    private function cursorFrom(array $closedDeals): ?string
+    {
+        $latest = 0;
+        foreach ($closedDeals as $deal) {
+            if (!isset($deal['closePositionDetail'])) {
+                continue;
+            }
+            $latest = max($latest, (int) ($deal['executionTimestamp'] ?? 0));
+        }
+
+        return $latest > 0 ? gmdate('Y-m-d H:i:s', intdiv($latest, 1000)) : null;
     }
 
     /**

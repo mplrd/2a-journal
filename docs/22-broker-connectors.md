@@ -173,6 +173,17 @@ Deux replis silencieux, tous deux vers le comportement UTC antérieur : pas de f
 
 **Non traité** : les lignes déjà en base gardent leur heure UTC ; seules les synchros ultérieures écrivent en heure locale. Une resynchro depuis zéro les réaligne.
 
+**Le curseur de synchro n'est PAS une date d'affichage.** Régression du passage en heure locale, corrigée le 2026-08-06 après remontée d'un `INCORRECT_BOUNDARIES - fromTimestamp is greater than toTimestamp`.
+
+`sync_cursor` est une valeur de **protocole** : elle repart en epoch via `strtotime()`, qui la résout dans le fuseau du serveur (UTC). La dériver du `closed_at` normalisé — devenu une heure murale locale — faisait revenir un deal clos à 16:30 à Paris comme 16:30 UTC, soit **deux heures dans le futur**. cTrader rejette alors la fenêtre.
+
+Et l'échec est **auto-verrouillant** : la synchro plante, donc le curseur n'est jamais réécrit, donc elle replantera indéfiniment. D'où deux corrections et non une :
+
+1. Le curseur vient désormais du `executionTimestamp` **brut**, formaté en UTC (`cursorFrom()`). Les trois autres connecteurs suivaient déjà des valeurs brutes de l'API — Ouinex le documente explicitement ; cTrader était l'exception.
+2. `windowStart()` ignore un curseur inutilisable (illisible, ou postérieur à `now`) et retombe sur la fenêtre par défaut. C'est la porte de sortie pour toute connexion déjà empoisonnée, sans intervention en base.
+
+La règle qui en découle : **ce qui repart vers une API ne se dérive jamais d'une valeur formatée pour l'affichage.**
+
 **Deux compléments (2026-08-05, au test de la correction précédente).** La conversion était juste mais n'atteignait pas les lignes attendues :
 
 - `BrokerOpenSyncService::updateBrokerFields` rafraîchissait `entry_price`, `size`, `direction`, `symbol` et `remaining_size` — mais **pas `opened_at`**. Une position déjà connue du journal gardait donc son horodatage d'origine indéfiniment : corrigée sur toutes les colonnes sauf celle qui avait changé. Rafraîchi désormais, et uniquement quand le snapshot en porte un (le snapshot live BingX n'a pas d'heure d'ouverture — écrire `null` effacerait ce qu'on détient déjà).

@@ -1187,6 +1187,81 @@ class CtraderConnectorTest extends TestCase
         $this->assertEquals(1.0, $position['exits'][0]['size']);
     }
 
+    public function testFetchDealsEmitsAUtcCursorNotAJournalDatetime(): void
+    {
+        // The cursor is a PROTOCOL value: it goes back out as an epoch through
+        // strtotime(), which reads it in the server's timezone. Deriving it
+        // from the normalized closed_at — a local wall-clock string since the
+        // journal stores display time — made a deal closed at 16:30 in Paris
+        // come back as 16:30 UTC, two hours into the future. The other three
+        // connectors all track raw API values for exactly this reason.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [[
+                    'dealId' => 1, 'positionId' => 90, 'symbolId' => 5, 'volume' => 100,
+                    'tradeSide' => 'BUY',
+                    'createTimestamp' => 1785916872000,
+                    'executionTimestamp' => 1785916872000, // 2026-08-05 08:01:12 UTC
+                    'executionPrice' => 26300.0,
+                    'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327, 'closedVolume' => 100],
+                ]],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+        $connector->setTimezone('Europe/Paris');
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        // The journal row is local, the cursor stays UTC.
+        $this->assertSame('2026-08-05 10:01:12', $result['deals'][0]['closed_at']);
+        $this->assertSame('2026-08-05 08:01:12', $result['cursor']);
+    }
+
+    public function testFetchDealsIgnoresACursorThatLandsInTheFuture(): void
+    {
+        // Recovery path, and it is not optional: a connection whose stored
+        // cursor is ahead of now would send fromTimestamp > toTimestamp,
+        // cTrader answers INCORRECT_BOUNDARIES, the sync fails — so the cursor
+        // is never rewritten and the connection stays broken for good. An
+        // unusable cursor falls back to the default window instead.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, ['deal' => [], 'hasMore' => false]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ], gmdate('Y-m-d H:i:s', time() + 7200)); // two hours ahead
+
+        $dealRequest = null;
+        foreach ($ws->sentMessages as $message) {
+            $decoded = json_decode($message, true);
+            if (($decoded['payloadType'] ?? null) === 2133) {
+                $dealRequest = $decoded['payload'];
+            }
+        }
+
+        $this->assertNotNull($dealRequest);
+        $this->assertLessThan(
+            $dealRequest['toTimestamp'],
+            $dealRequest['fromTimestamp'],
+            'a window that starts after it ends is rejected by cTrader',
+        );
+    }
+
     public function testFetchDealsWidensTheWindowToCoverStillOpenPositions(): void
     {
         // The sync cursor only ever moves forward, so a position opened weeks
