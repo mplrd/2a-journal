@@ -348,7 +348,8 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('BUY', $deals[0]['direction']);
         $this->assertEquals(19200.00, $deals[0]['entry_price']);
         $this->assertEquals(19226.05, $deals[0]['exit_price']);
-        $this->assertEquals(26.05, $deals[0]['pnl']);
+        // 26.05 gross less the 0.50 commission carried by the closing detail.
+        $this->assertEquals(25.55, $deals[0]['pnl']);
         $this->assertSame('ctrader_50', $deals[0]['external_id']);
     }
 

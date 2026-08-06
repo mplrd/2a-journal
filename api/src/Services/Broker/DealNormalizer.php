@@ -79,7 +79,7 @@ class DealNormalizer
             'entry_price' => (float) ($close['entryPrice'] ?? 0),
             'exit_price' => (float) ($deal['executionPrice'] ?? 0),
             'size' => round($volume, 5),
-            'pnl' => round(($close['grossProfit'] ?? 0) / (10 ** $moneyDigits), 2),
+            'pnl' => $this->ctraderNetProfit($close, $moneyDigits),
             'opened_at' => $this->msTimestampToDatetime(
                 (int) ($deal['positionOpenTimestamp'] ?? $deal['createTimestamp'] ?? 0)
             ),
@@ -93,6 +93,35 @@ class DealNormalizer
             'pips' => null,
             'comment' => null,
         ];
+    }
+
+    /**
+     * Realized P&L of a cTrader close, costs deducted.
+     *
+     * `grossProfit` is exactly what its name says — cTrader documents it as
+     * "Amount of realized gross profit", i.e. the price difference alone. The
+     * costs sit beside it in the same ProtoOAClosePositionDetail, on the same
+     * moneyDigits scale, and are already signed (negative when charged):
+     *
+     *   swap             "realized swap related to closed volume"
+     *   commission       "realized commission related to closed volume"
+     *   pnlConversionFee charged when the symbol's quote asset differs from the
+     *                    account's deposit asset (a EUR account on a USD-quoted
+     *                    index, say)
+     *
+     * Importing the gross alone left every trade looking better than the broker
+     * statement by the exact amount of its costs. Absent fields count as zero,
+     * so a payload that omits them behaves as before rather than inventing a
+     * cost or blowing up.
+     */
+    private function ctraderNetProfit(array $close, int $moneyDigits): float
+    {
+        $raw = ($close['grossProfit'] ?? 0)
+            + ($close['swap'] ?? 0)
+            + ($close['commission'] ?? 0)
+            + ($close['pnlConversionFee'] ?? 0);
+
+        return round($raw / (10 ** $moneyDigits), 2);
     }
 
     /**

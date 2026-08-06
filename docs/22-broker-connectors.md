@@ -186,6 +186,26 @@ Corrigé le 2026-08-05, même campagne. Deux trous, indépendants du fuseau mais
 
 **L'expiration n'était jamais rafraîchie.** `BrokerOrderSyncService::updateBrokerFields` réécrivait les champs de la *position* (symbole, sens, taille, entrée, SL) mais rien sur la ligne `orders` — même angle mort que `opened_at` sur les positions. Une `expires_at` déjà en base restait figée, y compris après le passage en heure locale. `OrderRepository::updateExpiry()` a été ajouté pour ça, distinct de `updateStatus()` afin qu'une synchro corrige la date sans toucher au cycle de vie.
 
+### P&L net, pas brut
+
+Corrigé le 2026-08-06. `grossProfit` est exactement ce que son nom dit — cTrader le documente comme « Amount of realized gross profit », donc l'écart de prix seul. Les coûts sont dans le **même** message, sur la **même** échelle `moneyDigits`, et déjà signés :
+
+| Champ | Description cTrader |
+|---|---|
+| `swap` | « realized swap related to closed volume » |
+| `commission` | « realized commission related to closed volume » |
+| `pnlConversionFee` | frais de conversion quand la devise de cotation du symbole diffère de celle du dépôt |
+
+N'importer que le brut faisait paraître chaque trade meilleur que le relevé broker, du montant exact de ses frais — sensible dès qu'on trade plusieurs lots. Les champs absents comptent pour zéro : un payload qui ne les porte pas se comporte comme avant.
+
+### Date de rattachement du réalisé sur trade encore ouvert
+
+Corrigé le 2026-08-06. `StatsRepository::effectiveDate()` existait déjà et résout la question — `COALESCE(t.closed_at, MAX(pe.exited_at))` : un trade clos compte à sa clôture, un trade encore ouvert à sa dernière sortie partielle. Tous les agrégats l'utilisaient **sauf `getDailyPnl`**, resté sur `DATE(t.closed_at)` en dur.
+
+Conséquence : ce qui était encaissé au TP1 d'une position toujours en cours tombait dans un groupe `DATE(NULL)` que le calendrier ne peut placer nulle part — pendant que les cartes KPI, qui filtrent sur `t.pnl IS NOT NULL` sans condition de statut, le comptaient. Deux totaux du même écran divergeaient du montant réalisé sur positions ouvertes.
+
+Le défaut préexistait pour les sorties partielles saisies à la main ; la synchro des clôtures partielles cTrader l'a simplement rendu courant.
+
 ### Taille affichée dans le bloc « En cours » du dashboard
 
 `positions.size` porte la taille **d'origine**, `trades.remaining_size` ce qu'il reste après les sorties partielles. Le panneau « En cours » du dashboard lisait `size` — il annonçait donc 2.5 contrats sur un short déjà à moitié soldé au TP1, alors qu'il n'en tournait plus que 1.5. Le défaut est ancien mais était invisible : avant la reconstruction de la taille d'origine, les deux colonnes étaient toujours égales sur les positions synchronisées. `remaining_size` était d'ailleurs déjà remontée par `StatsRepository::getOpenTrades()`, simplement jamais affichée.

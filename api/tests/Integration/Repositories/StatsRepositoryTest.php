@@ -204,11 +204,17 @@ class StatsRepositoryTest extends TestCase
         $pnlPercent = $entryValue > 0 ? round($partialPnl / $entryValue * 100, 4) : 0.0;
         $rr = round($partialPnl / ($size * 50.0), 4);
 
-        $this->tradeRepo->update((int) $trade['id'], [
+        $tradeUpdate = [
             'pnl' => $partialPnl,
             'pnl_percent' => $pnlPercent,
             'risk_reward' => $rr,
-        ]);
+        ];
+        // Only for the closed variant: a trade left OPEN must keep closed_at
+        // NULL, which is precisely what the date resolution has to cope with.
+        if (isset($overrides['closed_at'])) {
+            $tradeUpdate['closed_at'] = $overrides['closed_at'];
+        }
+        $this->tradeRepo->update((int) $trade['id'], $tradeUpdate);
 
         $exitedAt = $overrides['exited_at'] ?? '2026-01-15 11:00:00';
         $this->pdo->prepare(
@@ -1088,6 +1094,50 @@ class StatsRepositoryTest extends TestCase
         $result = $this->repo->getDailyPnl($this->userId);
 
         $this->assertCount(1, $result);
+    }
+
+    public function testGetDailyPnlCountsRealizedPartialsOfStillOpenTrades(): void
+    {
+        // A trade still running has closed_at NULL, so grouping on it dropped
+        // whatever was already banked at TP1 into a NULL bucket the calendar
+        // cannot place — while the KPI cards, which filter on `pnl IS NOT NULL`
+        // with no status condition, counted it. Two totals on the same screen
+        // disagreed by exactly the amount realized on open positions.
+        // effectiveDate() already resolves this for every other aggregate;
+        // this query was the one that never adopted it.
+        $this->createTradeWithPartial(103.27, [
+            'status' => 'OPEN',
+            'opened_at' => '2026-01-15 07:29:00',
+            'exited_at' => '2026-01-16 10:01:00',
+        ]);
+
+        $result = $this->repo->getDailyPnl($this->userId);
+
+        $indexed = [];
+        foreach ($result as $row) {
+            $indexed[$row['date']] = $row;
+        }
+
+        // Banked on the day of the partial exit, not the day the trade opened.
+        $this->assertArrayHasKey('2026-01-16', $indexed);
+        $this->assertEquals(103.27, (float) $indexed['2026-01-16']['total_pnl']);
+        $this->assertArrayNotHasKey('2026-01-15', $indexed);
+    }
+
+    public function testGetDailyPnlStillDatesClosedTradesFromTheirClose(): void
+    {
+        // Guard the other side: a closed trade keeps being counted on its close
+        // date even though it also has partial exits on earlier days.
+        $this->createTradeWithPartial(40.0, [
+            'status' => 'CLOSED',
+            'closed_at' => '2026-03-10 16:00:00',
+            'exited_at' => '2026-03-09 11:00:00',
+        ]);
+
+        $result = $this->repo->getDailyPnl($this->userId);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('2026-03-10', $result[0]['date']);
     }
 
     // ── BE threshold classification ─────────────────────────────
