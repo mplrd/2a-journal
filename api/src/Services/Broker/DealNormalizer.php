@@ -186,14 +186,16 @@ class DealNormalizer
 
         $exits = $position['partialExits'] ?? [];
         $closed = array_sum(array_map(fn($exit) => (float) ($exit['size'] ?? 0), $exits));
+        $size = round($remaining + $closed, 5);
 
         return [
             'symbol' => $position['symbolName'] ?? null,
             'direction' => $this->normalizeCtraderTradeSide($trade['tradeSide'] ?? null),
             'entry_price' => (float) $position['price'],
-            'size' => round($remaining + $closed, 5),
+            'size' => $size,
             'remaining_size' => round($remaining, 5),
             'exits' => $exits,
+            'targets' => $this->ctraderTargets($position, $size),
             'sl_price' => isset($position['stopLoss']) ? (float) $position['stopLoss'] : null,
             'tp_price' => isset($position['takeProfit']) ? (float) $position['takeProfit'] : null,
             'opened_at' => $this->msTimestampToDatetime((int) ($trade['openTimestamp'] ?? 0)),
@@ -201,6 +203,55 @@ class DealNormalizer
             'pnl' => null,
             'comment' => null,
         ];
+    }
+
+    /**
+     * The position's take profit levels, nearest to the entry first.
+     *
+     * ProtoOAPosition.takeProfit is a single double, so a position cannot
+     * express a staged exit plan on its own. Server-side partial take profits
+     * are separate LIMIT closing orders — the connector collects them and hands
+     * them over under `takeProfitOrders`. They carry more than the position's
+     * lone level does: each states how much volume comes off at that step,
+     * which is exactly what positions.targets models.
+     *
+     * Sorting on the DISTANCE to entry covers both directions at once: a long
+     * takes profit above its entry, a short below it, so "nearest first" is
+     * ascending in one case and descending in the other.
+     *
+     * @return list<array{price: float, size: float}>
+     */
+    private function ctraderTargets(array $position, float $positionSize): array
+    {
+        $entry = (float) ($position['price'] ?? 0);
+        $staged = $position['takeProfitOrders'] ?? [];
+
+        if (empty($staged)) {
+            $single = $position['takeProfit'] ?? null;
+            // Nothing staged, so the single objective covers the whole position.
+            return $single !== null && (float) $single > 0
+                ? [['price' => (float) $single, 'size' => $positionSize]]
+                : [];
+        }
+
+        $targets = [];
+        foreach ($staged as $order) {
+            $price = (float) ($order['price'] ?? 0);
+            if ($price <= 0) {
+                continue;
+            }
+            $targets[] = [
+                'price' => $price,
+                'size' => round(
+                    $this->ctraderVolumeToLots($order['volume'] ?? 0, $position['lotSize'] ?? null),
+                    5,
+                ),
+            ];
+        }
+
+        usort($targets, fn($a, $b) => abs($a['price'] - $entry) <=> abs($b['price'] - $entry));
+
+        return $targets;
     }
 
     /**

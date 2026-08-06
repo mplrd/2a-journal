@@ -173,6 +173,17 @@ Deux replis silencieux, tous deux vers le comportement UTC antérieur : pas de f
 
 **Non traité** : les lignes déjà en base gardent leur heure UTC ; seules les synchros ultérieures écrivent en heure locale. Une resynchro depuis zéro les réaligne.
 
+**Le curseur de synchro n'est PAS une date d'affichage.** Régression du passage en heure locale, corrigée le 2026-08-06 après remontée d'un `INCORRECT_BOUNDARIES - fromTimestamp is greater than toTimestamp`.
+
+`sync_cursor` est une valeur de **protocole** : elle repart en epoch via `strtotime()`, qui la résout dans le fuseau du serveur (UTC). La dériver du `closed_at` normalisé — devenu une heure murale locale — faisait revenir un deal clos à 16:30 à Paris comme 16:30 UTC, soit **deux heures dans le futur**. cTrader rejette alors la fenêtre.
+
+Et l'échec est **auto-verrouillant** : la synchro plante, donc le curseur n'est jamais réécrit, donc elle replantera indéfiniment. D'où deux corrections et non une :
+
+1. Le curseur vient désormais du `executionTimestamp` **brut**, formaté en UTC (`cursorFrom()`). Les trois autres connecteurs suivaient déjà des valeurs brutes de l'API — Ouinex le documente explicitement ; cTrader était l'exception.
+2. `windowStart()` ignore un curseur inutilisable (illisible, ou postérieur à `now`) et retombe sur la fenêtre par défaut. C'est la porte de sortie pour toute connexion déjà empoisonnée, sans intervention en base.
+
+La règle qui en découle : **ce qui repart vers une API ne se dérive jamais d'une valeur formatée pour l'affichage.**
+
 **Deux compléments (2026-08-05, au test de la correction précédente).** La conversion était juste mais n'atteignait pas les lignes attendues :
 
 - `BrokerOpenSyncService::updateBrokerFields` rafraîchissait `entry_price`, `size`, `direction`, `symbol` et `remaining_size` — mais **pas `opened_at`**. Une position déjà connue du journal gardait donc son horodatage d'origine indéfiniment : corrigée sur toutes les colonnes sauf celle qui avait changé. Rafraîchi désormais, et uniquement quand le snapshot en porte un (le snapshot live BingX n'a pas d'heure d'ouverture — écrire `null` effacerait ce qu'on détient déjà).
@@ -205,6 +216,30 @@ Corrigé le 2026-08-06. `StatsRepository::effectiveDate()` existait déjà et r�
 Conséquence : ce qui était encaissé au TP1 d'une position toujours en cours tombait dans un groupe `DATE(NULL)` que le calendrier ne peut placer nulle part — pendant que les cartes KPI, qui filtrent sur `t.pnl IS NOT NULL` sans condition de statut, le comptaient. Deux totaux du même écran divergeaient du montant réalisé sur positions ouvertes.
 
 Le défaut préexistait pour les sorties partielles saisies à la main ; la synchro des clôtures partielles cTrader l'a simplement rendu courant.
+
+### Objectifs synchronisés et mise à BE automatique
+
+Livré le 2026-08-06.
+
+**Le take profit du broker alimente `positions.targets`.** Il n'y a pas de colonne `tp_price` — les objectifs vivent dans ce JSON — et le `tp_price` normalisé par les connecteurs était donc jeté depuis toujours. L'entrée écrite reprend la forme que produit le formulaire de trade (`id`, `label`, `points`, `price`, `size`), pour qu'un objectif synchronisé s'affiche comme un objectif saisi. `points` est la distance à l'entrée, l'unité qu'édite le formulaire.
+
+**Les TP partiels serveur sont des ordres, pas un champ de la position.** `ProtoOAPosition.takeProfit` est un `double` **scalaire** : la position ne peut porter qu'**un** niveau. cTrader permettant désormais d'étager les prises de profit côté serveur, un plan TP1/TP2/TP3 n'existe que sous forme d'**ordres LIMIT de clôture** rattachés à la position (`closingOrder` vrai, `positionId` renseigné).
+
+Ces ordres portent d'ailleurs plus que le champ de la position : chacun indique **le volume qui sort à ce palier**, exactement ce que `positions.targets` modélise avec son `size`. La source la plus riche était donc celle que `fetchOpenOrders` écartait — à raison de son point de vue (ce ne sont pas des ordres d'entrée en attente), mais sans que personne ne les récupère ailleurs. `fetchOpenPositions` les collecte maintenant.
+
+**Le type d'ordre est le discriminant, et il est décisif** : la paire SL/TP propre à la position revient en `STOP_LOSS_TAKE_PROFIT` (code 4), ce n'est pas un objectif étagé par l'utilisateur. Seuls les `LIMIT` (code 2) de clôture comptent. La tolérance nom/code numérique s'applique comme partout ailleurs dans le connecteur.
+
+**Tri par distance à l'entrée**, ce qui couvre les deux sens d'un coup : un long prend ses profits au-dessus de son entrée, un short en dessous — « le plus proche d'abord » est croissant dans un cas, décroissant dans l'autre. Les paliers sont ensuite numérotés TP1..TPn dans cet ordre.
+
+Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors toute la taille.
+
+**Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
+
+**Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.
+
+**Promotion uniquement, jamais de rétrogradation.** Un trade peut aussi avoir été sécurisé à la main via une sortie de type BE ; ramener le stop en arrière sur la plateforme ne doit pas effacer cette décision.
+
+**Prérequis corrigé au passage : `findOpenByExternalIdPrefixInAccount` ne voyait que les `OPEN`.** Or `apply()` **insère** toute ligne du snapshot qu'il ne retrouve pas. Un trade passé `SECURED` devenait donc invisible au diff : la synchro suivante créait un **doublon** de la position, et sa clôture ne transitionnait jamais. Le défaut existait déjà pour un trade broker sécurisé manuellement ; la détection automatique l'aurait rendu systématique. La requête couvre désormais `OPEN` **et** `SECURED` — « ouvert » y signifie « pas encore clos », la même sémantique que `StatsRepository::getOpenTrades`.
 
 ### Taille affichée dans le bloc « En cours » du dashboard
 

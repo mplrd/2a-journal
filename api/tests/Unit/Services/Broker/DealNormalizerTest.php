@@ -631,6 +631,89 @@ class DealNormalizerTest extends TestCase
         $this->assertSame([], $row['exits']);
     }
 
+    public function testNormalizeCtraderOpenPositionBuildsOneTargetPerStagedTakeProfit(): void
+    {
+        // ProtoOAPosition.takeProfit is a single double — a position cannot
+        // express a staged exit plan. Server-side partial take profits are
+        // separate LIMIT closing orders, each carrying its own volume, which is
+        // richer than the position's lone level: it says how much comes off at
+        // each step. The connector hands them over; here they become targets,
+        // nearest first.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 331,
+            'price' => 26386.34,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => [
+                'symbolId' => 331, 'volume' => 250, 'tradeSide' => 'BUY',
+                'openTimestamp' => 1785907740000,
+            ],
+            'takeProfitOrders' => [
+                ['price' => 26600.0, 'volume' => 100],
+                ['price' => 26450.0, 'volume' => 100], // nearest, must come first
+                ['price' => 26900.0, 'volume' => 50],
+            ],
+        ]);
+
+        $this->assertCount(3, $row['targets']);
+        $this->assertSame(
+            [26450.0, 26600.0, 26900.0],
+            array_map(fn($t) => $t['price'], $row['targets']),
+        );
+        // Volume converted with the symbol lot size, like every other size.
+        $this->assertSame([1.0, 1.0, 0.5], array_map(fn($t) => $t['size'], $row['targets']));
+    }
+
+    public function testNormalizeCtraderOpenPositionOrdersAShortsTargetsDownwards(): void
+    {
+        // A short takes profit BELOW its entry, so "nearest first" means
+        // descending price. Sorting on the distance to entry covers both.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 332,
+            'price' => 26386.34,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 331, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            'takeProfitOrders' => [
+                ['price' => 26000.0, 'volume' => 100],
+                ['price' => 26300.0, 'volume' => 150],
+            ],
+        ]);
+
+        $this->assertSame([26300.0, 26000.0], array_map(fn($t) => $t['price'], $row['targets']));
+    }
+
+    public function testNormalizeCtraderOpenPositionFallsBackToThePositionsOwnTakeProfit(): void
+    {
+        // No staged orders: the single level on the position is the objective.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 333,
+            'price' => 26386.34,
+            'takeProfit' => 26600.0,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 331, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+        ]);
+
+        $this->assertCount(1, $row['targets']);
+        $this->assertSame(26600.0, $row['targets'][0]['price']);
+        // Nothing staged, so the objective covers the whole position.
+        $this->assertSame(2.5, $row['targets'][0]['size']);
+    }
+
+    public function testNormalizeCtraderOpenPositionHasNoTargetsWithoutAnyTakeProfit(): void
+    {
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 334,
+            'price' => 26386.34,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 331, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+        ]);
+
+        $this->assertSame([], $row['targets']);
+    }
+
     public function testNormalizeCtraderOpenPositionAcceptsNumericTradeSide(): void
     {
         // cTrader's JSON serialization may emit enum fields as their integer
