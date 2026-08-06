@@ -222,6 +222,103 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame(1.0, $targets[1]['size']);
     }
 
+    public function testFetchOpenPositionsCollectsProtectiveOrdersCarryingATakeProfit(): void
+    {
+        // cTrader stages up to five take profit levels per position, each with
+        // its own quantity. The public docs never state how those levels come
+        // out on the Open API, and reading only LIMIT closing orders brought
+        // back nothing on a real account — so a protective order that carries a
+        // takeProfit price counts as a level too. Broad on purpose: whichever
+        // shape the platform uses, the level is seen. A protective order with
+        // only a stop loss stays out.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'takeProfit' => 22386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        // Intermediate level: 500 points below entry on a short.
+                        'orderId' => 910, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'takeProfit' => 25886.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'BUY'],
+                    ],
+                    [
+                        // Final level on the rest of the position.
+                        'orderId' => 911, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'takeProfit' => 22386.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'BUY'],
+                    ],
+                    [
+                        // Pure stop loss: protective, but not an objective.
+                        'orderId' => 912, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'stopLoss' => 26619.42,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets, 'the stop-loss-only order is not an objective');
+        $this->assertSame(25886.34, $targets[0]['price']);
+        $this->assertSame(1.0, $targets[0]['size']);
+        $this->assertSame(22386.34, $targets[1]['price']);
+        $this->assertSame(1.5, $targets[1]['size']);
+    }
+
+    public function testFetchOpenPositionsDoesNotCountTheSameLevelTwice(): void
+    {
+        // The position's own takeProfit mirrors one of the staged levels. It is
+        // only a fallback, and a level reported by two orders at one price is
+        // still one level.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'takeProfit' => 22386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        'orderId' => 920, 'positionId' => 331, 'orderType' => 'LIMIT',
+                        'closingOrder' => true, 'limitPrice' => 22386.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY'],
+                    ],
+                    [
+                        'orderId' => 921, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'takeProfit' => 22386.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $this->assertCount(1, $result['positions'][0]['targets']);
+    }
+
     public function testFetchOpenPositionsIgnoresClosingOrdersOfOtherPositions(): void
     {
         $ws = $this->makeWsStub([

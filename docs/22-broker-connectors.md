@@ -227,7 +227,11 @@ Livré le 2026-08-06.
 
 Ces ordres portent d'ailleurs plus que le champ de la position : chacun indique **le volume qui sort à ce palier**, exactement ce que `positions.targets` modélise avec son `size`. La source la plus riche était donc celle que `fetchOpenOrders` écartait — à raison de son point de vue (ce ne sont pas des ordres d'entrée en attente), mais sans que personne ne les récupère ailleurs. `fetchOpenPositions` les collecte maintenant.
 
-**Le type d'ordre est le discriminant, et il est décisif** : la paire SL/TP propre à la position revient en `STOP_LOSS_TAKE_PROFIT` (code 4), ce n'est pas un objectif étagé par l'utilisateur. Seuls les `LIMIT` (code 2) de clôture comptent. La tolérance nom/code numérique s'applique comme partout ailleurs dans le connecteur.
+**La forme exacte de ces niveaux n'est pas documentée.** cTrader annonce publiquement jusqu'à **cinq** niveaux par position, chacun avec sa quantité ([Trade protections](https://help.ctrader.com/ctrader-web/trading/protections/)), mais aucune page ne dit comment ils sortent sur l'Open API. Le premier essai ne lisait que les ordres `LIMIT` de clôture et n'a **rien** remonté sur un compte réel : la position retombait sur son `takeProfit` unique.
+
+La collecte est donc volontairement large : un ordre de clôture compte comme niveau dès qu'il expose un prix de TP — `limitPrice` pour un `LIMIT`, `takeProfit` pour un ordre protecteur. Un ordre ne portant qu'un `stopLoss` n'est pas un objectif et reste dehors. Les niveaux sont dédoublonnés par prix, puisque le `takeProfit` de la position en reflète un et que deux ordres peuvent rapporter le même.
+
+**Un diagnostic couvre le cas non résolu.** Si une position annonce un `takeProfit` sans qu'aucun niveau ne soit lisible, `reportUnresolvedTakeProfits()` journalise la **forme** des ordres rattachés — types et champs de prix présents, jamais les prix, volumes ou identifiants. Silencieux en nominal. C'est le seul moyen d'apprendre la représentation réelle sans demander une resynchro à l'aveugle.
 
 **Tri par distance à l'entrée**, ce qui couvre les deux sens d'un coup : un long prend ses profits au-dessus de son entrée, un short en dessous — « le plus proche d'abord » est croissant dans un cas, décroissant dans l'autre. Les paliers sont ensuite numérotés TP1..TPn dans cet ordre.
 
