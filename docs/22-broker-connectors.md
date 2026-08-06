@@ -227,7 +227,17 @@ Livré le 2026-08-06.
 
 Ces ordres portent d'ailleurs plus que le champ de la position : chacun indique **le volume qui sort à ce palier**, exactement ce que `positions.targets` modélise avec son `size`. La source la plus riche était donc celle que `fetchOpenOrders` écartait — à raison de son point de vue (ce ne sont pas des ordres d'entrée en attente), mais sans que personne ne les récupère ailleurs. `fetchOpenPositions` les collecte maintenant.
 
-**La forme exacte de ces niveaux n'est pas documentée.** cTrader annonce publiquement jusqu'à **cinq** niveaux par position, chacun avec sa quantité ([Trade protections](https://help.ctrader.com/ctrader-web/trading/protections/)), mais aucune page ne dit comment ils sortent sur l'Open API. Le premier essai ne lisait que les ordres `LIMIT` de clôture et n'a **rien** remonté sur un compte réel : la position retombait sur son `takeProfit` unique.
+**Il faut les DEMANDER : `ProtoOAReconcileReq.returnProtectionOrders`.** C'est le cœur du sujet, et ça ne se voit dans aucune page rendue de la doc — seulement dans le `.proto` :
+
+> `optional bool returnProtectionOrders = 3;` — *« If TRUE, then current protection orders are returned separately, otherwise you can use position.stopLoss and position.takeProfit fields. »*
+
+Sans ce drapeau, cTrader **replie** toutes les protections dans les deux champs scalaires de la position. Une position portant cinq niveaux de TP n'en rapporte donc qu'un, et **aucun filtrage de `order[]` ne peut récupérer les autres : ils ne sont pas dans la réponse.** C'est ce qui a fait échouer une première tentative qui cherchait des ordres `LIMIT` de clôture — le filtre n'était pas en cause, la requête l'était.
+
+Seule `fetchOpenPositions` l'active : `fetchOpenOrders` écarte les ordres de clôture par construction, et `fetchDeals` ne lit que `position[]`.
+
+**Leçon de méthode** : les pages rendues de `help.ctrader.com` ne décrivent pas tous les champs. Le fichier [`OpenApiMessages.proto`](https://github.com/spotware/openapi-proto-messages) fait foi — le récupérer et le lire localement plutôt que se fier à un résumé.
+
+cTrader annonce jusqu'à **cinq** niveaux par position, chacun avec sa quantité ([Trade protections](https://help.ctrader.com/ctrader-web/trading/protections/)).
 
 La collecte est donc volontairement large : un ordre de clôture compte comme niveau dès qu'il expose un prix de TP — `limitPrice` pour un `LIMIT`, `takeProfit` pour un ordre protecteur. Un ordre ne portant qu'un `stopLoss` n'est pas un objectif et reste dehors. Les niveaux sont dédoublonnés par prix, puisque le `takeProfit` de la position en reflète un et que deux ordres peuvent rapporter le même.
 

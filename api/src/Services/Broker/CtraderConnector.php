@@ -217,8 +217,18 @@ class CtraderConnector implements ConnectorInterface
         }
 
         return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
+            // returnProtectionOrders is what makes a staged exit plan visible at
+            // all. The field is documented as: "If TRUE, then current protection
+            // orders are returned separately, otherwise you can use
+            // position.stopLoss and position.takeProfit fields." Left unset,
+            // cTrader COLLAPSES every protection into those two scalars — so a
+            // position with five take profit levels reports one, and no
+            // filtering of order[] can recover the rest because they were never
+            // sent. Only this read needs them: fetchOpenOrders discards closing
+            // orders by design, and fetchDeals only looks at position[].
             $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
                 'ctidTraderAccountId' => $accountId,
+                'returnProtectionOrders' => true,
             ]);
             $positions = $response['position'] ?? [];
             $takeProfitOrders = $this->collectStagedTakeProfits($response['order'] ?? []);

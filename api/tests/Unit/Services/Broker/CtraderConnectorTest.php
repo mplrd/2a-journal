@@ -164,6 +164,35 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('ctrader_999', $result['positions'][0]['external_id']);
     }
 
+    public function testFetchOpenPositionsAsksForTheProtectionOrders(): void
+    {
+        // ProtoOAReconcileReq.returnProtectionOrders: "If TRUE, then current
+        // protection orders are returned separately, otherwise you can use
+        // position.stopLoss and position.takeProfit fields." Without it cTrader
+        // COLLAPSES every protection into the position's two scalar fields, so
+        // a staged plan comes back as a single level and no amount of filtering
+        // on order[] can recover it — the orders were never sent.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $reconcile = null;
+        foreach ($ws->sentMessages as $message) {
+            $decoded = json_decode($message, true);
+            if (($decoded['payloadType'] ?? null) === 2124) {
+                $reconcile = $decoded['payload'];
+            }
+        }
+
+        $this->assertNotNull($reconcile, 'no ProtoOAReconcileReq was sent');
+        $this->assertTrue($reconcile['returnProtectionOrders'] ?? false);
+    }
+
     public function testFetchOpenPositionsCollectsStagedTakeProfitOrders(): void
     {
         // cTrader now places partial take profits server-side, as LIMIT closing
