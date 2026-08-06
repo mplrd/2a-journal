@@ -896,6 +896,59 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('SELL', $result['deals'][0]['direction']);
     }
 
+    public function testFetchDealsNamesArchivedSymbolsFromTheByIdResponse(): void
+    {
+        // ProtoOASymbolsListReq omits archived symbols unless asked, so a
+        // symbol the broker has retired is absent from the light list and can
+        // never be named from it — one instrument stays SYM_<id> while every
+        // other one on the same account resolves. ProtoOASymbolByIdRes, which
+        // we already call for lotSize, returns archivedSymbol[] alongside
+        // symbol[], and ProtoOAArchivedSymbol carries the name under `name`
+        // (not `symbolName`). No extra round trip needed.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    [
+                        'dealId' => 1, 'positionId' => 90, 'symbolId' => 331, 'volume' => 150,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                        'executionPrice' => 26300.0,
+                        'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960, 'closedVolume' => 150],
+                    ],
+                    [
+                        'dealId' => 2, 'positionId' => 91, 'symbolId' => 5, 'volume' => 100,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785917000000, 'executionTimestamp' => 1785917000000,
+                        'executionPrice' => 20000.0,
+                        'closePositionDetail' => ['entryPrice' => 20100.0, 'grossProfit' => 10000, 'closedVolume' => 100],
+                    ],
+                ],
+                'hasMore' => false,
+            ]),
+            // The light list knows 5 but not the retired 331.
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
+                ['symbolId' => 5, 'symbolName' => 'US100.cash'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, [
+                'symbol' => [['symbolId' => 5, 'lotSize' => 100]],
+                'archivedSymbol' => [['symbolId' => 331, 'name' => 'GER40']],
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        $names = array_column($result['deals'], 'symbol');
+        sort($names);
+        $this->assertSame(['GER40', 'US100.cash'], $names);
+    }
+
     public function testFetchDealsDatesAPositionFromItsOpeningDeal(): void
     {
         // The deal list carries the opening deal (no closePositionDetail) as

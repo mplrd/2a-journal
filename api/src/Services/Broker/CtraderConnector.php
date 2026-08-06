@@ -1114,6 +1114,18 @@ class CtraderConnector implements ConnectorInterface
             }
         }
 
+        // ProtoOASymbolsListReq leaves out archived symbols unless asked, so an
+        // instrument the broker has retired is absent from the light list and
+        // could never be named — one symbol stuck at SYM_<id> while every other
+        // one on the account resolved. The by-id response we just made returns
+        // archivedSymbol[] alongside symbol[], so the name is already in hand;
+        // ProtoOAArchivedSymbol spells it `name`, not `symbolName`.
+        foreach ($response['archivedSymbol'] ?? [] as $archived) {
+            if (isset($archived['symbolId'], $archived['name'])) {
+                $names[(int) $archived['symbolId']] ??= (string) $archived['name'];
+            }
+        }
+
         $map = [];
         foreach ($symbolIds as $symbolId) {
             $symbolId = (int) $symbolId;

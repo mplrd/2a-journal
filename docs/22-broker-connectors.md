@@ -128,6 +128,10 @@ Corrigé le 2026-08-05, au premier run avec de vrais trades importés. Quatre d�
 
 `resolveSymbolNames()` lisait `symbolName` sur la réponse *by-id* : le champ n'existe pas dans ce message, le `??` tombait donc systématiquement sur `'SYM_' . $id`. Le connecteur appelle désormais les deux (`resolveSymbols()`) : le nom vient de la liste light, le `lotSize` de la réponse by-id. La liste light couvre tout l'univers du broker, elle est donc **mémoïsée par compte pour la durée de la synchro** (`resetSyncCache()` la purge) — une synchro résout les symboles trois fois : deals, positions, ordres.
 
+**1 bis. Les symboles archivés ne sont dans aucune des deux listes.** Complément du 2026-08-05 : `ProtoOASymbolsListReq` porte un champ `includeArchivedSymbols` et **n'inclut pas** les symboles retirés sans lui. Un instrument que le broker a archivé est donc absent de la liste light — un seul symbole reste bloqué sur `SYM_<id>` pendant que tous les autres du même compte se résolvent, ce qui ressemble à s'y méprendre à de la donnée périmée.
+
+Pas besoin de la requête supplémentaire : `ProtoOASymbolByIdRes` renvoie `archivedSymbol[]` **à côté** de `symbol[]`, et on l'appelle déjà pour le `lotSize`. Attention au nom du champ — `ProtoOAArchivedSymbol` expose `name`, pas `symbolName`. Le repli ne s'applique que si la liste light n'a rien pour cet id (`??=`), la liste light restant la source primaire.
+
 **2. Le volume ne se divise pas par 100000.** Un DAX de 1,5 contrat était importé en `0.0015`. `volume` (deal et `tradeData`) comme `lotSize` sont exprimés **en cents** — centièmes d'unité — donc :
 
 ```
