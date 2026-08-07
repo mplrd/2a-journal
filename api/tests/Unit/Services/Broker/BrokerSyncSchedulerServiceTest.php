@@ -190,6 +190,29 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $this->assertSame(1, $result['deferred']);
     }
 
+    // ── Already syncing: reservation held elsewhere ─────────────
+
+    public function testConnectionAlreadySyncingIsCountedApart(): void
+    {
+        // A worker that finds the connection reserved has done no work: it is
+        // neither a success (nothing was imported) nor a failure (nothing broke).
+        $scheduler = $this->makeScheduler();
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$this->connectionRow(1, 10)]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+        $this->syncService->method('sync')->willReturn(['status' => \App\Enums\SyncStatus::SKIPPED->value]);
+
+        $this->connectionRepo->expects($this->never())->method('resetFailures');
+        $this->connectionRepo->expects($this->never())->method('incrementFailures');
+
+        $result = $scheduler->runDueConnections();
+
+        $this->assertSame(1, $result['processed']);
+        $this->assertSame(1, $result['already_syncing']);
+        $this->assertSame(0, $result['success']);
+        $this->assertSame(0, $result['failed']);
+    }
+
     // ── Empty: nothing due ──────────────────────────────────────
 
     public function testNothingDueReturnsZeros(): void

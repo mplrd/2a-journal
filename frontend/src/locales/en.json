@@ -947,6 +947,8 @@
     "sync_failed": "Sync failed",
     "sync_detail": "{count} position(s) imported",
     "sync_imported": "{positions} imported, {skipped} duplicate(s) skipped",
+    "sync_already_running": "Sync already running",
+    "sync_already_running_detail": "This account is already being synced. Try again in a moment.",
     "last_sync": "Last sync",
     "history": "History",
     "sync_history": "Sync history",

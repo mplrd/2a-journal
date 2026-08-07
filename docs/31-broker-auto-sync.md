@@ -111,6 +111,7 @@ BrokerSyncSchedulerService::runDueConnections()
     │     AND (last_sync_at IS NULL OR last_sync_at < UTC_TIMESTAMP() - INTERVAL X MINUTE)
     │
     ├─ Pour chaque connexion, en try/catch isolé :
+    │     ├─ Réservée ailleurs → SKIPPED, compté en already_syncing, rien d'autre
     │     ├─ Succès  → BrokerSyncService::sync() + resetFailures(id)
     │     └─ Échec   → incrementFailures(id)
     │                 Si consecutive_failures atteint max → markError(id) + status=ERROR
@@ -133,6 +134,7 @@ BrokerSyncSchedulerService::runDueConnections()
 | `processed` | Nombre de connexions effectivement pickées pour sync (filtrage `last_sync_at + INTERVAL < NOW()`). Si `total_active > processed`, la différence sont des connexions syncées trop récemment. |
 | `success` | Parmi les `processed`, combien ont été syncées avec succès. |
 | `failed` | Parmi les `processed`, combien ont échoué (incrémente `consecutive_failures`). |
+| `already_syncing` | Parmi les `processed`, combien tenaient déjà une réservation prise ailleurs (clic UI, autre worker). Ni succès ni échec : aucun travail n'a eu lieu, le compteur d'échecs n'est pas touché. Voir [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md). |
 | `deactivated` | Parmi les `failed`, combien ont atteint le seuil `BROKER_SYNC_MAX_FAILURES` et sont passées en `status=ERROR`. |
 | `interval_minutes` | Valeur effective de `BROKER_SYNC_INTERVAL_MINUTES` appliquée par ce run. Permet de vérifier d'un coup d'œil que l'env var est bien lue. |
 
@@ -224,7 +226,16 @@ MariaDB ne supporte pas les paramètres liés dans les expressions `INTERVAL` �
 
 ### Pourquoi un seul `flock` global et pas un lock par connexion
 
-Simplicité et suffisance : un run dure quelques secondes à quelques minutes, le cron tombe toutes les 5 minutes. Le risque d'overlapping est faible et les runs parallèles sur des connexions différentes n'apportent pas de bénéfice (le scheduler ne parallélise pas). Le flock global couvre le cas "un run particulièrement lent + nouveau cron" sans complexité supplémentaire.
+> **Révisé.** Ce raisonnement tenait tant que le seul risque était deux tours de
+> cron qui se chevauchent. Il ignorait le chemin HTTP : `POST /sync` ne prend
+> aucun verrou, donc un clic pendant un run du cron traite bien la même connexion
+> deux fois. Un verrou **par connexion** existe désormais
+> (`broker_connections.syncing_since`), voir
+> [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md). Le
+> `flock` global reste en place pour l'instant ; il saute avec la parallélisation
+> du scheduler.
+
+Argument d'origine : simplicité et suffisance : un run dure quelques secondes à quelques minutes, le cron tombe toutes les 5 minutes. Le risque d'overlapping est faible et les runs parallèles sur des connexions différentes n'apportent pas de bénéfice (le scheduler ne parallélise pas). Le flock global couvre le cas "un run particulièrement lent + nouveau cron" sans complexité supplémentaire.
 
 ### Pourquoi le CLI bootstrap toutes les dépendances manuellement
 

@@ -137,4 +137,39 @@ describe('BrokerConnectionPanel', () => {
 
     expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(true)
   })
+
+  it('says the sync is already running instead of claiming success on zero import', async () => {
+    // The scheduled run holds the connection: nothing was imported, and a
+    // "success, 0 positions" toast would read as "the broker sent nothing".
+    brokerSyncService.getConnection.mockResolvedValue({ data: activeConnection })
+    brokerSyncService.sync.mockResolvedValue({
+      data: { status: 'SKIPPED', imported_positions: 0, skipped_duplicates: 0 },
+    })
+    const wrapper = createWrapper()
+    await flushPromises()
+
+    await button(wrapper, 'broker-sync').trigger('click')
+    await flushPromises()
+
+    expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(false)
+    const info = toastAdd.mock.calls.find(([c]) => c.severity === 'info')
+    expect(info).toBeTruthy()
+    expect(info[0].summary).toBe(fr.broker.sync_already_running)
+    // No import happened, so no import recap panel either.
+    expect(wrapper.find('.message').exists()).toBe(false)
+  })
+
+  it('reports the import recap on a sync that actually ran', async () => {
+    brokerSyncService.getConnection.mockResolvedValue({ data: activeConnection })
+    brokerSyncService.sync.mockResolvedValue({
+      data: { status: 'SUCCESS', imported_positions: 3, skipped_duplicates: 1 },
+    })
+    const wrapper = createWrapper()
+    await flushPromises()
+
+    await button(wrapper, 'broker-sync').trigger('click')
+    await flushPromises()
+
+    expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(true)
+  })
 })

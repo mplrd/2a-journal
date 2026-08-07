@@ -209,4 +209,79 @@ class BrokerConnectionRepositoryTest extends TestCase
         $this->assertSame('auth refused', $row['last_sync_error']);
         $this->assertSame(3, (int) $row['consecutive_failures']);
     }
+
+    // ── claimForSync / releaseSync ──────────────────────────────
+
+    private function setSyncingSince(int $connectionId, ?string $syncingSince): void
+    {
+        $this->pdo->prepare('UPDATE broker_connections SET syncing_since = :t WHERE id = :id')
+            ->execute(['t' => $syncingSince, 'id' => $connectionId]);
+    }
+
+    public function testClaimForSyncSucceedsOnAFreeConnection(): void
+    {
+        $conn = $this->createConnection();
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900));
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNotNull($row['syncing_since']);
+    }
+
+    public function testClaimForSyncRefusesAConnectionAlreadyClaimed(): void
+    {
+        $conn = $this->createConnection();
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900));
+
+        // Second caller — the cron while the user clicked, or another worker.
+        $this->assertFalse($this->repo->claimForSync((int) $conn['id'], 900));
+    }
+
+    public function testClaimForSyncTakesOverAStaleClaim(): void
+    {
+        $conn = $this->createConnection();
+        // A worker that died 20 minutes ago must not hold the lock forever.
+        $this->setSyncingSince((int) $conn['id'], gmdate('Y-m-d H:i:s', time() - 20 * 60));
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900));
+    }
+
+    public function testClaimForSyncRefreshesTheTimestampOnTakeover(): void
+    {
+        $conn = $this->createConnection();
+        $stale = gmdate('Y-m-d H:i:s', time() - 20 * 60);
+        $this->setSyncingSince((int) $conn['id'], $stale);
+
+        $this->repo->claimForSync((int) $conn['id'], 900);
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNotSame($stale, $row['syncing_since']);
+    }
+
+    public function testReleaseSyncFreesTheConnection(): void
+    {
+        $conn = $this->createConnection();
+        $this->repo->claimForSync((int) $conn['id'], 900);
+
+        $this->repo->releaseSync((int) $conn['id']);
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNull($row['syncing_since']);
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900));
+    }
+
+    public function testClaimForSyncIsScopedToTheGivenConnection(): void
+    {
+        $claimed = $this->createConnection();
+        $other = $this->createConnection();
+
+        $this->repo->claimForSync((int) $claimed['id'], 900);
+
+        $this->assertTrue($this->repo->claimForSync((int) $other['id'], 900));
+    }
+
+    public function testClaimForSyncReturnsFalseForAnUnknownConnection(): void
+    {
+        $this->assertFalse($this->repo->claimForSync(999999, 900));
+    }
 }

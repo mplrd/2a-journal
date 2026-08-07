@@ -43,6 +43,11 @@ class BrokerSyncServiceTest extends TestCase
         $this->openSyncService = $this->createMock(BrokerOpenSyncService::class);
         $this->orderSyncService = $this->createMock(BrokerOrderSyncService::class);
 
+        // Every nominal sync reserves the connection first. Tests that exercise
+        // a REFUSED reservation build their own repository mock: PHPUnit picks
+        // the first registered matcher, so this default can't be overridden.
+        $this->connectionRepo->method('claimForSync')->willReturn(true);
+
         $this->service = new BrokerSyncService(
             $this->connectionRepo,
             $this->syncLogRepo,
@@ -473,6 +478,107 @@ class BrokerSyncServiceTest extends TestCase
         $this->makeServiceWith($spy, null)->sync(1, 10);
 
         $this->assertNull($spy->spiedTimezone);
+    }
+
+    // ── Reservation (one sync at a time per connection) ──────────────
+
+    public function testSyncReservesTheConnectionBeforeTouchingTheBroker(): void
+    {
+        // Nothing serialises the manual sync against the scheduled one, so two
+        // runs can otherwise import the same deals concurrently.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->expects($this->once())
+            ->method('claimForSync')
+            ->with(1, BrokerSyncService::SYNC_CLAIM_TTL_SECONDS)
+            ->willReturn(true);
+
+        $this->primeSyncStubsOn($repo);
+
+        $this->makeServiceWithRepo($repo)->sync(1, 10);
+    }
+
+    public function testSyncSkipsWithoutWorkingWhenTheConnectionIsAlreadySyncing(): void
+    {
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('claimForSync')->willReturn(false);
+
+        // A refused reservation is not a failure: nothing is logged, nothing is
+        // fetched, and the connection state is left exactly as the holder found it.
+        $repo->expects($this->never())->method('update');
+        $repo->expects($this->never())->method('releaseSync');
+        $this->syncLogRepo->expects($this->never())->method('create');
+
+        $spy = new TimezoneSpyConnector([]);
+        $result = $this->makeServiceWithRepo($repo, $spy)->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SKIPPED->value, $result['status']);
+        $this->assertSame(0, $result['imported_positions']);
+    }
+
+    public function testSyncReleasesTheReservationOnSuccess(): void
+    {
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('claimForSync')->willReturn(true);
+        $repo->expects($this->once())->method('releaseSync')->with(1);
+
+        $this->primeSyncStubsOn($repo);
+
+        $this->makeServiceWithRepo($repo)->sync(1, 10);
+    }
+
+    public function testSyncReleasesTheReservationWhenTheSyncBlowsUp(): void
+    {
+        // Without a finally, one crash leaves the connection locked until the
+        // staleness window expires — 15 minutes of no sync for that account.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('claimForSync')->willReturn(true);
+        $repo->expects($this->once())->method('releaseSync')->with(1);
+
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+        $connector = $this->createMock(ConnectorInterface::class);
+        $connector->method('refreshCredentials')->willReturnArgument(0);
+        $connector->method('fetchDeals')->willThrowException(new \RuntimeException('broker down'));
+
+        $this->expectException(\RuntimeException::class);
+
+        $this->makeServiceWithRepo($repo, $connector)->sync(1, 10);
+    }
+
+    /** primeSyncStubs against a bespoke repository mock. */
+    private function primeSyncStubsOn(BrokerConnectionRepository $repo): void
+    {
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+        $this->openSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+        $this->orderSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
+    }
+
+    private function makeServiceWithRepo(
+        BrokerConnectionRepository $repo,
+        ?ConnectorInterface $ctrader = null,
+    ): BrokerSyncService {
+        return new BrokerSyncService(
+            $repo,
+            $this->syncLogRepo,
+            $this->importService,
+            new RowGroupingService(),
+            $this->crypto,
+            $ctrader ?? new TimezoneSpyConnector([]),
+            $this->metaApiConnector,
+            $this->ouinexConnector,
+            $this->bingxConnector,
+            $this->openSyncService,
+            $this->orderSyncService,
+        );
     }
 
     /** The collaborators a sync touches beyond the connector under test. */

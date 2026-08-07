@@ -93,6 +93,20 @@ async function doSync() {
   syncResult.value = null
   try {
     const resp = await brokerSyncService.sync(connection.value.id)
+
+    // The scheduled run — or another tab — already holds this connection. No
+    // work was done, so no import recap: "success, 0 positions" would read as
+    // "the broker had nothing new", which is a different thing entirely.
+    if (resp.data?.status === 'SKIPPED') {
+      toast.add({
+        severity: 'info',
+        summary: t('broker.sync_already_running'),
+        detail: t('broker.sync_already_running_detail'),
+        life: 5000,
+      })
+      return
+    }
+
     syncResult.value = resp.data
     toast.add({ severity: 'success', summary: t('broker.sync_success'), detail: t('broker.sync_detail', { count: resp.data.imported_positions }), life: 5000 })
     emit('synced')

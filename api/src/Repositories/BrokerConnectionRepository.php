@@ -108,6 +108,53 @@ class BrokerConnectionRepository
         return $stmt->fetchAll();
     }
 
+    /**
+     * Reserve a connection for a sync run. Returns false when another run
+     * already holds it.
+     *
+     * The WHERE clause IS the lock: a single conditional UPDATE, so two callers
+     * racing on the same connection can never both come back with true. No
+     * SELECT-then-UPDATE, which would leave a window between the read and the
+     * write. rowCount() is the number of rows actually changed — PDO is not
+     * configured with MYSQL_ATTR_FOUND_ROWS.
+     *
+     * A claim older than $staleAfterSeconds is taken over: a worker killed
+     * mid-run must not lock its connection forever. Keep the window generous
+     * enough that a slow-but-alive sync is never doubled.
+     */
+    public function claimForSync(int $id, int $staleAfterSeconds): bool
+    {
+        // Clamped to [1, 86400] and injected as an integer literal: MariaDB does
+        // not accept a bound parameter inside an INTERVAL expression (same
+        // constraint as findDueForAutoSync).
+        if ($staleAfterSeconds < 1) {
+            $staleAfterSeconds = 1;
+        } elseif ($staleAfterSeconds > 86400) {
+            $staleAfterSeconds = 86400;
+        }
+
+        // UTC_TIMESTAMP() on both sides, and syncing_since is a DATETIME, so the
+        // comparison never depends on the MySQL session timezone.
+        $stmt = $this->pdo->prepare(
+            "UPDATE broker_connections
+             SET syncing_since = UTC_TIMESTAMP()
+             WHERE id = :id
+               AND (syncing_since IS NULL
+                    OR syncing_since < UTC_TIMESTAMP() - INTERVAL {$staleAfterSeconds} SECOND)"
+        );
+        $stmt->execute(['id' => $id]);
+
+        return $stmt->rowCount() === 1;
+    }
+
+    /** Release a reservation taken by claimForSync(). */
+    public function releaseSync(int $id): void
+    {
+        $this->pdo->prepare(
+            "UPDATE broker_connections SET syncing_since = NULL WHERE id = :id"
+        )->execute(['id' => $id]);
+    }
+
     public function incrementFailures(int $id): void
     {
         $this->pdo->prepare(

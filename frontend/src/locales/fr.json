@@ -947,6 +947,8 @@
     "sync_failed": "Erreur de synchronisation",
     "sync_detail": "{count} position(s) importée(s)",
     "sync_imported": "{positions} importée(s), {skipped} doublon(s) ignoré(s)",
+    "sync_already_running": "Synchronisation déjà en cours",
+    "sync_already_running_detail": "Une synchronisation de ce compte est déjà en cours. Réessayez dans un instant.",
     "last_sync": "Dernière sync",
     "history": "Historique",
     "sync_history": "Historique des synchronisations",

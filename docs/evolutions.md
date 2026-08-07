@@ -866,21 +866,20 @@ Le point était déjà pressenti dans l'entrée « Connecteurs broker — valida
 
 ---
 
-## Synchro broker — rien n'empêche une manuelle et une planifiée de se croiser
+## Positions — aucune contrainte d'unicité sur `external_id`
 
-**Contexte** : repéré sur question de l'utilisateur (2026-08-06), en documentant la fréquence de synchro. Pré-existant.
+**Contexte** : repéré le 2026-08-06 en cherchant ce qui rattrape une course entre
+deux synchros. Le volet applicatif est traité (réservation par connexion,
+[89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md)) ; le
+volet base reste ouvert.
 
-`cli/sync-brokers.php` pose un `flock` : deux runs planifiés ne se superposent jamais, et toutes les connexions dues — tous utilisateurs confondus — sont traitées séquentiellement dans un seul processus. **Mais ce verrou ne couvre que le scheduler.** Une synchro manuelle (`POST /broker/connections/{id}/sync`) est une requête HTTP indépendante : elle peut tourner en même temps que le run planifié, sur la même connexion.
+`ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. **`positions.external_id` n'a ni index ni contrainte d'unicité** : si deux imports concurrents lisent le même état — la réservation couvre les synchros broker, pas un import CSV lancé en parallèle — rien au niveau base ne rattrape la course. L'index manquant coûte aussi en lecture sur `findOpenByExternalIdPrefixInAccount`.
 
-Or `ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. Deux synchros concurrentes lisent donc le même état et peuvent insérer la même position deux fois. Et **`positions.external_id` n'a ni index ni contrainte d'unicité** : rien au niveau base ne rattrape la course.
+**À faire** : un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
 
-**À faire** : deux volets indépendants.
-- Un verrou par connexion (`GET_LOCK('broker_sync_<id>')` MySQL, ou une colonne `syncing_since` avec expiration) autour de `BrokerSyncService::sync()`.
-- Un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
+**Fichiers** : `api/database/schema.sql`, nouvelle migration.
 
-**Fichiers** : `api/src/Services/Broker/BrokerSyncService.php`, `api/database/schema.sql`, nouvelle migration.
-
-**Repéré le** : 2026-08-06. **Priorité** : moyenne — fenêtre étroite, mais c'est le mode d'échec qu'on vient de corriger côté logique.
+**Repéré le** : 2026-08-06. **Priorité** : moyenne — la fenêtre restante est étroite, mais l'index a aussi un intérêt de performance.
 
 ---
 
