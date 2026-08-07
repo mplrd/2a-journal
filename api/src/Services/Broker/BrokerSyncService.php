@@ -41,9 +41,34 @@ class BrokerSyncService
     ) {}
 
     /**
-     * Synchronize trades from broker API.
+     * Queue a sync instead of running it inside the HTTP request.
+     *
+     * A cTrader pass opens four to five WebSocket sessions in a row: run inline,
+     * the user waits in front of a spinner and a proxy timeout can cut it in
+     * half, leaving them with no idea whether anything was imported. Flagging
+     * the connection hands the work to the scheduler, which ticks every minute.
+     *
+     * Deliberately still queued when a run is already in flight: that run took
+     * its reservation before this flag was set, so it will not consume it, and
+     * the user gets the fresh pass they asked for on the following tick.
      */
-    public function sync(int $connectionId, int $userId): array
+    public function requestSync(int $connectionId, int $userId): array
+    {
+        $connection = $this->requireSyncableConnection($connectionId, $userId);
+
+        $this->connectionRepo->requestSync($connectionId);
+
+        return [
+            'status' => SyncStatus::QUEUED->value,
+            'syncing' => ($connection['syncing_since'] ?? null) !== null,
+        ];
+    }
+
+    /**
+     * The connection, or the reason it cannot be synced. Shared by the queueing
+     * path and the run itself so the two never diverge on what is syncable.
+     */
+    private function requireSyncableConnection(int $connectionId, int $userId): array
     {
         $connection = $this->connectionRepo->findById($connectionId);
         if (!$connection) {
@@ -57,6 +82,16 @@ class BrokerSyncService
         if ($connection['status'] !== ConnectionStatus::ACTIVE->value) {
             throw new ValidationException('broker.error.connection_not_active', 'status');
         }
+
+        return $connection;
+    }
+
+    /**
+     * Synchronize trades from broker API.
+     */
+    public function sync(int $connectionId, int $userId): array
+    {
+        $connection = $this->requireSyncableConnection($connectionId, $userId);
 
         // One sync at a time per connection. Nothing else serialises the manual
         // click against the scheduled run, and two concurrent runs on the same

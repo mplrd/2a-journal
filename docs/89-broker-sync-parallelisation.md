@@ -1,11 +1,10 @@
 # Étape 89 — Parallélisation des synchronisations broker
 
-> Cette doc couvre la refonte de l'ordonnancement des synchros broker.
-> **Lot A — réservation atomique** et **lot B — parallélisation du cron** sont
-> livrés ; le lot C (bouton non bloquant) viendra s'ajouter ici.
+> Refonte de l'ordonnancement des synchros broker, en trois lots.
 >
 > - [Lot A — la réservation](#lot-a--la-réservation)
 > - [Lot B — le superviseur et ses workers](#lot-b--le-superviseur-et-ses-workers)
+> - [Lot C — le bouton non bloquant](#lot-c--le-bouton-non-bloquant)
 
 ## Lot A — la réservation
 
@@ -276,8 +275,104 @@ liste, boucle quand l'index dépasse la taille, et ne change rien sans index.
 lance bien le scheduler complet — c'est le seul test qui monte le graphe de
 dépendances lourd, puisque le superviseur ne le monte plus.
 
-## Limite connue
+---
 
-La parallélisation raccourcit le tour ; elle ne rend pas la synchro **manuelle**
-non bloquante. Un clic reste une requête HTTP qui attend les quatre à cinq
-sessions WebSocket — c'est l'objet du lot C, que `sync_requested_at` attend déjà.
+## Lot C — le bouton non bloquant
+
+### Le problème
+
+`POST /broker/connections/{id}/sync` exécutait la synchro **dans la requête
+HTTP**. Une passe cTrader ouvre quatre à cinq sessions WebSocket successives
+(deals, positions ouvertes, ordres, ordres clos, solde) : l'utilisateur attend
+devant son écran, et un timeout de proxy peut couper la réponse au milieu — il
+se retrouve alors sans savoir si quoi que ce soit a été importé.
+
+### La forme retenue
+
+L'endpoint ne synchronise plus, il **demande** :
+
+```
+POST /broker/connections/{id}/sync
+   → sync_requested_at = UTC_TIMESTAMP()
+   → 202 {"status":"QUEUED","syncing":false}      (immédiat)
+
+… ≤ 60 s plus tard, un tick du scheduler …
+   → la connexion est due (sync_requested_at IS NOT NULL), et prioritaire
+   → claimForSync() prend la réservation ET consomme la demande, même UPDATE
+   → la synchro tourne dans le worker
+```
+
+**La demande est consommée par la réservation, pas en fin de run.** C'est le même
+`UPDATE` : il n'existe donc aucune fenêtre où deux workers pourraient honorer la
+même demande. Corollaire utile : un clic qui arrive **pendant** un run n'est pas
+avalé — ce run a pris sa réservation avant que le drapeau n'existe, donc la
+demande survit jusqu'au tick suivant et l'utilisateur obtient bien la passe
+fraîche qu'il a demandée.
+
+**Les demandes passent devant.** `findDueForAutoSync` trie
+`sync_requested_at IS NOT NULL DESC` en premier : quelqu'un regarde un spinner
+pour celle-là, les autres sont des rafraîchissements de fond que personne
+n'attend.
+
+**Une connexion non ACTIVE ne se réveille pas par le bouton** : le filtre
+`status = ACTIVE` reste en tête de la clause, et `requestSync()` refuse déjà en
+amont (403 pour une connexion d'autrui, 422 si elle n'est pas active).
+
+### Côté IHM
+
+La réponse au clic ne peut plus rien dire de l'import — il n'a pas eu lieu. Le
+panneau surveille donc **l'état de la connexion** :
+
+1. Clic → toast info « Synchronisation demandée ». Si un run est déjà en vol, le
+   détail le dit plutôt que de laisser croire à un doublon.
+2. Un badge affiche « En attente » (`sync_requested_at`) puis « Synchronisation
+   en cours » (`syncing_since`).
+3. Sondage toutes les **4 s**, en mode silencieux — un rechargement classique
+   basculerait le panneau sur son écran « chargement » à chaque tour.
+4. Les deux champs repassent à `null` → le run est fini. Le résultat se lit sur
+   `last_sync_status`, et les compteurs sur le dernier `sync_log` : c'est ce qui
+   restitue le récap « 3 importées, 1 doublon » que la réponse portait avant.
+5. Au bout de **5 minutes**, on arrête de sonder et on le dit. Le scheduler peut
+   être coupé ; un spinner qui ne se résout jamais est pire qu'un aveu.
+
+Le sondage est arrêté au démontage du composant — sans ça, quitter la page
+laisserait une requête toutes les 4 s tourner dans le vide.
+
+`SyncStatus::QUEUED` complète `SKIPPED` : même statut d'appel, jamais persisté.
+
+### Fichiers touchés (lot C)
+
+| Fichier | Rôle |
+|---|---|
+| `api/src/Repositories/BrokerConnectionRepository.php` | `requestSync()`, demandes prises en compte et prioritaires dans `findDue`/`countDue`, consommation dans `claimForSync`. |
+| `api/src/Services/Broker/BrokerSyncService.php` | `requestSync()` + `requireSyncableConnection()` partagé avec le run. |
+| `api/src/Controllers/BrokerSyncController.php` | 202 au lieu d'attendre la synchro. |
+| `api/src/Enums/SyncStatus.php` | Cas `QUEUED`. |
+| `frontend/src/components/broker/BrokerConnectionPanel.vue` | Sondage, badges d'état, récap reconstruit depuis le dernier log. |
+| `frontend/src/locales/{fr,en}.json` | `broker.sync_queued{,_detail}`, `sync_pending`, `sync_still_running{,_detail}`. |
+
+### Tests (lot C)
+
+`BrokerConnectionRepositoryTest` : une connexion demandée est due même synchro-
+nisée à l'instant, elle passe devant, une demande sur connexion révoquée reste
+sans effet, la réservation consomme la demande, et une réservation **refusée** la
+laisse intacte (le clic doit survivre au tick suivant).
+
+`BrokerSyncServiceTest` : la demande ne touche pas le broker et n'ouvre aucun
+log, elle reste acceptée pendant un run en cours, et les refus d'accès valent
+pour elle comme pour le run.
+
+`BrokerConnectionPanel.spec.js` (timers simulés) : rien n'est affirmé sur
+l'import au moment du clic, l'état d'attente est affiché, le récap n'arrive
+qu'une fois le run terminé, un échec remonte le message du broker, le sondage
+s'arrête au bout de 5 minutes et au démontage.
+
+## Limites connues
+
+- Le sondage est un `setTimeout` par panneau ouvert : suffisant à cette échelle,
+  mais c'est un websocket ou un SSE qu'il faudrait pour suivre plusieurs comptes
+  en même temps sans multiplier les requêtes.
+- La parallélisation ne change **pas** le nombre de requêtes envoyées à un broker
+  sur la journée, mais le bouton, lui, ajoute un cycle hors intervalle à chaque
+  clic. À garder en tête vu les budgets de requêtes des prop firms (cf. l'entrée
+  FTMO de `docs/specs/trading-journal-evolutions.md`).

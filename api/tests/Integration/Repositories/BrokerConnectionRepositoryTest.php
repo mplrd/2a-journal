@@ -308,4 +308,83 @@ class BrokerConnectionRepositoryTest extends TestCase
     {
         $this->assertFalse($this->repo->claimForSync(999999, 900));
     }
+
+    // ── requestSync (manual sync, picked up by the scheduler) ────
+
+    public function testRequestSyncStampsTheRequest(): void
+    {
+        $conn = $this->createConnection();
+
+        $this->repo->requestSync((int) $conn['id']);
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNotNull($row['sync_requested_at']);
+    }
+
+    public function testARequestedConnectionIsDueEvenIfSyncedJustNow(): void
+    {
+        // The whole point of the button: not waiting for the interval.
+        $conn = $this->createConnection();
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s', time() - 60));
+        $this->assertCount(0, $this->repo->findDueForAutoSync(15));
+
+        $this->repo->requestSync((int) $conn['id']);
+
+        $this->assertCount(1, $this->repo->findDueForAutoSync(15));
+        $this->assertSame(1, $this->repo->countDueForAutoSync(15));
+    }
+
+    public function testRequestedConnectionsComeFirst(): void
+    {
+        // Someone is watching a spinner for this one; the others are background
+        // refreshes nobody is waiting on.
+        $this->createConnection();
+        $this->createConnection();
+        $requested = $this->createConnection();
+        $this->setLastSyncAt((int) $requested['id'], gmdate('Y-m-d H:i:s', time() - 60));
+        $this->repo->requestSync((int) $requested['id']);
+
+        $due = $this->repo->findDueForAutoSync(15);
+
+        $this->assertSame((int) $requested['id'], (int) $due[0]['id']);
+        $this->assertCount(3, $due);
+    }
+
+    public function testARequestOnANonActiveConnectionIsIgnored(): void
+    {
+        // A revoked connection must not come back to life through the button.
+        $conn = $this->createConnection(['status' => ConnectionStatus::REVOKED->value]);
+        $this->repo->requestSync((int) $conn['id']);
+
+        $this->assertCount(0, $this->repo->findDueForAutoSync(15));
+        $this->assertSame(0, $this->repo->countDueForAutoSync(15));
+    }
+
+    public function testClaimingAConnectionConsumesItsPendingRequest(): void
+    {
+        // Same UPDATE as the reservation: no window in which the request could
+        // be honoured twice, and a click landing mid-run stays pending for the
+        // next tick.
+        $conn = $this->createConnection();
+        $this->repo->requestSync((int) $conn['id']);
+
+        $this->repo->claimForSync((int) $conn['id'], 900);
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNull($row['sync_requested_at']);
+        $this->assertNotNull($row['syncing_since']);
+    }
+
+    public function testARefusedClaimLeavesThePendingRequestAlone(): void
+    {
+        $conn = $this->createConnection();
+        $this->repo->claimForSync((int) $conn['id'], 900);
+        $this->repo->requestSync((int) $conn['id']);
+
+        // Another worker tries and loses.
+        $this->assertFalse($this->repo->claimForSync((int) $conn['id'], 900));
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNotNull($row['sync_requested_at'], 'The click must survive to the next tick');
+    }
 }

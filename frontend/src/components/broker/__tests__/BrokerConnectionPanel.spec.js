@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import PrimeVue from 'primevue/config'
@@ -12,6 +12,7 @@ vi.mock('@/services/brokerSync', () => ({
     getConnection: vi.fn(),
     sync: vi.fn(),
     deleteConnection: vi.fn(),
+    getSyncLogs: vi.fn(),
   },
 }))
 
@@ -138,38 +139,162 @@ describe('BrokerConnectionPanel', () => {
     expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(true)
   })
 
-  it('says the sync is already running instead of claiming success on zero import', async () => {
-    // The scheduled run holds the connection: nothing was imported, and a
-    // "success, 0 positions" toast would read as "the broker sent nothing".
-    brokerSyncService.getConnection.mockResolvedValue({ data: activeConnection })
-    brokerSyncService.sync.mockResolvedValue({
-      data: { status: 'SKIPPED', imported_positions: 0, skipped_duplicates: 0 },
+  describe('non-blocking sync', () => {
+    const queued = { ...activeConnection, sync_requested_at: '2026-08-07 09:00:00', syncing_since: null }
+    const running = { ...activeConnection, sync_requested_at: null, syncing_since: '2026-08-07 09:00:05' }
+    const done = {
+      ...activeConnection,
+      sync_requested_at: null,
+      syncing_since: null,
+      last_sync_status: 'SUCCESS',
+      last_sync_at: '2026-08-07 09:00:40',
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      brokerSyncService.sync.mockResolvedValue({ data: { status: 'QUEUED', syncing: false } })
+      brokerSyncService.getSyncLogs.mockResolvedValue({
+        data: [{ status: 'SUCCESS', deals_fetched: 9, deals_imported: 3, deals_skipped: 1 }],
+      })
     })
-    const wrapper = createWrapper()
-    await flushPromises()
 
-    await button(wrapper, 'broker-sync').trigger('click')
-    await flushPromises()
-
-    expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(false)
-    const info = toastAdd.mock.calls.find(([c]) => c.severity === 'info')
-    expect(info).toBeTruthy()
-    expect(info[0].summary).toBe(fr.broker.sync_already_running)
-    // No import happened, so no import recap panel either.
-    expect(wrapper.find('.message').exists()).toBe(false)
-  })
-
-  it('reports the import recap on a sync that actually ran', async () => {
-    brokerSyncService.getConnection.mockResolvedValue({ data: activeConnection })
-    brokerSyncService.sync.mockResolvedValue({
-      data: { status: 'SUCCESS', imported_positions: 3, skipped_duplicates: 1 },
+    afterEach(() => {
+      vi.useRealTimers()
     })
-    const wrapper = createWrapper()
-    await flushPromises()
 
-    await button(wrapper, 'broker-sync').trigger('click')
-    await flushPromises()
+    /** Hands back each connection state in turn, repeating the last one. */
+    function connectionStates(...states) {
+      let call = 0
+      brokerSyncService.getConnection.mockImplementation(() =>
+        Promise.resolve({ data: states[Math.min(call++, states.length - 1)] }),
+      )
+    }
 
-    expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(true)
+    it('queues the run instead of holding the request open', async () => {
+      // A cTrader pass opens four to five WebSocket sessions: inline, the user
+      // waits, and a proxy timeout can cut the response mid-import.
+      connectionStates(activeConnection, queued)
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+
+      const info = toastAdd.mock.calls.find(([c]) => c.severity === 'info')
+      expect(info[0].summary).toBe(fr.broker.sync_queued)
+      // Nothing is known about the import yet — claiming success here would be
+      // a lie, and so would a recap.
+      expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(false)
+      expect(wrapper.find('.message').exists()).toBe(false)
+    })
+
+    it('says the new request lines up behind a run already in flight', async () => {
+      // Queued all the same: the running pass took its reservation before this
+      // request existed, so it will not swallow it.
+      connectionStates(activeConnection, running)
+      brokerSyncService.sync.mockResolvedValue({ data: { status: 'QUEUED', syncing: true } })
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+
+      const info = toastAdd.mock.calls.find(([c]) => c.severity === 'info')
+      expect(info[0].detail).toBe(fr.broker.sync_already_running_detail)
+    })
+
+    it('shows the run is pending while the scheduler has not picked it up', async () => {
+      connectionStates(activeConnection, queued)
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain(fr.broker.sync_pending)
+    })
+
+    it('reports the import once the scheduler has finished the run', async () => {
+      connectionStates(activeConnection, queued, running, done)
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+
+      // Two ticks: still running, then done.
+      await vi.advanceTimersByTimeAsync(10_000)
+      await flushPromises()
+
+      expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(true)
+      expect(wrapper.text()).toContain('3')
+      expect(wrapper.emitted('synced')).toBeTruthy()
+    })
+
+    it('surfaces the broker error when the queued run failed', async () => {
+      const failed = {
+        ...done,
+        last_sync_status: 'FAILED',
+        last_sync_error: 'cTrader API error: CH_CLIENT_AUTH_FAILURE',
+      }
+      connectionStates(activeConnection, queued, failed)
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await flushPromises()
+
+      const error = toastAdd.mock.calls.find(([c]) => c.severity === 'error')
+      expect(error).toBeTruthy()
+      expect(error[0].detail).toContain('CH_CLIENT_AUTH_FAILURE')
+      expect(toastAdd.mock.calls.some(([c]) => c.severity === 'success')).toBe(false)
+    })
+
+    it('gives up polling instead of watching forever', async () => {
+      // The scheduler may be off, or the connection wedged: a spinner that
+      // never resolves is worse than an honest "still going".
+      connectionStates(activeConnection, running)
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+      await flushPromises()
+
+      expect(toastAdd.mock.calls.some(([c]) => c.severity === 'warn')).toBe(true)
+      const callsAfterGivingUp = brokerSyncService.getConnection.mock.calls.length
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(brokerSyncService.getConnection.mock.calls.length).toBe(callsAfterGivingUp)
+    })
+
+    it('stops polling when the panel goes away', async () => {
+      connectionStates(activeConnection, running)
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+
+      wrapper.unmount()
+      const callsAtUnmount = brokerSyncService.getConnection.mock.calls.length
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(brokerSyncService.getConnection.mock.calls.length).toBe(callsAtUnmount)
+    })
+
+    it('reports the refusal when the connection cannot be synced', async () => {
+      connectionStates(activeConnection)
+      brokerSyncService.sync.mockRejectedValue({ messageKey: 'broker.error.connection_not_active' })
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-sync').trigger('click')
+      await flushPromises()
+
+      expect(toastAdd.mock.calls.some(([c]) => c.severity === 'error')).toBe(true)
+    })
   })
 })

@@ -548,6 +548,65 @@ class BrokerSyncServiceTest extends TestCase
         $this->makeServiceWithRepo($repo, $connector)->sync(1, 10);
     }
 
+    // ── requestSync (the button, non-blocking) ───────────────────────
+
+    public function testRequestSyncFlagsTheConnectionWithoutTouchingTheBroker(): void
+    {
+        // A cTrader sync opens five WebSocket sessions in a row. Doing that
+        // inside the HTTP request means the user waits, and a proxy timeout can
+        // cut it in half.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->expects($this->once())->method('requestSync')->with(1);
+        $repo->expects($this->never())->method('claimForSync');
+        $this->syncLogRepo->expects($this->never())->method('create');
+
+        $result = $this->makeServiceWithRepo($repo)->requestSync(1, 10);
+
+        $this->assertSame(SyncStatus::QUEUED->value, $result['status']);
+    }
+
+    public function testRequestSyncReportsAnAlreadyRunningSync(): void
+    {
+        $connection = $this->makeConnection('CTRADER');
+        $connection['syncing_since'] = '2026-08-07 09:00:00';
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($connection);
+
+        // Still queued: the user wants a fresh pass, and the running one already
+        // took its reservation so it will not swallow this request.
+        $repo->expects($this->once())->method('requestSync')->with(1);
+
+        $result = $this->makeServiceWithRepo($repo)->requestSync(1, 10);
+
+        $this->assertSame(SyncStatus::QUEUED->value, $result['status']);
+        $this->assertTrue($result['syncing']);
+    }
+
+    public function testRequestSyncRejectsAnotherUsersConnection(): void
+    {
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->expects($this->never())->method('requestSync');
+
+        $this->expectException(\App\Exceptions\ForbiddenException::class);
+
+        $this->makeServiceWithRepo($repo)->requestSync(1, 999);
+    }
+
+    public function testRequestSyncRejectsANonActiveConnection(): void
+    {
+        $connection = $this->makeConnection('CTRADER');
+        $connection['status'] = ConnectionStatus::ERROR->value;
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($connection);
+        $repo->expects($this->never())->method('requestSync');
+
+        $this->expectException(\App\Exceptions\ValidationException::class);
+
+        $this->makeServiceWithRepo($repo)->requestSync(1, 10);
+    }
+
     /** primeSyncStubs against a bespoke repository mock. */
     private function primeSyncStubsOn(BrokerConnectionRepository $repo): void
     {

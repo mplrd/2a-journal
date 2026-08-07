@@ -16,4 +16,11 @@ enum SyncStatus: string
      * — ne pas l'écrire en base sans étendre l'ENUM de `sync_logs.status`.
      */
     case SKIPPED = 'SKIPPED';
+
+    /**
+     * Une synchro demandée depuis l'IHM et pas encore exécutée : le scheduler
+     * la reprend au prochain tick. Comme SKIPPED, issue d'appel uniquement,
+     * jamais persistée.
+     */
+    case QUEUED = 'QUEUED';
 }

@@ -883,19 +883,17 @@ volet base reste ouvert.
 
 ---
 
-## Synchro broker manuelle — bloquante côté utilisateur
+## Suivi d'une synchro broker — sondage HTTP plutôt que push
 
-**Contexte** : repéré sur question de l'utilisateur (2026-08-06).
+**Contexte** : issu du lot C de [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md) (2026-08-07), qui a rendu le bouton non bloquant. L'entrée d'origine — « synchro manuelle bloquante » — est traitée ; ce qui suit est ce que la solution laisse ouvert.
 
-`POST /broker/connections/{id}/sync` s'exécute dans la requête HTTP. Une synchro cTrader ouvre quatre à cinq sessions WebSocket successives (deals, positions ouvertes, ordres, ordres clos, solde) : l'utilisateur attend devant son écran, et un timeout de proxy peut couper au milieu.
+Le panneau broker suit l'avancement en interrogeant `GET /broker/connections` toutes les 4 s pendant 5 minutes max. Suffisant pour un compte, mais un utilisateur qui ouvre plusieurs comptes multiplie les requêtes, et la fin du run est détectée avec jusqu'à 4 s de retard.
 
-Le travail sait déjà tourner détaché — c'est ce que fait le scheduler. Ce qui manque est la mise en file et le suivi d'état côté IHM.
+**À faire, le jour où ça pèse** : un canal poussé (SSE, ou websocket si un autre besoin le justifie) pour l'état de synchro, au lieu du sondage. À évaluer seulement si le nombre de comptes suivis simultanément le justifie — le sondage est volontairement le choix le plus simple qui marche.
 
-**À faire** : marquer la connexion « synchronisation en cours » et rendre la main immédiatement, le run étant repris par le worker. Se combine naturellement avec le verrou par connexion ci-dessus. Prévoir l'affichage d'un état et d'une erreur éventuelle sans rechargement.
+**Fichiers** : `frontend/src/components/broker/BrokerConnectionPanel.vue`, `api/src/Controllers/BrokerSyncController.php`.
 
-**Fichiers** : `api/src/Controllers/BrokerSyncController.php`, `api/cli/sync-brokers.php`, `frontend/src/components/broker/`.
-
-**Repéré le** : 2026-08-06. **Priorité** : moyenne — confort, sauf sur un compte à gros historique où le timeout devient réel.
+**Repéré le** : 2026-08-07. **Priorité** : basse — pas de gêne à l'échelle actuelle.
 
 ---
 

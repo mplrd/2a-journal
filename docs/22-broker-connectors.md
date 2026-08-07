@@ -281,7 +281,7 @@ Pas de clés API partagées au niveau de l'application. Les credentials sont sto
 | PUT | `/broker/connections/{id}` | Reconfigurer les identifiants sur place (voir `85-broker-connection-reconfigure.md`) |
 | POST | `/broker/ctrader/accounts` | Lister les comptes cTrader d'un access token (voir `86-ctrader-account-discovery.md`) |
 | GET | `/broker/connections?account_id=X` | Statut connexion |
-| POST | `/broker/connections/{id}/sync` | Déclencher sync |
+| POST | `/broker/connections/{id}/sync` | **Demander** une sync. Réponse **202** immédiate, la synchro est exécutée par le scheduler au tick suivant (< 1 min). Voir `89-broker-sync-parallelisation.md`. |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |
 | GET | `/broker/connections/{id}/logs` | Historique syncs |
 
