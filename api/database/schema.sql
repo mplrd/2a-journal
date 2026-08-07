@@ -445,11 +445,17 @@ CREATE TABLE IF NOT EXISTS broker_connections (
     last_sync_error TEXT NULL DEFAULT NULL,
     consecutive_failures INT UNSIGNED NOT NULL DEFAULT 0,
     sync_cursor VARCHAR(255) NULL DEFAULT NULL,
+    -- Réservation de synchro : un UPDATE conditionnel sur syncing_since sert de
+    -- verrou (cf. migration 035). DATETIME, pas TIMESTAMP : comparé tel quel à
+    -- UTC_TIMESTAMP(), sans conversion de fuseau de session.
+    syncing_since DATETIME NULL DEFAULT NULL,
+    sync_requested_at DATETIME NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     UNIQUE KEY uk_broker_conn_account (account_id),
     KEY idx_broker_conn_user (user_id),
+    KEY idx_broker_conn_syncing (syncing_since),
     CONSTRAINT fk_broker_conn_user FOREIGN KEY (user_id)
         REFERENCES users (id) ON DELETE CASCADE,
     CONSTRAINT fk_broker_conn_account FOREIGN KEY (account_id)

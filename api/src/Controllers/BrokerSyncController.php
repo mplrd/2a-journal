@@ -84,16 +84,19 @@ class BrokerSyncController extends Controller
     }
 
     /**
-     * Trigger a sync for a connection.
+     * Ask for a sync. Returns 202 immediately: the scheduler picks the request
+     * up on its next tick, under a minute away. Running it inline made the user
+     * wait through four to five WebSocket sessions, with a proxy timeout able to
+     * cut the response before the import finished.
      */
     public function sync(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');
         $connectionId = (int) $request->getRouteParam('id');
 
-        $result = $this->syncService->sync($connectionId, $userId);
+        $result = $this->syncService->requestSync($connectionId, $userId);
 
-        return $this->jsonSuccess($result);
+        return $this->jsonSuccess($result, null, 202);
     }
 
     /**

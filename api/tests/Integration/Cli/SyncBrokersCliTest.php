@@ -44,7 +44,7 @@ class SyncBrokersCliTest extends TestCase
         $this->pdo->exec('DELETE FROM broker_connections');
     }
 
-    private function runCli(array $envOverrides = []): array
+    private function runCli(array $envOverrides = [], array $args = []): array
     {
         $cli = realpath(__DIR__ . '/../../../cli/sync-brokers.php');
         $this->assertNotFalse($cli, 'CLI script path must resolve');
@@ -58,6 +58,9 @@ class SyncBrokersCliTest extends TestCase
             : (empty($envParts) ? '' : implode(' ', $envParts) . ' ');
 
         $cmd = $envPrefix . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($cli);
+        foreach ($args as $arg) {
+            $cmd .= ' ' . escapeshellarg($arg);
+        }
 
         $descriptor = [
             1 => ['pipe', 'w'],
@@ -96,5 +99,33 @@ class SyncBrokersCliTest extends TestCase
 
         $payload = json_decode($result['stdout'], true);
         $this->assertTrue($payload['skipped']);
+    }
+
+    public function testDefaultInvocationIsTheSupervisor(): void
+    {
+        $result = $this->runCli(['BROKER_AUTO_SYNC_ENABLED' => 'true']);
+
+        $payload = json_decode($result['stdout'], true);
+        $this->assertSame('supervisor', $payload['role']);
+        // Nothing due: booting children to discover that would cost more than
+        // the work itself.
+        $this->assertSame(0, $payload['workers']);
+        $this->assertArrayHasKey('duration_ms', $payload);
+    }
+
+    public function testWorkerModeRunsTheSchedulerItself(): void
+    {
+        // Same wiring the supervisor spawns. A regression here (missing dep,
+        // typo in a config path) would only show up in production otherwise,
+        // since the supervisor never boots the heavy graph.
+        $result = $this->runCli(['BROKER_AUTO_SYNC_ENABLED' => 'true'], ['--worker', '--worker-index=1']);
+
+        $this->assertSame(0, $result['exit'], 'Expected exit 0, stderr: ' . $result['stderr']);
+
+        $payload = json_decode($result['stdout'], true);
+        $this->assertIsArray($payload, 'Stdout must be valid JSON: ' . $result['stdout']);
+        $this->assertSame('worker', $payload['role']);
+        $this->assertSame(1, $payload['worker_index']);
+        $this->assertSame(0, $payload['processed']);
     }
 }

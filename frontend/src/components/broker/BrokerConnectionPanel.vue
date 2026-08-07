@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import { brokerSyncService } from '@/services/brokerSync'
@@ -75,15 +75,42 @@ onMounted(async () => {
   await loadConnection()
 })
 
-async function loadConnection() {
-  loading.value = true
+onUnmounted(stopPolling)
+
+/**
+ * `silent` skips the loading flag: a poll must not blank the panel every few
+ * seconds while the user is watching the run.
+ */
+async function loadConnection({ silent = false } = {}) {
+  if (!silent) loading.value = true
   try {
     const resp = await brokerSyncService.getConnection(props.account.id)
     connection.value = resp.data
   } catch {
-    connection.value = null
+    if (!silent) connection.value = null
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
+  }
+}
+
+/**
+ * The sync is queued server-side and run by the scheduler, which ticks every
+ * minute. Nothing is known about the import when the request returns, so the
+ * panel watches the connection's state instead of the response.
+ */
+const POLL_INTERVAL_MS = 4000
+/** Past this, stop watching and say so — the scheduler may simply be off. */
+const POLL_TIMEOUT_MS = 5 * 60 * 1000
+
+let pollTimer = null
+
+const syncPending = computed(() => Boolean(connection.value?.sync_requested_at))
+const syncRunning = computed(() => Boolean(connection.value?.syncing_since))
+
+function stopPolling() {
+  if (pollTimer) {
+    clearTimeout(pollTimer)
+    pollTimer = null
   }
 }
 
@@ -93,14 +120,85 @@ async function doSync() {
   syncResult.value = null
   try {
     const resp = await brokerSyncService.sync(connection.value.id)
-    syncResult.value = resp.data
-    toast.add({ severity: 'success', summary: t('broker.sync_success'), detail: t('broker.sync_detail', { count: resp.data.imported_positions }), life: 5000 })
-    emit('synced')
-    await loadConnection()
+    toast.add({
+      severity: 'info',
+      summary: t('broker.sync_queued'),
+      // A run already in flight took its reservation before this request was
+      // recorded, so it will not swallow it — this one runs right after.
+      detail: resp.data?.syncing ? t('broker.sync_already_running_detail') : t('broker.sync_queued_detail'),
+      life: 4000,
+    })
+    await loadConnection({ silent: true })
+    schedulePoll(Date.now() + POLL_TIMEOUT_MS)
   } catch (err) {
-    toast.add({ severity: 'error', summary: t('broker.sync_failed'), detail: err.messageKey ? t(err.messageKey) : err.message, life: 5000 })
-  } finally {
     syncing.value = false
+    toast.add({ severity: 'error', summary: t('broker.sync_failed'), detail: err.messageKey ? t(err.messageKey) : err.message, life: 5000 })
+  }
+}
+
+function schedulePoll(deadline) {
+  stopPolling()
+  pollTimer = setTimeout(() => pollOnce(deadline), POLL_INTERVAL_MS)
+}
+
+async function pollOnce(deadline) {
+  pollTimer = null
+  await loadConnection({ silent: true })
+
+  if (syncPending.value || syncRunning.value) {
+    if (Date.now() >= deadline) {
+      syncing.value = false
+      toast.add({ severity: 'warn', summary: t('broker.sync_still_running'), detail: t('broker.sync_still_running_detail'), life: 8000 })
+      return
+    }
+    schedulePoll(deadline)
+    return
+  }
+
+  await reportFinishedSync()
+}
+
+/**
+ * The run is over. Its outcome lives on the connection, and the counts on the
+ * sync log it just wrote — the response to the click could not carry either.
+ */
+async function reportFinishedSync() {
+  syncing.value = false
+  emit('synced')
+
+  if (connection.value?.last_sync_status === 'FAILED') {
+    toast.add({
+      severity: 'error',
+      summary: t('broker.sync_failed'),
+      detail: connection.value.last_sync_error || t('common.error'),
+      life: 8000,
+    })
+    return
+  }
+
+  const log = await lastSyncLog()
+  if (log) {
+    syncResult.value = {
+      imported_positions: log.deals_imported ?? 0,
+      skipped_duplicates: log.deals_skipped ?? 0,
+    }
+  }
+
+  toast.add({
+    severity: 'success',
+    summary: t('broker.sync_success'),
+    detail: t('broker.sync_detail', { count: syncResult.value?.imported_positions ?? 0 }),
+    life: 5000,
+  })
+}
+
+/** Logs come back newest first; a missing recap must not lose the toast. */
+async function lastSyncLog() {
+  try {
+    const resp = await brokerSyncService.getSyncLogs(connection.value.id)
+    return resp.data?.[0] ?? null
+  } catch {
+    return null
   }
 }
 
@@ -170,6 +268,14 @@ function onConnected(provider, result) {
         <Tag v-if="environmentLabel" :value="environmentLabel" severity="info" />
         <span v-if="connection.last_sync_at" class="text-xs text-gray-400">
           {{ t('broker.last_sync') }}: {{ new Date(connection.last_sync_at).toLocaleString() }}
+        </span>
+        <!-- The run happens server-side now, so this is the only place the user
+             can see it is under way. -->
+        <span v-if="syncRunning" class="text-xs text-blue-500" data-testid="broker-sync-state">
+          <i class="pi pi-spin pi-spinner mr-1" />{{ t('broker.sync_already_running') }}
+        </span>
+        <span v-else-if="syncPending" class="text-xs text-blue-500" data-testid="broker-sync-state">
+          <i class="pi pi-clock mr-1" />{{ t('broker.sync_pending') }}
         </span>
       </div>
 

@@ -866,37 +866,34 @@ Le point était déjà pressenti dans l'entrée « Connecteurs broker — valida
 
 ---
 
-## Synchro broker — rien n'empêche une manuelle et une planifiée de se croiser
+## Positions — aucune contrainte d'unicité sur `external_id`
 
-**Contexte** : repéré sur question de l'utilisateur (2026-08-06), en documentant la fréquence de synchro. Pré-existant.
+**Contexte** : repéré le 2026-08-06 en cherchant ce qui rattrape une course entre
+deux synchros. Le volet applicatif est traité (réservation par connexion,
+[89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md)) ; le
+volet base reste ouvert.
 
-`cli/sync-brokers.php` pose un `flock` : deux runs planifiés ne se superposent jamais, et toutes les connexions dues — tous utilisateurs confondus — sont traitées séquentiellement dans un seul processus. **Mais ce verrou ne couvre que le scheduler.** Une synchro manuelle (`POST /broker/connections/{id}/sync`) est une requête HTTP indépendante : elle peut tourner en même temps que le run planifié, sur la même connexion.
+`ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. **`positions.external_id` n'a ni index ni contrainte d'unicité** : si deux imports concurrents lisent le même état — la réservation couvre les synchros broker, pas un import CSV lancé en parallèle — rien au niveau base ne rattrape la course. L'index manquant coûte aussi en lecture sur `findOpenByExternalIdPrefixInAccount`.
 
-Or `ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. Deux synchros concurrentes lisent donc le même état et peuvent insérer la même position deux fois. Et **`positions.external_id` n'a ni index ni contrainte d'unicité** : rien au niveau base ne rattrape la course.
+**À faire** : un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
 
-**À faire** : deux volets indépendants.
-- Un verrou par connexion (`GET_LOCK('broker_sync_<id>')` MySQL, ou une colonne `syncing_since` avec expiration) autour de `BrokerSyncService::sync()`.
-- Un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
+**Fichiers** : `api/database/schema.sql`, nouvelle migration.
 
-**Fichiers** : `api/src/Services/Broker/BrokerSyncService.php`, `api/database/schema.sql`, nouvelle migration.
-
-**Repéré le** : 2026-08-06. **Priorité** : moyenne — fenêtre étroite, mais c'est le mode d'échec qu'on vient de corriger côté logique.
+**Repéré le** : 2026-08-06. **Priorité** : moyenne — la fenêtre restante est étroite, mais l'index a aussi un intérêt de performance.
 
 ---
 
-## Synchro broker manuelle — bloquante côté utilisateur
+## Suivi d'une synchro broker — sondage HTTP plutôt que push
 
-**Contexte** : repéré sur question de l'utilisateur (2026-08-06).
+**Contexte** : issu du lot C de [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md) (2026-08-07), qui a rendu le bouton non bloquant. L'entrée d'origine — « synchro manuelle bloquante » — est traitée ; ce qui suit est ce que la solution laisse ouvert.
 
-`POST /broker/connections/{id}/sync` s'exécute dans la requête HTTP. Une synchro cTrader ouvre quatre à cinq sessions WebSocket successives (deals, positions ouvertes, ordres, ordres clos, solde) : l'utilisateur attend devant son écran, et un timeout de proxy peut couper au milieu.
+Le panneau broker suit l'avancement en interrogeant `GET /broker/connections` toutes les 4 s pendant 5 minutes max. Suffisant pour un compte, mais un utilisateur qui ouvre plusieurs comptes multiplie les requêtes, et la fin du run est détectée avec jusqu'à 4 s de retard.
 
-Le travail sait déjà tourner détaché — c'est ce que fait le scheduler. Ce qui manque est la mise en file et le suivi d'état côté IHM.
+**À faire, le jour où ça pèse** : un canal poussé (SSE, ou websocket si un autre besoin le justifie) pour l'état de synchro, au lieu du sondage. À évaluer seulement si le nombre de comptes suivis simultanément le justifie — le sondage est volontairement le choix le plus simple qui marche.
 
-**À faire** : marquer la connexion « synchronisation en cours » et rendre la main immédiatement, le run étant repris par le worker. Se combine naturellement avec le verrou par connexion ci-dessus. Prévoir l'affichage d'un état et d'une erreur éventuelle sans rechargement.
+**Fichiers** : `frontend/src/components/broker/BrokerConnectionPanel.vue`, `api/src/Controllers/BrokerSyncController.php`.
 
-**Fichiers** : `api/src/Controllers/BrokerSyncController.php`, `api/cli/sync-brokers.php`, `frontend/src/components/broker/`.
-
-**Repéré le** : 2026-08-06. **Priorité** : moyenne — confort, sauf sur un compte à gros historique où le timeout devient réel.
+**Repéré le** : 2026-08-07. **Priorité** : basse — pas de gêne à l'échelle actuelle.
 
 ---
 
