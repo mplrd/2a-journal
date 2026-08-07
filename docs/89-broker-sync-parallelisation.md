@@ -1,8 +1,13 @@
-# Étape 89 — Réservation atomique des synchronisations broker
+# Étape 89 — Parallélisation des synchronisations broker
 
 > Cette doc couvre la refonte de l'ordonnancement des synchros broker.
-> **Lot A — réservation atomique** est livré ; les lots B (parallélisation du
-> cron) et C (bouton non bloquant) viendront s'ajouter ici.
+> **Lot A — réservation atomique** et **lot B — parallélisation du cron** sont
+> livrés ; le lot C (bouton non bloquant) viendra s'ajouter ici.
+>
+> - [Lot A — la réservation](#lot-a--la-réservation)
+> - [Lot B — le superviseur et ses workers](#lot-b--le-superviseur-et-ses-workers)
+
+## Lot A — la réservation
 
 ## Le problème
 
@@ -129,7 +134,150 @@ et ne touche ni `resetFailures` ni `incrementFailures`.
 **Frontend** — `BrokerConnectionPanel.spec.js` : un `SKIPPED` produit un toast
 info sans récap d'import ; une synchro réelle garde son toast de succès.
 
+---
+
+## Lot B — le superviseur et ses workers
+
+### Le problème
+
+Un tick de cron traitait **toutes** les connexions dues, tous utilisateurs
+confondus, **une par une, dans un seul processus**. La durée d'un tour est donc
+la somme des durées de chaque synchro. Une synchro cTrader ouvre cinq sessions
+WebSocket successives : compter dix à trente secondes par connexion. À trois
+utilisateurs la plateforme devient une file d'attente, et le tour finit par
+déborder l'intervalle qu'il est censé respecter.
+
+### La forme retenue
+
+`cli/sync-brokers.php` porte désormais deux rôles :
+
+```
+supercronic (*/1 min)
+    │
+    ▼
+php cli/sync-brokers.php                     ← SUPERVISEUR
+    ├─ flock (un seul tour à la fois)
+    ├─ compte les connexions dues
+    ├─ 0 due → sort, sans lancer un seul processus
+    └─ sinon : min(BROKER_SYNC_WORKERS, dues, 16) enfants
+            │
+            ├─ php cli/sync-brokers.php --worker --worker-index=0
+            ├─ php cli/sync-brokers.php --worker --worker-index=1
+            └─ …
+                    │
+                    └─ chacun = le scheduler d'avant, à l'identique
+```
+
+**`proc_open` et non `fork`** : l'image du scheduler n'embarque pas `ext-pcntl`
+(elle a pdo_mysql, gd, zip, intl). Ce n'est pas qu'un contournement — un `fork`
+duplique la socket PDO du parent, deux processus qui parlent au même socket MySQL
+se corrompent mutuellement. Un vrai processus enfant ouvre sa propre connexion.
+
+**Aucune répartition n'est calculée.** Chaque worker lit la même liste de
+connexions dues et réserve ce qu'il peut : **c'est la réservation du lot A qui
+fait le partage**. Une répartition statique laisserait les workers ayant tiré les
+connexions rapides à ne rien faire, et devrait être recalculée dès qu'une
+connexion est ajoutée, supprimée, ou déjà tenue par une synchro manuelle.
+
+### Le décalage par worker
+
+Tous les workers lisent la liste dans le même ordre. Sans rien de plus, ils se
+jettent tous sur la connexion n°1 : les perdants brûlent une réservation refusée
+sur chaque entrée avant d'atteindre du travail libre. Chaque worker fait donc
+tourner la liste de son propre index (`worker_index`) avant de la parcourir.
+
+Faire tourner n'est pas sauter : un worker qui trouve tout pris parcourt quand
+même la liste entière. Le décalage optimise le cas courant sans changer la
+garantie.
+
+### Ce qui n'a pas été supprimé : le `flock`
+
+Le plan initial était de le retirer. **Révisé après coup** : le `flock` ne
+bridait pas le parallélisme, il empêchait deux *tours* de se superposer. Sans
+lui, un tour qui déborde son intervalle empile un second pool d'enfants sur le
+premier, puis un troisième — le nombre de processus PHP part en vrille
+précisément quand la machine est déjà en difficulté.
+
+Il est donc conservé, mais **pris par le seul superviseur**. Un worker qui le
+prendrait bloquerait contre son propre parent : c'est la raison du `if
+(!$isWorker)`, et la raison pour laquelle `scheduler/crontab` ne doit jamais
+contenir de ligne `--worker`.
+
+### Résumé de tour
+
+```json
+{"job":"broker-sync","status":"ok","role":"supervisor","skipped":false,"workers":4,
+ "total_active":15,"processed":12,"success":11,"failed":1,"deferred":0,
+ "already_syncing":8,"deactivated":0,"worker_errors":0,"interval_minutes":15,"duration_ms":4210}
+```
+
+Deux champs demandent une lecture attentive :
+
+- **`processed`** est la taille de la liste due, **pas** la somme des vues des
+  workers. Ils voient tous la même liste : sommer rapporterait six connexions
+  comme douze.
+- **`already_syncing`** mesure de la **contention**, pas des connexions : N-1
+  workers sautent la même connexion réservée. C'est attendu par construction ;
+  ce chiffre ne sert qu'à repérer un pool surdimensionné pour la charge.
+
+`duration_ms` est le chiffre à surveiller : c'est lui qui alerte **avant** qu'un
+tour déborde l'intervalle, plutôt qu'après. Un worker qui meurt ou n'imprime pas
+de JSON exploitable est compté dans `worker_errors` et ne fait pas échouer le
+tour.
+
+**Contrepartie à connaître** : la sortie d'erreur d'un enfant ne coule plus
+directement dans `/var/log/cron.log`, le pool la capture. Une ligne
+`worker_failed` la réémet via `BrokerLogger`, tronquée à 2000 caractères — assez
+pour la ligne d'erreur fatale et les premières frames, pas pour une trace
+complète. Si un diagnostic l'exige, lancer un worker à la main dans le conteneur
+(`php cli/sync-brokers.php --worker`) donne la sortie entière.
+
+### Réglage
+
+`BROKER_SYNC_WORKERS` (défaut **4**), exposé aussi en réglage admin
+(`broker_sync_workers`, priorité BDD > env). Borné à `[1, 16]` et jamais
+supérieur au nombre de connexions dues. Un `0` mal saisi retombe sur 1 : une
+valeur absurde ne doit pas désactiver silencieusement l'auto-sync.
+
+**Ce que ça ne change pas** : le nombre de requêtes envoyées à un broker sur la
+journée. Le nombre de cycles par connexion est fixé par
+`BROKER_SYNC_INTERVAL_MINUTES`, pas par le nombre de workers — seule leur
+simultanéité change. Point à garder en tête vu les budgets de requêtes côté prop
+firms (cf. l'entrée FTMO de `docs/specs/trading-journal-evolutions.md`).
+
+### Fichiers touchés (lot B)
+
+| Fichier | Rôle |
+|---|---|
+| `api/src/Services/Process/ProcessPoolInterface.php` | Contrat : lance N commandes, rend les N résultats dans l'ordre d'entrée. |
+| `api/src/Services/Process/ProcOpenProcessPool.php` | Implémentation `proc_open`, pipes non bloquants drainés en boucle. |
+| `api/src/Services/Broker/BrokerSyncSupervisorService.php` | Dimensionne le pool, agrège les rapports. |
+| `api/src/Services/Broker/BrokerSyncSchedulerService.php` | Rotation de la liste due par `worker_index`. |
+| `api/src/Repositories/BrokerConnectionRepository.php` | `countDueForAutoSync()`. |
+| `api/cli/sync-brokers.php` | Deux rôles, `flock` réservé au superviseur, câblage lourd déplacé côté worker. |
+| `api/src/Services/PlatformSettingsService.php` | Réglage `broker_sync_workers`. |
+| `admin/src/locales/{fr,en}.json`, `api/.env.example`, `scheduler/{Dockerfile,crontab}` | Réglage + documentation d'exploitation. |
+
+### Tests (lot B)
+
+`ProcOpenProcessPoolTest` teste le vrai `proc_open` sur des one-liners PHP —
+ordre des résultats indépendant de l'ordre d'arrivée, code de sortie non nul,
+stderr, et surtout un enfant qui écrit 200 Ko : sans drainage des pipes en
+boucle, il bloquerait indéfiniment et le pool ne rendrait jamais la main.
+
+`BrokerSyncSupervisorServiceTest` (pool factice) : rien lancé quand le drapeau
+est à false ou qu'il n'y a rien à faire, dimensionnement et bornes, index passé à
+chaque enfant, agrégation, worker mort ou bavard.
+
+`BrokerSyncSchedulerServiceTest` : la rotation démarre bien plus loin dans la
+liste, boucle quand l'index dépasse la taille, et ne change rien sans index.
+
+`SyncBrokersCliTest` : l'invocation par défaut est le superviseur, `--worker`
+lance bien le scheduler complet — c'est le seul test qui monte le graphe de
+dépendances lourd, puisque le superviseur ne le monte plus.
+
 ## Limite connue
 
-La réservation sérialise les synchros **d'une même connexion**. Elle ne réduit
-pas la durée d'un tour de cron, qui reste séquentiel — c'est l'objet du lot B.
+La parallélisation raccourcit le tour ; elle ne rend pas la synchro **manuelle**
+non bloquante. Un clic reste une requête HTTP qui attend les quatre à cinq
+sessions WebSocket — c'est l'objet du lot C, que `sync_requested_at` attend déjà.

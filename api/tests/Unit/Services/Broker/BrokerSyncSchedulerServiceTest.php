@@ -213,6 +213,78 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $this->assertSame(0, $result['failed']);
     }
 
+    // ── Worker offset: staggering the scan ──────────────────────
+
+    public function testWorkerOffsetStartsTheScanFurtherDownTheDueList(): void
+    {
+        // Every worker fetches the same due list. Without a per-worker offset
+        // they all pile onto connection #1, and each one burns a failed claim
+        // per entry before reaching free work.
+        $scheduler = $this->makeScheduler(['worker_index' => 2]);
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([
+            $this->connectionRow(1, 10),
+            $this->connectionRow(2, 20),
+            $this->connectionRow(3, 30),
+            $this->connectionRow(4, 40),
+        ]);
+        $this->connectionRepo->method('countActive')->willReturn(4);
+
+        $order = [];
+        $this->syncService->method('sync')->willReturnCallback(function (int $id) use (&$order) {
+            $order[] = $id;
+            return [];
+        });
+
+        $result = $scheduler->runDueConnections();
+
+        $this->assertSame([3, 4, 1, 2], $order);
+        // Rotating is not skipping: every due connection is still attempted.
+        $this->assertSame(4, $result['processed']);
+    }
+
+    public function testWorkerOffsetLargerThanTheListWrapsAround(): void
+    {
+        $scheduler = $this->makeScheduler(['worker_index' => 7]);
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([
+            $this->connectionRow(1, 10),
+            $this->connectionRow(2, 20),
+        ]);
+        $this->connectionRepo->method('countActive')->willReturn(2);
+
+        $order = [];
+        $this->syncService->method('sync')->willReturnCallback(function (int $id) use (&$order) {
+            $order[] = $id;
+            return [];
+        });
+
+        $scheduler->runDueConnections();
+
+        $this->assertSame([2, 1], $order);
+    }
+
+    public function testDefaultsToNoOffsetWhenRunningAlone(): void
+    {
+        $scheduler = $this->makeScheduler();
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([
+            $this->connectionRow(1, 10),
+            $this->connectionRow(2, 20),
+        ]);
+        $this->connectionRepo->method('countActive')->willReturn(2);
+
+        $order = [];
+        $this->syncService->method('sync')->willReturnCallback(function (int $id) use (&$order) {
+            $order[] = $id;
+            return [];
+        });
+
+        $scheduler->runDueConnections();
+
+        $this->assertSame([1, 2], $order);
+    }
+
     // ── Empty: nothing due ──────────────────────────────────────
 
     public function testNothingDueReturnsZeros(): void

@@ -152,6 +152,30 @@ class BrokerConnectionRepositoryTest extends TestCase
         $this->assertIsArray($due);
     }
 
+    // ── countDueForAutoSync ─────────────────────────────────────
+
+    public function testCountDueMatchesFindDue(): void
+    {
+        // The supervisor only needs the size of the due list to decide how many
+        // workers to boot — fetching every row for that would be wasteful.
+        $this->createConnection();
+        $recent = $this->createConnection();
+        $this->setLastSyncAt((int) $recent['id'], gmdate('Y-m-d H:i:s', time() - 5 * 60));
+        $old = $this->createConnection();
+        $this->setLastSyncAt((int) $old['id'], gmdate('Y-m-d H:i:s', time() - 60 * 60));
+
+        $this->assertSame(count($this->repo->findDueForAutoSync(15)), $this->repo->countDueForAutoSync(15));
+        $this->assertSame(2, $this->repo->countDueForAutoSync(15));
+    }
+
+    public function testCountDueIgnoresNonActiveConnections(): void
+    {
+        $this->createConnection(['status' => ConnectionStatus::ERROR->value]);
+        $this->createConnection(['status' => ConnectionStatus::REVOKED->value]);
+
+        $this->assertSame(0, $this->repo->countDueForAutoSync(15));
+    }
+
     // ── incrementFailures / resetFailures / markError ───────────
 
     public function testIncrementFailuresIncrementsCounter(): void

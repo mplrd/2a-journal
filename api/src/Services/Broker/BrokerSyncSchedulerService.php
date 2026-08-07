@@ -17,7 +17,7 @@ use Throwable;
  */
 class BrokerSyncSchedulerService
 {
-    /** @param array{auto_sync_enabled: bool, sync_interval_minutes: int, max_consecutive_failures: int} $config */
+    /** @param array{auto_sync_enabled: bool, sync_interval_minutes: int, max_consecutive_failures: int, worker_index?: int} $config */
     public function __construct(
         private BrokerConnectionRepository $connectionRepo,
         private BrokerSyncService $syncService,
@@ -48,7 +48,7 @@ class BrokerSyncSchedulerService
         }
 
         $totalActive = $this->connectionRepo->countActive();
-        $connections = $this->connectionRepo->findDueForAutoSync($intervalMinutes);
+        $connections = $this->stagger($this->connectionRepo->findDueForAutoSync($intervalMinutes));
 
         $success = 0;
         $failed = 0;
@@ -106,5 +106,34 @@ class BrokerSyncSchedulerService
             'deactivated' => $deactivated,
             'interval_minutes' => $intervalMinutes,
         ];
+    }
+
+    /**
+     * Rotate the due list by this worker's index.
+     *
+     * Every worker of a parallel run fetches the same list. Walking it in the
+     * same order means they all pile onto the first connection, and each loser
+     * burns a failed reservation on every entry before reaching free work.
+     * Rotating spreads the starting points; it never skips anything, so a
+     * worker that finds everything taken still walks the whole list.
+     *
+     * @param  array<int, array<string, mixed>> $connections
+     * @return array<int, array<string, mixed>>
+     */
+    private function stagger(array $connections): array
+    {
+        $offset = (int) ($this->config['worker_index'] ?? 0);
+        $count = count($connections);
+
+        if ($offset <= 0 || $count === 0) {
+            return $connections;
+        }
+
+        $offset %= $count;
+        if ($offset === 0) {
+            return $connections;
+        }
+
+        return array_merge(array_slice($connections, $offset), array_slice($connections, 0, $offset));
     }
 }

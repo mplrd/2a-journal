@@ -109,6 +109,27 @@ class BrokerConnectionRepository
     }
 
     /**
+     * How many connections findDueForAutoSync() would return. Lets the
+     * supervisor size its worker pool without fetching every row.
+     */
+    public function countDueForAutoSync(int $intervalMinutes): int
+    {
+        if ($intervalMinutes < 1) {
+            $intervalMinutes = 1;
+        } elseif ($intervalMinutes > 1440) {
+            $intervalMinutes = 1440;
+        }
+
+        $sql = "SELECT COUNT(*) FROM broker_connections
+                WHERE status = :status
+                  AND (last_sync_at IS NULL OR last_sync_at < UTC_TIMESTAMP() - INTERVAL {$intervalMinutes} MINUTE)";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(['status' => ConnectionStatus::ACTIVE->value]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
      * Reserve a connection for a sync run. Returns false when another run
      * already holds it.
      *

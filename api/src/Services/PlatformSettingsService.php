@@ -45,6 +45,11 @@ class PlatformSettingsService
                 'env_var' => 'BROKER_SYNC_MAX_FAILURES',
                 'description' => 'admin.settings.desc.broker_sync_max_failures',
             ],
+            'broker_sync_workers' => [
+                'type' => SettingType::INT->value,
+                'env_var' => 'BROKER_SYNC_WORKERS',
+                'description' => 'admin.settings.desc.broker_sync_workers',
+            ],
             'email_verification_enabled' => [
                 'type' => SettingType::BOOL->value,
                 'env_var' => 'EMAIL_VERIFICATION_ENABLED',

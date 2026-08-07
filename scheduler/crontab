@@ -16,6 +16,10 @@
 # var, default 15): the script returns immediately for connections synced
 # more recently than that, so a 1-min tick costs almost nothing.
 # Keeping a single user-facing knob (the env var) makes operations simpler.
+#
+# This invocation is the SUPERVISOR: it spawns BROKER_SYNC_WORKERS children
+# (`--worker`) and aggregates their reports. Never add a `--worker` line here —
+# a worker bypasses the flock that stops two runs from stacking up.
 */1 * * * * root . /etc/container-env && /usr/local/bin/php /var/www/api/cli/sync-brokers.php >> /var/log/cron.log 2>&1
 
 # Trailing newline required by debian cron — do not delete
