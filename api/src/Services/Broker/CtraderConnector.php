@@ -68,6 +68,57 @@ class CtraderConnector implements ConnectorInterface
      */
     private array $pendingPartialExits = [];
 
+    /**
+     * The authenticated socket held open for the length of one sync run, and
+     * the account it is authenticated against.
+     *
+     * A run asks the connector five separate questions (deals, open positions,
+     * pending orders, closed orders, balance). Opening a socket per question
+     * meant re-sending ApplicationAuth + AccountAuth five times: ten of the
+     * ~21 requests a run cost were spent re-proving who we are. FTMO disables a
+     * trading account past 2 000 requests a day, and a 15-minute interval put a
+     * single connection at ~2 016.
+     */
+    private ?WsClient $session = null;
+    private ?int $sessionAccountId = null;
+
+    /**
+     * Opt-in: only a sync run keeps its socket open between calls. placeOrder
+     * and friends run inside an HTTP request, where holding a socket would leak
+     * one per web request.
+     */
+    private bool $sessionReuse = false;
+
+    /**
+     * ProtoOAReconcileReq response, memoised per account for one run. Deals,
+     * open positions and pending orders all want the same snapshot, and asking
+     * three times seconds apart costs three requests to describe one state.
+     *
+     * @var array<int, array>
+     */
+    private array $reconcileCache = [];
+
+    /**
+     * symbolId → lotSize, memoised for one run alongside the names. Symbols are
+     * resolved three times over per run and only the names were cached, so
+     * ProtoOASymbolByIdReq went out every time.
+     *
+     * @var array<int, array<int, int>>
+     */
+    private array $lotSizeCache = [];
+
+    /**
+     * Requests actually put on the wire since the run opened, by message name.
+     *
+     * Working out what a sync cost meant reading this class line by line when
+     * FTMO disabled account 7589848 for "amount of activity". A budget nobody
+     * can measure is a budget nobody notices going over: the count belongs in
+     * the logs, and the connector is the only thing that can know it.
+     *
+     * @var array<string, int>
+     */
+    private array $requestCounts = [];
+
     public function __construct(array $config, ?WsClient $wsClient = null, ?HttpClient $httpClient = null)
     {
         $this->config = $config;
@@ -77,28 +128,17 @@ class CtraderConnector implements ConnectorInterface
 
     public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
     {
-        $ws = $this->connectWebSocket($credentials);
+        // 1-2. Application then account auth, on the run's shared socket when
+        //      there is one.
+        $ws = $this->acquireSession($credentials);
 
         try {
-            // 1. Application auth (credentials provided by user)
-            $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
-                'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
-                'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
-            ]);
-
-            // 2. Account auth
-            $this->sendAndReceive($ws, 'ProtoOAAccountAuthReq', [
-                'ctidTraderAccountId' => $credentials['ctid_trader_account_id'],
-                'accessToken' => $credentials['access_token'],
-            ]);
-
             // 3. Live snapshot first. It answers two questions the deal list
             //    alone cannot: which positions are still open (so a partial
             //    close is not mistaken for a finished trade), and how far back
-            //    the window must reach to cover them.
-            $reconcile = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
-                'ctidTraderAccountId' => $credentials['ctid_trader_account_id'],
-            ]);
+            //    the window must reach to cover them. Memoised for the run —
+            //    fetchOpenPositions and fetchOpenOrders want the same one.
+            $reconcile = $this->reconcile($ws, (int) $credentials['ctid_trader_account_id']);
             $openPositions = $reconcile['position'] ?? [];
             $openPositionIds = [];
             $oldestOpenTimestamp = null;
@@ -181,9 +221,9 @@ class CtraderConnector implements ConnectorInterface
             }
             unset($deal);
 
-            $ws->close();
+            $this->releaseSession($ws);
         } catch (\Throwable $e) {
-            try { $ws->close(); } catch (\Throwable) {}
+            $this->discardSession($ws);
             throw $e;
         }
 
@@ -217,19 +257,9 @@ class CtraderConnector implements ConnectorInterface
         }
 
         return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
-            // returnProtectionOrders is what makes a staged exit plan visible at
-            // all. The field is documented as: "If TRUE, then current protection
-            // orders are returned separately, otherwise you can use
-            // position.stopLoss and position.takeProfit fields." Left unset,
-            // cTrader COLLAPSES every protection into those two scalars — so a
-            // position with five take profit levels reports one, and no
-            // filtering of order[] can recover the rest because they were never
-            // sent. Only this read needs them: fetchOpenOrders discards closing
-            // orders by design, and fetchDeals only looks at position[].
-            $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
-                'ctidTraderAccountId' => $accountId,
-                'returnProtectionOrders' => true,
-            ]);
+            // The run's shared snapshot. It always carries the protection
+            // orders — see reconcile() for why that flag is not optional.
+            $response = $this->reconcile($ws, $accountId);
             $positions = $response['position'] ?? [];
             $takeProfitOrders = $this->collectStagedTakeProfits($response['order'] ?? []);
 
@@ -268,11 +298,11 @@ class CtraderConnector implements ConnectorInterface
         }
 
         return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) {
-            $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
-                'ctidTraderAccountId' => $accountId,
-            ]);
+            $response = $this->reconcile($ws, $accountId);
             $rawOrders = $response['order'] ?? [];
 
+            // The shared snapshot carries the protection orders too; this
+            // filter — which predates the sharing — is what keeps them out.
             $orders = array_values(array_filter($rawOrders, fn($o) => empty($o['closingOrder'])));
 
             $symbolMap = $this->resolveSymbols($ws, $accountId, $this->collectSymbolIds($orders));
@@ -382,13 +412,167 @@ class CtraderConnector implements ConnectorInterface
     }
 
     /**
-     * Drop the memoised state so the same connector instance can serve a
-     * second sync. Called by BrokerSyncService at the start of every run.
+     * Open a sync run: drop the memoised state so the same connector instance
+     * can serve a second sync, and allow the session to be held open across the
+     * five calls the run makes. Called by BrokerSyncService at the start of
+     * every run — which is what makes the reuse opt-in.
+     *
+     * Dropping the reconcile cache matters as much as the symbol one: a
+     * snapshot kept from the previous run would report positions that have
+     * since closed.
      */
     public function resetSyncCache(): void
     {
+        $this->closeSession();
         $this->symbolNameCache = [];
+        $this->lotSizeCache = [];
         $this->pendingPartialExits = [];
+        $this->requestCounts = [];
+        $this->sessionReuse = true;
+    }
+
+    /**
+     * What this run has spent so far, for the caller to journalise. Reset by
+     * resetSyncCache(), so it is always the cost of one run rather than of the
+     * process — the budget FTMO enforces is expressed per day, and the only way
+     * to project one from the other is to know the per-run figure.
+     *
+     * Read it BEFORE closeSession(): the run is over once the socket is shut.
+     *
+     * @return array{total: int, by_type: array<string, int>}
+     */
+    public function getRequestCounts(): array
+    {
+        return [
+            'total' => array_sum($this->requestCounts),
+            'by_type' => $this->requestCounts,
+        ];
+    }
+
+    /**
+     * Close the run: hang up the shared socket and forget the snapshot.
+     * BrokerSyncService calls this in a finally, so a run that blows up mid-way
+     * never leaves a socket dangling.
+     */
+    public function closeSession(): void
+    {
+        $this->discardSession($this->session);
+        $this->sessionReuse = false;
+        $this->reconcileCache = [];
+    }
+
+    /**
+     * The live snapshot, fetched at most once per account per run.
+     *
+     * `returnProtectionOrders` is always set, whoever asks first. Left unset,
+     * cTrader COLLAPSES a staged exit plan into `position.takeProfit` — so a
+     * position with five take profit levels reports one, and no filtering can
+     * recover the rest because they were never sent. fetchDeals reconciles
+     * before fetchOpenPositions does, so a cached request without the flag
+     * would silently reintroduce that bug. Callers that don't want the
+     * protection orders (fetchOpenOrders) already filter them out on
+     * `closingOrder`.
+     */
+    private function reconcile(WsClient $ws, int $accountId): array
+    {
+        if (isset($this->reconcileCache[$accountId])) {
+            return $this->reconcileCache[$accountId];
+        }
+
+        $response = $this->sendAndReceive($ws, 'ProtoOAReconcileReq', [
+            'ctidTraderAccountId' => $accountId,
+            'returnProtectionOrders' => true,
+        ]);
+
+        // Only memoise inside a run: outside one, two calls are two questions
+        // about two different moments.
+        if ($this->sessionReuse) {
+            $this->reconcileCache[$accountId] = $response;
+        }
+
+        return $response;
+    }
+
+    /**
+     * A live, authenticated socket for this account. Reuses the run's session
+     * when there is one; otherwise connects and runs the two-step auth dance.
+     *
+     * Deliberately does NOT translate exceptions — fetchDeals lets a cTrader
+     * error surface verbatim (the broker's own wording is what lands in
+     * last_sync_error and is what makes a failure diagnosable), while
+     * withAuthenticatedSession wraps them for the order path.
+     */
+    private function acquireSession(array $credentials): WsClient
+    {
+        $accountId = (int) ($credentials['ctid_trader_account_id'] ?? 0);
+
+        if ($this->sessionReuse && $this->session !== null && $this->sessionAccountId === $accountId) {
+            return $this->session;
+        }
+
+        // A different account on the same run: the old socket is authenticated
+        // against someone else and cannot be reused.
+        $this->discardSession($this->session);
+
+        $ws = $this->connectWebSocket($credentials);
+
+        // The socket has no owner yet: it is not the run's session until the
+        // auth goes through, so neither fetchDeals' catch nor closeSession()
+        // could reach it. A refused token would leak it for the life of the
+        // process — and a refused token is the everyday failure here.
+        try {
+            $this->authenticate($ws, $credentials, $accountId);
+        } catch (\Throwable $e) {
+            try { $ws->close(); } catch (\Throwable) {}
+            throw $e;
+        }
+
+        if ($this->sessionReuse) {
+            $this->session = $ws;
+            $this->sessionAccountId = $accountId;
+        }
+
+        return $ws;
+    }
+
+    private function authenticate(WsClient $ws, array $credentials, int $accountId): void
+    {
+        $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
+            'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
+            'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
+        ]);
+        $this->sendAndReceive($ws, 'ProtoOAAccountAuthReq', [
+            'ctidTraderAccountId' => $accountId,
+            'accessToken' => $credentials['access_token'] ?? '',
+        ]);
+    }
+
+    /**
+     * Done with a socket. Kept open when it is the run's shared session, closed
+     * otherwise — that single distinction is what turns five sessions into one
+     * without changing anything for the callers outside a run.
+     */
+    private function releaseSession(?WsClient $ws): void
+    {
+        if ($ws === null || $ws === $this->session) {
+            return;
+        }
+        try { $ws->close(); } catch (\Throwable) {}
+    }
+
+    /**
+     * Throw the socket away. Used on error — a half-broken session must never
+     * be handed to the next call of the run.
+     */
+    private function discardSession(?WsClient $ws): void
+    {
+        if ($ws !== null && $ws === $this->session) {
+            $this->session = null;
+            $this->sessionAccountId = null;
+        }
+        if ($ws !== null) {
+            try { $ws->close(); } catch (\Throwable) {}
+        }
     }
 
     /**
@@ -1100,39 +1284,50 @@ class CtraderConnector implements ConnectorInterface
             );
         }
 
-        try {
-            $ws = $this->connectWebSocket($credentials);
-        } catch (\Throwable $e) {
-            BrokerLogger::failure('ctrader', 'ws_connect_failed', [
-                'account_id' => (int) $accountId,
-                'msg' => $e->getMessage(),
-            ]);
-            throw new \App\Exceptions\BrokerOrderException(
-                'cTrader WebSocket connect failed: ' . $e->getMessage(),
-                'TRANSPORT_ERROR',
-                [],
-                $e,
-            );
+        // The connect and the auth are reported differently — a socket that
+        // never opened is a transport problem, refused credentials are the
+        // broker rejecting us — so they cannot be folded into one try.
+        $reused = $this->sessionReuse
+            && $this->session !== null
+            && $this->sessionAccountId === (int) $accountId;
+
+        if ($reused) {
+            $ws = $this->session;
+        } else {
+            $this->discardSession($this->session);
+            try {
+                $ws = $this->connectWebSocket($credentials);
+            } catch (\Throwable $e) {
+                BrokerLogger::failure('ctrader', 'ws_connect_failed', [
+                    'account_id' => (int) $accountId,
+                    'msg' => $e->getMessage(),
+                ]);
+                throw new \App\Exceptions\BrokerOrderException(
+                    'cTrader WebSocket connect failed: ' . $e->getMessage(),
+                    'TRANSPORT_ERROR',
+                    [],
+                    $e,
+                );
+            }
         }
 
         try {
-            $this->sendAndReceive($ws, 'ProtoOAApplicationAuthReq', [
-                'clientId' => $credentials['client_id'] ?? $this->config['client_id'] ?? '',
-                'clientSecret' => $credentials['client_secret'] ?? $this->config['client_secret'] ?? '',
-            ]);
-            $this->sendAndReceive($ws, 'ProtoOAAccountAuthReq', [
-                'ctidTraderAccountId' => (int) $accountId,
-                'accessToken' => $accessToken,
-            ]);
+            if (!$reused) {
+                $this->authenticate($ws, $credentials, (int) $accountId);
+                if ($this->sessionReuse) {
+                    $this->session = $ws;
+                    $this->sessionAccountId = (int) $accountId;
+                }
+            }
 
             $result = $callback($ws, (int) $accountId);
-            try { $ws->close(); } catch (\Throwable) {}
+            $this->releaseSession($ws);
             return $result;
         } catch (\App\Exceptions\BrokerOrderException $e) {
-            try { $ws->close(); } catch (\Throwable) {}
+            $this->discardSession($ws);
             throw $e;
         } catch (\Throwable $e) {
-            try { $ws->close(); } catch (\Throwable) {}
+            $this->discardSession($ws);
             BrokerLogger::failure('ctrader', 'request_failed', [
                 'account_id' => (int) $accountId,
                 'msg' => $e->getMessage(),
@@ -1237,6 +1432,11 @@ class CtraderConnector implements ConnectorInterface
 
     private function sendAndReceive(WsClient $ws, string $payloadType, array $payload = []): array
     {
+        // Counted here rather than at the call sites: this is the only place a
+        // request reaches the socket, so the tally cannot drift from reality as
+        // the connector grows new calls.
+        $this->requestCounts[$payloadType] = ($this->requestCounts[$payloadType] ?? 0) + 1;
+
         $ws->text($this->buildMessage($payloadType, $payload));
 
         // The Open API is asynchronous: heartbeats (payloadType 51) and other
@@ -1291,28 +1491,51 @@ class CtraderConnector implements ConnectorInterface
         }
 
         $names = $this->lightSymbolNames($ws, $accountId);
+        $lotSizes = $this->lotSizeCache[$accountId] ?? [];
 
-        $lotSizes = [];
-        $response = $this->sendAndReceive($ws, 'ProtoOASymbolByIdReq', [
-            'ctidTraderAccountId' => $accountId,
-            'symbolId' => $symbolIds,
-        ]);
-        foreach ($response['symbol'] ?? [] as $symbol) {
-            if (isset($symbol['symbolId'])) {
-                $lotSizes[(int) $symbol['symbolId']] = (int) ($symbol['lotSize'] ?? 0);
-            }
-        }
+        // Only ask about ids we have never resolved. A run resolves symbols
+        // three times over (deals, positions, orders), almost always on the
+        // same handful of instruments, and each round-trip counts against the
+        // broker's request budget.
+        $missing = array_values(array_filter(
+            array_map('intval', $symbolIds),
+            fn(int $id) => !array_key_exists($id, $lotSizes),
+        ));
 
-        // ProtoOASymbolsListReq leaves out archived symbols unless asked, so an
-        // instrument the broker has retired is absent from the light list and
-        // could never be named — one symbol stuck at SYM_<id> while every other
-        // one on the account resolved. The by-id response we just made returns
-        // archivedSymbol[] alongside symbol[], so the name is already in hand;
-        // ProtoOAArchivedSymbol spells it `name`, not `symbolName`.
-        foreach ($response['archivedSymbol'] ?? [] as $archived) {
-            if (isset($archived['symbolId'], $archived['name'])) {
-                $names[(int) $archived['symbolId']] ??= (string) $archived['name'];
+        if (!empty($missing)) {
+            // array_values() above is load-bearing: cTrader reads symbolId as a
+            // repeated int64 and a gappy array serialises as an object.
+            $response = $this->sendAndReceive($ws, 'ProtoOASymbolByIdReq', [
+                'ctidTraderAccountId' => $accountId,
+                'symbolId' => array_values(array_unique($missing)),
+            ]);
+            foreach ($response['symbol'] ?? [] as $symbol) {
+                if (isset($symbol['symbolId'])) {
+                    $lotSizes[(int) $symbol['symbolId']] = (int) ($symbol['lotSize'] ?? 0);
+                }
             }
+
+            // ProtoOASymbolsListReq leaves out archived symbols unless asked, so
+            // an instrument the broker has retired is absent from the light list
+            // and could never be named — one symbol stuck at SYM_<id> while
+            // every other one on the account resolved. The by-id response we
+            // just made returns archivedSymbol[] alongside symbol[]; ProtoOA-
+            // ArchivedSymbol spells it `name`, not `symbolName`.
+            foreach ($response['archivedSymbol'] ?? [] as $archived) {
+                if (isset($archived['symbolId'], $archived['name'])) {
+                    $names[(int) $archived['symbolId']] ??= (string) $archived['name'];
+                    $lotSizes[(int) $archived['symbolId']] ??= 0;
+                }
+            }
+
+            // Remember the misses too: an id cTrader does not answer for must
+            // not be re-asked on every resolution of the run.
+            foreach ($missing as $id) {
+                $lotSizes[$id] ??= 0;
+            }
+
+            $this->symbolNameCache[$accountId] = $names;
+            $this->lotSizeCache[$accountId] = $lotSizes;
         }
 
         $map = [];

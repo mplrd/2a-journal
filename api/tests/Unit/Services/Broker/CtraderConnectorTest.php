@@ -1588,6 +1588,297 @@ class CtraderConnectorTest extends TestCase
         ]));
         $this->assertNull($connector->getLastTestError());
     }
+
+    // ── Request budget: one session, one reconcile per sync run ──────
+
+    // Request-side ProtoOAPayloadType codes, to count what a run actually sends.
+    private const APP_AUTH_REQ     = 2100;
+    private const ACCOUNT_AUTH_REQ = 2102;
+    private const RECONCILE_REQ    = 2124;
+    private const TRADER_REQ       = 2121;
+    private const ORDER_LIST_REQ   = 2175;
+    private const DEAL_LIST_REQ    = 2133;
+    private const ASSET_LIST_REQ   = 2112;
+    private const SYMBOLS_LIST_REQ = 2114;
+    private const SYMBOL_BY_ID_REQ = 2116;
+
+    /** @return array<int, int> payloadType => how many times it was sent */
+    private function countRequests(array $sentMessages): array
+    {
+        $counts = [];
+        foreach ($sentMessages as $raw) {
+            $type = (int) (json_decode($raw, true)['payloadType'] ?? 0);
+            $counts[$type] = ($counts[$type] ?? 0) + 1;
+        }
+        return $counts;
+    }
+
+    private function syncWsStub(): TypedWsClient
+    {
+        return new TypedWsClient([
+            self::APP_AUTH_REQ => self::frame(self::APP_AUTH_RES),
+            self::ACCOUNT_AUTH_REQ => self::frame(self::ACCOUNT_AUTH_RES),
+            self::RECONCILE_REQ => self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 77,
+                    'tradeData' => ['symbolId' => 1, 'volume' => 100000, 'tradeSide' => 'SELL', 'openTimestamp' => 1786000000000],
+                    'price' => 19200.0,
+                ]],
+                'order' => [],
+            ]),
+            self::DEAL_LIST_REQ => self::frame(self::DEAL_LIST_RES, ['deal' => [], 'hasMore' => false]),
+            self::ORDER_LIST_REQ => self::frame(self::ORDER_LIST_RES, ['order' => []]),
+            self::SYMBOLS_LIST_REQ => self::frame(self::SYMBOLS_LIST_RES, [
+                'symbol' => [['symbolId' => 1, 'symbolName' => 'GER40']],
+            ]),
+            self::SYMBOL_BY_ID_REQ => self::frame(self::SYMBOL_BY_ID_RES, [
+                'symbol' => [['symbolId' => 1, 'lotSize' => 100]],
+            ]),
+            self::TRADER_REQ => self::frame(self::TRADER_RES, [
+                'trader' => ['balance' => 1000000, 'moneyDigits' => 2, 'depositAssetId' => 1],
+            ]),
+            self::ASSET_LIST_REQ => self::frame(self::ASSET_LIST_RES, [
+                'asset' => [['assetId' => 1, 'name' => 'EUR']],
+            ]),
+        ]);
+    }
+
+    private function syncCredentials(): array
+    {
+        return [
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 't',
+            'ctid_trader_account_id' => 42,
+        ];
+    }
+
+    /** Everything BrokerSyncService asks a connector for, in the same order. */
+    private function runFullSync(CtraderConnector $connector): void
+    {
+        $credentials = $this->syncCredentials();
+        $connector->fetchDeals($credentials);
+        $connector->fetchOpenPositions($credentials);
+        $connector->fetchOpenOrders($credentials);
+        $connector->fetchClosedOrders($credentials);
+        $connector->fetchBalance($credentials);
+    }
+
+    public function testASyncRunAuthenticatesOnceInsteadOfOncePerCall(): void
+    {
+        // FTMO disabled a real account for "amount of activity" at 2 000
+        // requests/day. Five fetches × (AppAuth + AccountAuth) is ten requests
+        // per run spent re-proving who we are, 960 a day at a 15-min interval.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(1, $counts[self::APP_AUTH_REQ] ?? 0);
+        $this->assertSame(1, $counts[self::ACCOUNT_AUTH_REQ] ?? 0);
+    }
+
+    public function testASyncRunReconcilesOnceInsteadOfThreeTimes(): void
+    {
+        // Deals, open positions and pending orders each asked for the same
+        // snapshot, seconds apart.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $this->assertSame(1, $this->countRequests($ws->sentMessages)[self::RECONCILE_REQ] ?? 0);
+    }
+
+    public function testTheSharedReconcileAsksForProtectionOrders(): void
+    {
+        // Without returnProtectionOrders, cTrader COLLAPSES a staged exit plan
+        // into position.takeProfit. fetchDeals reconciles first, so if its
+        // request is the one cached, every take profit level but the last is
+        // lost — the bug fixed just before this refactor.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $reconciles = array_filter(
+            array_map(fn($m) => json_decode($m, true), $ws->sentMessages),
+            fn($m) => (int) $m['payloadType'] === self::RECONCILE_REQ,
+        );
+        $this->assertCount(1, $reconciles);
+        $this->assertTrue(reset($reconciles)['payload']['returnProtectionOrders']);
+    }
+
+    public function testASyncRunResolvesSymbolsOnce(): void
+    {
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(1, $counts[self::SYMBOLS_LIST_REQ] ?? 0);
+        $this->assertSame(1, $counts[self::SYMBOL_BY_ID_REQ] ?? 0);
+    }
+
+    public function testAWholeSyncRunStaysUnderTenRequests(): void
+    {
+        // The budget this refactor exists for: ~21 before, single digits after.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $this->assertLessThanOrEqual(10, count($ws->sentMessages));
+    }
+
+    public function testSessionReuseIsOptInSoOrderCallsStayIsolated(): void
+    {
+        // placeOrder/cancelOrder run inside an HTTP request, not a sync run.
+        // Holding a socket open across them would leak one per web request.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $this->runFullSync($connector);
+
+        $this->assertSame(5, $this->countRequests($ws->sentMessages)[self::APP_AUTH_REQ] ?? 0);
+    }
+
+    public function testANewRunDoesNotInheritThePreviousRunsSnapshot(): void
+    {
+        // resetSyncCache opens the next run: a reconcile cached from the last
+        // one would report positions that closed in between.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $connector->fetchOpenPositions($this->syncCredentials());
+        $connector->closeSession();
+
+        $connector->resetSyncCache();
+        $connector->fetchOpenPositions($this->syncCredentials());
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(2, $counts[self::RECONCILE_REQ] ?? 0);
+        $this->assertSame(2, $counts[self::APP_AUTH_REQ] ?? 0);
+    }
+
+    public function testARunReportsWhatItSpent(): void
+    {
+        // It took reading the connector line by line to work out our daily
+        // volume when FTMO disabled the account. The number has to come from
+        // the logs instead — which means the connector has to know it.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $spent = $connector->getRequestCounts();
+        $connector->closeSession();
+
+        $this->assertSame(count($ws->sentMessages), $spent['total']);
+        // Named, not numeric: a log line reading ProtoOAReconcileReq is
+        // actionable, one reading 2124 has to be looked up.
+        $this->assertSame(1, $spent['by_type']['ProtoOAReconcileReq'] ?? 0);
+        $this->assertSame(1, $spent['by_type']['ProtoOAApplicationAuthReq'] ?? 0);
+    }
+
+    public function testEachRunCountsFromZero(): void
+    {
+        // A counter that accumulated across runs would report the process's
+        // lifetime total, not the per-run cost the budget is expressed in.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $first = $connector->getRequestCounts()['total'];
+        $connector->closeSession();
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $second = $connector->getRequestCounts()['total'];
+        $connector->closeSession();
+
+        $this->assertGreaterThan(0, $first);
+        $this->assertSame($first, $second);
+    }
+
+    public function testASecondAccountNeverInheritsTheFirstOnesSession(): void
+    {
+        // BrokerSyncService::getConnector() hands out ONE shared connector
+        // instance for every connection a worker syncs, and that instance now
+        // holds an authenticated socket. resetSyncCache() between connections
+        // is the first net; the account check inside acquireSession() is the
+        // second, and the only one left if a refactor drops the first. Serving
+        // account B off account A's session would cross two users' data.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $connector->fetchOpenPositions($this->syncCredentials());
+        $connector->fetchOpenPositions(['ctid_trader_account_id' => 99] + $this->syncCredentials());
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(2, $counts[self::APP_AUTH_REQ] ?? 0, 'the second account reused the first one\'s session');
+        $this->assertSame(2, $counts[self::RECONCILE_REQ] ?? 0, 'the second account was served the first one\'s snapshot');
+    }
+
+    public function testTheRunHangsUpItsSharedSocketExactlyOnce(): void
+    {
+        // The five calls share one socket, so four of them must NOT close it
+        // and the fifth must not leave it open — only closeSession() hangs up.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $this->assertSame(0, $ws->closeCount, 'the shared socket was closed mid-run');
+
+        $connector->closeSession();
+        $this->assertSame(1, $ws->closeCount);
+    }
+
+    public function testARefusedAuthDoesNotLeaveTheSocketOpen(): void
+    {
+        // fetchDeals acquires its session BEFORE its try/catch, so a socket
+        // that opens and is then refused has no owner: closeSession() cannot
+        // reach it either, since the session is only recorded once the auth
+        // has gone through. An expired access token is the everyday way in.
+        $ws = new TypedWsClient([
+            self::APP_AUTH_REQ => self::frame(self::APP_AUTH_RES),
+            self::ACCOUNT_AUTH_REQ => self::frame(self::ERROR_RES, [
+                'errorCode' => 'CH_CLIENT_AUTH_FAILURE',
+                'description' => 'access token expired',
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        try {
+            $connector->fetchDeals($this->syncCredentials());
+            $this->fail('the refused auth should have surfaced');
+        } catch (\Throwable $e) {
+            $this->assertStringContainsString('CH_CLIENT_AUTH_FAILURE', $e->getMessage());
+        }
+        // What BrokerSyncService does in its finally.
+        $connector->closeSession();
+
+        $this->assertSame(1, $ws->closeCount);
+    }
 }
 
 /**
@@ -1624,5 +1915,57 @@ class FakeWsClient extends \WebSocket\Client
     public function close(int $status = 1000, string $message = 'ttfn'): void
     {
         // no-op
+    }
+}
+
+/**
+ * Answers by request type rather than by position in a script. Counting what a
+ * sync run sends means the order of requests is exactly what is under test, so
+ * a fixed frame sequence would have to be rewritten for every change it is
+ * meant to catch.
+ */
+class TypedWsClient extends \WebSocket\Client
+{
+    public array $sentMessages = [];
+
+    /**
+     * How many times the socket was hung up. Counted rather than no-op'd:
+     * sharing one session across a run moves the responsibility for closing
+     * it, and nothing else in this suite would notice a socket left open.
+     */
+    public int $closeCount = 0;
+
+    /** @var array<int, array> request payloadType => response frame */
+    private array $responses;
+    private ?string $pending = null;
+
+    public function __construct(array $responses)
+    {
+        $this->responses = $responses;
+        // Skip parent constructor — no real socket.
+    }
+
+    public function text(string $payload): void
+    {
+        $this->sentMessages[] = $payload;
+        $type = (int) (json_decode($payload, true)['payloadType'] ?? 0);
+        $this->pending = json_encode(
+            $this->responses[$type] ?? ['payloadType' => 0, 'payload' => []],
+        );
+    }
+
+    public function receive(): string
+    {
+        if ($this->pending === null) {
+            throw new \RuntimeException('TypedWsClient received nothing to answer');
+        }
+        $frame = $this->pending;
+        $this->pending = null;
+        return $frame;
+    }
+
+    public function close(int $status = 1000, string $message = 'ttfn'): void
+    {
+        $this->closeCount++;
     }
 }

@@ -806,7 +806,9 @@ Dans le même bloc UI : `account.account_data.delete_account_description` vouvoi
 
 ---
 
-## Une synchro cTrader ouvre quatre sessions WebSocket
+## ✅ TRAITÉ — Une synchro cTrader ouvre quatre sessions WebSocket
+
+**Traité le 2026-08-09** — voir [90-ctrader-budget-requetes.md](90-ctrader-budget-requetes.md). Une session par run partagée par les cinq appels, `ProtoOAReconcileReq` mémoïsé, tailles de lot mises en cache : 19 requêtes par cycle ramenées à 9. La priorité « basse » ci-dessous s'est révélée fausse — ce n'était pas un sujet de latence : FTMO a désactivé un compte réel le 2026-08-07 pour dépassement de son plafond de 2 000 requêtes/jour, que notre volume frôlait. Entrée conservée pour l'historique.
 
 **Contexte** : repéré en corrigeant la fidélité des deals cTrader (2026-08-05). Pré-existant, aggravé de rien par le correctif.
 
@@ -819,6 +821,20 @@ Le cache de noms de symboles introduit avec le correctif (`CtraderConnector::$sy
 **Fichiers** : `api/src/Services/Broker/CtraderConnector.php`, `api/src/Services/Broker/BrokerSyncService.php`.
 
 **Repéré le** : 2026-08-05. **Priorité** : basse (correctness non affectée, seulement la latence de synchro).
+
+---
+
+## cTrader — la socket vit désormais un run entier, sans heartbeat sortant
+
+**Contexte** : repéré en relisant le partage de session (2026-08-09, doc 90). Pas un défaut constaté — une hypothèse tirée du code, à vérifier.
+
+`CtraderConnector::sendAndReceive()` **ignore** les heartbeats entrants (`payloadType 51`) mais le connecteur n'en **émet** jamais. Tant qu'une socket ne servait qu'un appel, la question ne se posait pas : elle vivait quelques centaines de millisecondes. Elle porte maintenant les cinq appels d'un run, pagination de `ProtoOADealListReq` comprise.
+
+**À vérifier avant d'agir** : le délai d'inactivité réel côté cTrader, dans le `.proto` Spotware (pas sur help.ctrader.com, qui omet des champs). Si le serveur coupe les sockets inactives, le symptôme serait un run qui casse en son milieu — cycle perdu, pas de perte de données, et le cycle suivant rattrape.
+
+**Fichiers** : `api/src/Services/Broker/CtraderConnector.php`.
+
+**Repéré le** : 2026-08-09. **Priorité** : basse tant que rien n'est observé en test live.
 
 ---
 

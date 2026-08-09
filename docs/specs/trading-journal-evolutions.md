@@ -110,6 +110,34 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - Le PDF contient des trades complets (Transaction ID, Direction, Size, Symbol, Price, Settled PnL) mais le parsing PDF est trop fragile pour un import fiable
 - **À surveiller** : vérifier si UFunded propose une API ou un export CSV à l'avenir
 
+### 22. ⚠️ CRITIQUE — Budget de requêtes cTrader : un compte FTMO désactivé pour hyperactivité
+- **Déclencheur** : le 2026-08-07, FTMO a temporairement désactivé le compte de trading 7589848 « due to the amount of activity ». Seuil annoncé : **2 000 trades ou requêtes serveur par jour** (SL/TP modifications et annulations d'ordres incluses dans leur décompte).
+- **Le compte n'est pas piloté par un EA** : le seul automatisme branché dessus est la synchro du journal, en lecture seule.
+- **Décompte réel d'un cycle de synchro cTrader** — `BrokerSyncService::sync()` enchaîne cinq appels connecteur, chacun ouvrant **sa propre session WebSocket** et rejouant `ProtoOAApplicationAuthReq` + `ProtoOAAccountAuthReq` :
+
+  | Appel | Requêtes émises |
+  |---|---|
+  | `fetchDeals` | AppAuth, AccountAuth, Reconcile, DealList (+ pagination), SymbolsList, SymbolById → **6** |
+  | `fetchOpenPositions` | AppAuth, AccountAuth, Reconcile, SymbolById → **4** |
+  | `fetchOpenOrders` | AppAuth, AccountAuth, Reconcile, SymbolById → **4** |
+  | `fetchClosedOrders` | AppAuth, AccountAuth, OrderList → **3** |
+  | `fetchBalance` | AppAuth, AccountAuth, TraderReq, AssetList → **4** |
+
+  **≈ 21 requêtes par cycle**, dont **10 ne sont que des ré-authentifications** et **3 sont le même `ProtoOAReconcileReq`** émis à quelques secondes d'intervalle. S'ajoute un appel HTTPS de refresh OAuth par cycle (`openapi.ctrader.com`, hors serveur de trading).
+- **Volume résultant** : `BROKER_SYNC_INTERVAL_MINUTES` vaut 15 par défaut → 96 cycles/jour → **2 016 requêtes/jour et par connexion**. Le seuil FTMO est à 2 000. Les synchros manuelles s'ajoutent par-dessus, et **plusieurs connexions ACTIVE pointant sur le même compte broker multiplient le tout** (rien n'empêche aujourd'hui d'en créer deux).
+- **Réserve** : leurs exemples ne citent que des écritures (trades, SL/TP, annulations). Non confirmé qu'ils comptabilisent les lectures. Question posée au support le 2026-08-07 — **reporter leur réponse ici**, elle conditionne le dimensionnement.
+- **Ce que le journal n'envoie jamais sur cTrader** (à garder vrai) : aucun ordre, aucune modification de SL/TP — les types `Amend*` ne sont même pas dans `CtraderConnector::PAYLOAD_TYPES` et `modifyOrder()` lève `NOT_IMPLEMENTED`. Seul chemin d'écriture existant : les webhooks TradingView (`TradingViewWebhookService`), donc uniquement si un robot est armé.
+- **À faire**, par ordre de délai :
+  1. ✅ **Immédiat, sans déploiement** : relever `BROKER_SYNC_INTERVAL_MINUTES` (60 → ~500 req/jour) ou désactiver la connexion concernée. **Fait le vendredi 2026-08-07**, le jour même de la désactivation du compte — action d'exploitation depuis le BO admin, sans déploiement. La valeur retenue n'est pas consignée ici ; la ligne `sync_request_budget` (point 3) donnera de toute façon le volume réel plutôt que le volume supposé.
+  2. ✅ **Fond** (livré le 2026-08-09, branche `fix/ctrader-request-budget`, doc [90](../90-ctrader-budget-requetes.md)) : une session WebSocket unique par run au lieu de cinq, et un seul `ProtoOAReconcileReq` partagé entre deals / positions / ordres. Mesuré : **19 requêtes ramenées à 9** (l'estimation initiale de ~21→~8 était juste à une requête près, les tailles de lot étant aussi mises en cache). Reprenait l'entrée « Une synchro cTrader ouvre quatre sessions WebSocket » de `docs/evolutions.md`, marquée traitée.
+  3. 🟡 **Garde-fous** — deux sur trois livrés le 2026-08-09 :
+     - ✅ compter et journaliser les requêtes émises par run → ligne `sync_request_budget` (total + détail par type nommé, avec `connection_id`), émise même quand le run échoue ;
+     - ✅ interdire plusieurs connexions sur un même compte broker → `BrokerConnectionService::assertBrokerAccountFree()`, à la création et à la reconfiguration. Contrôle applicatif et non contrainte SQL : l'identifiant du compte broker vit dans le blob chiffré ;
+     - ❌ budget quotidien par connexion avec intervalle dérivé → **non traité**, demande un compteur journalier persisté (migration) et une surface admin. Écarté sciemment du lot.
+- **Fichiers** : `api/src/Services/Broker/CtraderConnector.php`, `api/src/Services/Broker/BrokerSyncService.php`, `api/config/broker.php`, `scheduler/crontab`.
+- **Priorité** : **critique** — c'est le seul point du backlog dont la conséquence est la perte d'un compte de trading réel, chez un prop firm.
+- **Statut au 2026-08-09** : le fond et deux garde-fous sur trois sont livrés sur `fix/ctrader-request-budget`, **validés par les tests uniquement**. Rien n'a encore tourné contre un vrai cTrader : le flag broker et les identifiants réels rendent la vérification impossible en local, elle ne peut avoir lieu qu'en env de test. C'est la ligne `sync_request_budget` dans les logs qui permettra de la faire — sans elle, on ne pourrait que relire le code, exactement comme il a fallu le faire pour instruire l'incident.
+
 ## Architecture / UX
 
 ### 19. Widgets autonomes avec chargement indépendant

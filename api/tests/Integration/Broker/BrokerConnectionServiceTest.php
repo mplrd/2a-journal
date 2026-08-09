@@ -332,6 +332,82 @@ class BrokerConnectionServiceTest extends TestCase
         ]);
     }
 
+    // ── One broker account, one connection ──────────────────────────
+
+    /** @return array<string, string|int> */
+    private function ctraderBody(int $ctidTraderAccountId): array
+    {
+        return [
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 't',
+            'account_id_ctrader' => $ctidTraderAccountId,
+        ];
+    }
+
+    public function testCreateRefusesASecondConnectionOnTheSameBrokerAccount(): void
+    {
+        // Two journal accounts, one cTrader account behind both. Nothing stopped
+        // this, and it doubles the request volume against a broker that disables
+        // a trading account for going over — invisibly, since each connection
+        // looks perfectly healthy on its own.
+        $secondAccount = $this->seedAccount($this->userId);
+        $this->service->createConnection($this->userId, $this->accountId, 'CTRADER', $this->ctraderBody(7589848));
+
+        $this->expectException(ValidationException::class);
+        $this->service->createConnection($this->userId, $secondAccount, 'CTRADER', $this->ctraderBody(7589848));
+    }
+
+    public function testCreateAllowsASecondConnectionOnADifferentBrokerAccount(): void
+    {
+        $secondAccount = $this->seedAccount($this->userId);
+        $this->service->createConnection($this->userId, $this->accountId, 'CTRADER', $this->ctraderBody(7589848));
+
+        $result = $this->service->createConnection($this->userId, $secondAccount, 'CTRADER', $this->ctraderBody(7589849));
+
+        $this->assertNotEmpty($result['connection']['id']);
+    }
+
+    public function testCreateIgnoresARevokedConnectionOnTheSameBrokerAccount(): void
+    {
+        // A revoked connection never syncs, so it spends nothing. Counting it
+        // would strand the user: they could not reconnect the account they
+        // just disconnected.
+        $secondAccount = $this->seedAccount($this->userId);
+        $first = $this->service->createConnection($this->userId, $this->accountId, 'CTRADER', $this->ctraderBody(7589848));
+        $this->repo->update((int) $first['connection']['id'], ['status' => ConnectionStatus::REVOKED->value]);
+
+        $result = $this->service->createConnection($this->userId, $secondAccount, 'CTRADER', $this->ctraderBody(7589848));
+
+        $this->assertNotEmpty($result['connection']['id']);
+    }
+
+    public function testUpdateRefusesPointingAtAnAlreadyConnectedBrokerAccount(): void
+    {
+        $secondAccount = $this->seedAccount($this->userId);
+        $this->service->createConnection($this->userId, $this->accountId, 'CTRADER', $this->ctraderBody(7589848));
+        $second = $this->service->createConnection($this->userId, $secondAccount, 'CTRADER', $this->ctraderBody(7589849));
+
+        $this->expectException(ValidationException::class);
+        $this->service->updateCredentials((int) $second['connection']['id'], $this->userId, [
+            'account_id_ctrader' => 7589848,
+        ]);
+    }
+
+    public function testUpdateLetsAConnectionKeepItsOwnBrokerAccount(): void
+    {
+        // The obvious way to get this wrong: a reconfigure that changes only
+        // the access token would find "another" connection on that broker
+        // account — itself — and reject every reconfigure there is.
+        $created = $this->service->createConnection($this->userId, $this->accountId, 'CTRADER', $this->ctraderBody(7589848));
+
+        $result = $this->service->updateCredentials((int) $created['connection']['id'], $this->userId, [
+            'access_token' => 'refreshed',
+        ]);
+
+        $this->assertSame('refreshed', $this->decryptStored((int) $result['connection']['id'])['access_token']);
+    }
+
     // ── cTrader account discovery ───────────────────────────────────
 
     public function testDiscoverCtraderAccountsWithTypedCredentials(): void
