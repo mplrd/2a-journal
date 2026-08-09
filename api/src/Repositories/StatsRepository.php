@@ -608,14 +608,30 @@ class StatsRepository
         // on the same screen disagreed by exactly that amount.
         $eff = $this->effectiveDate();
 
-        $sql = "SELECT DATE({$eff}) AS date,
+        // GROUP BY on the ALIAS, never on the expression again. effectiveDate()
+        // carries a correlated subquery, and under MySQL's ONLY_FULL_GROUP_BY —
+        // on by default, and on in production — the server does not recognise
+        // the SELECT expression and the GROUP BY expression as the same thing
+        // once a subquery is inside. It then sees t.closed_at as a bare
+        // nonaggregated column and refuses the whole query:
+        //
+        //   1055 Expression #1 of SELECT list is not in GROUP BY clause and
+        //   contains nonaggregated column 't.closed_at' …
+        //
+        // Every stats endpoint returned 500 in production while the suite
+        // stayed green: the tests run on MariaDB, which accepts this form even
+        // WITH only_full_group_by set — so no local sql_mode setting can guard
+        // it. Grouping by the alias is what the sibling aggregates already do
+        // (GROUP BY period, GROUP BY bucket) and it sidesteps the matching
+        // entirely.
+        $sql = "SELECT DATE({$eff}) AS `date`,
                        COUNT(*) AS trade_count,
                        COALESCE(SUM(t.pnl), 0) AS total_pnl
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 {$where}
-                GROUP BY DATE({$eff})
-                ORDER BY date ASC";
+                GROUP BY `date`
+                ORDER BY `date` ASC";
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
