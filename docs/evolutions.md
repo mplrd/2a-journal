@@ -838,6 +838,42 @@ Le cache de noms de symboles introduit avec le correctif (`CtraderConnector::$sy
 
 ---
 
+## ⚠️ Les tests tournent sur MariaDB, la prod sur MySQL — divergence non couverte
+
+**Contexte** : découvert le 2026-08-09 en corrigeant le P&L journalier, qui renvoyait un 500 en prod et en test depuis plusieurs jours avec 1721 tests verts.
+
+`getDailyPnl` faisait `GROUP BY` sur une expression contenant une **sous-requête corrélée** (`effectiveDate()`). Sous `ONLY_FULL_GROUP_BY` — actif par défaut sur MySQL, donc en prod — le serveur n'apparie plus l'expression du `SELECT` avec celle du `GROUP BY` dès qu'une sous-requête est dedans, voit `t.closed_at` comme colonne non agrégée, et rejette la requête avec l'erreur 1055.
+
+**Le point qui compte** : ce n'est pas un simple oubli de `sql_mode` en local. **Vérifié, pas supposé** — MariaDB 11.4.9 accepte cette requête *même avec* `ONLY_FULL_GROUP_BY` explicitement activé, là où MySQL 8.4.7 la refuse. Aucun réglage de `sql_mode` sur la base de dev n'aurait donc attrapé le bug. Toute la suite d'intégration est aveugle à cette classe de divergence.
+
+**Palliatif en place** : un test statique (`testNoAggregateGroupsByAnExpressionCarryingASubquery`) lit le source de `StatsRepository` et refuse tout `GROUP BY` contenant `SELECT` ou l'expression `$eff`. Ça couvre ce fichier et ce motif précis, rien d'autre.
+
+**À faire** : faire tourner la suite d'intégration contre **MySQL**, le moteur de prod — en CI a minima, idéalement en local. C'est le seul garde-fou général. Attention, l'activation révélera probablement d'autres requêtes non conformes à `ONLY_FULL_GROUP_BY` : prévoir le chantier, pas un patch.
+
+**Aggravant, traité séparément** : le `catch (\Throwable)` de `api/public/index.php:78` ne journalise rien. L'erreur était donc invisible dans les logs Railway (prod comme test) ; il a fallu rejouer l'appel avec `APP_DEBUG=true` pour l'obtenir. Voir l'entrée dédiée.
+
+**Fichiers** : `api/src/Repositories/StatsRepository.php`, `api/phpunit.xml`, `api/tests/Integration/`.
+
+**Repéré le** : 2026-08-09. **Priorité** : haute — la conséquence constatée est un endpoint en 500 pendant plusieurs jours, sans qu'aucun test ni aucun log ne le signale.
+
+---
+
+## Les 500 de l'API ne laissent aucune trace
+
+**Contexte** : découvert le 2026-08-09 pendant le diagnostic ci-dessus.
+
+`api/public/index.php:78` attrape tout `Throwable`, renvoie `INTERNAL_ERROR` / `error.internal`, et **n'écrit rien** : ni `error_log`, ni `BrokerLogger`. En prod (`APP_DEBUG` off) l'exception est perdue définitivement. Sur 333 lignes de logs conteneur de l'env de test, zéro ligne d'erreur PHP alors que l'endpoint renvoyait bien un 500.
+
+Seul le mode debug expose la cause, et il la renvoie **au client** — donc inutilisable en prod.
+
+**À faire** : journaliser le `Throwable` (message, fichier, ligne, trace) sur stderr avant de renvoyer la réponse générique. La réponse client ne doit pas changer : elle reste sans détail, ce qui est la bonne propriété côté sécurité. C'est la journalisation serveur qui manque, pas la réponse.
+
+**Fichiers** : `api/public/index.php`.
+
+**Repéré le** : 2026-08-09. **Priorité** : haute — un défaut d'observabilité qui transforme chaque incident en enquête.
+
+---
+
 ## `database/schema.sql` a dérivé des migrations
 
 **Contexte** : repéré en vérifiant, avant commit, que `partial_exits.external_id` existait bien (correctif fidélité cTrader, 2026-08-05).
