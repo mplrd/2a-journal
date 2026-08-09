@@ -1124,6 +1124,32 @@ class StatsRepositoryTest extends TestCase
         $this->assertArrayNotHasKey('2026-01-15', $indexed);
     }
 
+    public function testNoAggregateGroupsByAnExpressionCarryingASubquery(): void
+    {
+        // getDailyPnl grouped by DATE(effectiveDate()), and effectiveDate()
+        // carries a correlated subquery. MySQL's ONLY_FULL_GROUP_BY — on by
+        // default and on in production — then fails to match the SELECT
+        // expression with the GROUP BY one, sees t.closed_at as a bare
+        // nonaggregated column, and rejects the query with error 1055. The
+        // dashboard's P&L calendar returned 500 in production for days.
+        //
+        // This assertion is deliberately static rather than a query. This suite
+        // runs on MariaDB, which accepts that form EVEN WITH only_full_group_by
+        // set — verified, not assumed — so no runtime test and no local
+        // sql_mode can guard it. Reading the SQL we emit is what works here.
+        // Group by the alias instead, as the sibling aggregates already do.
+        $source = file_get_contents(dirname(__DIR__, 3) . '/src/Repositories/StatsRepository.php');
+
+        foreach (explode("\n", $source) as $i => $line) {
+            if (!str_contains($line, 'GROUP BY')) {
+                continue;
+            }
+            $clause = substr($line, strpos($line, 'GROUP BY'));
+            $this->assertStringNotContainsString('SELECT', $clause, "GROUP BY carries a subquery at line " . ($i + 1));
+            $this->assertStringNotContainsString('$eff', $clause, "GROUP BY uses the effectiveDate() expression at line " . ($i + 1));
+        }
+    }
+
     public function testGetDailyPnlStillDatesClosedTradesFromTheirClose(): void
     {
         // Guard the other side: a closed trade keeps being counted on its close
