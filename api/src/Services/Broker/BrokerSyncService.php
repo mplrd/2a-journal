@@ -298,6 +298,13 @@ class BrokerSyncService
             // left the reservation in place would lock the connection out of
             // every sync until the staleness window expires.
             $this->connectionRepo->releaseSync($connectionId);
+
+            // Connectors that hold one socket open for the whole run (cTrader)
+            // hang up here. Without it a crashed run leaks its socket, and the
+            // scheduler runs thousands of them a day.
+            if (isset($connector) && method_exists($connector, 'closeSession')) {
+                $connector->closeSession();
+            }
         }
     }
 

@@ -69,6 +69,8 @@ cTrader n'a pas d'API REST pour les trades. Le protocole natif est Protobuf over
 
 Côté réception, `sendAndReceive()` : ignore les heartbeats (`payloadType 51`) en bouclant, détecte les erreurs sur le **code numérique 2142** (une comparaison sur le nom de message ne matcherait jamais), et retourne le sous-objet `payload`. La table nom→code vit dans `CtraderConnector::PAYLOAD_TYPES`.
 
+**Une seule session par run de synchro.** Les cinq lectures ci-dessous partagent une session WebSocket authentifiée une fois, et un unique `ProtoOAReconcileReq` mémoïsé — 9 requêtes par cycle au lieu de 19. La réutilisation est opt-in (`resetSyncCache()` l'ouvre, `closeSession()` la ferme) pour que les méthodes d'écriture, qui tournent dans une requête HTTP, gardent leur session isolée. Détail et budget : [90-ctrader-budget-requetes.md](90-ctrader-budget-requetes.md).
+
 **Lecture complète (parité Ouinex/BingX).** Au-delà de `fetchDeals` (trades clos via `ProtoOADealListReq`), le connecteur câble tout le read path consommé par `BrokerSyncService` :
 
 | Méthode | Message cTrader | Contenu |
