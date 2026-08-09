@@ -107,6 +107,18 @@ class CtraderConnector implements ConnectorInterface
      */
     private array $lotSizeCache = [];
 
+    /**
+     * Requests actually put on the wire since the run opened, by message name.
+     *
+     * Working out what a sync cost meant reading this class line by line when
+     * FTMO disabled account 7589848 for "amount of activity". A budget nobody
+     * can measure is a budget nobody notices going over: the count belongs in
+     * the logs, and the connector is the only thing that can know it.
+     *
+     * @var array<string, int>
+     */
+    private array $requestCounts = [];
+
     public function __construct(array $config, ?WsClient $wsClient = null, ?HttpClient $httpClient = null)
     {
         $this->config = $config;
@@ -415,7 +427,26 @@ class CtraderConnector implements ConnectorInterface
         $this->symbolNameCache = [];
         $this->lotSizeCache = [];
         $this->pendingPartialExits = [];
+        $this->requestCounts = [];
         $this->sessionReuse = true;
+    }
+
+    /**
+     * What this run has spent so far, for the caller to journalise. Reset by
+     * resetSyncCache(), so it is always the cost of one run rather than of the
+     * process — the budget FTMO enforces is expressed per day, and the only way
+     * to project one from the other is to know the per-run figure.
+     *
+     * Read it BEFORE closeSession(): the run is over once the socket is shut.
+     *
+     * @return array{total: int, by_type: array<string, int>}
+     */
+    public function getRequestCounts(): array
+    {
+        return [
+            'total' => array_sum($this->requestCounts),
+            'by_type' => $this->requestCounts,
+        ];
     }
 
     /**
@@ -1401,6 +1432,11 @@ class CtraderConnector implements ConnectorInterface
 
     private function sendAndReceive(WsClient $ws, string $payloadType, array $payload = []): array
     {
+        // Counted here rather than at the call sites: this is the only place a
+        // request reaches the socket, so the tally cannot drift from reality as
+        // the connector grows new calls.
+        $this->requestCounts[$payloadType] = ($this->requestCounts[$payloadType] ?? 0) + 1;
+
         $ws->text($this->buildMessage($payloadType, $payload));
 
         // The Open API is asynchronous: heartbeats (payloadType 51) and other

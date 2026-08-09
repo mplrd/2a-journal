@@ -1775,6 +1775,47 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame(2, $counts[self::APP_AUTH_REQ] ?? 0);
     }
 
+    public function testARunReportsWhatItSpent(): void
+    {
+        // It took reading the connector line by line to work out our daily
+        // volume when FTMO disabled the account. The number has to come from
+        // the logs instead — which means the connector has to know it.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $spent = $connector->getRequestCounts();
+        $connector->closeSession();
+
+        $this->assertSame(count($ws->sentMessages), $spent['total']);
+        // Named, not numeric: a log line reading ProtoOAReconcileReq is
+        // actionable, one reading 2124 has to be looked up.
+        $this->assertSame(1, $spent['by_type']['ProtoOAReconcileReq'] ?? 0);
+        $this->assertSame(1, $spent['by_type']['ProtoOAApplicationAuthReq'] ?? 0);
+    }
+
+    public function testEachRunCountsFromZero(): void
+    {
+        // A counter that accumulated across runs would report the process's
+        // lifetime total, not the per-run cost the budget is expressed in.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $first = $connector->getRequestCounts()['total'];
+        $connector->closeSession();
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $second = $connector->getRequestCounts()['total'];
+        $connector->closeSession();
+
+        $this->assertGreaterThan(0, $first);
+        $this->assertSame($first, $second);
+    }
+
     public function testASecondAccountNeverInheritsTheFirstOnesSession(): void
     {
         // BrokerSyncService::getConnector() hands out ONE shared connector

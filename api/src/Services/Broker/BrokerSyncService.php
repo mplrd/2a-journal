@@ -299,6 +299,23 @@ class BrokerSyncService
             // every sync until the staleness window expires.
             $this->connectionRepo->releaseSync($connectionId);
 
+            // What the run cost at the broker, before the session is torn down.
+            // Brokers cap requests per day — FTMO disables a trading account
+            // past 2 000 — and a budget nobody can measure is one nobody
+            // notices going over. Logged even when the run failed: a crashing
+            // run still spent its requests, and a crash loop is exactly how a
+            // quota gets burnt.
+            if (isset($connector) && method_exists($connector, 'getRequestCounts')) {
+                $spent = $connector->getRequestCounts();
+                if (($spent['total'] ?? 0) > 0) {
+                    BrokerLogger::event('ctrader', 'sync_request_budget', [
+                        'connection_id' => $connectionId,
+                        'requests' => $spent['total'],
+                        'by_type' => $spent['by_type'] ?? [],
+                    ]);
+                }
+            }
+
             // Connectors that hold one socket open for the whole run (cTrader)
             // hang up here. Without it a crashed run leaks its socket, and the
             // scheduler runs thousands of them a day.

@@ -1014,6 +1014,7 @@
     "error": {
       "account_required": "Veuillez sélectionner un compte",
       "already_connected": "Ce compte est déjà connecté à un broker",
+      "broker_account_already_connected": "Ce compte broker est déjà relié à un autre de vos comptes. Deux connexions sur le même compte broker doublent le nombre de requêtes envoyées, ce que certains brokers sanctionnent.",
       "unsupported_provider": "Fournisseur non supporté",
       "connection_not_found": "Connexion introuvable",
       "credentials_required": "Veuillez renseigner tous les identifiants",

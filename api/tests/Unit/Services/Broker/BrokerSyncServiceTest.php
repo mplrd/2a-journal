@@ -655,6 +655,80 @@ class BrokerSyncServiceTest extends TestCase
             ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
     }
 
+    public function testARunJournalisesWhatItSpentAtTheBroker(): void
+    {
+        // FTMO disables a trading account past 2 000 server requests a day, and
+        // working out our own figure meant reading the connector line by line.
+        // The run has to say what it cost, against the connection it cost it
+        // on — a total with no connection_id cannot be traced back to a culprit.
+        $this->primeSyncStubs();
+        $service = $this->makeServiceWithRepo($this->connectionRepo, new RequestBudgetSpyConnector([]));
+
+        $lines = $this->captureErrorLog(fn() => $service->sync(1, 10));
+
+        $budget = null;
+        foreach ($lines as $line) {
+            $entry = json_decode($line, true);
+            if (($entry['event'] ?? null) === 'sync_request_budget') {
+                $budget = $entry;
+            }
+        }
+
+        $this->assertNotNull($budget, 'the run never said what it spent');
+        $this->assertSame('ctrader', $budget['job']);
+        $this->assertSame(1, $budget['connection_id']);
+        $this->assertSame(9, $budget['requests']);
+        $this->assertSame(1, $budget['by_type']['ProtoOAReconcileReq']);
+    }
+
+    public function testAConnectorThatCountsNothingIsNotJournalised(): void
+    {
+        // Only cTrader counts today. A line reading "0 requests" for MetaApi
+        // would be read as "this sync was free", which is the opposite of true.
+        $this->primeSyncStubs();
+        $service = $this->makeServiceWithRepo($this->connectionRepo, new TimezoneSpyConnector([]));
+
+        $lines = $this->captureErrorLog(fn() => $service->sync(1, 10));
+
+        $budgetLines = array_filter(
+            $lines,
+            fn($l) => (json_decode($l, true)['event'] ?? null) === 'sync_request_budget',
+        );
+        $this->assertSame([], array_values($budgetLines));
+    }
+
+    /**
+     * BrokerLogger writes to error_log(), the portable stderr-ish sink. Point
+     * it at a file for the duration of the call and read back what landed.
+     *
+     * Writing to a FILE makes error_log() prepend "[date UTC] " to every line —
+     * a prefix that does not exist when the same call goes to stderr, which is
+     * where it goes in production. Strip it, or every line comes back as
+     * unparseable JSON and the assertions read as "nothing was logged".
+     *
+     * @return list<string>
+     */
+    private function captureErrorLog(callable $run): array
+    {
+        $file = tempnam(sys_get_temp_dir(), 'brokerlog');
+        $previous = ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+
+        $contents = file_get_contents($file) ?: '';
+        unlink($file);
+
+        return array_values(array_map(
+            fn($l) => preg_replace('/^\[[^\]]+\]\s*/', '', $l),
+            array_filter(explode("\n", $contents), fn($l) => trim($l) !== ''),
+        ));
+    }
+
     private function makeServiceWith(
         ConnectorInterface $ctrader,
         ?\App\Repositories\UserRepository $userRepo,
@@ -721,5 +795,31 @@ class TimezoneSpyConnector extends \App\Services\Broker\CtraderConnector
     public function refreshCredentials(array $credentials): array
     {
         return $credentials;
+    }
+}
+
+/**
+ * A connector that reports a request bill. The counting itself is CtraderConnector's
+ * job and is tested there; what this exercises is the wiring — that the sync
+ * service asks, and journalises the answer against the right connection.
+ */
+class RequestBudgetSpyConnector extends TimezoneSpyConnector
+{
+    public function getRequestCounts(): array
+    {
+        return [
+            'total' => 9,
+            'by_type' => [
+                'ProtoOAApplicationAuthReq' => 1,
+                'ProtoOAAccountAuthReq' => 1,
+                'ProtoOAReconcileReq' => 1,
+                'ProtoOADealListReq' => 1,
+                'ProtoOASymbolsListReq' => 1,
+                'ProtoOASymbolByIdReq' => 1,
+                'ProtoOAOrderListReq' => 1,
+                'ProtoOATraderReq' => 1,
+                'ProtoOAAssetListReq' => 1,
+            ],
+        ];
     }
 }
