@@ -101,7 +101,16 @@ function formatDayPnl(pnl) {
 <template>
   <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 h-full">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.daily_calendar') }}</h3>
+      <div class="flex items-center gap-1.5">
+        <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.daily_calendar') }}</h3>
+        <i
+          data-testid="daily-pnl-help"
+          class="pi pi-info-circle text-gray-400 cursor-help text-xs"
+          role="img"
+          :aria-label="t('dashboard.daily_calendar_help')"
+          v-tooltip.top="t('dashboard.daily_calendar_help')"
+        />
+      </div>
       <div class="flex items-center gap-1">
         <button
           class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
