@@ -156,6 +156,7 @@
     "no_open_trades": "No open trades.",
     "no_recent_trades": "No closed trades yet.",
     "daily_calendar": "Daily P&L",
+    "daily_calendar_help": "Sum of the gains and losses realized on that day, with no currency conversion between accounts, rounded to the unit. Partial take profits on a still-open trade are counted on the day they were taken, without waiting for the close. An amber cell means a result of exactly zero.",
     "no_data": "No data available.",
     "view_all": "View all",
     "all_accounts": "All accounts",

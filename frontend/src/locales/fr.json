@@ -156,6 +156,7 @@
     "no_open_trades": "Aucun trade en cours.",
     "no_recent_trades": "Aucun trade fermé pour le moment.",
     "daily_calendar": "P&L journalier",
+    "daily_calendar_help": "Somme des gains et pertes réalisés ce jour-là, sans conversion de devise entre comptes, arrondie à l'unité. Les TP partiels d'un trade encore ouvert sont comptés à leur date de prise, sans attendre la clôture. Une case orange signale un résultat exactement nul.",
     "no_data": "Aucune donnée disponible.",
     "view_all": "Voir tout",
     "all_accounts": "Tous les comptes",
