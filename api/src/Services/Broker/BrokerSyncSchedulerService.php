@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Enums\SyncStatus;
 use App\Exceptions\BrokerRateLimitException;
 use App\Repositories\BrokerConnectionRepository;
 use Throwable;
@@ -16,7 +17,7 @@ use Throwable;
  */
 class BrokerSyncSchedulerService
 {
-    /** @param array{auto_sync_enabled: bool, sync_interval_minutes: int, max_consecutive_failures: int} $config */
+    /** @param array{auto_sync_enabled: bool, sync_interval_minutes: int, max_consecutive_failures: int, worker_index?: int} $config */
     public function __construct(
         private BrokerConnectionRepository $connectionRepo,
         private BrokerSyncService $syncService,
@@ -26,7 +27,7 @@ class BrokerSyncSchedulerService
     /**
      * Sync all due connections. Returns a run summary for logging.
      *
-     * @return array{skipped: bool, total_active: int, processed: int, success: int, failed: int, deferred: int, deactivated: int, interval_minutes: int}
+     * @return array{skipped: bool, total_active: int, processed: int, success: int, failed: int, deferred: int, already_syncing: int, deactivated: int, interval_minutes: int}
      */
     public function runDueConnections(): array
     {
@@ -40,17 +41,19 @@ class BrokerSyncSchedulerService
                 'success' => 0,
                 'failed' => 0,
                 'deferred' => 0,
+                'already_syncing' => 0,
                 'deactivated' => 0,
                 'interval_minutes' => $intervalMinutes,
             ];
         }
 
         $totalActive = $this->connectionRepo->countActive();
-        $connections = $this->connectionRepo->findDueForAutoSync($intervalMinutes);
+        $connections = $this->stagger($this->connectionRepo->findDueForAutoSync($intervalMinutes));
 
         $success = 0;
         $failed = 0;
         $deferred = 0;
+        $alreadySyncing = 0;
         $deactivated = 0;
         $maxFailures = $this->config['max_consecutive_failures'];
 
@@ -60,7 +63,17 @@ class BrokerSyncSchedulerService
             $previousFailures = (int) ($conn['consecutive_failures'] ?? 0);
 
             try {
-                $this->syncService->sync($id, $userId);
+                $result = $this->syncService->sync($id, $userId);
+
+                // The connection was reserved by someone else — a manual sync,
+                // or a sibling worker. No work was done, so it is neither a
+                // success to reward nor a failure to punish: leave the failure
+                // streak alone and let the next tick pick it up.
+                if (($result['status'] ?? null) === SyncStatus::SKIPPED->value) {
+                    $alreadySyncing++;
+                    continue;
+                }
+
                 $this->connectionRepo->resetFailures($id);
                 $success++;
             } catch (BrokerRateLimitException $e) {
@@ -89,8 +102,38 @@ class BrokerSyncSchedulerService
             'success' => $success,
             'failed' => $failed,
             'deferred' => $deferred,
+            'already_syncing' => $alreadySyncing,
             'deactivated' => $deactivated,
             'interval_minutes' => $intervalMinutes,
         ];
+    }
+
+    /**
+     * Rotate the due list by this worker's index.
+     *
+     * Every worker of a parallel run fetches the same list. Walking it in the
+     * same order means they all pile onto the first connection, and each loser
+     * burns a failed reservation on every entry before reaching free work.
+     * Rotating spreads the starting points; it never skips anything, so a
+     * worker that finds everything taken still walks the whole list.
+     *
+     * @param  array<int, array<string, mixed>> $connections
+     * @return array<int, array<string, mixed>>
+     */
+    private function stagger(array $connections): array
+    {
+        $offset = (int) ($this->config['worker_index'] ?? 0);
+        $count = count($connections);
+
+        if ($offset <= 0 || $count === 0) {
+            return $connections;
+        }
+
+        $offset %= $count;
+        if ($offset === 0) {
+            return $connections;
+        }
+
+        return array_merge(array_slice($connections, $offset), array_slice($connections, 0, $offset));
     }
 }

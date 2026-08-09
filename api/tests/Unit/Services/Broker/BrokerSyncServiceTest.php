@@ -43,6 +43,11 @@ class BrokerSyncServiceTest extends TestCase
         $this->openSyncService = $this->createMock(BrokerOpenSyncService::class);
         $this->orderSyncService = $this->createMock(BrokerOrderSyncService::class);
 
+        // Every nominal sync reserves the connection first. Tests that exercise
+        // a REFUSED reservation build their own repository mock: PHPUnit picks
+        // the first registered matcher, so this default can't be overridden.
+        $this->connectionRepo->method('claimForSync')->willReturn(true);
+
         $this->service = new BrokerSyncService(
             $this->connectionRepo,
             $this->syncLogRepo,
@@ -442,5 +447,379 @@ class BrokerSyncServiceTest extends TestCase
         $this->assertSame(0, $result['pending_cancelled']);
         $this->assertSame(0, $result['pending_executed']);
         $this->assertSame(0, $result['pending_expired']);
+    }
+
+    // ── Timezone handed to the connector ────────────────────────────
+
+    public function testSyncHandsTheUsersTimezoneToTheConnector(): void
+    {
+        // The journal's DATETIME columns hold local wall-clock time, so the
+        // connector has to know which clock to render broker instants on.
+        // Without it a trade opened at 07:29 in Paris is journalled as 05:29,
+        // two hours away from every hand-entered trade beside it.
+        $userRepo = $this->createMock(\App\Repositories\UserRepository::class);
+        $userRepo->method('findById')->willReturn(['id' => 10, 'timezone' => 'Europe/Paris']);
+
+        $spy = new TimezoneSpyConnector([]);
+        $this->primeSyncStubs();
+
+        $this->makeServiceWith($spy, $userRepo)->sync(1, 10);
+
+        $this->assertSame('Europe/Paris', $spy->spiedTimezone);
+    }
+
+    public function testSyncLeavesTheConnectorOnUtcWhenTheTimezoneIsUnknown(): void
+    {
+        // No repository injected → null, i.e. the UTC behaviour that predates
+        // this. A sync must never fail because a timezone could not be read.
+        $spy = new TimezoneSpyConnector([]);
+        $this->primeSyncStubs();
+
+        $this->makeServiceWith($spy, null)->sync(1, 10);
+
+        $this->assertNull($spy->spiedTimezone);
+    }
+
+    // ── Reservation (one sync at a time per connection) ──────────────
+
+    public function testSyncReservesTheConnectionBeforeTouchingTheBroker(): void
+    {
+        // Nothing serialises the manual sync against the scheduled one, so two
+        // runs can otherwise import the same deals concurrently.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->expects($this->once())
+            ->method('claimForSync')
+            ->with(1, BrokerSyncService::SYNC_CLAIM_TTL_SECONDS)
+            ->willReturn(true);
+
+        $this->primeSyncStubsOn($repo);
+
+        $this->makeServiceWithRepo($repo)->sync(1, 10);
+    }
+
+    public function testSyncSkipsWithoutWorkingWhenTheConnectionIsAlreadySyncing(): void
+    {
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('claimForSync')->willReturn(false);
+
+        // A refused reservation is not a failure: nothing is logged, nothing is
+        // fetched, and the connection state is left exactly as the holder found it.
+        $repo->expects($this->never())->method('update');
+        $repo->expects($this->never())->method('releaseSync');
+        $this->syncLogRepo->expects($this->never())->method('create');
+
+        $spy = new TimezoneSpyConnector([]);
+        $result = $this->makeServiceWithRepo($repo, $spy)->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SKIPPED->value, $result['status']);
+        $this->assertSame(0, $result['imported_positions']);
+    }
+
+    public function testSyncReleasesTheReservationOnSuccess(): void
+    {
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('claimForSync')->willReturn(true);
+        $repo->expects($this->once())->method('releaseSync')->with(1);
+
+        $this->primeSyncStubsOn($repo);
+
+        $this->makeServiceWithRepo($repo)->sync(1, 10);
+    }
+
+    public function testSyncReleasesTheReservationWhenTheSyncBlowsUp(): void
+    {
+        // Without a finally, one crash leaves the connection locked until the
+        // staleness window expires — 15 minutes of no sync for that account.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('claimForSync')->willReturn(true);
+        $repo->expects($this->once())->method('releaseSync')->with(1);
+
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+        $connector = $this->createMock(ConnectorInterface::class);
+        $connector->method('refreshCredentials')->willReturnArgument(0);
+        $connector->method('fetchDeals')->willThrowException(new \RuntimeException('broker down'));
+
+        $this->expectException(\RuntimeException::class);
+
+        $this->makeServiceWithRepo($repo, $connector)->sync(1, 10);
+    }
+
+    // ── requestSync (the button, non-blocking) ───────────────────────
+
+    public function testRequestSyncFlagsTheConnectionWithoutTouchingTheBroker(): void
+    {
+        // A cTrader sync opens five WebSocket sessions in a row. Doing that
+        // inside the HTTP request means the user waits, and a proxy timeout can
+        // cut it in half.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->expects($this->once())->method('requestSync')->with(1);
+        $repo->expects($this->never())->method('claimForSync');
+        $this->syncLogRepo->expects($this->never())->method('create');
+
+        $result = $this->makeServiceWithRepo($repo)->requestSync(1, 10);
+
+        $this->assertSame(SyncStatus::QUEUED->value, $result['status']);
+    }
+
+    public function testRequestSyncReportsAnAlreadyRunningSync(): void
+    {
+        $connection = $this->makeConnection('CTRADER');
+        $connection['syncing_since'] = '2026-08-07 09:00:00';
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($connection);
+
+        // Still queued: the user wants a fresh pass, and the running one already
+        // took its reservation so it will not swallow this request.
+        $repo->expects($this->once())->method('requestSync')->with(1);
+
+        $result = $this->makeServiceWithRepo($repo)->requestSync(1, 10);
+
+        $this->assertSame(SyncStatus::QUEUED->value, $result['status']);
+        $this->assertTrue($result['syncing']);
+    }
+
+    public function testRequestSyncRejectsAnotherUsersConnection(): void
+    {
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->expects($this->never())->method('requestSync');
+
+        $this->expectException(\App\Exceptions\ForbiddenException::class);
+
+        $this->makeServiceWithRepo($repo)->requestSync(1, 999);
+    }
+
+    public function testRequestSyncRejectsANonActiveConnection(): void
+    {
+        $connection = $this->makeConnection('CTRADER');
+        $connection['status'] = ConnectionStatus::ERROR->value;
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($connection);
+        $repo->expects($this->never())->method('requestSync');
+
+        $this->expectException(\App\Exceptions\ValidationException::class);
+
+        $this->makeServiceWithRepo($repo)->requestSync(1, 10);
+    }
+
+    /** primeSyncStubs against a bespoke repository mock. */
+    private function primeSyncStubsOn(BrokerConnectionRepository $repo): void
+    {
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+        $this->openSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+        $this->orderSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
+    }
+
+    private function makeServiceWithRepo(
+        BrokerConnectionRepository $repo,
+        ?ConnectorInterface $ctrader = null,
+    ): BrokerSyncService {
+        return new BrokerSyncService(
+            $repo,
+            $this->syncLogRepo,
+            $this->importService,
+            new RowGroupingService(),
+            $this->crypto,
+            $ctrader ?? new TimezoneSpyConnector([]),
+            $this->metaApiConnector,
+            $this->ouinexConnector,
+            $this->bingxConnector,
+            $this->openSyncService,
+            $this->orderSyncService,
+        );
+    }
+
+    /** The collaborators a sync touches beyond the connector under test. */
+    private function primeSyncStubs(): void
+    {
+        $this->connectionRepo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+        $this->openSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'transitioned' => 0, 'skipped_orphans' => 0]);
+        $this->orderSyncService->method('apply')
+            ->willReturn(['inserted' => 0, 'updated' => 0, 'executed' => 0, 'expired' => 0, 'cancelled' => 0]);
+    }
+
+    public function testARunJournalisesWhatItSpentAtTheBroker(): void
+    {
+        // FTMO disables a trading account past 2 000 server requests a day, and
+        // working out our own figure meant reading the connector line by line.
+        // The run has to say what it cost, against the connection it cost it
+        // on — a total with no connection_id cannot be traced back to a culprit.
+        $this->primeSyncStubs();
+        $service = $this->makeServiceWithRepo($this->connectionRepo, new RequestBudgetSpyConnector([]));
+
+        $lines = $this->captureErrorLog(fn() => $service->sync(1, 10));
+
+        $budget = null;
+        foreach ($lines as $line) {
+            $entry = json_decode($line, true);
+            if (($entry['event'] ?? null) === 'sync_request_budget') {
+                $budget = $entry;
+            }
+        }
+
+        $this->assertNotNull($budget, 'the run never said what it spent');
+        $this->assertSame('ctrader', $budget['job']);
+        $this->assertSame(1, $budget['connection_id']);
+        $this->assertSame(9, $budget['requests']);
+        $this->assertSame(1, $budget['by_type']['ProtoOAReconcileReq']);
+    }
+
+    public function testAConnectorThatCountsNothingIsNotJournalised(): void
+    {
+        // Only cTrader counts today. A line reading "0 requests" for MetaApi
+        // would be read as "this sync was free", which is the opposite of true.
+        $this->primeSyncStubs();
+        $service = $this->makeServiceWithRepo($this->connectionRepo, new TimezoneSpyConnector([]));
+
+        $lines = $this->captureErrorLog(fn() => $service->sync(1, 10));
+
+        $budgetLines = array_filter(
+            $lines,
+            fn($l) => (json_decode($l, true)['event'] ?? null) === 'sync_request_budget',
+        );
+        $this->assertSame([], array_values($budgetLines));
+    }
+
+    /**
+     * BrokerLogger writes to error_log(), the portable stderr-ish sink. Point
+     * it at a file for the duration of the call and read back what landed.
+     *
+     * Writing to a FILE makes error_log() prepend "[date UTC] " to every line —
+     * a prefix that does not exist when the same call goes to stderr, which is
+     * where it goes in production. Strip it, or every line comes back as
+     * unparseable JSON and the assertions read as "nothing was logged".
+     *
+     * @return list<string>
+     */
+    private function captureErrorLog(callable $run): array
+    {
+        $file = tempnam(sys_get_temp_dir(), 'brokerlog');
+        $previous = ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+
+        $contents = file_get_contents($file) ?: '';
+        unlink($file);
+
+        return array_values(array_map(
+            fn($l) => preg_replace('/^\[[^\]]+\]\s*/', '', $l),
+            array_filter(explode("\n", $contents), fn($l) => trim($l) !== ''),
+        ));
+    }
+
+    private function makeServiceWith(
+        ConnectorInterface $ctrader,
+        ?\App\Repositories\UserRepository $userRepo,
+    ): BrokerSyncService {
+        return new BrokerSyncService(
+            $this->connectionRepo,
+            $this->syncLogRepo,
+            $this->importService,
+            new RowGroupingService(),
+            $this->crypto,
+            $ctrader,
+            $this->metaApiConnector,
+            $this->ouinexConnector,
+            $this->bingxConnector,
+            $this->openSyncService,
+            $this->orderSyncService,
+            null,
+            $userRepo,
+        );
+    }
+}
+
+/**
+ * A real connector — so it carries the NormalizesInUserTimezone trait — with
+ * its network calls stubbed out, recording the timezone the sync service hands
+ * it. A plain interface mock would not do: the point is that the wiring reaches
+ * a connector that actually implements setTimezone().
+ */
+class TimezoneSpyConnector extends \App\Services\Broker\CtraderConnector
+{
+    public ?string $spiedTimezone = null;
+
+    public function setTimezone(?string $timezone): void
+    {
+        $this->spiedTimezone = $timezone;
+        parent::setTimezone($timezone);
+    }
+
+    public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
+    {
+        return ['deals' => [], 'cursor' => null, 'raw_count' => 0];
+    }
+
+    public function fetchOpenPositions(array $credentials): array
+    {
+        return ['positions' => [], 'raw_count' => 0];
+    }
+
+    public function fetchOpenOrders(array $credentials): array
+    {
+        return ['orders' => [], 'raw_count' => 0];
+    }
+
+    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
+    {
+        return ['orders' => [], 'raw_count' => 0];
+    }
+
+    public function fetchBalance(array $credentials): ?float
+    {
+        return null;
+    }
+
+    public function refreshCredentials(array $credentials): array
+    {
+        return $credentials;
+    }
+}
+
+/**
+ * A connector that reports a request bill. The counting itself is CtraderConnector's
+ * job and is tested there; what this exercises is the wiring — that the sync
+ * service asks, and journalises the answer against the right connection.
+ */
+class RequestBudgetSpyConnector extends TimezoneSpyConnector
+{
+    public function getRequestCounts(): array
+    {
+        return [
+            'total' => 9,
+            'by_type' => [
+                'ProtoOAApplicationAuthReq' => 1,
+                'ProtoOAAccountAuthReq' => 1,
+                'ProtoOAReconcileReq' => 1,
+                'ProtoOADealListReq' => 1,
+                'ProtoOASymbolsListReq' => 1,
+                'ProtoOASymbolByIdReq' => 1,
+                'ProtoOAOrderListReq' => 1,
+                'ProtoOATraderReq' => 1,
+                'ProtoOAAssetListReq' => 1,
+            ],
+        ];
     }
 }

@@ -6,7 +6,11 @@
 #
 # Build context: repo root (so we can COPY api/ into the image).
 # On Railway: Root Directory = "." (repo root), Dockerfile = "scheduler/Dockerfile".
-# Scale this service to exactly 1 instance — otherwise jobs run twice.
+# Keep this service at 1 instance. The broker sync is safe against duplicates
+# on its own now (a connection is reserved before it is synced, see
+# docs/89-broker-sync-parallelisation.md) and fans out to BROKER_SYNC_WORKERS
+# child processes inside the container, so a second instance would buy nothing
+# — while every OTHER job in scheduler/crontab would still run twice.
 
 # --- Stage 1: Install PHP dependencies ---
 FROM composer:2 AS composer-build

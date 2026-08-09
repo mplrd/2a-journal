@@ -91,13 +91,23 @@ Le script n'a pas été livré avec cette itération car il n'y avait pas de don
 
 Un run part toutes les **5 minutes** (fréquence du cron dans `scheduler/crontab`). Cette valeur est la **granularité maximale** ; l'intervalle effectif par connexion est piloté par `BROKER_SYNC_INTERVAL_MINUTES` via le filtre SQL.
 
+> **Mis à jour.** Le CLI est désormais un **superviseur** qui délègue à N
+> processus enfants, chacun exécutant le scheduler décrit ci-dessous. Le schéma
+> qui suit reste exact pour un worker ; l'étage superviseur est décrit dans
+> [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md).
+
 ```
-supercronic tick (*/5 min)
+supercronic tick (*/1 min)
     │
     ▼
-php api/cli/sync-brokers.php
+php api/cli/sync-brokers.php                    ← superviseur
     │
     ├─ flock /tmp/broker-sync.lock  (skip silent si un run précédent tourne encore)
+    │
+    ├─ Rien de dû → sort sans lancer d'enfant
+    │
+    ▼
+php api/cli/sync-brokers.php --worker --worker-index=N   ← × BROKER_SYNC_WORKERS
     │
     ├─ Bootstrap PDO + config + DI
     │
@@ -111,6 +121,7 @@ BrokerSyncSchedulerService::runDueConnections()
     │     AND (last_sync_at IS NULL OR last_sync_at < UTC_TIMESTAMP() - INTERVAL X MINUTE)
     │
     ├─ Pour chaque connexion, en try/catch isolé :
+    │     ├─ Réservée ailleurs → SKIPPED, compté en already_syncing, rien d'autre
     │     ├─ Succès  → BrokerSyncService::sync() + resetFailures(id)
     │     └─ Échec   → incrementFailures(id)
     │                 Si consecutive_failures atteint max → markError(id) + status=ERROR
@@ -121,18 +132,26 @@ BrokerSyncSchedulerService::runDueConnections()
 ### Exemple de sortie JSON
 
 ```json
-{"job":"broker-sync","status":"ok","skipped":false,"total_active":15,"processed":12,"success":11,"failed":1,"deactivated":0,"interval_minutes":15}
+{"job":"broker-sync","status":"ok","role":"supervisor","skipped":false,"workers":4,"total_active":15,"processed":12,"success":11,"failed":1,"deferred":0,"already_syncing":8,"deactivated":0,"worker_errors":0,"interval_minutes":15,"duration_ms":4210}
 ```
+
+Chaque worker émet la même ligne avec `"role":"worker"` et son `worker_index` ;
+le superviseur les agrège.
 
 | Champ | Signification |
 |---|---|
 | `job` | Nom du job émetteur. Utile quand le scheduler hébergera plusieurs jobs (filtre / alerte par job). |
 | `status` | `ok` (run OK), `locked` (un autre run était en cours, skip silencieux), `error` (erreur fatale avant le run, stderr + exit 1). |
+| `role` | `supervisor` (le tour agrégé) ou `worker` (un enfant). |
+| `workers` | Nombre d'enfants réellement lancés : `min(BROKER_SYNC_WORKERS, connexions dues, 16)`. `0` quand il n'y a rien à faire — on ne paie pas le démarrage d'un processus pour le découvrir. |
+| `worker_errors` | Enfants morts ou dont la sortie n'était pas exploitable. Leur stderr est journalisée à part. N'échoue pas le tour. |
+| `duration_ms` | Durée du tour complet. **Le chiffre à surveiller** : il alerte avant que le tour ne déborde l'intervalle. |
 | `skipped` | `true` si `BROKER_AUTO_SYNC_ENABLED=false` — le scheduler tourne mais ne fait rien. |
 | `total_active` | Nombre de connexions `status=ACTIVE` en BDD au moment du run, indépendamment de leur `last_sync_at`. |
 | `processed` | Nombre de connexions effectivement pickées pour sync (filtrage `last_sync_at + INTERVAL < NOW()`). Si `total_active > processed`, la différence sont des connexions syncées trop récemment. |
 | `success` | Parmi les `processed`, combien ont été syncées avec succès. |
 | `failed` | Parmi les `processed`, combien ont échoué (incrémente `consecutive_failures`). |
+| `already_syncing` | Parmi les `processed`, combien tenaient déjà une réservation prise ailleurs (clic UI, autre worker). Ni succès ni échec : aucun travail n'a eu lieu, le compteur d'échecs n'est pas touché. Voir [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md). |
 | `deactivated` | Parmi les `failed`, combien ont atteint le seuil `BROKER_SYNC_MAX_FAILURES` et sont passées en `status=ERROR`. |
 | `interval_minutes` | Valeur effective de `BROKER_SYNC_INTERVAL_MINUTES` appliquée par ce run. Permet de vérifier d'un coup d'œil que l'env var est bien lue. |
 
@@ -224,7 +243,17 @@ MariaDB ne supporte pas les paramètres liés dans les expressions `INTERVAL` �
 
 ### Pourquoi un seul `flock` global et pas un lock par connexion
 
-Simplicité et suffisance : un run dure quelques secondes à quelques minutes, le cron tombe toutes les 5 minutes. Le risque d'overlapping est faible et les runs parallèles sur des connexions différentes n'apportent pas de bénéfice (le scheduler ne parallélise pas). Le flock global couvre le cas "un run particulièrement lent + nouveau cron" sans complexité supplémentaire.
+> **Révisé.** Ce raisonnement tenait tant que le seul risque était deux tours de
+> cron qui se chevauchent. Il ignorait le chemin HTTP : `POST /sync` ne prend
+> aucun verrou, donc un clic pendant un run du cron traite bien la même connexion
+> deux fois. Un verrou **par connexion** existe désormais
+> (`broker_connections.syncing_since`), voir
+> [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md). Le
+> `flock` est conservé, mais pris par le seul **superviseur** : il n'empêche plus
+> le parallélisme, il empêche deux *tours* de s'empiler. Un worker ne le prend
+> jamais — il bloquerait contre son propre parent.
+
+Argument d'origine : simplicité et suffisance : un run dure quelques secondes à quelques minutes, le cron tombe toutes les 5 minutes. Le risque d'overlapping est faible et les runs parallèles sur des connexions différentes n'apportent pas de bénéfice (le scheduler ne parallélise pas). Le flock global couvre le cas "un run particulièrement lent + nouveau cron" sans complexité supplémentaire.
 
 ### Pourquoi le CLI bootstrap toutes les dépendances manuellement
 

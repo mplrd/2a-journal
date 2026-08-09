@@ -48,6 +48,7 @@ class BrokerConnectionService
         }
 
         $credentials = $this->mapper->build($provider, $body);
+        $this->assertBrokerAccountFree($userId, $provider, $credentials);
         $encrypted = $this->crypto->encrypt($credentials);
 
         $connection = $this->connectionRepo->create([
@@ -85,6 +86,7 @@ class BrokerConnectionService
 
         $existing = $this->decryptOrEmpty($connection);
         $credentials = $this->mapper->merge($provider, $existing, $body);
+        $this->assertBrokerAccountFree($userId, $provider, $credentials, $connectionId);
         $encrypted = $this->crypto->encrypt($credentials);
 
         // Reset the failure state in the same write: fresh credentials mean the
@@ -102,6 +104,57 @@ class BrokerConnectionService
             'connection' => $this->present($this->connectionRepo->findById($connectionId), $credentials),
             'connection_test' => $this->testCredentials($provider, $credentials),
         ];
+    }
+
+    /**
+     * Refuse a second live connection onto the same broker account.
+     *
+     * Two of them sync on their own schedules and double the request volume
+     * against the broker — silently, since each connection looks healthy on its
+     * own. FTMO disables a trading account past 2 000 requests a day, so the
+     * duplicate is not a tidiness problem: it is half the budget, gone.
+     *
+     * Enforced here rather than by a UNIQUE key because the identifier lives
+     * inside the encrypted credentials blob, where SQL cannot reach it. The
+     * scan is per user, and a user has a handful of connections.
+     *
+     * REVOKED ones are ignored: they never sync, so they spend nothing, and
+     * counting them would leave the user unable to reconnect an account they
+     * had just disconnected.
+     *
+     * @throws ValidationException when the broker account is already taken
+     */
+    private function assertBrokerAccountFree(
+        int $userId,
+        string $provider,
+        array $credentials,
+        ?int $excludeConnectionId = null,
+    ): void {
+        $identity = $this->mapper->brokerAccountIdentity($provider);
+        if ($identity === null) {
+            return;
+        }
+
+        $mine = (string) ($credentials[$identity['key']] ?? '');
+        if ($mine === '') {
+            return;
+        }
+
+        foreach ($this->connectionRepo->findAllByUserId($userId) as $other) {
+            if ((int) $other['id'] === $excludeConnectionId
+                || $other['provider'] !== $provider
+                || $other['status'] === ConnectionStatus::REVOKED->value) {
+                continue;
+            }
+
+            $theirs = (string) ($this->decryptOrEmpty($other)[$identity['key']] ?? '');
+            if ($theirs !== '' && $theirs === $mine) {
+                throw new ValidationException(
+                    'broker.error.broker_account_already_connected',
+                    $identity['field'],
+                );
+            }
+        }
     }
 
     /**

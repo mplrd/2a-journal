@@ -149,7 +149,8 @@ class CtraderConnectorTest extends TestCase
                 'takeProfit' => 19500.0,
                 'tradeData' => ['symbolId' => 22, 'volume' => 50000, 'tradeSide' => 'BUY', 'openTimestamp' => 1700000000000],
             ]]]),
-            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'lotSize' => 100000]]]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
 
@@ -161,6 +162,255 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('BUY', $result['positions'][0]['direction']);
         $this->assertEquals(0.5, $result['positions'][0]['size']);
         $this->assertSame('ctrader_999', $result['positions'][0]['external_id']);
+    }
+
+    public function testFetchOpenPositionsAsksForTheProtectionOrders(): void
+    {
+        // ProtoOAReconcileReq.returnProtectionOrders: "If TRUE, then current
+        // protection orders are returned separately, otherwise you can use
+        // position.stopLoss and position.takeProfit fields." Without it cTrader
+        // COLLAPSES every protection into the position's two scalar fields, so
+        // a staged plan comes back as a single level and no amount of filtering
+        // on order[] can recover it — the orders were never sent.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $reconcile = null;
+        foreach ($ws->sentMessages as $message) {
+            $decoded = json_decode($message, true);
+            if (($decoded['payloadType'] ?? null) === 2124) {
+                $reconcile = $decoded['payload'];
+            }
+        }
+
+        $this->assertNotNull($reconcile, 'no ProtoOAReconcileReq was sent');
+        $this->assertTrue($reconcile['returnProtectionOrders'] ?? false);
+    }
+
+    public function testFetchOpenPositionsCollectsStagedTakeProfitOrders(): void
+    {
+        // cTrader now places partial take profits server-side, as LIMIT closing
+        // orders bound to the position. They are the ONLY record of a staged
+        // exit plan — ProtoOAPosition.takeProfit holds a single level — and the
+        // order path deliberately drops closing orders, so without this they
+        // vanished entirely. The STOP_LOSS_TAKE_PROFIT order below is the
+        // position's own protective pair, not an objective: it must be ignored.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        'orderId' => 900, 'positionId' => 331, 'orderType' => 'LIMIT',
+                        'closingOrder' => true, 'limitPrice' => 26600.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        'orderId' => 901, 'positionId' => 331, 'orderType' => 'LIMIT',
+                        'closingOrder' => true, 'limitPrice' => 26450.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        // The position's own SL/TP pair — not a staged objective.
+                        'orderId' => 902, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT',
+                        'closingOrder' => true, 'stopPrice' => 26200.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        // A standalone entry order on another symbol: untouched.
+                        'orderId' => 903, 'orderType' => 'LIMIT', 'limitPrice' => 20000.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'BUY'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets, 'only the LIMIT closing orders are objectives');
+        // Nearest to the entry first, with the volume each step takes off.
+        $this->assertSame(26450.0, $targets[0]['price']);
+        $this->assertSame(1.5, $targets[0]['size']);
+        $this->assertSame(26600.0, $targets[1]['price']);
+        $this->assertSame(1.0, $targets[1]['size']);
+    }
+
+    public function testFetchOpenPositionsCollectsProtectiveOrdersCarryingATakeProfit(): void
+    {
+        // cTrader stages up to five take profit levels per position, each with
+        // its own quantity. The public docs never state how those levels come
+        // out on the Open API, and reading only LIMIT closing orders brought
+        // back nothing on a real account — so a protective order that carries a
+        // takeProfit price counts as a level too. Broad on purpose: whichever
+        // shape the platform uses, the level is seen. A protective order with
+        // only a stop loss stays out.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'takeProfit' => 22386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        // Intermediate level: 500 points below entry on a short.
+                        'orderId' => 910, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'takeProfit' => 25886.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'BUY'],
+                    ],
+                    [
+                        // Final level on the rest of the position.
+                        'orderId' => 911, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'takeProfit' => 22386.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'BUY'],
+                    ],
+                    [
+                        // Pure stop loss: protective, but not an objective.
+                        'orderId' => 912, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'stopLoss' => 26619.42,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets, 'the stop-loss-only order is not an objective');
+        $this->assertSame(25886.34, $targets[0]['price']);
+        $this->assertSame(1.0, $targets[0]['size']);
+        $this->assertSame(22386.34, $targets[1]['price']);
+        $this->assertSame(1.5, $targets[1]['size']);
+    }
+
+    public function testFetchOpenPositionsAcceptsAProtectionOrderWithoutTheClosingFlag(): void
+    {
+        // Requiring closingOrder was a guess, and returnProtectionOrders still
+        // brought back nothing usable on a real account. `closingOrder` is
+        // documented for orders the user places to close part of a position;
+        // nothing promises the platform sets it on the protections it returns
+        // separately. The link that genuinely matters is positionId — an order
+        // bound to a position and carrying a take profit price IS a level.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'takeProfit' => 22386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [[
+                    'orderId' => 930, 'positionId' => 331,
+                    'orderType' => 'STOP_LOSS_TAKE_PROFIT',
+                    // no closingOrder flag at all
+                    'takeProfit' => 25886.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'BUY'],
+                ]],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets);
+        $this->assertSame(25886.34, $targets[0]['price']);
+    }
+
+    public function testFetchOpenPositionsDoesNotCountTheSameLevelTwice(): void
+    {
+        // The position's own takeProfit mirrors one of the staged levels. It is
+        // only a fallback, and a level reported by two orders at one price is
+        // still one level.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'takeProfit' => 22386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        'orderId' => 920, 'positionId' => 331, 'orderType' => 'LIMIT',
+                        'closingOrder' => true, 'limitPrice' => 22386.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY'],
+                    ],
+                    [
+                        'orderId' => 921, 'positionId' => 331,
+                        'orderType' => 'STOP_LOSS_TAKE_PROFIT', 'closingOrder' => true,
+                        'takeProfit' => 22386.34,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $this->assertCount(1, $result['positions'][0]['targets']);
+    }
+
+    public function testFetchOpenPositionsIgnoresClosingOrdersOfOtherPositions(): void
+    {
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [[
+                    'orderId' => 950, 'positionId' => 999, 'orderType' => 'LIMIT',
+                    'closingOrder' => true, 'limitPrice' => 26600.0,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'SELL'],
+                ]],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $this->assertSame([], $result['positions'][0]['targets']);
     }
 
     public function testFetchOpenOrdersFiltersProtectiveClosingOrders(): void
@@ -187,7 +437,8 @@ class CtraderConnectorTest extends TestCase
                     'tradeData' => ['symbolId' => 22, 'volume' => 10000, 'tradeSide' => 'SELL', 'openTimestamp' => 1700000000000],
                 ],
             ]]),
-            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 22, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 22, 'lotSize' => 100000]]]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
 
@@ -342,10 +593,12 @@ class CtraderConnectorTest extends TestCase
 
         $this->assertCount(1, $deals);
         $this->assertSame('GER40', $deals[0]['symbol']);
-        $this->assertSame('SELL', $deals[0]['direction']);
+        // The closing deal sold, so the position it closed was a BUY.
+        $this->assertSame('BUY', $deals[0]['direction']);
         $this->assertEquals(19200.00, $deals[0]['entry_price']);
         $this->assertEquals(19226.05, $deals[0]['exit_price']);
-        $this->assertEquals(26.05, $deals[0]['pnl']);
+        // 26.05 gross less the 0.50 commission carried by the closing detail.
+        $this->assertEquals(25.55, $deals[0]['pnl']);
         $this->assertSame('ctrader_50', $deals[0]['external_id']);
     }
 
@@ -801,6 +1054,7 @@ class CtraderConnectorTest extends TestCase
         $ws = $this->makeWsStub([
             self::frame(self::APP_AUTH_RES),
             self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
             self::frame(self::DEAL_LIST_RES, [
                 'deal' => [
                     ['dealId' => 1, 'symbolId' => 1, 'executionTimestamp' => 1750000000000],
@@ -811,10 +1065,15 @@ class CtraderConnectorTest extends TestCase
                 ],
                 'hasMore' => false,
             ]),
-            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
                 ['symbolId' => 1, 'symbolName' => 'EURUSD'],
                 ['symbolId' => 22, 'symbolName' => 'GBPUSD'],
                 ['symbolId' => 41, 'symbolName' => 'XAUUSD'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+                ['symbolId' => 1, 'lotSize' => 10000000],
+                ['symbolId' => 22, 'lotSize' => 10000000],
+                ['symbolId' => 41, 'lotSize' => 10000],
             ]]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
@@ -839,6 +1098,368 @@ class CtraderConnectorTest extends TestCase
         $this->assertNotNull($symbolRequest, 'no ProtoOASymbolByIdReq was sent');
         $this->assertIsArray($symbolRequest->payload->symbolId);
         $this->assertSame([1, 22, 41], $symbolRequest->payload->symbolId);
+    }
+
+    public function testFetchDealsTakesSymbolNamesFromTheLightSymbolList(): void
+    {
+        // ProtoOASymbolByIdRes carries ProtoOASymbol, which has NO symbolName
+        // field at all — only ProtoOALightSymbol (ProtoOASymbolsListRes) does.
+        // Reading the name off the wrong message is why every synced trade came
+        // back labelled "SYM_331". The stub mirrors the real API: the by-id
+        // response has lotSize and no name.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [[
+                    'dealId' => 1,
+                    'positionId' => 90,
+                    'symbolId' => 331,
+                    'volume' => 150,
+                    'tradeSide' => 'BUY',
+                    'createTimestamp' => 1785916872000,
+                    'executionTimestamp' => 1785916872000,
+                    'executionPrice' => 26300.0,
+                    'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960, 'closedVolume' => 150],
+                ]],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
+                ['symbolId' => 331, 'symbolName' => 'GER40'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+                ['symbolId' => 331, 'lotSize' => 100, 'digits' => 2],
+            ]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 43210987,
+        ]);
+
+        $this->assertSame('GER40', $result['deals'][0]['symbol']);
+        // lotSize 100 cents → 150 cents of volume is 1.5 contracts, not 0.0015.
+        $this->assertEquals(1.5, $result['deals'][0]['size']);
+        // tradeSide BUY closed the position → it was a SELL.
+        $this->assertSame('SELL', $result['deals'][0]['direction']);
+    }
+
+    public function testFetchDealsNamesArchivedSymbolsFromTheByIdResponse(): void
+    {
+        // ProtoOASymbolsListReq omits archived symbols unless asked, so a
+        // symbol the broker has retired is absent from the light list and can
+        // never be named from it — one instrument stays SYM_<id> while every
+        // other one on the same account resolves. ProtoOASymbolByIdRes, which
+        // we already call for lotSize, returns archivedSymbol[] alongside
+        // symbol[], and ProtoOAArchivedSymbol carries the name under `name`
+        // (not `symbolName`). No extra round trip needed.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    [
+                        'dealId' => 1, 'positionId' => 90, 'symbolId' => 331, 'volume' => 150,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                        'executionPrice' => 26300.0,
+                        'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960, 'closedVolume' => 150],
+                    ],
+                    [
+                        'dealId' => 2, 'positionId' => 91, 'symbolId' => 5, 'volume' => 100,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785917000000, 'executionTimestamp' => 1785917000000,
+                        'executionPrice' => 20000.0,
+                        'closePositionDetail' => ['entryPrice' => 20100.0, 'grossProfit' => 10000, 'closedVolume' => 100],
+                    ],
+                ],
+                'hasMore' => false,
+            ]),
+            // The light list knows 5 but not the retired 331.
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
+                ['symbolId' => 5, 'symbolName' => 'US100.cash'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, [
+                'symbol' => [['symbolId' => 5, 'lotSize' => 100]],
+                'archivedSymbol' => [['symbolId' => 331, 'name' => 'GER40']],
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        $names = array_column($result['deals'], 'symbol');
+        sort($names);
+        $this->assertSame(['GER40', 'US100.cash'], $names);
+    }
+
+    public function testFetchDealsDatesAPositionFromItsOpeningDeal(): void
+    {
+        // The deal list carries the opening deal (no closePositionDetail) as
+        // well as the closing one. Without wiring the two together, opened_at
+        // fell back to the closing deal's own createTimestamp and every trade
+        // looked like it had opened at the instant it closed.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    [
+                        'dealId' => 10, 'positionId' => 331, 'symbolId' => 5, 'volume' => 250,
+                        'tradeSide' => 'SELL',
+                        'createTimestamp' => 1785907740000, 'executionTimestamp' => 1785907740000,
+                        'executionPrice' => 26386.34,
+                    ],
+                    [
+                        'dealId' => 11, 'positionId' => 331, 'symbolId' => 5, 'volume' => 250,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                        'executionPrice' => 26300.0,
+                        'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 12960, 'closedVolume' => 250],
+                    ],
+                ],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        $this->assertCount(1, $result['deals']);
+        $this->assertSame('2026-08-05 05:29:00', $result['deals'][0]['opened_at']);
+        $this->assertSame('2026-08-05 08:01:12', $result['deals'][0]['closed_at']);
+    }
+
+    public function testFetchDealsHoldsBackClosuresOfStillOpenPositions(): void
+    {
+        // A TP1 is a partial close: the position stays open. Emitting its deal
+        // as a closed trade created a second, phantom position — a "BUY with an
+        // instant profit" sitting next to the still-open SELL. Those deals must
+        // leave fetchDeals as partial exits on the live position instead.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            ]]]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [
+                    // TP1 on the still-open position 331.
+                    [
+                        'dealId' => 11, 'positionId' => 331, 'symbolId' => 5, 'volume' => 100,
+                        'tradeSide' => 'BUY',
+                        'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                        'executionPrice' => 26300.0,
+                        'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327, 'closedVolume' => 100],
+                    ],
+                    // A genuinely finished position — must still come through.
+                    [
+                        'dealId' => 12, 'positionId' => 400, 'symbolId' => 5, 'volume' => 100,
+                        'tradeSide' => 'SELL',
+                        'createTimestamp' => 1785917000000, 'executionTimestamp' => 1785917000000,
+                        'executionPrice' => 26500.0,
+                        'closePositionDetail' => ['entryPrice' => 26400.0, 'grossProfit' => 10000, 'closedVolume' => 100],
+                    ],
+                ],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        $externalIds = array_column($result['deals'], 'external_id');
+        $this->assertSame(['ctrader_400'], $externalIds);
+        // Both deals were still fetched — raw_count reports the wire truth.
+        $this->assertSame(2, $result['raw_count']);
+    }
+
+    public function testFetchOpenPositionsAttachesThePartialExitsSeenInTheSameSync(): void
+    {
+        // Companion to the test above: what fetchDeals held back has to
+        // resurface here, so the journal records the TP1 as a partial exit of
+        // the open position and rebuilds the original size (1.5 left + 1 taken).
+        $dealsWs = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            ]]]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [[
+                    'dealId' => 11, 'positionId' => 331, 'symbolId' => 5, 'volume' => 100,
+                    'tradeSide' => 'BUY',
+                    'createTimestamp' => 1785916872000, 'executionTimestamp' => 1785916872000,
+                    'executionPrice' => 26300.0,
+                    'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327, 'closedVolume' => 100],
+                ]],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+            // Second session (fetchOpenPositions). In production each fetch
+            // opens its own socket; the stub is shared, so its frames follow
+            // on. No symbols list this time round: the name map is memoised for
+            // the sync run rather than re-pulling the broker's whole universe.
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            ]]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $dealsWs);
+        $credentials = [
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ];
+
+        $connector->fetchDeals($credentials);
+        $open = $connector->fetchOpenPositions($credentials);
+
+        $position = $open['positions'][0];
+        $this->assertSame('ctrader_331', $position['external_id']);
+        $this->assertSame('SELL', $position['direction']);
+        $this->assertEquals(2.5, $position['size']);
+        $this->assertEquals(1.5, $position['remaining_size']);
+        $this->assertCount(1, $position['exits']);
+        $this->assertSame('ctrader_deal_11', $position['exits'][0]['external_id']);
+        $this->assertEquals(103.27, $position['exits'][0]['pnl']);
+        $this->assertEquals(1.0, $position['exits'][0]['size']);
+    }
+
+    public function testFetchDealsEmitsAUtcCursorNotAJournalDatetime(): void
+    {
+        // The cursor is a PROTOCOL value: it goes back out as an epoch through
+        // strtotime(), which reads it in the server's timezone. Deriving it
+        // from the normalized closed_at — a local wall-clock string since the
+        // journal stores display time — made a deal closed at 16:30 in Paris
+        // come back as 16:30 UTC, two hours into the future. The other three
+        // connectors all track raw API values for exactly this reason.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, [
+                'deal' => [[
+                    'dealId' => 1, 'positionId' => 90, 'symbolId' => 5, 'volume' => 100,
+                    'tradeSide' => 'BUY',
+                    'createTimestamp' => 1785916872000,
+                    'executionTimestamp' => 1785916872000, // 2026-08-05 08:01:12 UTC
+                    'executionPrice' => 26300.0,
+                    'closePositionDetail' => ['entryPrice' => 26386.34, 'grossProfit' => 10327, 'closedVolume' => 100],
+                ]],
+                'hasMore' => false,
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+        $connector->setTimezone('Europe/Paris');
+
+        $result = $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ]);
+
+        // The journal row is local, the cursor stays UTC.
+        $this->assertSame('2026-08-05 10:01:12', $result['deals'][0]['closed_at']);
+        $this->assertSame('2026-08-05 08:01:12', $result['cursor']);
+    }
+
+    public function testFetchDealsIgnoresACursorThatLandsInTheFuture(): void
+    {
+        // Recovery path, and it is not optional: a connection whose stored
+        // cursor is ahead of now would send fromTimestamp > toTimestamp,
+        // cTrader answers INCORRECT_BOUNDARIES, the sync fails — so the cursor
+        // is never rewritten and the connection stays broken for good. An
+        // unusable cursor falls back to the default window instead.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::DEAL_LIST_RES, ['deal' => [], 'hasMore' => false]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ], gmdate('Y-m-d H:i:s', time() + 7200)); // two hours ahead
+
+        $dealRequest = null;
+        foreach ($ws->sentMessages as $message) {
+            $decoded = json_decode($message, true);
+            if (($decoded['payloadType'] ?? null) === 2133) {
+                $dealRequest = $decoded['payload'];
+            }
+        }
+
+        $this->assertNotNull($dealRequest);
+        $this->assertLessThan(
+            $dealRequest['toTimestamp'],
+            $dealRequest['fromTimestamp'],
+            'a window that starts after it ends is rejected by cTrader',
+        );
+    }
+
+    public function testFetchDealsWidensTheWindowToCoverStillOpenPositions(): void
+    {
+        // The sync cursor only ever moves forward, so a position opened weeks
+        // before it would fall outside the window and its partial exits would
+        // be lost the next time round. The window is pulled back to the oldest
+        // still-open position instead.
+        $openedAtMs = 1751000000000; // well before the cursor below
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [[
+                'positionId' => 331,
+                'price' => 26386.34,
+                'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => $openedAtMs],
+            ]]]),
+            self::frame(self::DEAL_LIST_RES, ['deal' => [], 'hasMore' => false]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->fetchDeals([
+            'client_id' => 'a', 'client_secret' => 'b',
+            'access_token' => 'tok', 'ctid_trader_account_id' => 1,
+        ], '2026-08-04 00:00:00');
+
+        $dealRequest = null;
+        foreach ($ws->sentMessages as $message) {
+            $decoded = json_decode($message, true);
+            if (($decoded['payloadType'] ?? null) === 2133) {
+                $dealRequest = $decoded;
+            }
+        }
+
+        $this->assertNotNull($dealRequest, 'no ProtoOADealListReq was sent');
+        $this->assertSame($openedAtMs, $dealRequest['payload']['fromTimestamp']);
     }
 
     public function testFetchAccountsToleratesAMissingIsLiveFlag(): void
@@ -967,6 +1588,297 @@ class CtraderConnectorTest extends TestCase
         ]));
         $this->assertNull($connector->getLastTestError());
     }
+
+    // ── Request budget: one session, one reconcile per sync run ──────
+
+    // Request-side ProtoOAPayloadType codes, to count what a run actually sends.
+    private const APP_AUTH_REQ     = 2100;
+    private const ACCOUNT_AUTH_REQ = 2102;
+    private const RECONCILE_REQ    = 2124;
+    private const TRADER_REQ       = 2121;
+    private const ORDER_LIST_REQ   = 2175;
+    private const DEAL_LIST_REQ    = 2133;
+    private const ASSET_LIST_REQ   = 2112;
+    private const SYMBOLS_LIST_REQ = 2114;
+    private const SYMBOL_BY_ID_REQ = 2116;
+
+    /** @return array<int, int> payloadType => how many times it was sent */
+    private function countRequests(array $sentMessages): array
+    {
+        $counts = [];
+        foreach ($sentMessages as $raw) {
+            $type = (int) (json_decode($raw, true)['payloadType'] ?? 0);
+            $counts[$type] = ($counts[$type] ?? 0) + 1;
+        }
+        return $counts;
+    }
+
+    private function syncWsStub(): TypedWsClient
+    {
+        return new TypedWsClient([
+            self::APP_AUTH_REQ => self::frame(self::APP_AUTH_RES),
+            self::ACCOUNT_AUTH_REQ => self::frame(self::ACCOUNT_AUTH_RES),
+            self::RECONCILE_REQ => self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 77,
+                    'tradeData' => ['symbolId' => 1, 'volume' => 100000, 'tradeSide' => 'SELL', 'openTimestamp' => 1786000000000],
+                    'price' => 19200.0,
+                ]],
+                'order' => [],
+            ]),
+            self::DEAL_LIST_REQ => self::frame(self::DEAL_LIST_RES, ['deal' => [], 'hasMore' => false]),
+            self::ORDER_LIST_REQ => self::frame(self::ORDER_LIST_RES, ['order' => []]),
+            self::SYMBOLS_LIST_REQ => self::frame(self::SYMBOLS_LIST_RES, [
+                'symbol' => [['symbolId' => 1, 'symbolName' => 'GER40']],
+            ]),
+            self::SYMBOL_BY_ID_REQ => self::frame(self::SYMBOL_BY_ID_RES, [
+                'symbol' => [['symbolId' => 1, 'lotSize' => 100]],
+            ]),
+            self::TRADER_REQ => self::frame(self::TRADER_RES, [
+                'trader' => ['balance' => 1000000, 'moneyDigits' => 2, 'depositAssetId' => 1],
+            ]),
+            self::ASSET_LIST_REQ => self::frame(self::ASSET_LIST_RES, [
+                'asset' => [['assetId' => 1, 'name' => 'EUR']],
+            ]),
+        ]);
+    }
+
+    private function syncCredentials(): array
+    {
+        return [
+            'client_id' => 'a',
+            'client_secret' => 'b',
+            'access_token' => 't',
+            'ctid_trader_account_id' => 42,
+        ];
+    }
+
+    /** Everything BrokerSyncService asks a connector for, in the same order. */
+    private function runFullSync(CtraderConnector $connector): void
+    {
+        $credentials = $this->syncCredentials();
+        $connector->fetchDeals($credentials);
+        $connector->fetchOpenPositions($credentials);
+        $connector->fetchOpenOrders($credentials);
+        $connector->fetchClosedOrders($credentials);
+        $connector->fetchBalance($credentials);
+    }
+
+    public function testASyncRunAuthenticatesOnceInsteadOfOncePerCall(): void
+    {
+        // FTMO disabled a real account for "amount of activity" at 2 000
+        // requests/day. Five fetches × (AppAuth + AccountAuth) is ten requests
+        // per run spent re-proving who we are, 960 a day at a 15-min interval.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(1, $counts[self::APP_AUTH_REQ] ?? 0);
+        $this->assertSame(1, $counts[self::ACCOUNT_AUTH_REQ] ?? 0);
+    }
+
+    public function testASyncRunReconcilesOnceInsteadOfThreeTimes(): void
+    {
+        // Deals, open positions and pending orders each asked for the same
+        // snapshot, seconds apart.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $this->assertSame(1, $this->countRequests($ws->sentMessages)[self::RECONCILE_REQ] ?? 0);
+    }
+
+    public function testTheSharedReconcileAsksForProtectionOrders(): void
+    {
+        // Without returnProtectionOrders, cTrader COLLAPSES a staged exit plan
+        // into position.takeProfit. fetchDeals reconciles first, so if its
+        // request is the one cached, every take profit level but the last is
+        // lost — the bug fixed just before this refactor.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $reconciles = array_filter(
+            array_map(fn($m) => json_decode($m, true), $ws->sentMessages),
+            fn($m) => (int) $m['payloadType'] === self::RECONCILE_REQ,
+        );
+        $this->assertCount(1, $reconciles);
+        $this->assertTrue(reset($reconciles)['payload']['returnProtectionOrders']);
+    }
+
+    public function testASyncRunResolvesSymbolsOnce(): void
+    {
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(1, $counts[self::SYMBOLS_LIST_REQ] ?? 0);
+        $this->assertSame(1, $counts[self::SYMBOL_BY_ID_REQ] ?? 0);
+    }
+
+    public function testAWholeSyncRunStaysUnderTenRequests(): void
+    {
+        // The budget this refactor exists for: ~21 before, single digits after.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $connector->closeSession();
+
+        $this->assertLessThanOrEqual(10, count($ws->sentMessages));
+    }
+
+    public function testSessionReuseIsOptInSoOrderCallsStayIsolated(): void
+    {
+        // placeOrder/cancelOrder run inside an HTTP request, not a sync run.
+        // Holding a socket open across them would leak one per web request.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $this->runFullSync($connector);
+
+        $this->assertSame(5, $this->countRequests($ws->sentMessages)[self::APP_AUTH_REQ] ?? 0);
+    }
+
+    public function testANewRunDoesNotInheritThePreviousRunsSnapshot(): void
+    {
+        // resetSyncCache opens the next run: a reconcile cached from the last
+        // one would report positions that closed in between.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $connector->fetchOpenPositions($this->syncCredentials());
+        $connector->closeSession();
+
+        $connector->resetSyncCache();
+        $connector->fetchOpenPositions($this->syncCredentials());
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(2, $counts[self::RECONCILE_REQ] ?? 0);
+        $this->assertSame(2, $counts[self::APP_AUTH_REQ] ?? 0);
+    }
+
+    public function testARunReportsWhatItSpent(): void
+    {
+        // It took reading the connector line by line to work out our daily
+        // volume when FTMO disabled the account. The number has to come from
+        // the logs instead — which means the connector has to know it.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $spent = $connector->getRequestCounts();
+        $connector->closeSession();
+
+        $this->assertSame(count($ws->sentMessages), $spent['total']);
+        // Named, not numeric: a log line reading ProtoOAReconcileReq is
+        // actionable, one reading 2124 has to be looked up.
+        $this->assertSame(1, $spent['by_type']['ProtoOAReconcileReq'] ?? 0);
+        $this->assertSame(1, $spent['by_type']['ProtoOAApplicationAuthReq'] ?? 0);
+    }
+
+    public function testEachRunCountsFromZero(): void
+    {
+        // A counter that accumulated across runs would report the process's
+        // lifetime total, not the per-run cost the budget is expressed in.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $first = $connector->getRequestCounts()['total'];
+        $connector->closeSession();
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $second = $connector->getRequestCounts()['total'];
+        $connector->closeSession();
+
+        $this->assertGreaterThan(0, $first);
+        $this->assertSame($first, $second);
+    }
+
+    public function testASecondAccountNeverInheritsTheFirstOnesSession(): void
+    {
+        // BrokerSyncService::getConnector() hands out ONE shared connector
+        // instance for every connection a worker syncs, and that instance now
+        // holds an authenticated socket. resetSyncCache() between connections
+        // is the first net; the account check inside acquireSession() is the
+        // second, and the only one left if a refactor drops the first. Serving
+        // account B off account A's session would cross two users' data.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $connector->fetchOpenPositions($this->syncCredentials());
+        $connector->fetchOpenPositions(['ctid_trader_account_id' => 99] + $this->syncCredentials());
+        $connector->closeSession();
+
+        $counts = $this->countRequests($ws->sentMessages);
+        $this->assertSame(2, $counts[self::APP_AUTH_REQ] ?? 0, 'the second account reused the first one\'s session');
+        $this->assertSame(2, $counts[self::RECONCILE_REQ] ?? 0, 'the second account was served the first one\'s snapshot');
+    }
+
+    public function testTheRunHangsUpItsSharedSocketExactlyOnce(): void
+    {
+        // The five calls share one socket, so four of them must NOT close it
+        // and the fifth must not leave it open — only closeSession() hangs up.
+        $ws = $this->syncWsStub();
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        $this->runFullSync($connector);
+        $this->assertSame(0, $ws->closeCount, 'the shared socket was closed mid-run');
+
+        $connector->closeSession();
+        $this->assertSame(1, $ws->closeCount);
+    }
+
+    public function testARefusedAuthDoesNotLeaveTheSocketOpen(): void
+    {
+        // fetchDeals acquires its session BEFORE its try/catch, so a socket
+        // that opens and is then refused has no owner: closeSession() cannot
+        // reach it either, since the session is only recorded once the auth
+        // has gone through. An expired access token is the everyday way in.
+        $ws = new TypedWsClient([
+            self::APP_AUTH_REQ => self::frame(self::APP_AUTH_RES),
+            self::ACCOUNT_AUTH_REQ => self::frame(self::ERROR_RES, [
+                'errorCode' => 'CH_CLIENT_AUTH_FAILURE',
+                'description' => 'access token expired',
+            ]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->resetSyncCache();
+        try {
+            $connector->fetchDeals($this->syncCredentials());
+            $this->fail('the refused auth should have surfaced');
+        } catch (\Throwable $e) {
+            $this->assertStringContainsString('CH_CLIENT_AUTH_FAILURE', $e->getMessage());
+        }
+        // What BrokerSyncService does in its finally.
+        $connector->closeSession();
+
+        $this->assertSame(1, $ws->closeCount);
+    }
 }
 
 /**
@@ -1003,5 +1915,57 @@ class FakeWsClient extends \WebSocket\Client
     public function close(int $status = 1000, string $message = 'ttfn'): void
     {
         // no-op
+    }
+}
+
+/**
+ * Answers by request type rather than by position in a script. Counting what a
+ * sync run sends means the order of requests is exactly what is under test, so
+ * a fixed frame sequence would have to be rewritten for every change it is
+ * meant to catch.
+ */
+class TypedWsClient extends \WebSocket\Client
+{
+    public array $sentMessages = [];
+
+    /**
+     * How many times the socket was hung up. Counted rather than no-op'd:
+     * sharing one session across a run moves the responsibility for closing
+     * it, and nothing else in this suite would notice a socket left open.
+     */
+    public int $closeCount = 0;
+
+    /** @var array<int, array> request payloadType => response frame */
+    private array $responses;
+    private ?string $pending = null;
+
+    public function __construct(array $responses)
+    {
+        $this->responses = $responses;
+        // Skip parent constructor — no real socket.
+    }
+
+    public function text(string $payload): void
+    {
+        $this->sentMessages[] = $payload;
+        $type = (int) (json_decode($payload, true)['payloadType'] ?? 0);
+        $this->pending = json_encode(
+            $this->responses[$type] ?? ['payloadType' => 0, 'payload' => []],
+        );
+    }
+
+    public function receive(): string
+    {
+        if ($this->pending === null) {
+            throw new \RuntimeException('TypedWsClient received nothing to answer');
+        }
+        $frame = $this->pending;
+        $this->pending = null;
+        return $frame;
+    }
+
+    public function close(int $status = 1000, string $message = 'ttfn'): void
+    {
+        $this->closeCount++;
     }
 }

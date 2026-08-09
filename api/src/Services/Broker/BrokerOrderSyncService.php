@@ -155,14 +155,22 @@ class BrokerOrderSyncService
 
         $this->orderRepo->create([
             'position_id' => $position['id'],
+            // When the broker says the order was placed. Left out, the column
+            // falls back to CURRENT_TIMESTAMP and every synced order is dated
+            // at the moment of the sync instead.
+            'created_at' => $row['created_at'] ?? null,
             'expires_at' => $row['expires_at'] ?? null,
             'status' => OrderStatus::PENDING->value,
         ]);
     }
 
     /**
-     * Refresh the columns Ouinex owns. setup/notes/custom_field_values are
+     * Refresh the columns the broker owns. setup/notes/custom_field_values are
      * the user's — never touched here.
+     *
+     * The expiry lives on the order row, not the position, and used to be left
+     * out entirely: an expiry already on file was never corrected, including
+     * when the connectors stopped writing UTC.
      */
     private function updateBrokerFields(array $existing, array $snapshot): void
     {
@@ -173,5 +181,9 @@ class BrokerOrderSyncService
             'direction' => $snapshot['direction'],
             'symbol' => $snapshot['symbol'],
         ]);
+
+        if (array_key_exists('expires_at', $snapshot)) {
+            $this->orderRepo->updateExpiry((int) $existing['order_id'], $snapshot['expires_at']);
+        }
     }
 }

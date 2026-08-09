@@ -18,6 +18,22 @@ class BrokerLogger
 {
     public static function failure(string $job, string $event, array $meta = []): void
     {
+        self::write($job, $event, $meta);
+    }
+
+    /**
+     * Same shape, same sink, for something that went right and is worth
+     * counting — a sync's request bill, for instance. Separate from failure()
+     * so a log filter on the two can differ, and so nobody has to call
+     * "failure" to report a nominal run.
+     */
+    public static function event(string $job, string $event, array $meta = []): void
+    {
+        self::write($job, $event, $meta);
+    }
+
+    private static function write(string $job, string $event, array $meta): void
+    {
         $entry = array_merge([
             'job' => $job,
             'event' => $event,

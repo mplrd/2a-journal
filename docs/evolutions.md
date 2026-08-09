@@ -806,4 +806,111 @@ Dans le même bloc UI : `account.account_data.delete_account_description` vouvoi
 
 ---
 
+## ✅ TRAITÉ — Une synchro cTrader ouvre quatre sessions WebSocket
+
+**Traité le 2026-08-09** — voir [90-ctrader-budget-requetes.md](90-ctrader-budget-requetes.md). Une session par run partagée par les cinq appels, `ProtoOAReconcileReq` mémoïsé, tailles de lot mises en cache : 19 requêtes par cycle ramenées à 9. La priorité « basse » ci-dessous s'est révélée fausse — ce n'était pas un sujet de latence : FTMO a désactivé un compte réel le 2026-08-07 pour dépassement de son plafond de 2 000 requêtes/jour, que notre volume frôlait. Entrée conservée pour l'historique.
+
+**Contexte** : repéré en corrigeant la fidélité des deals cTrader (2026-08-05). Pré-existant, aggravé de rien par le correctif.
+
+`BrokerSyncService` appelle successivement `fetchDeals`, `fetchOpenPositions`, `fetchOpenOrders`, `fetchClosedOrders` et `fetchBalance`. Chacune ouvre sa propre connexion WebSocket et rejoue `ProtoOAApplicationAuthReq` + `ProtoOAAccountAuthReq` — soit cinq poignées de main et cinq authentifications pour une synchro. `ProtoOAReconcileReq` est en plus émis trois fois (deals, positions, ordres) et renvoie à chaque fois le même snapshot.
+
+Le cache de noms de symboles introduit avec le correctif (`CtraderConnector::$symbolNameCache`) montre le chemin : une session unique portée sur toute la durée du run, purgée par `resetSyncCache()`.
+
+**À faire** : factoriser une session par run plutôt que par méthode. Chantier de connecteur, à ne pas mêler à une correction de données.
+
+**Fichiers** : `api/src/Services/Broker/CtraderConnector.php`, `api/src/Services/Broker/BrokerSyncService.php`.
+
+**Repéré le** : 2026-08-05. **Priorité** : basse (correctness non affectée, seulement la latence de synchro).
+
+---
+
+## cTrader — la socket vit désormais un run entier, sans heartbeat sortant
+
+**Contexte** : repéré en relisant le partage de session (2026-08-09, doc 90). Pas un défaut constaté — une hypothèse tirée du code, à vérifier.
+
+`CtraderConnector::sendAndReceive()` **ignore** les heartbeats entrants (`payloadType 51`) mais le connecteur n'en **émet** jamais. Tant qu'une socket ne servait qu'un appel, la question ne se posait pas : elle vivait quelques centaines de millisecondes. Elle porte maintenant les cinq appels d'un run, pagination de `ProtoOADealListReq` comprise.
+
+**À vérifier avant d'agir** : le délai d'inactivité réel côté cTrader, dans le `.proto` Spotware (pas sur help.ctrader.com, qui omet des champs). Si le serveur coupe les sockets inactives, le symptôme serait un run qui casse en son milieu — cycle perdu, pas de perte de données, et le cycle suivant rattrape.
+
+**Fichiers** : `api/src/Services/Broker/CtraderConnector.php`.
+
+**Repéré le** : 2026-08-09. **Priorité** : basse tant que rien n'est observé en test live.
+
+---
+
+## `database/schema.sql` a dérivé des migrations
+
+**Contexte** : repéré en vérifiant, avant commit, que `partial_exits.external_id` existait bien (correctif fidélité cTrader, 2026-08-05).
+
+La colonne est ajoutée par la migration `023_partial_exits_external_id.sql` mais absente de `database/schema.sql`. Aucun script ne lit `schema.sql` — ni `migrate.php`, ni `entrypoint.sh` — c'est donc de la documentation, sans risque de déploiement. Mais elle décrit un schéma qui n'existe plus, et rien ne garantit que `023` soit la seule dérive : les migrations vont jusqu'à `034`.
+
+**À faire** : régénérer `schema.sql` depuis une base à jour (`mysqldump --no-data`) et le comparer au fichier actuel pour recenser l'écart complet. Décider ensuite s'il reste une référence utile ou s'il vaut mieux le supprimer au profit des seules migrations.
+
+**Fichiers** : `api/database/schema.sql`, `api/database/migrations/`.
+
+**Repéré le** : 2026-08-05. **Priorité** : basse.
+
+---
+
+## Un trade sans stop loss affiche un SL au prix d'entrée
+
+**Contexte** : repéré en corrigeant l'affichage du SL des trades synchronisés (2026-08-06). Pré-existant, indépendant de la synchro.
+
+`PricePointsInput` calcule le prix compagnon à partir des points. Quand aucun stop n'est enregistré, les points valent 0 et le champ prix affiche donc `entrée - 0`, c'est-à-dire le **prix d'entrée** — au lieu de rester vide. Un trade sans stop paraît en avoir un, posé exactement à l'entrée.
+
+**À faire** : distinguer « zéro point » de « pas de stop » dans le composant — sans doute en laissant le prix à `null` quand les points sont nuls ET qu'aucun prix n'est stocké. Vérifier l'impact sur le BE et les TP, qui partagent le composant.
+
+**Fichiers** : `frontend/src/components/**/PricePointsInput.vue`, `frontend/src/components/trade/TradeForm.vue`.
+
+**Repéré le** : 2026-08-06. **Priorité** : basse.
+
+---
+
+## cTrader — `placeOrder` convertit encore le volume en dur
+
+**Contexte** : repéré en corrigeant la conversion de volume côté **lecture** (2026-08-06). Le read path calcule désormais `lots = volume / lotSize`, la valeur exacte du symbole. `placeOrder` (`CtraderConnector:808`) fait toujours `size * 100` — les deux sens du connecteur ne parlent donc plus la même langue.
+
+Le `×100` n'est juste que pour un symbole dont le lot vaut une unité (indices CFD typiquement). Sur une paire FX où `lotSize` vaut 10 000 000 cents, envoyer 0.1 lot produit un volume de `10` au lieu de `1 000 000` — soit un ordre 100 000 fois trop petit, probablement rejeté sous le volume minimum. Le risque est donc plutôt le refus que l'exécution erronée, mais c'est à vérifier.
+
+Le point était déjà pressenti dans l'entrée « Connecteurs broker — validation sandbox avant activation prod » ; il est maintenant chiffrable et corrigeable en réutilisant `resolveSymbols()`, qui renvoie déjà le `lotSize`.
+
+**À faire** : résoudre le `lotSize` du symbole dans `placeOrder` (l'appel `ProtoOASymbolsListReq` y est déjà fait pour trouver le `symbolId`) et convertir par `size * lotSize`. Concerne les ordres sortants — robots TradingView —, pas la synchronisation.
+
+**Fichiers** : `api/src/Services/Broker/CtraderConnector.php`.
+
+**Repéré le** : 2026-08-06. **Priorité** : haute avant toute activation des robots sur cTrader, nulle tant qu'ils sont inactifs.
+
+---
+
+## Positions — aucune contrainte d'unicité sur `external_id`
+
+**Contexte** : repéré le 2026-08-06 en cherchant ce qui rattrape une course entre
+deux synchros. Le volet applicatif est traité (réservation par connexion,
+[89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md)) ; le
+volet base reste ouvert.
+
+`ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. **`positions.external_id` n'a ni index ni contrainte d'unicité** : si deux imports concurrents lisent le même état — la réservation couvre les synchros broker, pas un import CSV lancé en parallèle — rien au niveau base ne rattrape la course. L'index manquant coûte aussi en lecture sur `findOpenByExternalIdPrefixInAccount`.
+
+**À faire** : un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
+
+**Fichiers** : `api/database/schema.sql`, nouvelle migration.
+
+**Repéré le** : 2026-08-06. **Priorité** : moyenne — la fenêtre restante est étroite, mais l'index a aussi un intérêt de performance.
+
+---
+
+## Suivi d'une synchro broker — sondage HTTP plutôt que push
+
+**Contexte** : issu du lot C de [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md) (2026-08-07), qui a rendu le bouton non bloquant. L'entrée d'origine — « synchro manuelle bloquante » — est traitée ; ce qui suit est ce que la solution laisse ouvert.
+
+Le panneau broker suit l'avancement en interrogeant `GET /broker/connections` toutes les 4 s pendant 5 minutes max. Suffisant pour un compte, mais un utilisateur qui ouvre plusieurs comptes multiplie les requêtes, et la fin du run est détectée avec jusqu'à 4 s de retard.
+
+**À faire, le jour où ça pèse** : un canal poussé (SSE, ou websocket si un autre besoin le justifie) pour l'état de synchro, au lieu du sondage. À évaluer seulement si le nombre de comptes suivis simultanément le justifie — le sondage est volontairement le choix le plus simple qui marche.
+
+**Fichiers** : `frontend/src/components/broker/BrokerConnectionPanel.vue`, `api/src/Controllers/BrokerSyncController.php`.
+
+**Repéré le** : 2026-08-07. **Priorité** : basse — pas de gêne à l'échelle actuelle.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

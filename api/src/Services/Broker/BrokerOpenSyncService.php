@@ -3,6 +3,7 @@
 namespace App\Services\Broker;
 
 use App\Enums\BrokerProvider;
+use App\Enums\Direction;
 use App\Enums\ExitType;
 use App\Enums\TradeStatus;
 use App\Repositories\PartialExitRepository;
@@ -114,6 +115,7 @@ class BrokerOpenSyncService
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
             'sl_price' => $row['sl_price'] ?? null,
+            'targets' => $this->brokerTargets($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
             'position_type' => 'TRADE',
@@ -152,19 +154,125 @@ class BrokerOpenSyncService
      */
     private function updateBrokerFields(array $existing, array $snapshot): void
     {
-        $this->positionRepo->update((int) $existing['position_id'], [
+        $positionFields = [
             'entry_price' => $snapshot['entry_price'],
             'size' => $snapshot['size'],
             'sl_price' => $snapshot['sl_price'] ?? null,
             'direction' => $snapshot['direction'],
             'symbol' => $snapshot['symbol'],
-        ]);
+        ];
 
-        $this->tradeRepo->update((int) $existing['trade_id'], [
-            'remaining_size' => $snapshot['remaining_size'] ?? $snapshot['size'],
-        ]);
+        // Objectives are the user's the moment they type one, same contract as
+        // setup and notes. A broker take profit only fills an empty slot.
+        if ($this->hasNoTargets($existing)) {
+            $brokerTargets = $this->brokerTargets($snapshot);
+            if ($brokerTargets !== null) {
+                $positionFields['targets'] = $brokerTargets;
+            }
+        }
+
+        $this->positionRepo->update((int) $existing['position_id'], $positionFields);
+
+        $tradeFields = ['remaining_size' => $snapshot['remaining_size'] ?? $snapshot['size']];
+
+        // A stop moved to the entry — or past it — is what actually takes the
+        // risk off, and the broker reports it as a level we already sync.
+        // Promotion only: a trade can also have been secured by hand through a
+        // BE exit, and pulling the stop back on the platform must not erase
+        // that decision.
+        if (
+            $existing['trade_status'] === TradeStatus::OPEN->value
+            && $this->stopProtectsEntry($snapshot, (float) $existing['entry_price'])
+        ) {
+            $tradeFields['status'] = TradeStatus::SECURED->value;
+            $tradeFields['be_reached'] = 1;
+        }
+
+        // opened_at is broker-driven like every field above, and was the one
+        // this path never rewrote — so a position already on file kept its
+        // original timestamp forever. That is what left positions two hours off
+        // once the connectors switched from UTC to the user's own timezone:
+        // corrected on every column but the one that had changed.
+        // Only when the snapshot actually carries one: BingX's live snapshot
+        // has no open time, and writing null would erase what we already hold.
+        if (!empty($snapshot['opened_at'])) {
+            $tradeFields['opened_at'] = $snapshot['opened_at'];
+        }
+
+        $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
+    }
+
+    /**
+     * The broker's take profit as a positions.targets payload, or null when
+     * there is none.
+     *
+     * There is no tp_price column — objectives live in that JSON — so the entry
+     * mirrors what the trade form writes (id, label, points, price, size) and a
+     * synced objective renders like any other. `points` is the distance from
+     * entry, which is the unit the form edits in; the size is the whole
+     * position, since a broker take profit closes it outright.
+     */
+    private function brokerTargets(array $row): ?string
+    {
+        // A connector that resolves a staged exit plan hands over `targets`,
+        // one entry per level with its own size — cTrader's server-side partial
+        // take profits, for instance. Connectors reporting a single level fall
+        // back to tp_price, which then covers the whole position.
+        $levels = $row['targets'] ?? [];
+        if (empty($levels)) {
+            $takeProfit = $row['tp_price'] ?? null;
+            if ($takeProfit === null || (float) $takeProfit <= 0) {
+                return null;
+            }
+            $levels = [['price' => (float) $takeProfit, 'size' => (float) $row['size']]];
+        }
+
+        $entryPrice = (float) $row['entry_price'];
+        $targets = [];
+        foreach ($levels as $index => $level) {
+            $rank = $index + 1;
+            $targets[] = [
+                'id' => 'tp' . $rank,
+                'label' => 'TP' . $rank,
+                'points' => round(abs((float) $level['price'] - $entryPrice), 5),
+                'price' => (float) $level['price'],
+                'size' => (float) ($level['size'] ?? $row['size']),
+            ];
+        }
+
+        return json_encode($targets);
+    }
+
+    /** True when the journal holds no objective for this position yet. */
+    private function hasNoTargets(array $existing): bool
+    {
+        $stored = $existing['targets'] ?? null;
+        if ($stored === null || $stored === '') {
+            return true;
+        }
+        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
+
+        return empty($decoded);
+    }
+
+    /**
+     * Whether the stop loss has reached the entry, or gone past it into
+     * profit — both count as "no risk left", per the product call. Direction
+     * inverts the comparison: a long is protected once its stop rises TO the
+     * entry, a short once its stop drops to it.
+     */
+    private function stopProtectsEntry(array $snapshot, float $entryPrice): bool
+    {
+        $stop = $snapshot['sl_price'] ?? null;
+        if ($stop === null || $entryPrice <= 0) {
+            return false;
+        }
+
+        return ($snapshot['direction'] ?? null) === Direction::SELL->value
+            ? (float) $stop <= $entryPrice
+            : (float) $stop >= $entryPrice;
     }
 
     /**
@@ -199,6 +307,11 @@ class BrokerOpenSyncService
      * In-place flip OPEN → CLOSED for an existing trade that just moved out
      * of the broker's live set. The position row and its user metadata
      * (setup, notes, custom_fields) are deliberately left alone.
+     *
+     * Every closing leg is also recorded as a partial exit, mirroring the
+     * manual close path (TradeService::exit writes one per exit, final leg
+     * included). Dedup on external_id means a leg already banked while the
+     * position was still open is not written twice.
      */
     private function transitionToClosed(array $existing, array $closed): void
     {
@@ -210,8 +323,19 @@ class BrokerOpenSyncService
             'remaining_size' => 0.0,
             'exit_type' => ExitType::MANUAL->value,
         ]);
+
+        $this->insertPartialExits((int) $existing['trade_id'], $closed['exits'] ?? []);
     }
 
+    /**
+     * Index closed rows by external_id, MERGING rows that share one instead of
+     * letting the last overwrite the rest.
+     *
+     * A position closed in several legs (a TP1 then the remainder) is reported
+     * as one row per leg, all carrying the position's external_id. Keeping only
+     * the last one credited the trade with the final leg's P&L alone and
+     * dropped everything banked earlier.
+     */
     private function indexByExternalId(array $rows): array
     {
         $indexed = [];
@@ -219,8 +343,73 @@ class BrokerOpenSyncService
             if (!isset($row['external_id'])) {
                 continue;
             }
-            $indexed[$row['external_id']] = $row;
+            $externalId = $row['external_id'];
+            $indexed[$externalId] = isset($indexed[$externalId])
+                ? $this->mergeClosedRows($indexed[$externalId], $row)
+                : $this->withOwnExit($row);
         }
         return $indexed;
+    }
+
+    /**
+     * Seed a closed row's exits[] with itself so a single-leg close carries the
+     * same shape as a merged multi-leg one. Connectors that already reconstruct
+     * their own exits (BingX) keep theirs untouched.
+     */
+    private function withOwnExit(array $row): array
+    {
+        if (isset($row['exits'])) {
+            return $row;
+        }
+        $row['exits'] = [$this->rowToExit($row)];
+
+        return $row;
+    }
+
+    /**
+     * Fold a second closing leg into the first: P&L and size add up, the exit
+     * price is re-averaged by size, and the position is closed at the LAST
+     * fill.
+     */
+    private function mergeClosedRows(array $merged, array $row): array
+    {
+        $mergedSize = (float) ($merged['size'] ?? 0);
+        $rowSize = (float) ($row['size'] ?? 0);
+        $totalSize = $mergedSize + $rowSize;
+
+        $mergedPrice = (float) ($merged['exit_price'] ?? $merged['avg_exit_price'] ?? 0);
+        $rowPrice = (float) ($row['exit_price'] ?? $row['avg_exit_price'] ?? 0);
+
+        $merged['size'] = $totalSize;
+        $merged['pnl'] = (float) ($merged['pnl'] ?? 0) + (float) ($row['pnl'] ?? 0);
+        $merged['exit_price'] = $totalSize > 0
+            ? ($mergedPrice * $mergedSize + $rowPrice * $rowSize) / $totalSize
+            : $rowPrice;
+
+        $rowClosedAt = $row['closed_at'] ?? null;
+        if ($rowClosedAt !== null && $rowClosedAt > ($merged['closed_at'] ?? '')) {
+            $merged['closed_at'] = $rowClosedAt;
+        }
+
+        $merged['exits'] = array_merge($merged['exits'] ?? [], $row['exits'] ?? [$this->rowToExit($row)]);
+
+        return $merged;
+    }
+
+    /**
+     * A closing row seen as one exit. `exit_external_id` is the per-leg id
+     * (a deal, a fill) — distinct from `external_id`, which identifies the
+     * position and is shared by every leg, so it is the only one usable for
+     * partial-exit dedup.
+     */
+    private function rowToExit(array $row): array
+    {
+        return [
+            'exit_price' => $row['exit_price'] ?? $row['avg_exit_price'] ?? null,
+            'size' => $row['size'] ?? 0,
+            'pnl' => $row['pnl'] ?? 0,
+            'closed_at' => $row['closed_at'] ?? null,
+            'external_id' => $row['exit_external_id'] ?? null,
+        ];
     }
 }

@@ -16,6 +16,14 @@ use App\Services\Import\RowGroupingService;
 
 class BrokerSyncService
 {
+    /**
+     * Au-delà de ce délai, la réservation d'une connexion est considérée
+     * abandonnée et reprise par l'appelant suivant. Assez large pour ne jamais
+     * doubler une synchro lente encore vivante, assez court pour qu'un worker
+     * tué ne bloque pas la connexion au-delà d'un tour de cron.
+     */
+    public const SYNC_CLAIM_TTL_SECONDS = 900;
+
     public function __construct(
         private BrokerConnectionRepository $connectionRepo,
         private SyncLogRepository $syncLogRepo,
@@ -29,12 +37,38 @@ class BrokerSyncService
         private BrokerOpenSyncService $openSyncService,
         private BrokerOrderSyncService $orderSyncService,
         private ?AccountRepository $accountRepo = null,
+        private ?\App\Repositories\UserRepository $userRepo = null,
     ) {}
 
     /**
-     * Synchronize trades from broker API.
+     * Queue a sync instead of running it inside the HTTP request.
+     *
+     * A cTrader pass opens four to five WebSocket sessions in a row: run inline,
+     * the user waits in front of a spinner and a proxy timeout can cut it in
+     * half, leaving them with no idea whether anything was imported. Flagging
+     * the connection hands the work to the scheduler, which ticks every minute.
+     *
+     * Deliberately still queued when a run is already in flight: that run took
+     * its reservation before this flag was set, so it will not consume it, and
+     * the user gets the fresh pass they asked for on the following tick.
      */
-    public function sync(int $connectionId, int $userId): array
+    public function requestSync(int $connectionId, int $userId): array
+    {
+        $connection = $this->requireSyncableConnection($connectionId, $userId);
+
+        $this->connectionRepo->requestSync($connectionId);
+
+        return [
+            'status' => SyncStatus::QUEUED->value,
+            'syncing' => ($connection['syncing_since'] ?? null) !== null,
+        ];
+    }
+
+    /**
+     * The connection, or the reason it cannot be synced. Shared by the queueing
+     * path and the run itself so the two never diverge on what is syncable.
+     */
+    private function requireSyncableConnection(int $connectionId, int $userId): array
     {
         $connection = $this->connectionRepo->findById($connectionId);
         if (!$connection) {
@@ -49,14 +83,35 @@ class BrokerSyncService
             throw new ValidationException('broker.error.connection_not_active', 'status');
         }
 
-        // Create sync log entry
-        $syncLog = $this->syncLogRepo->create([
-            'broker_connection_id' => $connectionId,
-            'user_id' => $userId,
-            'status' => SyncStatus::STARTED->value,
-        ]);
+        return $connection;
+    }
+
+    /**
+     * Synchronize trades from broker API.
+     */
+    public function sync(int $connectionId, int $userId): array
+    {
+        $connection = $this->requireSyncableConnection($connectionId, $userId);
+
+        // One sync at a time per connection. Nothing else serialises the manual
+        // click against the scheduled run, and two concurrent runs on the same
+        // connection import the same deals twice — the dedup is per-batch, not
+        // cross-batch. The reservation is also what lets the scheduler fan out
+        // across several workers without splitting the work up front.
+        if (!$this->connectionRepo->claimForSync($connectionId, self::SYNC_CLAIM_TTL_SECONDS)) {
+            return $this->alreadySyncingResult();
+        }
+
+        $syncLog = null;
 
         try {
+            // Create sync log entry
+            $syncLog = $this->syncLogRepo->create([
+                'broker_connection_id' => $connectionId,
+                'user_id' => $userId,
+                'status' => SyncStatus::STARTED->value,
+            ]);
+
             // Decrypt credentials
             $credentials = $this->crypto->decrypt(
                 $connection['credentials_encrypted'],
@@ -87,6 +142,14 @@ class BrokerSyncService
             }
             if (method_exists($connector, 'resetSyncCache')) {
                 $connector->resetSyncCache();
+            }
+
+            // The journal's DATETIME columns hold local wall-clock time — that
+            // is what the trade form writes. Brokers report instants, so
+            // without this the synced rows land in UTC and sit an hour or two
+            // away from the trades the user typed in by hand.
+            if (method_exists($connector, 'setTimezone')) {
+                $connector->setTimezone($this->resolveUserTimezone($userId));
             }
 
             // Fetch deals from broker
@@ -220,14 +283,83 @@ class BrokerSyncService
                 'last_sync_error' => $e->getMessage(),
             ]);
 
-            $this->syncLogRepo->update($syncLog['id'], [
-                'status' => SyncStatus::FAILED->value,
-                'error_message' => $e->getMessage(),
-                'completed_at' => date('Y-m-d H:i:s'),
-            ]);
+            // Null when the failure happened while opening the log itself.
+            if ($syncLog !== null) {
+                $this->syncLogRepo->update($syncLog['id'], [
+                    'status' => SyncStatus::FAILED->value,
+                    'error_message' => $e->getMessage(),
+                    'completed_at' => date('Y-m-d H:i:s'),
+                ]);
+            }
 
             throw $e;
+        } finally {
+            // In a finally, never at the end of the happy path: a crash that
+            // left the reservation in place would lock the connection out of
+            // every sync until the staleness window expires.
+            $this->connectionRepo->releaseSync($connectionId);
+
+            // What the run cost at the broker, before the session is torn down.
+            // Brokers cap requests per day — FTMO disables a trading account
+            // past 2 000 — and a budget nobody can measure is one nobody
+            // notices going over. Logged even when the run failed: a crashing
+            // run still spent its requests, and a crash loop is exactly how a
+            // quota gets burnt.
+            if (isset($connector) && method_exists($connector, 'getRequestCounts')) {
+                $spent = $connector->getRequestCounts();
+                if (($spent['total'] ?? 0) > 0) {
+                    BrokerLogger::event('ctrader', 'sync_request_budget', [
+                        'connection_id' => $connectionId,
+                        'requests' => $spent['total'],
+                        'by_type' => $spent['by_type'] ?? [],
+                    ]);
+                }
+            }
+
+            // Connectors that hold one socket open for the whole run (cTrader)
+            // hang up here. Without it a crashed run leaks its socket, and the
+            // scheduler runs thousands of them a day.
+            if (isset($connector) && method_exists($connector, 'closeSession')) {
+                $connector->closeSession();
+            }
         }
+    }
+
+    /**
+     * Résultat d'une synchro qui n'a pas eu lieu : une autre la tenait déjà.
+     * Même forme que le succès — l'appelant lit des compteurs, il ne doit pas
+     * avoir à distinguer deux structures — mais tout à zéro et un statut à part.
+     */
+    private function alreadySyncingResult(): array
+    {
+        return [
+            'status' => SyncStatus::SKIPPED->value,
+            'deals_fetched' => 0,
+            'imported_positions' => 0,
+            'imported_trades' => 0,
+            'skipped_duplicates' => 0,
+            'batch_id' => null,
+            'live_inserted' => 0,
+            'live_updated' => 0,
+            'live_transitioned' => 0,
+            'pending_inserted' => 0,
+            'pending_updated' => 0,
+            'pending_executed' => 0,
+            'pending_expired' => 0,
+            'pending_cancelled' => 0,
+        ];
+    }
+
+    /**
+     * The timezone the journal's datetimes are written in for this user.
+     * Null — no repository injected, unknown user, blank column — leaves the
+     * connector on UTC, i.e. the behaviour that predates this.
+     */
+    private function resolveUserTimezone(int $userId): ?string
+    {
+        $timezone = $this->userRepo?->findById($userId)['timezone'] ?? null;
+
+        return is_string($timezone) && $timezone !== '' ? $timezone : null;
     }
 
     private function getConnector(string $provider): ConnectorInterface

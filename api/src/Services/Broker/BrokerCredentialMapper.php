@@ -38,22 +38,46 @@ class BrokerCredentialMapper
             // early without it, so a connection created without one simply
             // stops working at expiry instead of renewing itself.
             'refresh_token'      => ['key' => 'refresh_token', 'secret' => true, 'required' => false],
-            'account_id_ctrader' => ['key' => 'ctid_trader_account_id', 'secret' => false, 'required' => true, 'cast' => 'int'],
+            'account_id_ctrader' => ['key' => 'ctid_trader_account_id', 'secret' => false, 'required' => true, 'cast' => 'int', 'identity' => true],
             'environment'        => ['key' => 'environment', 'secret' => false, 'required' => false, 'enum' => CtraderEnvironment::class, 'default' => CtraderEnvironment::LIVE->value],
         ],
         BrokerProvider::METAAPI->value => [
             'api_token'          => ['key' => 'api_token', 'secret' => true, 'required' => true],
-            'metaapi_account_id' => ['key' => 'metaapi_account_id', 'secret' => false, 'required' => true],
+            'metaapi_account_id' => ['key' => 'metaapi_account_id', 'secret' => false, 'required' => true, 'identity' => true],
         ],
         BrokerProvider::OUINEX->value => [
-            'service_api_key'    => ['key' => 'service_api_key', 'secret' => true, 'required' => true],
+            // No account number to key on: the API key IS the account as far as
+            // Ouinex is concerned, so it is what identifies one.
+            'service_api_key'    => ['key' => 'service_api_key', 'secret' => true, 'required' => true, 'identity' => true],
             'service_api_secret' => ['key' => 'service_api_secret', 'secret' => true, 'required' => true],
         ],
         BrokerProvider::BINGX->value => [
-            'api_key'    => ['key' => 'api_key', 'secret' => true, 'required' => true],
+            'api_key'    => ['key' => 'api_key', 'secret' => true, 'required' => true, 'identity' => true],
             'api_secret' => ['key' => 'api_secret', 'secret' => true, 'required' => true],
         ],
     ];
+
+    /**
+     * Which credential identifies the broker-side account, and under which
+     * request-body field the user supplies it.
+     *
+     * Two connections pointing at the same broker account each sync on their
+     * own schedule, doubling the request volume against brokers that cap it —
+     * and nothing in the schema can express the constraint, since the
+     * identifier lives inside the encrypted credentials blob.
+     *
+     * @return array{field: string, key: string}|null null for an unknown provider
+     */
+    public function brokerAccountIdentity(string $provider): ?array
+    {
+        foreach (self::SPEC[$provider] ?? [] as $field => $spec) {
+            if ($spec['identity'] ?? false) {
+                return ['field' => $field, 'key' => $spec['key']];
+            }
+        }
+
+        return null;
+    }
 
     /**
      * Assemble a fresh credentials array from a request body.

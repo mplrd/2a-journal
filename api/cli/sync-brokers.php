@@ -2,17 +2,24 @@
 
 /**
  * Auto-sync scheduler entry point. Run by the `scheduler` container
- * (supercronic) every 5 minutes. Looks up all ACTIVE broker connections
- * whose last sync is older than BROKER_SYNC_INTERVAL_MINUTES and syncs them.
+ * (supercronic). Two roles in one script:
  *
- * Usage: php api/cli/sync-brokers.php
+ *   php api/cli/sync-brokers.php                     → supervisor
+ *   php api/cli/sync-brokers.php --worker [--worker-index=N]  → worker
+ *
+ * The supervisor sizes a pool of children and aggregates what they report.
+ * Each worker runs the exact scheduler that used to be the whole job: it walks
+ * the due connections and reserves what it can. No work is split up front —
+ * `broker_connections.syncing_since` is what shares it out, so a worker that
+ * draws a slow connection never leaves the others idle.
  *
  * Exit codes:
  *   0 — run completed (with or without per-connection failures)
  *   1 — fatal error before the run could complete (bad config, DB down, ...)
  *
- * A flock prevents two overlapping runs from stepping on each other when the
- * cron fires while a previous run is still going.
+ * A flock still guards the SUPERVISOR so a run that overruns its interval does
+ * not stack a second pool of children on top of the first. Workers must never
+ * take it: they would block on their own parent.
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -39,16 +46,30 @@ use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncSchedulerService;
 use App\Services\Broker\BrokerSyncService;
+use App\Services\Broker\BrokerSyncSupervisorService;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\Broker\CtraderConnector;
 use App\Services\Broker\MetaApiConnector;
 use App\Services\Broker\OuinexConnector;
 use App\Services\CustomFieldService;
 use App\Services\PlatformSettingsService;
+use App\Services\Process\ProcOpenProcessPool;
 use App\Services\Import\ColumnMapperService;
 use App\Services\Import\FileParserService;
 use App\Services\Import\ImportService;
 use App\Services\Import\RowGroupingService;
+
+/** Default child count when neither the DB setting nor the env var says. */
+const DEFAULT_WORKERS = 4;
+
+$argvValues = $argv ?? [];
+$isWorker = in_array('--worker', $argvValues, true);
+$workerIndex = 0;
+foreach ($argvValues as $arg) {
+    if (str_starts_with($arg, '--worker-index=')) {
+        $workerIndex = max(0, (int) substr($arg, strlen('--worker-index=')));
+    }
+}
 
 // Load .env (same pattern as seed-demo.php)
 $envFile = __DIR__ . '/../.env';
@@ -70,26 +91,77 @@ if (file_exists($envFile)) {
     }
 }
 
-// Acquire lock — skip silently if a previous run is still in flight.
-$lockPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'broker-sync.lock';
-$lockHandle = fopen($lockPath, 'c');
-if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
-    fwrite(STDOUT, json_encode([
-        'job' => JOB_NAME,
-        'status' => 'locked',
-        'message' => 'another run in progress',
-    ]) . PHP_EOL);
-    exit(0);
+// Supervisor only: skip silently if a previous run is still in flight. A worker
+// taking this lock would block against its own parent.
+$lockHandle = null;
+if (!$isWorker) {
+    $lockPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'broker-sync.lock';
+    $lockHandle = fopen($lockPath, 'c');
+    if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+        fwrite(STDOUT, json_encode([
+            'job' => JOB_NAME,
+            'status' => 'locked',
+            'message' => 'another run in progress',
+        ]) . PHP_EOL);
+        exit(0);
+    }
 }
 
 try {
     Database::reset();
     $pdo = Database::getConnection();
 
+    $brokerConnectionRepo = new BrokerConnectionRepository($pdo);
+
+    // Live settings: prefer DB-backed values (admin BO override), fall back to
+    // env var, then null. The scheduler skips the run if any required setting
+    // is unconfigured (logged with the unconfigured key for debugging).
+    $platformSettings = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
+    $autoSyncEnabled = $platformSettings->resolve('broker_auto_sync_enabled');
+    $syncInterval = $platformSettings->resolve('broker_sync_interval_minutes');
+    $maxFailures = $platformSettings->resolve('broker_sync_max_failures');
+    $workers = $platformSettings->resolve('broker_sync_workers');
+
+    if ($syncInterval === null || $maxFailures === null) {
+        $missing = [];
+        if ($syncInterval === null) $missing[] = 'broker_sync_interval_minutes';
+        if ($maxFailures === null) $missing[] = 'broker_sync_max_failures';
+        fwrite(STDOUT, json_encode([
+            'job' => JOB_NAME,
+            'status' => 'unconfigured',
+            'missing_settings' => $missing,
+        ]) . PHP_EOL);
+        exit(0);
+    }
+
+    if (!$isWorker) {
+        // ── Supervisor ──────────────────────────────────────────
+        // Only PDO, the connection repository and the settings are wired here:
+        // the expensive DI graph belongs to the children.
+        $supervisor = new BrokerSyncSupervisorService(
+            new ProcOpenProcessPool(),
+            $brokerConnectionRepo,
+            PHP_BINARY,
+            __FILE__,
+        );
+
+        $summary = $supervisor->run([
+            'auto_sync_enabled' => (bool) $autoSyncEnabled,
+            'sync_interval_minutes' => (int) $syncInterval,
+            'workers' => $workers === null ? DEFAULT_WORKERS : (int) $workers,
+        ]);
+
+        fwrite(STDOUT, json_encode(array_merge(
+            ['job' => JOB_NAME, 'status' => 'ok', 'role' => 'supervisor'],
+            $summary,
+        )) . PHP_EOL);
+        exit(0);
+    }
+
+    // ── Worker ──────────────────────────────────────────────────
     $brokerConfig = require __DIR__ . '/../config/broker.php';
 
     // Repositories (all only need PDO)
-    $brokerConnectionRepo = new BrokerConnectionRepository($pdo);
     $syncLogRepo = new SyncLogRepository($pdo);
     $importBatchRepo = new ImportBatchRepository($pdo);
     $symbolAliasRepo = new SymbolAliasRepository($pdo);
@@ -148,27 +220,11 @@ try {
         $brokerOpenSyncService,
         $brokerOrderSyncService,
         $accountRepo,
+        // Without it the scheduler writes broker timestamps in UTC while a
+        // manual sync writes them in the user's timezone — the same position
+        // would drift by the offset depending on which path last touched it.
+        new \App\Repositories\UserRepository($pdo),
     );
-
-    // Live settings: prefer DB-backed values (admin BO override), fall back to
-    // env var, then null. The scheduler skips the run if any required setting
-    // is unconfigured (logged with the unconfigured key for debugging).
-    $platformSettings = new PlatformSettingsService(new PlatformSettingsRepository($pdo));
-    $autoSyncEnabled = $platformSettings->resolve('broker_auto_sync_enabled');
-    $syncInterval = $platformSettings->resolve('broker_sync_interval_minutes');
-    $maxFailures = $platformSettings->resolve('broker_sync_max_failures');
-
-    if ($syncInterval === null || $maxFailures === null) {
-        $missing = [];
-        if ($syncInterval === null) $missing[] = 'broker_sync_interval_minutes';
-        if ($maxFailures === null) $missing[] = 'broker_sync_max_failures';
-        fwrite(STDOUT, json_encode([
-            'job' => JOB_NAME,
-            'status' => 'unconfigured',
-            'missing_settings' => $missing,
-        ]) . PHP_EOL);
-        exit(0);
-    }
 
     $scheduler = new BrokerSyncSchedulerService(
         $brokerConnectionRepo,
@@ -177,17 +233,24 @@ try {
             'auto_sync_enabled' => (bool) $autoSyncEnabled,
             'sync_interval_minutes' => (int) $syncInterval,
             'max_consecutive_failures' => (int) $maxFailures,
+            // Staggers this worker's scan so the pool does not pile onto the
+            // head of the due list.
+            'worker_index' => $workerIndex,
         ],
     );
 
     $summary = $scheduler->runDueConnections();
 
-    fwrite(STDOUT, json_encode(array_merge(['job' => JOB_NAME, 'status' => 'ok'], $summary)) . PHP_EOL);
+    fwrite(STDOUT, json_encode(array_merge(
+        ['job' => JOB_NAME, 'status' => 'ok', 'role' => 'worker', 'worker_index' => $workerIndex],
+        $summary,
+    )) . PHP_EOL);
     exit(0);
 } catch (Throwable $e) {
     fwrite(STDERR, json_encode([
         'job' => JOB_NAME,
         'status' => 'error',
+        'role' => $isWorker ? 'worker' : 'supervisor',
         'message' => $e->getMessage(),
     ]) . PHP_EOL);
     exit(1);

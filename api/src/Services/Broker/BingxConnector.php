@@ -29,6 +29,7 @@ use GuzzleHttp\Exception\GuzzleException;
 class BingxConnector implements ConnectorInterface
 {
     use TracksLastTestError;
+    use NormalizesInUserTimezone;
 
     /** Page size for allOrders pagination per chunk. */
     private const PAGE_SIZE = 100;
@@ -95,7 +96,6 @@ class BingxConnector implements ConnectorInterface
 
     private Client $httpClient;
     private string $baseUrl;
-    private DealNormalizer $normalizer;
     private BingxFillReconstructor $reconstructor;
 
     /** @see self::DEFAULT_MAX_EMPTY_CHUNKS */
@@ -155,7 +155,6 @@ class BingxConnector implements ConnectorInterface
     ) {
         $this->httpClient = $httpClient;
         $this->baseUrl = rtrim($baseUrl, '/');
-        $this->normalizer = new DealNormalizer();
         $this->reconstructor = new BingxFillReconstructor();
         $this->maxEmptyChunks = ($maxEmptyChunks !== null && $maxEmptyChunks >= 1)
             ? $maxEmptyChunks
@@ -304,7 +303,7 @@ class BingxConnector implements ConnectorInterface
                     $rawCount += count($list);
 
                     foreach ($list as $raw) {
-                        $fill = $this->normalizer->normalizeBingxFill($raw);
+                        $fill = $this->normalizer()->normalizeBingxFill($raw);
                         if ($fill === null) {
                             continue;
                         }
@@ -437,7 +436,7 @@ class BingxConnector implements ConnectorInterface
 
         $live = [];
         foreach ($liveSnapshot as $raw) {
-            $normalized = $this->normalizer->normalizeBingxOpenPosition($raw);
+            $normalized = $this->normalizer()->normalizeBingxOpenPosition($raw);
             if ($normalized === null) {
                 continue;
             }
@@ -463,7 +462,7 @@ class BingxConnector implements ConnectorInterface
         $orders = [];
         $rawCount = count($list);
         foreach ($list as $raw) {
-            $normalized = $this->normalizer->normalizeBingxOpenOrder($raw);
+            $normalized = $this->normalizer()->normalizeBingxOpenOrder($raw);
             if ($normalized !== null) {
                 $orders[] = $normalized;
             }
@@ -504,7 +503,7 @@ class BingxConnector implements ConnectorInterface
                     $rawCount += count($list);
 
                     foreach ($list as $raw) {
-                        $normalized = $this->normalizer->normalizeBingxClosedOrder($raw);
+                        $normalized = $this->normalizer()->normalizeBingxClosedOrder($raw);
                         if ($normalized !== null) {
                             $orders[] = $normalized;
                         }

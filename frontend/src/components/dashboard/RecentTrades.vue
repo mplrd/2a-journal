@@ -28,6 +28,16 @@ function directionSeverity(direction) {
   return direction === Direction.BUY ? 'success' : 'danger'
 }
 
+/**
+ * Size still running on an ongoing trade. `size` is the position as originally
+ * opened; `remaining_size` is what survives the partial exits taken since.
+ * They match until a TP1 is taken, which is why showing `size` went unnoticed
+ * for so long. Falls back for rows that report no remainder.
+ */
+function runningSize(trade) {
+  return trade.remaining_size ?? trade.size
+}
+
 function exitTypeSeverity(exitType) {
   switch (exitType) {
     case 'TP':
@@ -98,7 +108,10 @@ function viewAll() {
             </Column>
             <Column field="size" :header="t('positions.size')">
               <template #body="{ data }">
-                <span class="font-mono tabular-nums">{{ formatSize(data.size) }}</span>
+                <!-- What is still exposed, not what was originally opened: a
+                     position half-closed at TP1 keeps its original size on the
+                     position row and the remainder on the trade. -->
+                <span class="font-mono tabular-nums">{{ formatSize(runningSize(data)) }}</span>
               </template>
             </Column>
             <Column field="opened_at" :header="t('trades.opened_at')">

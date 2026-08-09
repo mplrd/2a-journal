@@ -600,13 +600,21 @@ class StatsRepository
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
 
-        $sql = "SELECT DATE(t.closed_at) AS date,
+        // Same realized date as every other aggregate: closed_at for a finished
+        // trade, otherwise the last partial exit. Grouping on closed_at alone
+        // sent whatever was banked at TP1 on a still-running trade into a NULL
+        // bucket the calendar cannot place — while the KPI cards, which filter
+        // on `pnl IS NOT NULL` with no status condition, counted it. Two totals
+        // on the same screen disagreed by exactly that amount.
+        $eff = $this->effectiveDate();
+
+        $sql = "SELECT DATE({$eff}) AS date,
                        COUNT(*) AS trade_count,
                        COALESCE(SUM(t.pnl), 0) AS total_pnl
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 {$where}
-                GROUP BY DATE(t.closed_at)
+                GROUP BY DATE({$eff})
                 ORDER BY date ASC";
 
         $stmt = $this->pdo->prepare($sql);
