@@ -6,7 +6,10 @@ use App\Enums\BrokerProvider;
 use App\Enums\ConnectionStatus;
 use App\Enums\SyncStatus;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\BrokerCredentialRepository;
 use App\Repositories\SyncLogRepository;
+use App\Services\Broker\BrokerCredentialMapper;
+use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
@@ -23,6 +26,8 @@ class BrokerSyncServiceTest extends TestCase
     private SyncLogRepository $syncLogRepo;
     private ImportService $importService;
     private CredentialEncryptionService $crypto;
+    private BrokerCredentialRepository $credentialRepo;
+    private BrokerCredentialStore $credentialStore;
     private ConnectorInterface $metaApiConnector;
     private ConnectorInterface $ctraderConnector;
     private ConnectorInterface $ouinexConnector;
@@ -36,6 +41,14 @@ class BrokerSyncServiceTest extends TestCase
         $this->syncLogRepo = $this->createMock(SyncLogRepository::class);
         $this->importService = $this->createMock(ImportService::class);
         $this->crypto = new CredentialEncryptionService(random_bytes(32));
+        // No shared row by default, so forConnection() resolves to exactly the
+        // connection blob these tests seed — the pre-sharing behaviour.
+        $this->credentialRepo = $this->createMock(BrokerCredentialRepository::class);
+        $this->credentialStore = new BrokerCredentialStore(
+            $this->credentialRepo,
+            $this->crypto,
+            new BrokerCredentialMapper(),
+        );
         $this->metaApiConnector = $this->createMock(ConnectorInterface::class);
         $this->ctraderConnector = $this->createMock(ConnectorInterface::class);
         $this->ouinexConnector = $this->createMock(ConnectorInterface::class);
@@ -53,7 +66,7 @@ class BrokerSyncServiceTest extends TestCase
             $this->syncLogRepo,
             $this->importService,
             new RowGroupingService(),
-            $this->crypto,
+            $this->credentialStore,
             $this->ctraderConnector,
             $this->metaApiConnector,
             $this->ouinexConnector,
@@ -157,6 +170,85 @@ class BrokerSyncServiceTest extends TestCase
         $this->connectionRepo->method('findById')->willReturn($connection);
 
         $this->expectException(\App\Exceptions\ValidationException::class);
+        $this->service->sync(1, 10);
+    }
+
+    // ── Shared credentials and the token refresh (docs/91) ──────────
+
+    public function testSyncSkipsTheRefreshWhenTheSharedTokenWasJustRenewed(): void
+    {
+        // cTrader rotates the refresh token on use. Once two connections share
+        // one, a second sync running moments after the first would present a
+        // token the first has already consumed — the refresh throws, the sync
+        // fails, and the connection flips to ERROR. Sharing created that race;
+        // this is what closes it. It also spends one refresh call instead of
+        // one per connection, which is evolution #22's whole subject.
+        $connection = $this->makeConnection('CTRADER', [
+            'access_token' => 'tok', 'refresh_token' => 'ref', 'ctid_trader_account_id' => 123,
+        ]);
+        $this->stubOpenSnapshotDefaults($this->ctraderConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        // Another connection renewed the shared credentials seconds ago.
+        $this->credentialRepo->method('secondsSinceUpdate')->willReturn(4);
+
+        $this->ctraderConnector->expects($this->never())->method('refreshCredentials');
+        $this->ctraderConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
+        $this->service->sync(1, 10);
+    }
+
+    public function testSyncStillRefreshesWhenTheSharedTokenIsOld(): void
+    {
+        $connection = $this->makeConnection('CTRADER', [
+            'access_token' => 'tok', 'refresh_token' => 'ref', 'ctid_trader_account_id' => 123,
+        ]);
+        $this->stubOpenSnapshotDefaults($this->ctraderConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->credentialRepo->method('secondsSinceUpdate')->willReturn(4000);
+
+        $this->ctraderConnector->expects($this->once())
+            ->method('refreshCredentials')
+            ->willReturnArgument(0);
+        $this->ctraderConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
+        $this->service->sync(1, 10);
+    }
+
+    public function testSyncRefreshesWhenNothingIsSharedAtAll(): void
+    {
+        // BingX and Ouinex store no shared row, so there is never anything to
+        // be fresh — the refresh path must behave exactly as it always did.
+        $connection = $this->makeConnection('BINGX', ['api_key' => 'k', 'api_secret' => 's']);
+        $this->stubOpenSnapshotDefaults($this->bingxConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->credentialRepo->method('secondsSinceUpdate')->willReturn(null);
+
+        $this->bingxConnector->expects($this->once())
+            ->method('refreshCredentials')
+            ->willReturnArgument(0);
+        $this->bingxConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
         $this->service->sync(1, 10);
     }
 
@@ -630,7 +722,7 @@ class BrokerSyncServiceTest extends TestCase
             $this->syncLogRepo,
             $this->importService,
             new RowGroupingService(),
-            $this->crypto,
+            $this->credentialStore,
             $ctrader ?? new TimezoneSpyConnector([]),
             $this->metaApiConnector,
             $this->ouinexConnector,
@@ -738,7 +830,7 @@ class BrokerSyncServiceTest extends TestCase
             $this->syncLogRepo,
             $this->importService,
             new RowGroupingService(),
-            $this->crypto,
+            $this->credentialStore,
             $ctrader,
             $this->metaApiConnector,
             $this->ouinexConnector,

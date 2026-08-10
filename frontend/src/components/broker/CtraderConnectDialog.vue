@@ -19,22 +19,58 @@ const props = defineProps({
   account: { type: Object, default: null },
   // Existing connection → reconfigure mode. Null → create mode.
   connection: { type: Object, default: null },
+  // The user's cTrader app credentials, if they already connected one account
+  // (docs/91). In create mode they prefill this dialog; null means first
+  // connection, and the form behaves exactly as it always did.
+  shared: { type: Object, default: null },
 })
 
 const emit = defineEmits(['update:visible', 'connected'])
 
-const { values, isEditing, canSubmit, changed, full, reset } = useBrokerCredentialForm({
-  connection: toRef(props, 'connection'),
-  publicFields: ['client_id', 'account_id_ctrader', 'environment'],
-  secretFields: ['client_secret', 'access_token', 'refresh_token'],
-  // Secret, but not required: a connection without one simply stops working at
-  // token expiry instead of renewing itself.
-  optionalFields: ['refresh_token'],
-  defaults: { environment: CtraderEnvironment.LIVE },
-})
+const { values, isEditing, canSubmit, changed, full, reset, isStored, storedFields, sharing } =
+  useBrokerCredentialForm({
+    connection: toRef(props, 'connection'),
+    shared: toRef(props, 'shared'),
+    publicFields: ['client_id', 'account_id_ctrader', 'environment'],
+    secretFields: ['client_secret', 'access_token', 'refresh_token'],
+    // Secret, but not required: a connection without one simply stops working at
+    // token expiry instead of renewing itself.
+    optionalFields: ['refresh_token'],
+    defaults: { environment: CtraderEnvironment.LIVE },
+  })
 
 const loading = ref(false)
 const error = ref(null)
+
+/**
+ * Nothing left to type in the app credentials — they came with the user's
+ * first cTrader connection.
+ */
+const credentialsAreStored = computed(() => storedFields.value.length > 0)
+
+// Folded by default in that case, because the dialog is then about one thing:
+// picking the account. Everything stays on this single screen — sharing is a
+// storage fact and must not cost the user a second navigation.
+const showCredentials = ref(false)
+const credentialsVisible = computed(() => !credentialsAreStored.value || showCredentials.value)
+
+/**
+ * How many connections these credentials feed, and — when reconfiguring more
+ * than one — that editing them here reaches all of them. Without saying it,
+ * changing a token from the second connection silently rewrites the first,
+ * which is the one trap sharing introduces.
+ */
+const sharingBanner = computed(() => {
+  if (!sharing.value) return null
+
+  const feeds = t('broker.shared_credentials_feeds', { count: sharing.value.count })
+
+  if (isEditing.value) {
+    return sharing.value.count > 1 ? `${feeds} ${t('broker.shared_credentials_edit_warning')}` : null
+  }
+
+  return credentialsAreStored.value ? `${t('broker.shared_credentials_stored')} ${feeds}` : null
+})
 
 const discoveredAccounts = ref([])
 const discovering = ref(false)
@@ -45,19 +81,26 @@ const environmentOptions = computed(() => [
   { label: t('broker.ctrader_env_demo'), value: CtraderEnvironment.DEMO },
 ])
 
-/** In reconfigure mode a blank secret input keeps the stored value. */
-const secretPlaceholder = (createKey) =>
-  isEditing.value ? t('broker.credential_unchanged_placeholder') : t(createKey)
+/**
+ * A blank secret input keeps the stored value — while reconfiguring, and now
+ * also while creating a second connection on already-stored app credentials.
+ * The two cases read differently to the user, hence two placeholders.
+ */
+const secretPlaceholder = (field, createKey) => {
+  if (isEditing.value) return t('broker.credential_unchanged_placeholder')
+  if (isStored(field)) return t('broker.credential_stored_placeholder')
+  return t(createKey)
+}
 
 /**
- * Account discovery needs the three app credentials. While reconfiguring they
- * may already all be stored, so the button stays enabled and the backend reads
- * them from the connection.
+ * Account discovery needs the three app credentials. They may already all be
+ * stored — on the connection when reconfiguring, or on the user when this is a
+ * second connection — so the button stays enabled and the backend reads them.
  */
 const canDiscover = computed(() => {
   if (isEditing.value) return true
   return ['client_id', 'client_secret', 'access_token'].every(
-    (f) => (values.value[f] ?? '').trim() !== '',
+    (f) => (values.value[f] ?? '').trim() !== '' || isStored(f),
   )
 })
 
@@ -224,68 +267,99 @@ async function submit() {
         {{ isEditing ? t('broker.reconfigure_instructions') : t('broker.ctrader_instructions') }}
       </p>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {{ t('broker.ctrader_client_id') }}
-          <FieldHelpIcon :text="t('broker.ctrader_client_id_help')" testid="ctrader-client-id-help" />
-        </label>
-        <InputText
-          v-model="values.client_id"
-          class="w-full"
-          :placeholder="t('broker.ctrader_client_id_placeholder')"
-          autocomplete="off"
-          name="ctrader-client-id"
-          spellcheck="false"
+      <!-- One cTrader app, several accounts: the four credentials below belong
+           to the app and are stored once for the user. This says how many
+           connections they feed — and, when reconfiguring, that an edit here
+           reaches every one of them. -->
+      <Message
+        v-if="sharingBanner"
+        severity="info"
+        :closable="false"
+        class="text-sm"
+        data-testid="ctrader-shared-banner"
+      >
+        {{ sharingBanner }}
+      </Message>
+
+      <!-- Folded away once stored, so a second connection is one field long.
+           The inputs are still here, one click down: rotating a secret must
+           not require going and finding the first connection. -->
+      <div v-if="credentialsAreStored" class="flex justify-end">
+        <Button
+          :label="showCredentials ? t('broker.shared_credentials_hide') : t('broker.shared_credentials_show')"
+          :icon="showCredentials ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+          size="small"
+          severity="secondary"
+          text
+          data-testid="ctrader-shared-toggle"
+          @click="showCredentials = !showCredentials"
         />
       </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {{ t('broker.ctrader_client_secret') }}
-          <FieldHelpIcon :text="t('broker.ctrader_client_secret_help')" testid="ctrader-client-secret-help" />
-        </label>
-        <InputText
-          v-model="values.client_secret"
-          class="w-full"
-          type="password"
-          :placeholder="secretPlaceholder('broker.ctrader_client_secret_placeholder')"
-          autocomplete="new-password"
-          name="ctrader-client-secret"
-          spellcheck="false"
-        />
-      </div>
+      <template v-if="credentialsVisible">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_client_id') }}
+            <FieldHelpIcon :text="t('broker.ctrader_client_id_help')" testid="ctrader-client-id-help" />
+          </label>
+          <InputText
+            v-model="values.client_id"
+            class="w-full"
+            :placeholder="t('broker.ctrader_client_id_placeholder')"
+            autocomplete="off"
+            name="ctrader-client-id"
+            spellcheck="false"
+          />
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {{ t('broker.ctrader_access_token') }}
-          <FieldHelpIcon :text="t('broker.ctrader_access_token_help')" testid="ctrader-access-token-help" />
-        </label>
-        <InputText
-          v-model="values.access_token"
-          class="w-full"
-          type="password"
-          :placeholder="secretPlaceholder('broker.ctrader_access_token_placeholder')"
-          autocomplete="new-password"
-          name="ctrader-access-token"
-          spellcheck="false"
-        />
-      </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_client_secret') }}
+            <FieldHelpIcon :text="t('broker.ctrader_client_secret_help')" testid="ctrader-client-secret-help" />
+          </label>
+          <InputText
+            v-model="values.client_secret"
+            class="w-full"
+            type="password"
+            :placeholder="secretPlaceholder('client_secret', 'broker.ctrader_client_secret_placeholder')"
+            autocomplete="new-password"
+            name="ctrader-client-secret"
+            spellcheck="false"
+          />
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          {{ t('broker.ctrader_refresh_token') }}
-          <FieldHelpIcon :text="t('broker.ctrader_refresh_token_help')" testid="ctrader-refresh-token-help" />
-        </label>
-        <InputText
-          v-model="values.refresh_token"
-          class="w-full"
-          type="password"
-          :placeholder="secretPlaceholder('broker.ctrader_refresh_token_placeholder')"
-          autocomplete="new-password"
-          name="ctrader-refresh-token"
-          spellcheck="false"
-        />
-      </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_access_token') }}
+            <FieldHelpIcon :text="t('broker.ctrader_access_token_help')" testid="ctrader-access-token-help" />
+          </label>
+          <InputText
+            v-model="values.access_token"
+            class="w-full"
+            type="password"
+            :placeholder="secretPlaceholder('access_token', 'broker.ctrader_access_token_placeholder')"
+            autocomplete="new-password"
+            name="ctrader-access-token"
+            spellcheck="false"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {{ t('broker.ctrader_refresh_token') }}
+            <FieldHelpIcon :text="t('broker.ctrader_refresh_token_help')" testid="ctrader-refresh-token-help" />
+          </label>
+          <InputText
+            v-model="values.refresh_token"
+            class="w-full"
+            type="password"
+            :placeholder="secretPlaceholder('refresh_token', 'broker.ctrader_refresh_token_placeholder')"
+            autocomplete="new-password"
+            name="ctrader-refresh-token"
+            spellcheck="false"
+          />
+        </div>
+      </template>
 
       <!-- Manual fallback, shown only while discovery has not answered. Both
            values come from the picked account otherwise. -->

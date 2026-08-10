@@ -1038,10 +1038,17 @@ class CtraderConnector implements ConnectorInterface
 
         $http = $this->httpClient ?? new HttpClient();
 
-        // The cTrader OAuth app credentials are stored per-connection (the
-        // user enters them in the connect dialog), so prefer the credentials'
-        // client_id/secret and fall back to config. oauth_token_url falls back
-        // to the known cTrader endpoint when not configured.
+        // The cTrader OAuth app credentials are the user's own (typed in the
+        // connect dialog and, since docs/91, stored once for all their cTrader
+        // connections), so prefer the credentials' client_id/secret and fall
+        // back to config. oauth_token_url falls back to the known cTrader
+        // endpoint when not configured.
+        //
+        // Note for whoever lands here after a refresh failure: cTrader rotates
+        // the refresh token on use, and it is now shared. BrokerSyncService
+        // skips this call when another connection renewed it moments ago —
+        // without that guard, the second concurrent sync consumes a token that
+        // is already spent.
         $tokenUrl = $this->config['oauth_token_url'] ?? 'https://openapi.ctrader.com/apps/token';
         $response = $http->get($tokenUrl, [
             'query' => [

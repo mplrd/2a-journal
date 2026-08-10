@@ -7,8 +7,10 @@ use App\Enums\ConnectionStatus;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\BrokerCredentialRepository;
 use App\Services\Broker\BrokerConnectionService;
 use App\Services\Broker\BrokerCredentialMapper;
+use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\ConnectorRegistry;
 use App\Services\Broker\CredentialEncryptionService;
 use PDO;
@@ -29,6 +31,7 @@ class BrokerConnectionServiceTest extends TestCase
     private PDO $pdo;
     private BrokerConnectionRepository $repo;
     private CredentialEncryptionService $crypto;
+    private BrokerCredentialStore $store;
     private BrokerConnectionService $service;
     private int $userId;
     private int $otherUserId;
@@ -43,9 +46,14 @@ class BrokerConnectionServiceTest extends TestCase
 
         $this->repo = new BrokerConnectionRepository($this->pdo);
         $this->crypto = new CredentialEncryptionService(str_repeat('k', 32));
+        $this->store = new BrokerCredentialStore(
+            new BrokerCredentialRepository($this->pdo),
+            $this->crypto,
+            new BrokerCredentialMapper(),
+        );
         $this->service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry(
                 new FakeConnector(),
@@ -178,7 +186,7 @@ class BrokerConnectionServiceTest extends TestCase
         $failing = new FakeConnector(false, 'cTrader API error: CH_CLIENT_AUTH_FAILURE - wrong clientSecret');
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($failing, $failing, $failing, $failing),
         );
@@ -207,7 +215,7 @@ class BrokerConnectionServiceTest extends TestCase
         );
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($leaky, $leaky, $leaky, $leaky),
         );
@@ -237,7 +245,7 @@ class BrokerConnectionServiceTest extends TestCase
         );
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($leaky, $leaky, $leaky, $leaky),
         );
@@ -256,7 +264,7 @@ class BrokerConnectionServiceTest extends TestCase
         $failing = new FakeConnector(false, 'cTrader API error: CH_CLIENT_AUTH_FAILURE - wrong clientSecret');
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($failing, $failing, $failing, $failing),
         );
@@ -272,7 +280,7 @@ class BrokerConnectionServiceTest extends TestCase
         $noisy = new FakeConnector(false, str_repeat('z', 900));
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($noisy, $noisy, $noisy, $noisy),
         );
@@ -288,7 +296,7 @@ class BrokerConnectionServiceTest extends TestCase
         $throwing = new FakeConnector(false, null, true);
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($throwing, $throwing, $throwing, $throwing),
         );
@@ -456,7 +464,7 @@ class BrokerConnectionServiceTest extends TestCase
         $failing = new FakeConnector(false, null, true);
         $service = new BrokerConnectionService(
             $this->repo,
-            $this->crypto,
+            $this->store,
             new BrokerCredentialMapper(),
             new ConnectorRegistry($failing, $failing, $failing, $failing),
         );
@@ -558,10 +566,14 @@ class BrokerConnectionServiceTest extends TestCase
         return (int) $row['id'];
     }
 
+    /**
+     * What the connection actually resolves to, connection row and shared row
+     * together. Since credentials are split by provider, reading the connection
+     * blob alone would only ever see the account identifiers.
+     */
     private function decryptStored(int $id): array
     {
-        $row = $this->repo->findById($id);
-        return $this->crypto->decrypt($row['credentials_encrypted'], $row['credentials_iv']);
+        return $this->store->forConnection($this->repo->findById($id));
     }
 
     private function seedUser(string $email): int
@@ -583,7 +595,7 @@ class BrokerConnectionServiceTest extends TestCase
     private function wipeTables(): void
     {
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-        foreach (['sync_logs', 'broker_connections', 'accounts', 'users'] as $table) {
+        foreach (['sync_logs', 'broker_connections', 'broker_credentials', 'accounts', 'users'] as $table) {
             $this->pdo->exec("DELETE FROM {$table}");
         }
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=1');
@@ -612,87 +624,6 @@ class BrokerConnectionServiceTest extends TestCase
     }
 }
 
-/**
- * Minimal connector double: only testConnection()/getLastTestError() matter for
- * the save-time credential check.
- */
-class FakeConnector implements \App\Services\Broker\ConnectorInterface
-{
-    public function __construct(
-        private bool $testResult = true,
-        private ?string $lastError = null,
-        private bool $throws = false,
-    ) {}
-
-    public function testConnection(array $credentials): bool
-    {
-        if ($this->throws) {
-            throw new \RuntimeException('boom');
-        }
-        return $this->testResult;
-    }
-
-    /** cTrader-only, resolved via method_exists — not part of ConnectorInterface. */
-    public function fetchAccounts(array $credentials): array
-    {
-        if ($this->throws) {
-            throw new \RuntimeException('boom');
-        }
-        return [['ctid_trader_account_id' => 42111, 'trader_login' => '1234567', 'is_live' => true]];
-    }
-
-    public function getLastTestError(): ?string
-    {
-        return $this->lastError;
-    }
-
-    public function fetchDeals(array $credentials, ?string $sinceCursor = null): array
-    {
-        return ['deals' => [], 'cursor' => '', 'raw_count' => 0];
-    }
-
-    public function fetchOpenPositions(array $credentials): array
-    {
-        return ['positions' => [], 'raw_count' => 0];
-    }
-
-    public function fetchOpenOrders(array $credentials): array
-    {
-        return ['orders' => [], 'raw_count' => 0];
-    }
-
-    public function fetchClosedOrders(array $credentials, ?string $sinceCursor = null): array
-    {
-        return ['orders' => [], 'raw_count' => 0];
-    }
-
-    public function refreshCredentials(array $credentials): array
-    {
-        return $credentials;
-    }
-
-    public function fetchBalance(array $credentials): ?float
-    {
-        return null;
-    }
-
-    public function placeOrder(array $credentials, array $order): array
-    {
-        return ['external_order_id' => '1', 'status' => null, 'raw' => []];
-    }
-
-    public function cancelOrder(array $credentials, string $externalOrderId): array
-    {
-        return ['status' => null, 'raw' => []];
-    }
-
-    public function closePosition(array $credentials, string $externalPositionId, ?float $sizeOverride = null): array
-    {
-        return ['status' => null, 'raw' => []];
-    }
-
-    public function modifyOrder(array $credentials, array $modification): array
-    {
-        return ['status' => null, 'raw' => []];
-    }
-}
+// FakeConnector now lives in its own PSR-4 file beside this one: two test
+// classes use it, and a class declared inside a test file only exists once
+// PHPUnit happens to have loaded that file.
