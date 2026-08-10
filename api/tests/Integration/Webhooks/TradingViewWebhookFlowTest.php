@@ -24,6 +24,9 @@ use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
 use App\Services\Broker\ConnectorInterface;
+use App\Repositories\BrokerCredentialRepository;
+use App\Services\Broker\BrokerCredentialMapper;
+use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\OrderService;
 use App\Services\PlanEvaluator;
@@ -98,7 +101,11 @@ class TradingViewWebhookFlowTest extends TestCase
             $orderService,
             $orderRepo,
             $historyRepo,
-            $this->crypto,
+            new BrokerCredentialStore(
+                new BrokerCredentialRepository($this->pdo),
+                $this->crypto,
+                new BrokerCredentialMapper(),
+            ),
             $this->connector,
             $this->connector,
             $this->connector,

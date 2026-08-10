@@ -24,12 +24,24 @@ class BrokerSyncService
      */
     public const SYNC_CLAIM_TTL_SECONDS = 900;
 
+    /**
+     * En deçà de ce délai, les identifiants partagés d'un utilisateur sont
+     * considérés comme fraîchement renouvelés et la passe suivante ne redemande
+     * pas de token (docs/91).
+     *
+     * Cinq minutes : assez large pour couvrir un tick de scheduler entier —
+     * c'est là que deux connexions du même utilisateur se marchent dessus — et
+     * très en deçà de la durée de vie d'un access token cTrader, donc jamais au
+     * risque de travailler avec un token expiré.
+     */
+    public const SHARED_CREDENTIAL_FRESHNESS_SECONDS = 300;
+
     public function __construct(
         private BrokerConnectionRepository $connectionRepo,
         private SyncLogRepository $syncLogRepo,
         private ImportService $importService,
         private RowGroupingService $grouper,
-        private CredentialEncryptionService $crypto,
+        private BrokerCredentialStore $credentials,
         private ConnectorInterface $ctraderConnector,
         private ConnectorInterface $metaApiConnector,
         private ConnectorInterface $ouinexConnector,
@@ -112,24 +124,48 @@ class BrokerSyncService
                 'status' => SyncStatus::STARTED->value,
             ]);
 
-            // Decrypt credentials
-            $credentials = $this->crypto->decrypt(
-                $connection['credentials_encrypted'],
-                $connection['credentials_iv']
-            );
+            // The connection's own row plus the user's shared app credentials.
+            $credentials = $this->credentials->forConnection($connection);
 
             // Select connector
             $connector = $this->getConnector($connection['provider']);
 
-            // Refresh credentials if needed
-            $refreshed = $connector->refreshCredentials($credentials);
-            if ($refreshed !== $credentials) {
-                $encrypted = $this->crypto->encrypt($refreshed);
-                $this->connectionRepo->update($connectionId, [
-                    'credentials_encrypted' => $encrypted['ciphertext'],
-                    'credentials_iv' => $encrypted['iv'],
-                ]);
-                $credentials = $refreshed;
+            // Refresh credentials if needed — unless another connection of the
+            // same user just did it.
+            //
+            // cTrader rotates the refresh token on use. Once two connections
+            // share one, a sync starting moments after another would present a
+            // token the first has already consumed: the refresh throws, the
+            // sync fails, and the connection flips to ERROR. Sharing is what
+            // created that race, so closing it belongs here.
+            //
+            // The same skip is the request-budget win of evolution #22: one
+            // refresh call for the user's whole provider, not one per
+            // connection. Nothing is skipped when nothing is shared, which is
+            // how Ouinex and BingX keep their exact previous behaviour.
+            $justRenewed = $this->credentials->sharedRenewedWithin(
+                (int) $connection['user_id'],
+                $connection['provider'],
+                self::SHARED_CREDENTIAL_FRESHNESS_SECONDS,
+            );
+
+            if (!$justRenewed) {
+                $refreshed = $connector->refreshCredentials($credentials);
+                if ($refreshed !== $credentials) {
+                    // A renewed access token is a shared credential, so it
+                    // lands on the user's row and every other connection of
+                    // this provider picks it up on its next pass.
+                    $encrypted = $this->credentials->store(
+                        (int) $connection['user_id'],
+                        $connection['provider'],
+                        $refreshed,
+                    );
+                    $this->connectionRepo->update($connectionId, [
+                        'credentials_encrypted' => $encrypted['ciphertext'],
+                        'credentials_iv' => $encrypted['iv'],
+                    ]);
+                    $credentials = $refreshed;
+                }
             }
 
             // Hand the connector the symbols we've persisted from previous

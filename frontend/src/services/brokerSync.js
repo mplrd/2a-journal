@@ -9,6 +9,16 @@ export const brokerSyncService = {
     return api.get('/broker/connections')
   },
 
+  /**
+   * The app credentials the user already has stored, per provider — what a
+   * *create* dialog needs to arrive prefilled instead of asking for the same
+   * cTrader tokens a second time (docs/91). Secret values never come back:
+   * each is reported as a set/unset flag.
+   */
+  async getSharedCredentials() {
+    return api.get('/broker/credentials')
+  },
+
   async createMetaApiConnection(accountId, apiToken, metaApiAccountId) {
     return api.post('/broker/connections', {
       provider: 'METAAPI',

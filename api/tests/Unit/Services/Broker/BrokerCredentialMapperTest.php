@@ -338,4 +338,100 @@ class BrokerCredentialMapperTest extends TestCase
 
         $this->assertSame(['credentials_public' => [], 'credentials_set' => []], $view);
     }
+
+    // ── shared / own split (docs/91-broker-shared-credentials.md) ───
+
+    public function testSharedFieldsOfCtraderAreTheFourAppCredentials(): void
+    {
+        // What a second cTrader connection must not make the user retype. The
+        // account id is deliberately absent: it is the one thing that differs
+        // between two connections of the same app.
+        $this->assertSame(
+            ['client_id', 'client_secret', 'access_token', 'refresh_token'],
+            $this->mapper->sharedFields('CTRADER'),
+        );
+    }
+
+    public function testSharedFieldsOfMetaApiIsTheApiToken(): void
+    {
+        $this->assertSame(['api_token'], $this->mapper->sharedFields('METAAPI'));
+    }
+
+    public function testOuinexAndBingxShareNothing(): void
+    {
+        // Their API key IS the account, so there is nothing above the
+        // connection to hoist. This is the test of the abstraction: they must
+        // traverse the feature without a single behaviour change.
+        $this->assertSame([], $this->mapper->sharedFields('OUINEX'));
+        $this->assertSame([], $this->mapper->sharedFields('BINGX'));
+    }
+
+    public function testSharedFieldsOfUnknownProviderIsEmpty(): void
+    {
+        $this->assertSame([], $this->mapper->sharedFields('KRAKEN'));
+    }
+
+    public function testCtraderEnvironmentStaysWithTheConnection(): void
+    {
+        // Not shared on purpose: which cTrader host an account lives on is a
+        // property of the account, not of the app credentials. One access token
+        // can list both live and demo accounts.
+        $this->assertNotContains('environment', $this->mapper->sharedFields('CTRADER'));
+    }
+
+    public function testSplitCtraderSeparatesAppCredentialsFromTheAccount(): void
+    {
+        $split = $this->mapper->split('CTRADER', [
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'refresh_token' => 'refresh',
+            'ctid_trader_account_id' => 12345678,
+            'environment' => 'DEMO',
+        ]);
+
+        $this->assertSame([
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'refresh_token' => 'refresh',
+        ], $split['shared']);
+
+        $this->assertSame([
+            'ctid_trader_account_id' => 12345678,
+            'environment' => 'DEMO',
+        ], $split['own']);
+    }
+
+    public function testSplitOmitsAnAbsentOptionalSharedCredential(): void
+    {
+        // A connection created without a refresh token must not write an empty
+        // key into the shared row — publicView would then report it as set.
+        $split = $this->mapper->split('CTRADER', [
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'ctid_trader_account_id' => 12345678,
+        ]);
+
+        $this->assertArrayNotHasKey('refresh_token', $split['shared']);
+    }
+
+    public function testSplitLeavesEverythingOnTheConnectionForBingx(): void
+    {
+        $split = $this->mapper->split('BINGX', ['api_key' => 'k', 'api_secret' => 's']);
+
+        $this->assertSame([], $split['shared']);
+        $this->assertSame(['api_key' => 'k', 'api_secret' => 's'], $split['own']);
+    }
+
+    public function testSplitOfUnknownProviderKeepsEverythingOnTheConnection(): void
+    {
+        // Same defensive stance as publicView(): a provider we no longer
+        // support keeps behaving exactly as it did before sharing existed.
+        $split = $this->mapper->split('KRAKEN', ['api_key' => 'k']);
+
+        $this->assertSame([], $split['shared']);
+        $this->assertSame(['api_key' => 'k'], $split['own']);
+    }
 }

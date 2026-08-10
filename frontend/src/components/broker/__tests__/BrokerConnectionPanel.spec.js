@@ -10,6 +10,7 @@ import en from '@/locales/en.json'
 vi.mock('@/services/brokerSync', () => ({
   brokerSyncService: {
     getConnection: vi.fn(),
+    getSharedCredentials: vi.fn(),
     sync: vi.fn(),
     deleteConnection: vi.fn(),
     getSyncLogs: vi.fn(),
@@ -37,10 +38,14 @@ function createWrapper() {
         },
         CtraderConnectDialog: {
           name: 'CtraderConnectDialog',
-          template: '<div class="ctrader-dialog" :data-mode="connection ? `edit` : `create`" />',
-          props: ['visible', 'account', 'connection'],
+          template:
+            '<div class="ctrader-dialog" :data-mode="connection ? `edit` : `create`" :data-shared-count="shared ? shared.credentials_shared_count : `none`" />',
+          props: ['visible', 'account', 'connection', 'shared'],
         },
-        MetaApiConnectDialog: { template: '<div />', props: ['visible', 'account', 'connection'] },
+        MetaApiConnectDialog: {
+          template: '<div class="metaapi-dialog" :data-shared="shared ? `yes` : `none`" />',
+          props: ['visible', 'account', 'connection', 'shared'],
+        },
         OuinexConnectDialog: { template: '<div />', props: ['visible', 'account', 'connection'] },
         BingxConnectDialog: { template: '<div />', props: ['visible', 'account', 'connection'] },
         SyncHistoryDialog: { template: '<div />', props: ['visible', 'connection'] },
@@ -107,6 +112,81 @@ describe('BrokerConnectionPanel', () => {
     await button(wrapper, 'broker-reconfigure').trigger('click')
 
     expect(wrapper.find('.ctrader-dialog').attributes('data-mode')).toBe('edit')
+  })
+
+  // ── Shared app credentials (docs/91) ──────────────────────────────
+  describe('shared app credentials', () => {
+    const sharedCtrader = {
+      CTRADER: {
+        credentials_public: { client_id: '30528' },
+        credentials_set: { client_secret: true, access_token: true },
+        credentials_shared_fields: ['client_id', 'client_secret', 'access_token', 'refresh_token'],
+        credentials_shared_count: 2,
+      },
+    }
+
+    it('does not ask for stored credentials until a dialog is opened', async () => {
+      // This panel is rendered once per account. Fetching on mount would cost
+      // one request per account on a page nobody may connect anything from.
+      brokerSyncService.getConnection.mockRejectedValue(new Error('no connection'))
+      createWrapper()
+      await flushPromises()
+
+      expect(brokerSyncService.getSharedCredentials).not.toHaveBeenCalled()
+    })
+
+    it('hands the create dialog what the user already stored for that provider', async () => {
+      brokerSyncService.getConnection.mockRejectedValue(new Error('no connection'))
+      brokerSyncService.getSharedCredentials.mockResolvedValue({ data: sharedCtrader })
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-connect-ctrader').trigger('click')
+      await flushPromises()
+
+      const dialog = wrapper.find('.ctrader-dialog')
+      expect(dialog.attributes('data-mode')).toBe('create')
+      expect(dialog.attributes('data-shared-count')).toBe('2')
+    })
+
+    it('gives a provider with nothing stored no shared credentials', async () => {
+      brokerSyncService.getConnection.mockRejectedValue(new Error('no connection'))
+      brokerSyncService.getSharedCredentials.mockResolvedValue({ data: sharedCtrader })
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-connect-metaapi').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('.metaapi-dialog').attributes('data-shared')).toBe('none')
+    })
+
+    it('still opens the dialog when the lookup fails', async () => {
+      // Prefilling is a convenience. Losing it must never cost the user the
+      // ability to connect an account by hand.
+      brokerSyncService.getConnection.mockRejectedValue(new Error('no connection'))
+      brokerSyncService.getSharedCredentials.mockRejectedValue(new Error('boom'))
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-connect-ctrader').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('.ctrader-dialog').attributes('data-shared-count')).toBe('none')
+    })
+
+    it('does not carry stored credentials into a reconfigure', async () => {
+      // The connection already carries its own view of them, count included.
+      brokerSyncService.getConnection.mockResolvedValue({ data: erroredConnection })
+      brokerSyncService.getSharedCredentials.mockResolvedValue({ data: sharedCtrader })
+      const wrapper = createWrapper()
+      await flushPromises()
+
+      await button(wrapper, 'broker-reconfigure').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('.ctrader-dialog').attributes('data-shared-count')).toBe('none')
+    })
   })
 
   it('warns when the saved credentials failed their connection test', async () => {

@@ -517,4 +517,114 @@ describe('CtraderConnectDialog', () => {
       expect(emitted[0][0].connection_test.success).toBe(false)
     })
   })
+
+  // ── Shared app credentials (docs/91) ──────────────────────────────
+  describe('shared app credentials', () => {
+    const shared = {
+      credentials_public: { client_id: '30528' },
+      credentials_set: { client_secret: true, access_token: true, refresh_token: true },
+      credentials_shared_fields: ['client_id', 'client_secret', 'access_token', 'refresh_token'],
+      credentials_shared_count: 1,
+    }
+
+    const banner = (wrapper) => wrapper.find('[data-testid="ctrader-shared-banner"]')
+    const toggle = (wrapper) => wrapper.find('[data-testid="ctrader-shared-toggle"]')
+
+    it('folds the app credentials away when they are already stored', async () => {
+      // The second connection is about picking an account, not about pasting
+      // four tokens again. Everything stays in this one dialog — the fold is
+      // what keeps it from being a wall of prefilled inputs.
+      const wrapper = createWrapper({ shared })
+
+      expect(field(wrapper, 'ctrader-client-secret').exists()).toBe(false)
+      expect(toggle(wrapper).exists()).toBe(true)
+    })
+
+    it('connects with nothing but the account picked', async () => {
+      const wrapper = createWrapper({ shared })
+      expect(submit(wrapper).attributes('disabled')).toBeDefined()
+
+      await field(wrapper, 'ctrader-account-id').setValue('7589849')
+
+      expect(submit(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('says how many connections the stored credentials already feed', async () => {
+      const wrapper = createWrapper({
+        shared: { ...shared, credentials_shared_count: 2 },
+      })
+
+      expect(banner(wrapper).text()).toContain('2')
+    })
+
+    it('unfolds to a prefilled client id and secrets marked as stored', async () => {
+      const wrapper = createWrapper({ shared })
+
+      await toggle(wrapper).trigger('click')
+
+      expect(field(wrapper, 'ctrader-client-id').element.value).toBe('30528')
+      // Never echoed — only flagged, so the user can tell it is not missing.
+      expect(field(wrapper, 'ctrader-client-secret').element.value).toBe('')
+      expect(field(wrapper, 'ctrader-client-secret').attributes('placeholder')).toBe(
+        fr.broker.credential_stored_placeholder,
+      )
+    })
+
+    it('can look accounts up without retyping a stored secret', async () => {
+      // The picker needs the three app credentials; they are stored, so the
+      // button must not sit disabled waiting for input that will never come.
+      const wrapper = createWrapper({ shared })
+
+      expect(
+        wrapper.find('[data-testid="ctrader-load-accounts"]').attributes('disabled'),
+      ).toBeUndefined()
+    })
+
+    it('sends only the account when nothing else was touched', async () => {
+      const wrapper = createWrapper({ shared })
+      await field(wrapper, 'ctrader-account-id').setValue('7589849')
+      await submit(wrapper).trigger('click')
+      await flushPromises()
+
+      const body = brokerSyncService.createCtraderConnection.mock.calls[0][1]
+      expect(body.account_id_ctrader).toBe('7589849')
+      // Blank means "keep what is stored", exactly as when reconfiguring.
+      expect(body.client_secret).toBe('')
+    })
+
+    it('shows no fold and no banner for a first connection', async () => {
+      const wrapper = createWrapper()
+
+      expect(toggle(wrapper).exists()).toBe(false)
+      expect(banner(wrapper).exists()).toBe(false)
+      expect(field(wrapper, 'ctrader-client-secret').exists()).toBe(true)
+    })
+
+    it('warns before an edit that reaches every connection', async () => {
+      // The trap of sharing: editing a token from the second connection
+      // silently rewrites the first unless the dialog says so.
+      const wrapper = createWrapper({
+        connection: {
+          ...existingConnection,
+          credentials_shared_fields: ['client_id', 'client_secret', 'access_token', 'refresh_token'],
+          credentials_shared_count: 3,
+        },
+      })
+
+      expect(banner(wrapper).text()).toContain('3')
+      expect(banner(wrapper).text()).toContain(fr.broker.shared_credentials_edit_warning)
+    })
+
+    it('stays quiet when the connection is the only one on those credentials', async () => {
+      const wrapper = createWrapper({
+        connection: {
+          ...existingConnection,
+          credentials_shared_fields: ['client_id', 'client_secret', 'access_token', 'refresh_token'],
+          credentials_shared_count: 1,
+        },
+      })
+
+      expect(banner(wrapper).exists()).toBe(false)
+    })
+  })
 })

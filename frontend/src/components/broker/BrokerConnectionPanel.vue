@@ -33,6 +33,10 @@ const showBingxDialog = ref(false)
 const showHistory = ref(false)
 // Set while a dialog is open in reconfigure mode; null means create mode.
 const editingConnection = ref(null)
+// The user's stored app credentials per provider (docs/91), fetched when a
+// connect dialog is opened. Only useful in create mode: a connection already
+// carries its own view of them.
+const sharedCredentials = ref({})
 
 const isConnected = computed(() => connection.value && connection.value.status === 'ACTIVE')
 const isBroken = computed(() => connection.value && connection.value.status !== 'ACTIVE')
@@ -223,10 +227,36 @@ function reconfigure() {
   flag.value = true
 }
 
-function openConnectDialog(provider) {
+/**
+ * Fetched here rather than on mount: this panel is rendered once per account,
+ * and most sessions never open a connect dialog at all — one request per
+ * account for a prefill nobody asked for.
+ *
+ * A failure is swallowed on purpose. Prefilling is a convenience; losing it
+ * must never cost the user the ability to connect an account by hand.
+ */
+async function loadSharedCredentials() {
+  try {
+    const resp = await brokerSyncService.getSharedCredentials()
+    sharedCredentials.value = resp.data || {}
+  } catch {
+    sharedCredentials.value = {}
+  }
+}
+
+async function openConnectDialog(provider) {
   editingConnection.value = null
+  await loadSharedCredentials()
   DIALOG_FLAGS[provider].value = true
 }
+
+/**
+ * What a *create* dialog prefills from. Null while reconfiguring: the
+ * connection already carries its own credential view and sharing count, and
+ * feeding both would leave the dialog with two sources of truth.
+ */
+const sharedFor = (provider) =>
+  editingConnection.value ? null : (sharedCredentials.value[provider] ?? null)
 
 /**
  * Saving is deliberately never blocked on the credential test (a broker
@@ -331,16 +361,16 @@ function onConnected(provider, result) {
       <div>
         <h5 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">{{ t('broker.section_platforms') }}</h5>
         <div class="flex flex-wrap gap-2">
-          <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" @click="openConnectDialog('METAAPI')" />
-          <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" @click="openConnectDialog('CTRADER')" />
+          <Button :label="t('broker.connect_metaapi')" icon="pi pi-link" size="small" data-testid="broker-connect-metaapi" @click="openConnectDialog('METAAPI')" />
+          <Button :label="t('broker.connect_ctrader')" icon="pi pi-link" size="small" data-testid="broker-connect-ctrader" @click="openConnectDialog('CTRADER')" />
         </div>
       </div>
 
       <div>
         <h5 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">{{ t('broker.section_brokers') }}</h5>
         <div class="flex flex-wrap gap-2">
-          <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" @click="openConnectDialog('BINGX')" />
-          <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" @click="openConnectDialog('OUINEX')" />
+          <Button :label="t('broker.connect_bingx')" icon="pi pi-link" size="small" severity="secondary" data-testid="broker-connect-bingx" @click="openConnectDialog('BINGX')" />
+          <Button :label="t('broker.connect_ouinex')" icon="pi pi-link" size="small" severity="secondary" data-testid="broker-connect-ouinex" @click="openConnectDialog('OUINEX')" />
         </div>
       </div>
     </div>
@@ -350,6 +380,7 @@ function onConnected(provider, result) {
       v-model:visible="showCtraderDialog"
       :account="account"
       :connection="editingConnection"
+      :shared="sharedFor('CTRADER')"
       @connected="onConnected('CTRADER', $event)"
     />
 
@@ -357,6 +388,7 @@ function onConnected(provider, result) {
       v-model:visible="showMetaApiDialog"
       :account="account"
       :connection="editingConnection"
+      :shared="sharedFor('METAAPI')"
       @connected="onConnected('METAAPI', $event)"
     />
 

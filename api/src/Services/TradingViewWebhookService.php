@@ -21,9 +21,9 @@ use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradingPlanRepository;
 use App\Repositories\TradingViewAlertEventRepository;
 use App\Repositories\TradingViewWebhookRepository;
+use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\BrokerLogger;
 use App\Services\Broker\ConnectorInterface;
-use App\Services\Broker\CredentialEncryptionService;
 use DateTimeImmutable;
 
 class TradingViewWebhookService
@@ -36,7 +36,7 @@ class TradingViewWebhookService
         private OrderService $orderService,
         private OrderRepository $orderRepo,
         private StatusHistoryRepository $historyRepo,
-        private CredentialEncryptionService $crypto,
+        private BrokerCredentialStore $credentialStore,
         private ConnectorInterface $ctraderConnector,
         private ConnectorInterface $metaApiConnector,
         private ConnectorInterface $ouinexConnector,
@@ -332,12 +332,14 @@ class TradingViewWebhookService
         return $order;
     }
 
+    /**
+     * The connection's own credentials with the user's shared app credentials
+     * underneath. Reading the connection row alone would hand the connector a
+     * cTrader blob with no access token in it (docs/91).
+     */
     private function credentials(array $ctx): array
     {
-        return $this->crypto->decrypt(
-            $ctx['connection']['credentials_encrypted'],
-            $ctx['connection']['credentials_iv'],
-        );
+        return $this->credentialStore->forConnection($ctx['connection']);
     }
 
     private function connectorFor(array $ctx): ConnectorInterface

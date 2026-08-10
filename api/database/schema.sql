@@ -431,7 +431,28 @@ CREATE TABLE IF NOT EXISTS custom_field_values (
         REFERENCES trades (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 18. BROKER_CONNECTIONS (API credentials per account)
+-- 18a. BROKER_CREDENTIALS (app credentials shared by every connection of a provider)
+--
+-- Ce qui appartient à l'utilisateur plutôt qu'au compte : les identifiants
+-- d'application d'un provider (cf. migration 036). Deux comptes cTrader
+-- partagent client_id/client_secret/access_token/refresh_token et ne diffèrent
+-- que par leur ctidTraderAccountId, qui reste sur broker_connections. Un
+-- provider dont la clé d'API EST le compte (Ouinex, BingX) n'écrit jamais ici.
+CREATE TABLE IF NOT EXISTS broker_credentials (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    provider ENUM('CTRADER','METAAPI','OUINEX','BINGX') NOT NULL,
+    credentials_encrypted TEXT NOT NULL,
+    credentials_iv VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_broker_credentials_user_provider (user_id, provider),
+    CONSTRAINT fk_broker_credentials_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 18b. BROKER_CONNECTIONS (broker-account identity per journal account)
 CREATE TABLE IF NOT EXISTS broker_connections (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,

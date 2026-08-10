@@ -43,6 +43,7 @@ use App\Repositories\PositionRepository;
 use App\Repositories\RateLimitRepository;
 use App\Repositories\RobotRepository;
 use App\Repositories\BrokerConnectionRepository;
+use App\Repositories\BrokerCredentialRepository;
 use App\Repositories\ImportBatchRepository;
 use App\Repositories\StatsRepository;
 use App\Repositories\SupportTicketRepository;
@@ -76,6 +77,7 @@ use App\Services\SetupService;
 use App\Services\Broker\BingxConnector;
 use App\Services\Broker\BrokerConnectionService;
 use App\Services\Broker\BrokerCredentialMapper;
+use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\BrokerOpenSyncService;
 use App\Services\Broker\BrokerOrderSyncService;
 use App\Services\Broker\BrokerSyncService;
@@ -406,6 +408,15 @@ $brokerFeatureFlag = new FeatureFlagMiddleware(
 $brokerConnectionRepo = new BrokerConnectionRepository($pdo);
 $syncLogRepo = new SyncLogRepository($pdo);
 $cryptoService = new CredentialEncryptionService($brokerConfig['encryption_key']);
+// Credentials sit in two rows since docs/91: what a provider declares `shared`
+// belongs to the user (one row per provider), the rest to the connection. The
+// store is the only thing that knows — everything downstream still handles one
+// flat credentials array.
+$brokerCredentialStore = new BrokerCredentialStore(
+    new BrokerCredentialRepository($pdo),
+    $cryptoService,
+    new BrokerCredentialMapper(),
+);
 $metaApiConnector = new MetaApiConnector(
     new \GuzzleHttp\Client(),
     $brokerConfig['metaapi']['base_url']
@@ -426,7 +437,7 @@ $brokerSyncService = new BrokerSyncService(
     $syncLogRepo,
     $importService,
     new RowGroupingService(),
-    $cryptoService,
+    $brokerCredentialStore,
     $ctraderConnector,
     $metaApiConnector,
     $ouinexConnector,
@@ -438,7 +449,7 @@ $brokerSyncService = new BrokerSyncService(
 );
 $brokerConnectionService = new BrokerConnectionService(
     $brokerConnectionRepo,
-    $cryptoService,
+    $brokerCredentialStore,
     new BrokerCredentialMapper(),
     new ConnectorRegistry(
         $ctraderConnector,
@@ -456,6 +467,7 @@ $brokerSyncController = new BrokerSyncController(
 $router->post('/broker/connections', [$brokerSyncController, 'createConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->put('/broker/connections/{id}', [$brokerSyncController, 'updateConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->post('/broker/ctrader/accounts', [$brokerSyncController, 'ctraderAccounts'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
+$router->get('/broker/credentials', [$brokerSyncController, 'sharedCredentials'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->get('/broker/connections', [$brokerSyncController, 'connections'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->post('/broker/connections/{id}/sync', [$brokerSyncController, 'sync'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
 $router->delete('/broker/connections/{id}', [$brokerSyncController, 'deleteConnection'], [$authMiddleware, $requireSubscription, $brokerFeatureFlag]);
@@ -485,7 +497,7 @@ $tvWebhookService = new TradingViewWebhookService(
     $orderService,
     $orderRepo,
     $historyRepo,
-    $cryptoService,
+    $brokerCredentialStore,
     $ctraderConnector,
     $metaApiConnector,
     $ouinexConnector,
