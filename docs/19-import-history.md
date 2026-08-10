@@ -61,7 +61,33 @@ Exemple réel : 626 lignes cTrader → 414 positions (134 avec sorties partielle
 
 ## Détection des doublons
 
-Chaque position reçoit un `external_id` = SHA-256 de `(symbol, direction, entry_price, opened_at, closed_at, total_size)`. Stocké en base sur `positions.external_id` (UNIQUE par user). Un re-import du même fichier détecte 100% de doublons.
+### L'identifiant
+
+Chaque position reçoit un `external_id`, stocké sur `positions.external_id` :
+
+- **l'identifiant du broker** quand la ligne en a un (`ctrader_<positionId>`, etc.) — c'est le cas des synchros par connecteur ;
+- **à défaut**, un SHA-256 de `(symbol, direction, entry_price, opened_at, closed_at, total_size)`. Les lignes d'un tableur n'ont pas d'identifiant broker : le hash déterministe est alors le seul moyen de reconnaître la même position d'un import à l'autre.
+
+L'identifiant broker prime depuis le commit `ea05cb8` (2026-08-06). Hasher systématiquement donnait deux identités à une même position — `ctrader_<positionId>` quand le diff live l'insérait ouverte, un hash quand l'import la créait fermée — et elle atterrissait deux fois.
+
+### La portée : le compte, et rien d'autre
+
+**Un import dans un compte ne dépend que de ce compte.** `ImportService::getExistingExternalIds()` filtre sur `(user_id, account_id)` : `user_id` est un garde-fou de propriété, `account_id` est ce qui décide.
+
+Cette portée est une correction du 2026-08-10. Le filtre portait auparavant sur `user_id` seul, avec deux conséquences :
+
+1. un `external_id` vu sur **n'importe quel** compte de l'utilisateur bloquait l'import ;
+2. rien ne filtrait `deleted_at` — les comptes **supprimés** bloquaient donc aussi, un soft delete laissant les lignes en place.
+
+Supprimer un compte ne libérait pas ses identifiants : impossible de repartir d'un compte vierge. Constaté en env de test le 2026-08-10 — deux comptes créés trente secondes après la suppression des précédents ont perdu 8 et 6 positions, sans erreur ni avertissement.
+
+Le scoping par compte règle les deux cas d'un coup : les positions d'un autre compte, supprimé ou non, ne sont plus consultées.
+
+**Ce que ça autorise** : la même position broker peut désormais exister sur deux comptes du journal. C'est exactement ce qu'on veut en réimportant un compte broker ailleurs, et c'est le prix de la règle ci-dessus.
+
+**Ce que ça protège toujours** : un re-import du même fichier dans le même compte détecte 100 % de doublons.
+
+> `positions.external_id` n'a **ni index ni contrainte d'unicité** — la déduplication est applicative, pas garantie par le schéma. Deux imports concurrents sur le même compte peuvent donc encore passer au travers. Voir `docs/evolutions.md`.
 
 ## Endpoints API
 
@@ -122,7 +148,7 @@ Annule un import : supprime toutes les positions du batch (CASCADE sur trades + 
 
 - `sl_points`, `sl_price`, `setup` → nullable (positions importées sans ces données)
 - `import_batch_id` INT UNSIGNED NULL → FK vers import_batches
-- `external_id` VARCHAR(128) NULL → hash pour détection doublons
+- `external_id` VARCHAR(128) NULL → identifiant broker, ou hash à défaut (détection des doublons). Sans index ni contrainte d'unicité.
 
 ### Table import_batches
 
@@ -172,6 +198,7 @@ Dialog PrimeVue ouvert depuis la page Comptes (bouton import par compte). Le com
 | Unit | `ImportServiceTest.php` | 4 tests (preview, grouping, symboles, templates) |
 | Integration | `ImportBatchRepositoryTest.php` | 3 tests (CRUD) |
 | Integration | `SymbolAliasRepositoryTest.php` | 4 tests (upsert, find) |
+| Integration | `Import/ImportDeduplicationTest.php` | 6 tests (portée de la dédup : compte neuf, compte supprimé, doublon interne, autre utilisateur, compteur) |
 
 ## Clés i18n
 

@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Enums\ExitType;
 use App\Enums\ImportStatus;
+use App\Enums\PositionType;
 use App\Enums\SymbolType;
 use App\Enums\TradeStatus;
 use App\Exceptions\ForbiddenException;
@@ -159,7 +160,7 @@ class ImportService
         $account = $this->accountRepo->findById($accountId);
         $accountCurrency = $account['currency'] ?? 'EUR';
 
-        $existingExternalIds = $this->getExistingExternalIds($userId);
+        $existingExternalIds = $this->getExistingExternalIds($userId, $accountId);
 
         $this->pdo->beginTransaction();
 
@@ -180,7 +181,7 @@ class ImportService
             $errors = [];
 
             foreach ($positions as $posData) {
-                if (in_array($posData['external_id'], $existingExternalIds)) {
+                if (isset($existingExternalIds[$posData['external_id']])) {
                     $skippedDuplicates++;
                     continue;
                 }
@@ -201,7 +202,7 @@ class ImportService
                         'notes' => $posData['comment'],
                         'import_batch_id' => $batchId,
                         'external_id' => $posData['external_id'],
-                        'position_type' => 'TRADE',
+                        'position_type' => PositionType::TRADE->value,
                     ]);
 
                     // Create trade — OPEN if no closed_at, CLOSED otherwise
@@ -402,13 +403,34 @@ class ImportService
         return require $file;
     }
 
-    private function getExistingExternalIds(int $userId): array
+    /**
+     * The external ids already held by the target account, as a lookup set.
+     *
+     * Scoped to the account, and that scope is the whole point: an import into
+     * an account must depend on that account and nothing else. Filtering on
+     * user_id alone made every position the user owns a blocker — including
+     * positions on accounts they had deleted, since a soft delete leaves the
+     * rows in place. Deleting an account and re-importing into a fresh one,
+     * the obvious way to start clean, silently dropped whatever the old
+     * account already held. Observed on the test environment on 2026-08-10:
+     * two accounts created thirty seconds earlier lost 8 and 6 positions.
+     *
+     * user_id stays as an ownership guard; account_id is what decides.
+     *
+     * Returned keyed by external_id so the per-row check is a hash lookup
+     * rather than a scan of the whole account.
+     *
+     * @return array<string, true>
+     */
+    private function getExistingExternalIds(int $userId, int $accountId): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT external_id FROM positions WHERE user_id = :user_id AND external_id IS NOT NULL"
+            "SELECT external_id FROM positions
+             WHERE user_id = :user_id AND account_id = :account_id AND external_id IS NOT NULL"
         );
-        $stmt->execute(['user_id' => $userId]);
-        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $stmt->execute(['user_id' => $userId, 'account_id' => $accountId]);
+
+        return array_fill_keys($stmt->fetchAll(PDO::FETCH_COLUMN), true);
     }
 
     private function resolveSymbol(int $userId, string $brokerSymbol, array $symbolMapping, ?string $broker, string $accountCurrency = 'EUR'): string
