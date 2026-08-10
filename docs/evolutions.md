@@ -949,4 +949,36 @@ Le panneau broker suit l'avancement en interrogeant `GET /broker/connections` to
 
 ---
 
+## Erreurs non gérées dans `account-view.spec.js`
+
+**Contexte** : repéré en passant la suite frontend pendant l'évol #23 (identifiants brokers partagés, [91-broker-shared-credentials.md](91-broker-shared-credentials.md)). Le fichier passe ses 10 tests mais Vitest remonte 10 « unhandled errors » et **sort en code 1**, ce qui rend le résultat de `npx vitest run` inexploitable en l'état pour une CI.
+
+L'origine est `CustomFieldsTab.vue`, dont le `onMounted` appelle `customFields.fetchDefinitions()` sans que `@/services/customFields` soit mocké dans ce spec : la promesse rejetée n'est rattrapée par personne. Rien à voir avec le broker — préexistant, vérifié en stashant les changements de l'évol #23.
+
+**À faire** : mocker le service des champs personnalisés dans `account-view.spec.js`, ou attraper le rejet dans le store. Les deux sont à une ligne près.
+
+**Fichiers** : `frontend/src/__tests__/account-view.spec.js`, `frontend/src/stores/customFields.js`.
+
+**Repéré le** : 2026-08-10. **Priorité** : moyenne — aucun impact produit, mais un code de sortie non nul masque les vraies régressions le jour où il y en aura une.
+
+---
+
+## Clés i18n admin absentes des deux locales
+
+**Contexte** : repéré par `/check-i18n` pendant l'évol #23. Six clés renvoyées par le back n'existent ni dans `fr.json` ni dans `en.json`. L'utilisateur voit donc la clé brute à la place du message :
+
+- `admin.error.user_not_found`, `admin.error.cannot_self_suspend`, `admin.error.cannot_self_delete` (`AdminUserService.php`)
+- `admin.settings.error.unknown_key`, `admin.settings.error.invalid_type` (`PlatformSettingsService.php`)
+- `admin.settings.error.value_required` (`AdminSettingsController.php`)
+
+Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la branche de l'évol #23 pour ne pas l'élargir.
+
+**À faire** : ajouter les six clés dans les deux locales.
+
+**Fichiers** : `frontend/src/locales/fr.json`, `frontend/src/locales/en.json`.
+
+**Repéré le** : 2026-08-10. **Priorité** : moyenne — visible seulement dans l'admin, mais c'est une clé brute affichée à l'écran.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
