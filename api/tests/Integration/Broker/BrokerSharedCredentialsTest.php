@@ -323,6 +323,59 @@ class BrokerSharedCredentialsTest extends TestCase
         $this->assertSame([], $this->service->sharedCredentialsForUser($this->userId));
     }
 
+    // ── Typing credentials is not renewing them ─────────────────────
+
+    public function testTypingCredentialsDoesNotCountAsARenewal(): void
+    {
+        // The distinction the first version of the guard got wrong. Writing the
+        // shared row and renewing the token are opposite situations: a token
+        // the user just pasted may be months old, and the sync that follows is
+        // the one that most needs a refresh.
+        $this->createCtrader($this->accountId, 7589848);
+
+        $this->assertFalse($this->store->sharedRenewedWithin($this->userId, 'CTRADER', 300));
+    }
+
+    public function testReconfiguringDoesNotCountAsARenewalEither(): void
+    {
+        $id = $this->createCtrader($this->accountId, 7589848);
+
+        $this->service->updateCredentials($id, $this->userId, ['client_secret' => 'rotated']);
+
+        $this->assertFalse($this->store->sharedRenewedWithin($this->userId, 'CTRADER', 300));
+    }
+
+    public function testARenewalIsWhatOpensTheSkipWindow(): void
+    {
+        $this->createCtrader($this->accountId, 7589848);
+
+        // What BrokerSyncService does after a successful token refresh.
+        $this->store->store($this->userId, 'CTRADER', [
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'renewed',
+            'refresh_token' => 'rotated',
+            'ctid_trader_account_id' => 7589848,
+        ], fromRefresh: true);
+
+        $this->assertTrue($this->store->sharedRenewedWithin($this->userId, 'CTRADER', 300));
+        // ...and the renewed token is what the connection now resolves to.
+        $this->assertSame(
+            'renewed',
+            $this->store->sharedFor($this->userId, 'CTRADER')['access_token'],
+        );
+    }
+
+    public function testAProviderWithoutSharedCredentialsNeverSkips(): void
+    {
+        $this->service->createConnection($this->userId, $this->accountId, 'BINGX', [
+            'api_key' => 'k',
+            'api_secret' => 's',
+        ]);
+
+        $this->assertFalse($this->store->sharedRenewedWithin($this->userId, 'BINGX', 300));
+    }
+
     // ── Disconnecting must actually revoke ──────────────────────────
 
     public function testDisconnectingOneOfTwoConnectionsKeepsTheSharedCredentials(): void

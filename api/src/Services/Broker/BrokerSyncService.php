@@ -155,10 +155,15 @@ class BrokerSyncService
                     // A renewed access token is a shared credential, so it
                     // lands on the user's row and every other connection of
                     // this provider picks it up on its next pass.
+                    //
+                    // This is the only call site allowed to pass fromRefresh:
+                    // it is what stamps refreshed_at and therefore opens the
+                    // skip window above for the user's other connections.
                     $encrypted = $this->credentials->store(
                         (int) $connection['user_id'],
                         $connection['provider'],
                         $refreshed,
+                        fromRefresh: true,
                     );
                     $this->connectionRepo->update($connectionId, [
                         'credentials_encrypted' => $encrypted['ciphertext'],

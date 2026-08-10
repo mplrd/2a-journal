@@ -84,16 +84,22 @@ class BrokerCredentialStore
     }
 
     /**
-     * True when the user's shared credentials for a provider were written
-     * within the last $seconds — so a token another connection just renewed
-     * must not be renewed again.
+     * True when a token *renewal* succeeded for the user's provider within the
+     * last $seconds — so a token another connection just renewed must not be
+     * renewed again.
+     *
+     * Renewed, not written: typing or reconfiguring credentials leaves the
+     * window shut, because the access token being pasted can be arbitrarily
+     * old. Keying this on the last write is the regression migration 037 undoes
+     * — it silenced the refresh on the first sync after connecting, the one
+     * sync that needs it most.
      *
      * False when nothing is shared, which is what keeps Ouinex and BingX (and
      * any first connection) on exactly their old refresh behaviour.
      */
     public function sharedRenewedWithin(int $userId, string $provider, int $seconds): bool
     {
-        $age = $this->credentialRepo->secondsSinceUpdate($userId, $provider);
+        $age = $this->credentialRepo->secondsSinceRefresh($userId, $provider);
 
         return $age !== null && $age <= $seconds;
     }
@@ -107,15 +113,19 @@ class BrokerCredentialStore
      * row that does not exist yet (create) and one that does (reconfigure,
      * refreshed access token).
      *
+     * `$fromRefresh` tells those apart, and only the sync's successful token
+     * renewal may set it: it is what opens the skip window read by
+     * sharedRenewedWithin(). A create or a reconfigure must leave it false.
+     *
      * @return array{ciphertext: string, iv: string}
      */
-    public function store(int $userId, string $provider, array $credentials): array
+    public function store(int $userId, string $provider, array $credentials, bool $fromRefresh = false): array
     {
         $split = $this->mapper->split($provider, $credentials);
 
         if ($split['shared'] !== []) {
             $encrypted = $this->crypto->encrypt($split['shared']);
-            $this->credentialRepo->upsert($userId, $provider, $encrypted['ciphertext'], $encrypted['iv']);
+            $this->credentialRepo->upsert($userId, $provider, $encrypted['ciphertext'], $encrypted['iv'], $fromRefresh);
         }
 
         return $this->crypto->encrypt($split['own']);

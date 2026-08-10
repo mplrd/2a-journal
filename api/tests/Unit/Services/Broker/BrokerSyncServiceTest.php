@@ -191,7 +191,7 @@ class BrokerSyncServiceTest extends TestCase
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
 
         // Another connection renewed the shared credentials seconds ago.
-        $this->credentialRepo->method('secondsSinceUpdate')->willReturn(4);
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(4);
 
         $this->ctraderConnector->expects($this->never())->method('refreshCredentials');
         $this->ctraderConnector->method('fetchDeals')
@@ -213,7 +213,7 @@ class BrokerSyncServiceTest extends TestCase
         $this->connectionRepo->method('findById')->willReturn($connection);
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
 
-        $this->credentialRepo->method('secondsSinceUpdate')->willReturn(4000);
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(4000);
 
         $this->ctraderConnector->expects($this->once())
             ->method('refreshCredentials')
@@ -237,12 +237,46 @@ class BrokerSyncServiceTest extends TestCase
         $this->connectionRepo->method('findById')->willReturn($connection);
         $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
 
-        $this->credentialRepo->method('secondsSinceUpdate')->willReturn(null);
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(null);
 
         $this->bingxConnector->expects($this->once())
             ->method('refreshCredentials')
             ->willReturnArgument(0);
         $this->bingxConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
+        $this->service->sync(1, 10);
+    }
+
+    public function testSyncRefreshesOnTheFirstPassAfterCredentialsAreTyped(): void
+    {
+        // The regression that shipped with the first version of the guard: it
+        // keyed on when the shared row was last *written*, and typing
+        // credentials writes it. So the very first sync after connecting —
+        // precisely when the pasted access token is most likely to be months
+        // old — was the one sync that skipped the refresh.
+        //
+        // Credentials exist and were written seconds ago, but nothing has ever
+        // renewed them: the refresh must run.
+        $connection = $this->makeConnection('CTRADER', [
+            'access_token' => 'stale-token-from-the-portal',
+            'refresh_token' => 'ref',
+            'ctid_trader_account_id' => 123,
+        ]);
+        $this->stubOpenSnapshotDefaults($this->ctraderConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(null);
+
+        $this->ctraderConnector->expects($this->once())
+            ->method('refreshCredentials')
+            ->willReturnArgument(0);
+        $this->ctraderConnector->method('fetchDeals')
             ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
         $this->importService->method('importNormalizedPositions')->willReturn([
             'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
