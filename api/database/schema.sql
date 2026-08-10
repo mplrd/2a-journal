@@ -444,6 +444,11 @@ CREATE TABLE IF NOT EXISTS broker_credentials (
     provider ENUM('CTRADER','METAAPI','OUINEX','BINGX') NOT NULL,
     credentials_encrypted TEXT NOT NULL,
     credentials_iv VARCHAR(32) NOT NULL,
+    -- Dernier renouvellement de token RÉUSSI, et lui seul (cf. migration 037).
+    -- Une saisie ou une reconfiguration ne l'écrit pas : l'access token collé
+    -- par l'utilisateur peut dater de plusieurs mois. DATETIME, pas TIMESTAMP :
+    -- écrit et comparé en UTC_TIMESTAMP(), sans conversion de fuseau de session.
+    refreshed_at DATETIME NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

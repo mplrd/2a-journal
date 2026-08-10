@@ -1,7 +1,8 @@
 # 91 — Identifiants d'application partagés entre connexions broker
 
 > Évolution #23 de `docs/specs/trading-journal-evolutions.md`.
-> Livré le 2026-08-10.
+> Livré le 2026-08-10. Corrigé le même jour par la migration 037 — voir
+> « Renouvelé, pas écrit ».
 
 ## Le problème
 
@@ -100,7 +101,7 @@ vivent dans deux lignes**. Il expose :
 | `ownOf($connection)` | Ce que porte la seule connexion |
 | `sharedFor($userId, $provider)` | Les identifiants d'application de l'utilisateur |
 | `allSharedFor($userId)` | Idem, tous providers confondus |
-| `store($userId, $provider, $credentials)` | Écrit la ligne partagée, rend le blob chiffré de la connexion |
+| `store($userId, $provider, $credentials, $fromRefresh = false)` | Écrit la ligne partagée, rend le blob chiffré de la connexion. `$fromRefresh` réservé au renouvellement de token — voir plus bas |
 | `sharedRenewedWithin(...)` | Voir « la course au refresh » plus bas |
 | `forget($userId, $provider)` | Oublie les identifiants d'un broker |
 
@@ -130,8 +131,8 @@ connexion basculerait en `ERROR`. Avant le partage, chaque connexion avait son
 propre token et le problème n'existait pas — c'est donc bien le partage qui
 créait la course, et c'est ici qu'elle se ferme.
 
-`BrokerSyncService` saute le refresh quand les identifiants partagés ont été
-écrits il y a moins de `SHARED_CREDENTIAL_FRESHNESS_SECONDS` (300 s) :
+`BrokerSyncService` saute le refresh quand un **renouvellement de token a
+réussi** il y a moins de `SHARED_CREDENTIAL_FRESHNESS_SECONDS` (300 s) :
 
 - assez large pour couvrir un tick de scheduler entier, là où deux connexions
   du même utilisateur se marchent dessus ;
@@ -142,9 +143,33 @@ Le même saut est le gain de l'évolution #22 dans le cas concurrent : un appel
 de refresh pour tout le provider d'un utilisateur, au lieu d'un par connexion.
 Rien n'est sauté quand rien n'est partagé.
 
-L'âge est calculé **en SQL** (`TIMESTAMPDIFF(SECOND, updated_at,
-CURRENT_TIMESTAMP)`) et non en PHP : `updated_at` est un `TIMESTAMP` relu dans
-le fuseau de session, le comparer à une horloge PHP serait décalé du décalage.
+#### Renouvelé, pas écrit — le correctif de la migration 037
+
+La première version de cette garde s'appuyait sur `updated_at`, c'est-à-dire sur
+la dernière **écriture** de la ligne partagée. Elle confondait deux situations
+opposées :
+
+- une autre connexion vient de renouveler le token → il est frais, sauter est
+  correct ;
+- **l'utilisateur vient de saisir ses identifiants** → l'access token collé
+  depuis le portail broker peut dater de plusieurs mois, et sauter le refresh
+  est exactement l'inverse de ce qu'il faut faire.
+
+Le second cas est celui de la toute première synchro après une connexion, soit
+le moment où le refresh est le plus nécessaire. La garde le supprimait.
+
+La colonne `broker_credentials.refreshed_at` (migration 037) sépare les deux :
+seul un renouvellement réussi l'écrit. `BrokerCredentialStore::store()` prend un
+`$fromRefresh` à `false` par défaut, et **`BrokerSyncService` est le seul appelant
+à le passer à `true`** — création et reconfiguration laissent la colonne
+intacte. `NULL` (jamais renouvelé) ferme la fenêtre, donc rend le comportement
+d'avant la 036 : on refresh.
+
+L'âge est calculé **en SQL** (`TIMESTAMPDIFF(SECOND, refreshed_at,
+UTC_TIMESTAMP())`) et non en PHP. `refreshed_at` est un `DATETIME` écrit et relu
+en UTC, jamais converti dans le fuseau de session — même convention que
+`broker_connections.syncing_since`. La version précédente lisait un `TIMESTAMP`
+(`updated_at`), relu lui dans le fuseau de session.
 
 ### Migration 036 — purge assumée
 
@@ -236,10 +261,11 @@ possibilité de connecter un compte à la main.
 | `testSyncSkipsTheRefreshWhenTheSharedTokenWasJustRenewed` | La course au refresh token est fermée | ✅ |
 | `testSyncStillRefreshesWhenTheSharedTokenIsOld` | Hors fenêtre, le refresh a bien lieu | ✅ |
 | `testSyncRefreshesWhenNothingIsSharedAtAll` | BingX/Ouinex : chemin de refresh inchangé | ✅ |
+| `testSyncRefreshesOnTheFirstPassAfterCredentialsAreTyped` | Migration 037 : une saisie n'ouvre pas la fenêtre de saut | ✅ |
 
 ### Backend — intégration
 
-`api/tests/Integration/Broker/BrokerSharedCredentialsTest.php` (20 tests)
+`api/tests/Integration/Broker/BrokerSharedCredentialsTest.php` (24 tests)
 
 | Test | Scénario | Statut |
 |---|---|---|
@@ -263,6 +289,10 @@ possibilité de connecter un compte à la main.
 | `testSharedCredentialsForUserIgnoresProvidersThatShareNothing` | BingX absent de la réponse | ✅ |
 | `testDisconnectingOneOfTwoConnectionsKeepsTheSharedCredentials` | La ligne survit tant qu'on s'en sert | ✅ |
 | `testDisconnectingTheLastConnectionDropsTheSharedCredentials` | Déconnecter efface vraiment | ✅ |
+| `testTypingCredentialsDoesNotCountAsARenewal` | Migration 037 : une saisie ne date pas un renouvellement | ✅ |
+| `testReconfiguringDoesNotCountAsARenewalEither` | Idem pour une reconfiguration | ✅ |
+| `testARenewalIsWhatOpensTheSkipWindow` | Seul `fromRefresh: true` ouvre la fenêtre | ✅ |
+| `testAProviderWithoutSharedCredentialsNeverSkips` | BingX : jamais de saut | ✅ |
 
 ### Frontend
 
@@ -295,16 +325,19 @@ n'est pas non plus taillé pour cTrader.
 transmission en reconfiguration, et ouverture de la modale malgré un échec de
 récupération.
 
-**Total : 1030 tests unitaires backend, 724 tests d'intégration backend,
-540 tests frontend — tous verts.**
+**Total : 1031 tests unitaires backend, 728 tests d'intégration backend,
+540 tests frontend — tous verts.** (Les 5 tests ajoutés par la migration 037 sont
+inclus ; le frontend n'a pas bougé pour ce correctif.)
 
 ## Reste à faire
 
 - **Jamais validé contre un vrai cTrader.** Comme tout le domaine broker, le
   flag et les identifiants réels rendent la vérification impossible en local :
   elle ne peut avoir lieu qu'en env de test. Ce qu'il faut y regarder en
-  priorité : la création d'une deuxième connexion sans ressaisie, et le fait
-  qu'une passe de synchro concurrente ne provoque plus d'échec de refresh.
+  priorité : la création d'une deuxième connexion sans ressaisie, le fait
+  qu'une passe de synchro concurrente ne provoque plus d'échec de refresh, et —
+  depuis la 037 — que la **première** synchro après une saisie renouvelle bien
+  le token au lieu de le sauter.
 - Le saut de refresh ne dédoublonne que dans la fenêtre de 300 s. Réduire le
   nombre d'appels dans le cas général (une connexion qui synchronise toutes les
   15 minutes redemande un token à chaque passe) reste du ressort de

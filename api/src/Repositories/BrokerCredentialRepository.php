@@ -45,15 +45,32 @@ class BrokerCredentialRepository
      * same provider can be saved concurrently (a manual reconfigure while the
      * scheduler persists a refreshed access token), and a SELECT-then-INSERT
      * would lose one of them to a duplicate-key error instead of settling.
+     *
+     * `$fromRefresh` stamps `refreshed_at`, and ONLY a successful token renewal
+     * may set it. A user typing or reconfiguring credentials leaves it alone:
+     * the access token they pasted can be arbitrarily old, so that write must
+     * not look like a renewal to the sync's skip window (migration 037).
      */
-    public function upsert(int $userId, string $provider, string $ciphertext, string $iv): void
-    {
+    public function upsert(
+        int $userId,
+        string $provider,
+        string $ciphertext,
+        string $iv,
+        bool $fromRefresh = false,
+    ): void {
+        // Both are hardcoded SQL fragments chosen by a boolean — no value from
+        // the caller ever reaches the statement text. On a plain write the
+        // UPDATE assigns refreshed_at to itself, i.e. leaves it untouched.
+        $onInsert = $fromRefresh ? 'UTC_TIMESTAMP()' : 'NULL';
+        $onUpdate = $fromRefresh ? 'UTC_TIMESTAMP()' : 'refreshed_at';
+
         $this->pdo->prepare(
-            "INSERT INTO broker_credentials (user_id, provider, credentials_encrypted, credentials_iv)
-             VALUES (:user_id, :provider, :ciphertext, :iv)
+            "INSERT INTO broker_credentials (user_id, provider, credentials_encrypted, credentials_iv, refreshed_at)
+             VALUES (:user_id, :provider, :ciphertext, :iv, {$onInsert})
              ON DUPLICATE KEY UPDATE
                 credentials_encrypted = VALUES(credentials_encrypted),
-                credentials_iv = VALUES(credentials_iv)"
+                credentials_iv = VALUES(credentials_iv),
+                refreshed_at = {$onUpdate}"
         )->execute([
             'user_id' => $userId,
             'provider' => $provider,
@@ -63,19 +80,22 @@ class BrokerCredentialRepository
     }
 
     /**
-     * How long ago the stored credentials were last written, in seconds — null
-     * when the user has none for that provider.
+     * How long ago a token renewal last succeeded for this user and provider,
+     * in seconds. Null when there is no row, or when nothing has ever renewed
+     * it — the two cases where no sync may skip its refresh.
      *
-     * Computed in SQL rather than in PHP on purpose: `updated_at` is a
-     * TIMESTAMP read back in the session timezone, so comparing it to a PHP
-     * clock would be off by the offset. Both sides of TIMESTAMPDIFF here are
-     * session-local, which makes the difference correct whatever it is set to.
+     * Reads `refreshed_at`, never `updated_at`: writing credentials is not
+     * renewing them (migration 037). `refreshed_at` is a DATETIME written with
+     * UTC_TIMESTAMP() and compared to UTC_TIMESTAMP(), so the difference never
+     * depends on the session timezone — same convention as
+     * `broker_connections.syncing_since`.
      */
-    public function secondsSinceUpdate(int $userId, string $provider): ?int
+    public function secondsSinceRefresh(int $userId, string $provider): ?int
     {
         $stmt = $this->pdo->prepare(
-            "SELECT TIMESTAMPDIFF(SECOND, updated_at, CURRENT_TIMESTAMP)
-             FROM broker_credentials WHERE user_id = :user_id AND provider = :provider"
+            "SELECT TIMESTAMPDIFF(SECOND, refreshed_at, UTC_TIMESTAMP())
+             FROM broker_credentials
+             WHERE user_id = :user_id AND provider = :provider AND refreshed_at IS NOT NULL"
         );
         $stmt->execute(['user_id' => $userId, 'provider' => $provider]);
         $seconds = $stmt->fetchColumn();
