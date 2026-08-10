@@ -927,7 +927,9 @@ volet base reste ouvert.
 
 `ImportService::importNormalizedPositions` déduplique en lisant `getExistingExternalIds()` en début de transaction. **`positions.external_id` n'a ni index ni contrainte d'unicité** : si deux imports concurrents lisent le même état — la réservation couvre les synchros broker, pas un import CSV lancé en parallèle — rien au niveau base ne rattrape la course. L'index manquant coûte aussi en lecture sur `findOpenByExternalIdPrefixInAccount`.
 
-**À faire** : un index unique sur `(user_id, external_id)` — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
+**À faire** : un index unique sur **`(account_id, external_id)`** — migration additive mais **à vérifier avant** : les données existantes peuvent déjà contenir des doublons (cf. l'historique du hash d'identité), il faudra les purger ou l'index échouera.
+
+> **Corrigé le 2026-08-10** : cette entrée proposait `(user_id, external_id)`. Ce couple est désormais **faux** — la déduplication est scopée au compte depuis le correctif du 2026-08-10 (`docs/19-import-history.md`, « La portée »), et la même position broker peut légitimement exister sur deux comptes du journal. Un unique sur `(user_id, external_id)` réintroduirait au niveau base exactement le bug qui a fait perdre 14 trades en env de test.
 
 **Fichiers** : `api/database/schema.sql`, nouvelle migration.
 
