@@ -34,6 +34,25 @@ class ResponseTest extends TestCase
         $this->assertSame(201, $response->getStatusCode());
     }
 
+    public function testSuccessCarriesAnAbsentPayloadAsNull(): void
+    {
+        // "Found nothing, and that is a normal answer" is a real case — asking
+        // an account whether it has a broker connection, for one. The typed
+        // array parameter turned it into a TypeError, so a 200 with no payload
+        // came out as a 500: GET /broker/connections?account_id=N failed for
+        // every account before its first connection, for four months.
+        //
+        // Null, not []: an empty array is truthy in JavaScript, so the client
+        // would read "no connection" as "here is a connection".
+        $response = Response::success(null);
+
+        $body = $response->getBody();
+        $this->assertTrue($body['success']);
+        $this->assertNull($body['data']);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('"data":null', json_encode($body));
+    }
+
     public function testErrorReturnsCorrectFormat(): void
     {
         $response = Response::error('VALIDATION_ERROR', 'error.validation', 'email', 422);

@@ -24,12 +24,13 @@ class BrokerSyncSupervisorService
     private const MAX_WORKERS = 16;
 
     /**
-     * How much of a dead child's stderr we carry into the run log. Its output
-     * no longer flows straight into the cron log now that the pool captures it,
-     * so this is the only trace left — long enough for a fatal error line plus
-     * the first frames of its stack.
+     * Ceiling on the stderr lines carried over from one child per run.
+     *
+     * Generous enough for a fatal error and its stack, or a run's worth of
+     * connector diagnostics, without letting a child in a logging loop flood
+     * the container stream.
      */
-    private const STDERR_LOG_CHARS = 2000;
+    private const FORWARDED_STDERR_LINES = 200;
 
     public function __construct(
         private ProcessPoolInterface $pool,
@@ -72,13 +73,16 @@ class BrokerSyncSupervisorService
         $summaries = [];
         $workerErrors = 0;
         foreach ($results as $index => $result) {
+            // Before anything else, and whatever the child's fate: its stderr
+            // is the only record of what the connectors reported.
+            $this->forwardWorkerDiagnostics($index, (string) ($result['stderr'] ?? ''));
+
             $parsed = $this->parseWorkerSummary($result);
             if ($parsed === null) {
                 $workerErrors++;
                 BrokerLogger::failure('broker-sync', 'worker_failed', [
                     'worker_index' => $index,
                     'exit_code' => $result['exit_code'] ?? null,
-                    'stderr' => substr((string) ($result['stderr'] ?? ''), 0, self::STDERR_LOG_CHARS),
                 ]);
                 continue;
             }
@@ -102,6 +106,52 @@ class BrokerSyncSupervisorService
         }
 
         return min($configured, $due);
+    }
+
+    /**
+     * Re-emit a child's stderr into the supervisor's own, so what happened
+     * inside a worker reaches the container stream.
+     *
+     * The pool has to capture each child's output to read its summary off
+     * stdout, and a successful child's captured stderr used to be dropped
+     * right there. Everything the connectors reported during a working sync
+     * went with it: `take_profit_levels_unresolved`, the cTrader request
+     * budget, every non-fatal warning. Written correctly, reaching nobody —
+     * checked against the test environment on 2026-08-11, where six hours of
+     * scheduler logs held 360 supervisor lines and not one worker line. It
+     * made a sync defect impossible to diagnose anywhere but locally.
+     *
+     * Lines go out verbatim through error_log(), not through BrokerLogger:
+     * the child already formatted them, and re-wrapping would bury a JSON
+     * diagnostic inside another JSON envelope. A separate header line says
+     * which worker they came from — several run at once, and a line nobody can
+     * attribute is half a diagnostic.
+     *
+     * Silent when the child wrote nothing, which is the nominal case: this
+     * runs every minute and must not add noise per tick.
+     */
+    private function forwardWorkerDiagnostics(int $index, string $stderr): void
+    {
+        $lines = array_values(array_filter(
+            array_map('rtrim', explode("\n", $stderr)),
+            fn(string $line): bool => $line !== '',
+        ));
+
+        if ($lines === []) {
+            return;
+        }
+
+        $kept = array_slice($lines, 0, self::FORWARDED_STDERR_LINES);
+
+        BrokerLogger::event('broker-sync', 'worker_output', [
+            'worker_index' => $index,
+            'lines' => count($lines),
+            'dropped' => count($lines) - count($kept),
+        ]);
+
+        foreach ($kept as $line) {
+            error_log($line);
+        }
     }
 
     /**

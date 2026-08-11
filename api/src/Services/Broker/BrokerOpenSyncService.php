@@ -5,6 +5,7 @@ namespace App\Services\Broker;
 use App\Enums\BrokerProvider;
 use App\Enums\Direction;
 use App\Enums\ExitType;
+use App\Enums\PositionType;
 use App\Enums\TradeStatus;
 use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
@@ -115,13 +116,13 @@ class BrokerOpenSyncService
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
             'sl_price' => $row['sl_price'] ?? null,
-            'targets' => $this->brokerTargets($row),
+            'targets' => BrokerTargetBuilder::fromSnapshot($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
-            'position_type' => 'TRADE',
+            'position_type' => PositionType::TRADE->value,
         ]);
 
-        $trade = $this->tradeRepo->create([
+        $tradeFields = [
             'position_id' => $position['id'],
             // BingX /user/positions doesn't expose an open time on the live
             // snapshot, so normalizeBingxOpenPosition returns null and we
@@ -134,7 +135,20 @@ class BrokerOpenSyncService
             'opened_at' => $row['opened_at'] ?? date('Y-m-d H:i:s'),
             'remaining_size' => $row['remaining_size'] ?? $row['size'],
             'status' => TradeStatus::OPEN->value,
-        ]);
+        ];
+
+        // A position can already be protected the first time we see it, and
+        // the same rule has to apply here as on the update path. Left out, the
+        // status depended on something arbitrary: a position the closed-deals
+        // import had materialised earlier in the same run was found existing
+        // and promoted, one arriving only in the open snapshot was filed OPEN
+        // and stayed wrong until the next pass.
+        if ($this->stopProtectsEntry($row, (float) ($row['entry_price'] ?? 0))) {
+            $tradeFields['status'] = TradeStatus::SECURED->value;
+            $tradeFields['be_reached'] = 1;
+        }
+
+        $trade = $this->tradeRepo->create($tradeFields);
 
         // BingX (and any connector that reconstructs from fills) may emit
         // an exits[] array on still-open positions — partial closes that
@@ -163,12 +177,15 @@ class BrokerOpenSyncService
         ];
 
         // Objectives are the user's the moment they type one, same contract as
-        // setup and notes. A broker take profit only fills an empty slot.
-        if ($this->hasNoTargets($existing)) {
-            $brokerTargets = $this->brokerTargets($snapshot);
-            if ($brokerTargets !== null) {
-                $positionFields['targets'] = $brokerTargets;
-            }
+        // setup and notes — but an objective the SYNC wrote belongs to the
+        // broker and has to follow it. The old rule ("only fill an empty
+        // slot") could not tell the two apart, so it froze both: a take profit
+        // moved on the platform never reached the journal, and one removed
+        // there stayed on file for good. Ownership is now carried in the JSON
+        // itself, and a broker-owned set is rewritten from the snapshot —
+        // including to null when the broker no longer has an objective.
+        if (BrokerTargetBuilder::isBrokerOwned($existing['targets'] ?? null)) {
+            $positionFields['targets'] = BrokerTargetBuilder::fromSnapshot($snapshot);
         }
 
         $this->positionRepo->update((int) $existing['position_id'], $positionFields);
@@ -202,59 +219,6 @@ class BrokerOpenSyncService
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
-    }
-
-    /**
-     * The broker's take profit as a positions.targets payload, or null when
-     * there is none.
-     *
-     * There is no tp_price column — objectives live in that JSON — so the entry
-     * mirrors what the trade form writes (id, label, points, price, size) and a
-     * synced objective renders like any other. `points` is the distance from
-     * entry, which is the unit the form edits in; the size is the whole
-     * position, since a broker take profit closes it outright.
-     */
-    private function brokerTargets(array $row): ?string
-    {
-        // A connector that resolves a staged exit plan hands over `targets`,
-        // one entry per level with its own size — cTrader's server-side partial
-        // take profits, for instance. Connectors reporting a single level fall
-        // back to tp_price, which then covers the whole position.
-        $levels = $row['targets'] ?? [];
-        if (empty($levels)) {
-            $takeProfit = $row['tp_price'] ?? null;
-            if ($takeProfit === null || (float) $takeProfit <= 0) {
-                return null;
-            }
-            $levels = [['price' => (float) $takeProfit, 'size' => (float) $row['size']]];
-        }
-
-        $entryPrice = (float) $row['entry_price'];
-        $targets = [];
-        foreach ($levels as $index => $level) {
-            $rank = $index + 1;
-            $targets[] = [
-                'id' => 'tp' . $rank,
-                'label' => 'TP' . $rank,
-                'points' => round(abs((float) $level['price'] - $entryPrice), 5),
-                'price' => (float) $level['price'],
-                'size' => (float) ($level['size'] ?? $row['size']),
-            ];
-        }
-
-        return json_encode($targets);
-    }
-
-    /** True when the journal holds no objective for this position yet. */
-    private function hasNoTargets(array $existing): bool
-    {
-        $stored = $existing['targets'] ?? null;
-        if ($stored === null || $stored === '') {
-            return true;
-        }
-        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
-
-        return empty($decoded);
     }
 
     /**

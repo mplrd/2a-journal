@@ -148,6 +148,12 @@ class BrokerOrderSyncService
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
             'sl_price' => $row['sl_price'] ?? null,
+            // The connectors normalize a pending order's take profit and
+            // nothing consumed it: only the open-position path knew how to
+            // write positions.targets, so an order's objective was neither
+            // stored nor displayed. A pending order has no partial exit, so
+            // the level covers its whole size.
+            'targets' => BrokerTargetBuilder::fromSnapshot($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
             'position_type' => PositionType::ORDER->value,
@@ -180,6 +186,13 @@ class BrokerOrderSyncService
             'sl_price' => $snapshot['sl_price'] ?? null,
             'direction' => $snapshot['direction'],
             'symbol' => $snapshot['symbol'],
+            // Refreshed unconditionally, unlike the open-position path. There
+            // is no user-typed objective to protect on a synced pending order:
+            // the row came from the broker and every other field here is
+            // already taken from the snapshot. Dropping the take profit on the
+            // platform therefore clears it here too, rather than leaving a
+            // stale objective behind.
+            'targets' => BrokerTargetBuilder::fromSnapshot($snapshot),
         ]);
 
         if (array_key_exists('expires_at', $snapshot)) {

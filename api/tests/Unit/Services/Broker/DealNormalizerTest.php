@@ -697,8 +697,64 @@ class DealNormalizerTest extends TestCase
 
         $this->assertCount(1, $row['targets']);
         $this->assertSame(26600.0, $row['targets'][0]['price']);
-        // Nothing staged, so the objective covers the whole position.
+        // Nothing staged and nothing taken off yet, so the objective covers the
+        // whole position — here the remaining volume IS the whole position.
         $this->assertSame(2.5, $row['targets'][0]['size']);
+    }
+
+    public function testNormalizeCtraderOpenPositionSizesTheOwnTakeProfitOnWhatRemains(): void
+    {
+        // A take profit closes what is still open, not what the position was
+        // worth before it was trimmed. The size was computed against the
+        // REBUILT original — remaining plus every partial exit — so a position
+        // already reduced advertised an objective larger than itself.
+        //
+        // Observed on the test environment on 2026-08-11: a GER40 short down to
+        // 1 lot from 2.5 displayed a take profit for 2.5.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 334,
+            'price' => 26415.24,
+            'takeProfit' => 22000.0,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 331, 'volume' => 100, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            'partialExits' => [['size' => 1.5]],
+        ]);
+
+        // The original is still rebuilt for the position itself — that part is
+        // right and other code depends on it.
+        $this->assertSame(2.5, $row['size']);
+        $this->assertSame(1.0, $row['remaining_size']);
+
+        $this->assertCount(1, $row['targets']);
+        $this->assertSame(1.0, $row['targets'][0]['size']);
+    }
+
+    public function testNormalizeCtraderOpenPositionLeavesTheOwnTakeProfitOnlyWhatTheStagedLevelsSpare(): void
+    {
+        // The position's own level is the last step of the plan: it takes off
+        // whatever the staged ones leave. That remainder is measured against
+        // the remaining volume too, not the original.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 335,
+            'price' => 26415.24,
+            'takeProfit' => 22000.0,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 331, 'volume' => 200, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            'partialExits' => [['size' => 0.5]],
+            'takeProfitOrders' => [
+                ['price' => 26000.0, 'volume' => 50],
+            ],
+        ]);
+
+        $this->assertSame(2.5, $row['size']);
+        $this->assertSame(2.0, $row['remaining_size']);
+
+        // Nearest first: the staged level at 26000 comes before the far 22000.
+        $this->assertSame([26000.0, 22000.0], array_map(fn($t) => $t['price'], $row['targets']));
+        // 0.5 staged, so 1.5 of the 2.0 still open is left for the own level.
+        $this->assertSame([0.5, 1.5], array_map(fn($t) => $t['size'], $row['targets']));
     }
 
     public function testNormalizeCtraderOpenPositionHasNoTargetsWithoutAnyTakeProfit(): void

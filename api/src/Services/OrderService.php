@@ -18,6 +18,7 @@ use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
+use App\Services\Broker\BrokerTargetBuilder;
 use App\Repositories\TradingPlanRepository;
 use DateTimeImmutable;
 use Throwable;
@@ -113,6 +114,9 @@ class OrderService
             $targetsData = is_string($data['targets']) ? json_decode($data['targets'], true) : $data['targets'];
             if (is_array($targetsData)) {
                 $targetsData = $this->calculateTargetPrices($targetsData, $entryPrice, $direction);
+                // An order the user places owns its objectives — no broker
+                // marker, so the sync will never rewrite them.
+                $targetsData = BrokerTargetBuilder::withoutSource($targetsData);
                 $targets = json_encode($targetsData);
             }
         }

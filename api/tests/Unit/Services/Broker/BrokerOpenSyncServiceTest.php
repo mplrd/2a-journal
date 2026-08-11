@@ -368,6 +368,94 @@ class BrokerOpenSyncServiceTest extends TestCase
         );
     }
 
+    public function testUpdateRealignsAnObjectiveTheBrokerOwns(): void
+    {
+        // Moving a take profit on the platform has to reach the journal. The
+        // guard used to be "write only into an empty slot", which froze a
+        // synced objective exactly like a hand-typed one: once written, it was
+        // never read again and the two drifted apart for good.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => '[{"id":"tp1","label":"TP1","points":1000,"price":61000,"size":0.5,"source":"broker"}]',
+                    'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(1001, $this->callback(function ($data) {
+                $targets = json_decode($data['targets'] ?? '[]', true);
+                // The snapshot's 62000 replaces the stored 61000.
+                return count($targets) === 1 && (float) $targets[0]['price'] === 62000.0;
+            }));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()], // tp 62000
+            closedSnapshot: [],
+        );
+    }
+
+    public function testUpdateNeverTouchesAnObjectiveTheUserTyped(): void
+    {
+        // The other half of the contract, unchanged: what the user typed is
+        // theirs. An objective with no broker marker is left exactly as it is.
+        $typed = '[{"id":"tp1","label":"TP1","points":500,"price":60500,"size":0.5}]';
+
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => $typed,
+                    'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(1001, $this->callback(fn($data) => !array_key_exists('targets', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testUpdateClearsABrokerObjectiveTheBrokerHasRemoved(): void
+    {
+        // Deleting the take profit on the platform must delete it here too,
+        // not leave the last known level standing.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => '[{"id":"tp1","label":"TP1","points":2000,"price":62000,"size":0.5,"source":"broker"}]',
+                    'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(1001, $this->callback(
+                fn($data) => array_key_exists('targets', $data) && $data['targets'] === null,
+            ));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['tp_price' => null])],
+            closedSnapshot: [],
+        );
+    }
+
     // ── Stop loss at break-even → SECURED ───────────────────────────
 
     public function testPromotesToSecuredWhenTheStopReachesTheEntry(): void
@@ -399,6 +487,85 @@ class BrokerOpenSyncServiceTest extends TestCase
             accountId: 5,
             batchId: 99,
             openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60000.0])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testSecuresAPositionThatIsAlreadyProtectedWhenFirstSeen(): void
+    {
+        // The gap this closes: the promotion lived only on the update path, so
+        // a position whose stop already protects the entry the first time we
+        // see it was filed as OPEN and stayed wrong until the next pass.
+        //
+        // Which pass got it right was effectively arbitrary — a position the
+        // closed-deals import had already materialised earlier in the same run
+        // was found existing and promoted, one that arrived only in the open
+        // snapshot was not. Observed on the test environment on 2026-08-11:
+        // two DAX positions correct, a NAS position with the same stop-to-entry
+        // relationship reported OPEN for twenty minutes.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(
+                fn($data) => ($data['status'] ?? null) === TradeStatus::SECURED->value
+                    && ($data['be_reached'] ?? null) === 1,
+            ));
+
+        $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60000.0])],
+            closedSnapshot: [],
+        );
+
+        $this->assertSame(1, $stats['inserted']);
+    }
+
+    public function testInsertLeavesAPositionOpenWhenItsStopStillCarriesRisk(): void
+    {
+        // The mirror of the test above: promoting on insert must not promote
+        // everything. The default snapshot's stop sits 1000 below a long entry.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(
+                fn($data) => ($data['status'] ?? null) === TradeStatus::OPEN->value
+                    && !array_key_exists('be_reached', $data),
+            ));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testSecuresAShortOnInsertOnceItsStopIsBelowEntry(): void
+    {
+        // Direction inverts the comparison on the insert path too — this is the
+        // exact shape of the NAS position that went unflagged.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(
+                fn($data) => ($data['status'] ?? null) === TradeStatus::SECURED->value,
+            ));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'direction' => 'SELL',
+                'entry_price' => 29843.43,
+                'sl_price' => 29840.84,
+            ])],
             closedSnapshot: [],
         );
     }

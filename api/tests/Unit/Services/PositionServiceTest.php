@@ -314,6 +314,26 @@ class PositionServiceTest extends TestCase
         $this->assertEquals(18700, $resultTargets[1]['price']); // 18500 + 200
     }
 
+    public function testUpdateTakesOwnershipOfASyncedObjective(): void
+    {
+        // Objectives written by a broker sync carry source=broker, and the sync
+        // keeps refreshing those so the journal stays aligned with the
+        // platform. The moment the user edits them from the form they become
+        // the user's: the marker is dropped, and the next sync leaves them be.
+        $position = $this->fakePosition(['direction' => 'BUY', 'entry_price' => '18500.00000']);
+        $this->positionRepo->method('findById')->willReturn($position);
+        $this->positionRepo->method('update')->willReturnCallback(
+            fn($id, $data) => array_merge($position, $data),
+        );
+
+        $result = $this->service->update(1, 1, ['targets' => [
+            ['id' => 'tp1', 'label' => 'TP1', 'points' => 100, 'size' => 0.5, 'source' => 'broker'],
+        ]]);
+
+        $resultTargets = json_decode($result['targets'], true);
+        $this->assertArrayNotHasKey('source', $resultTargets[0]);
+    }
+
     // ── Update: price calculations SELL ─────────────────────────
 
     public function testUpdateCalculatesSlPriceSell(): void

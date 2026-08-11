@@ -247,13 +247,42 @@ La collecte est donc volontairement large : un ordre de clôture compte comme ni
 
 **Tri par distance à l'entrée**, ce qui couvre les deux sens d'un coup : un long prend ses profits au-dessus de son entrée, un short en dessous — « le plus proche d'abord » est croissant dans un cas, décroissant dans l'autre. Les paliers sont ensuite numérotés TP1..TPn dans cet ordre.
 
-Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors toute la taille.
+Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors tout ce qui reste ouvert.
 
-**Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
+**Les tailles se mesurent sur le restant, jamais sur l'origine reconstruite** (corrigé le 2026-08-11). Un take profit clôture la position telle qu'elle est *maintenant*. Le calcul partait de `size` — le restant plus toutes les sorties partielles — si bien qu'une position déjà allégée annonçait un objectif plus gros qu'elle. Constaté en env de test : un short GER40 descendu à 1 lot sur 2.5 affichait un TP pour 2.5. Le reliquat laissé au `takeProfit` de la position se calcule donc lui aussi sur le restant, moins ce que prennent les paliers étagés.
+
+**Règle : un objectif suit son propriétaire** (revu le 2026-08-11).
+
+La règle d'origine était « un TP broker ne remplit qu'un emplacement vide », par analogie avec `setup` et `notes`. Elle ne distinguait pas un objectif **saisi** d'un objectif **synchronisé** et gelait les deux : une fois le premier niveau écrit, `targets` n'était plus jamais relu. Déplacer un take profit sur la plateforme n'atteignait donc jamais le journal, et en retirer un y laissait l'ancien niveau indéfiniment.
+
+L'origine est désormais portée par le JSON lui-même. Chaque niveau écrit par la synchro reçoit `"source": "broker"` (`BrokerTargetBuilder::SOURCE`), et `isBrokerOwned()` décide :
+
+| État de `positions.targets` | La synchro réécrit ? |
+|---|---|
+| Vide ou `[]` | Oui |
+| Tous les niveaux marqués `broker` | Oui — **y compris à `null`** si le broker n'a plus d'objectif |
+| Au moins un niveau sans marqueur | Non |
+| JSON illisible | Non — ce qu'on ne sait pas lire ne doit pas être écrasé |
+
+La possession est **tout ou rien** : la colonne s'écrit d'un bloc, donc un seul niveau saisi protège la liste entière.
+
+**Éditer depuis un formulaire, c'est en prendre possession.** `PositionService::update()` et `OrderService` retirent le marqueur de tous les niveaux qu'ils enregistrent (`BrokerTargetBuilder::withoutSource()`). La passe suivante les laisse tranquilles.
+
+**Migration 038** estampille les lignes déjà en base — restreinte à ce qu'on peut prouver : `external_id` **et** `import_batch_id` non nuls, seul profil sur lequel les diffs broker écrivent `targets`. Sans elle, l'existant serait traité comme saisi à la main, donc gelé pour toujours.
+
+**Les ordres en attente écrivent aussi leurs objectifs** (ajouté le 2026-08-11). `normalizeCtraderOpenOrder()` produit un `tp_price` depuis toujours et `BrokerOrderSyncService` ne persistait que `sl_price` : la construction du JSON vivait en privé dans `BrokerOpenSyncService`, donc le chemin des ordres ne savait pas écrire un objectif. Le take profit d'un ordre était normalisé puis jeté, et la vue Ordres n'avait aucune colonne pour l'afficher.
+
+La construction est extraite dans **`BrokerTargetBuilder::fromSnapshot()`**, partagée par les deux diffs. Un ordre en attente n'a pas de sortie partielle : son objectif couvre sa taille entière.
+
+**Sur le chemin des ordres, `targets` est rafraîchi sans condition** — contrairement aux positions. Il n'y a pas d'objectif saisi à protéger sur un ordre synchronisé : la ligne vient du broker, et son entrée, sa taille et son stop sont déjà repris du snapshot sur ce même chemin. Retirer le take profit sur la plateforme l'efface donc ici aussi, au lieu de laisser un objectif périmé.
 
 **Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.
 
 **Promotion uniquement, jamais de rétrogradation.** Un trade peut aussi avoir été sécurisé à la main via une sortie de type BE ; ramener le stop en arrière sur la plateforme ne doit pas effacer cette décision.
+
+**À l'insertion aussi, pas seulement à la mise à jour** (corrigé le 2026-08-11). La règle ne vivait que sur le chemin `updateBrokerFields()`. Une position déjà protégée la première fois qu'on la voyait était donc classée `OPEN`, et ne se corrigeait qu'à la passe suivante.
+
+Le pire n'était pas le retard mais l'incohérence : le statut dépendait de si l'import des deals clôturés avait matérialisé la position **plus tôt dans la même passe**. Dans ce cas la réconciliation du snapshot la trouvait existante et la promouvait ; sinon `insertNewOpen()` la créait `OPEN`. Constaté en env de test le 2026-08-11 — deux positions DAX correctes, une position NAS au stop tout aussi protecteur restée `OPEN` pendant vingt minutes, jusqu'à la passe automatique suivante. `insertNewOpen()` évalue maintenant `stopProtectsEntry()` comme l'autre chemin, et `TradeRepository::create()` accepte `be_reached` pour que le drapeau parte avec le statut.
 
 **Prérequis corrigé au passage : `findOpenByExternalIdPrefixInAccount` ne voyait que les `OPEN`.** Or `apply()` **insère** toute ligne du snapshot qu'il ne retrouve pas. Un trade passé `SECURED` devenait donc invisible au diff : la synchro suivante créait un **doublon** de la position, et sa clôture ne transitionnait jamais. Le défaut existait déjà pour un trade broker sécurisé manuellement ; la détection automatique l'aurait rendu systématique. La requête couvre désormais `OPEN` **et** `SECURED` — « ouvert » y signifie « pas encore clos », la même sémantique que `StatsRepository::getOpenTrades`.
 
@@ -282,12 +311,22 @@ Pas de clés API partagées au niveau de l'application. Les credentials sont sto
 | POST | `/broker/connections` | Créer connexion (cTrader ou MetaApi) |
 | PUT | `/broker/connections/{id}` | Reconfigurer les identifiants sur place (voir `85-broker-connection-reconfigure.md`) |
 | POST | `/broker/ctrader/accounts` | Lister les comptes cTrader d'un access token (voir `86-ctrader-account-discovery.md`) |
-| GET | `/broker/connections?account_id=X` | Statut connexion |
+| GET | `/broker/connections?account_id=X` | Statut connexion — `data: null` quand le compte n'en a pas (voir plus bas) |
 | POST | `/broker/connections/{id}/sync` | **Demander** une sync. Réponse **202** immédiate, la synchro est exécutée par le scheduler au tick suivant (< 1 min). Voir `89-broker-sync-parallelisation.md`. |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |
 | GET | `/broker/connections/{id}/logs` | Historique syncs |
 
 La création et la reconfiguration renvoient toutes deux `connection_test: { success, error }` : le résultat du `testConnection()` du provider, exécuté **sans bloquer** l'enregistrement.
+
+### « Pas de connexion » est une réponse, pas une erreur (corrigé le 2026-08-11)
+
+`GET /broker/connections?account_id=X` renvoyait **500** dès que le compte n'avait pas encore de connexion — donc pour tout compte avant sa première. `findForAccount()` rend `null` dans ce cas, et `Controller::jsonSuccess()` typait son paramètre `array` : `TypeError`, et un 200 parfaitement légitime sortait en 500.
+
+Le défaut datait du **03/04**, quand les routes broker ont été écrites (le code d'alors passait littéralement `jsonSuccess(null)`), et `Response::success()` est typée `array` depuis le commit initial du 10/02. Il est resté invisible quatre mois parce que le front l'avale : `BrokerConnectionPanel.vue` fait `catch { connection.value = null }`, ce qui affiche « pas de connexion » — l'état correct par accident. Seuls les logs saignaient.
+
+`Response::success()` et `jsonSuccess()` acceptent désormais `?array` et émettent `"data": null`.
+
+**Pas `[]`** : un tableau vide est *truthy* en JavaScript, le panneau croirait à une connexion existante. Absent et vide sont deux réponses différentes, la première seule convient ici.
 
 ## Tables
 
