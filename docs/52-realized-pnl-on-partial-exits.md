@@ -44,6 +44,46 @@ L'expression est extraite dans `effectiveDate()` pour réutilisation. Elle est a
 
 `getCumulativePnl()` n'a pas besoin du COALESCE : il itère déjà sur `partial_exits.exited_at` directement, donc les partials des SECURED apparaissent maintenant dans la courbe cumulée (puisque le WHERE englobant accepte SECURED).
 
+### La date effective ne convient PAS pour additionner de l'argent par jour (revu le 2026-08-11)
+
+La « date effective » réduit un trade à **une** date. C'est correct pour
+**filtrer** une fenêtre, et pour les agrégats **par trade** (taux de réussite,
+comptages, R:R moyen) — on ne coupe pas un gagnant en deux.
+
+C'est faux dès qu'on additionne **de l'argent par jour**. Un trade dont les
+paliers tombent des jours différents voit tout son réalisé attribué au dernier :
+banquer 400 au TP1 lundi, prendre le TP2 mercredi, et **lundi perd
+silencieusement ses 400** au profit de mercredi. Le montant se déplace à chaque
+nouveau palier. Constaté sur l'historique réel : plusieurs trades s'étalaient
+déjà sur deux à trois jours.
+
+`getDailyPnl()` n'utilise donc plus `effectiveDate()`. Il additionne deux
+contributions :
+
+1. **chaque sortie partielle**, sur `DATE(pe.exited_at)` ;
+2. **ce que la clôture réalise au-delà de ces paliers**, sur `DATE(t.closed_at)` —
+   soit `t.pnl` moins les paliers déjà comptés.
+
+Le reliquat couvre les deux cas que les paliers ne décrivent pas : un trade
+clôturé sans jamais avoir enregistré de partielle (tout son P&L tombe à la
+clôture), et un total annoncé par le broker au-dessus de la somme des jambes,
+swap et commissions inclus. Sur 547 trades réels : 542 ont `t.pnl` égal à la
+somme exacte de leurs paliers, 4 n'ont aucune partielle, 1 présente un écart.
+
+**Un palier à zéro compte, un reliquat à zéro non.** Une sortie à l'équilibre est
+un événement réel et son jour est un jour d'activité ; un reliquat nul n'est
+qu'un artefact du modèle, l'enregistrer inventerait une journée.
+
+`trade_count` vaut « trades ayant réalisé quelque chose ce jour-là », compté une
+seule fois même si plusieurs de leurs paliers sont tombés le même jour.
+
+**Deux requêtes plutôt qu'une UNION** : le filtre doit porter sur une colonne de
+date **différente** de chaque côté — une jambe se filtre sur sa propre date de
+sortie, pas sur celle de son trade — et un paramètre nommé ne peut pas être
+répété quand les requêtes préparées émulées sont désactivées. Fusionner en PHP
+évite au passage le `GROUP BY` sur l'expression à sous-requête que
+`ONLY_FULL_GROUP_BY` refuse en production.
+
 ### Migration 015 — Backfill SECURED existants
 
 Sur les bases déployées avant ce release, des trades SECURED peuvent exister avec `pnl IS NULL` mais des `partial_exits.pnl` valorisés. La migration 015 reconstitue les agrégats avec les mêmes formules que `calculateRealizedMetrics()` :

@@ -305,6 +305,27 @@ Le pire n'était pas le retard mais l'incohérence : le statut dépendait de si 
 
 **Prérequis corrigé au passage : `findOpenByExternalIdPrefixInAccount` ne voyait que les `OPEN`.** Or `apply()` **insère** toute ligne du snapshot qu'il ne retrouve pas. Un trade passé `SECURED` devenait donc invisible au diff : la synchro suivante créait un **doublon** de la position, et sa clôture ne transitionnait jamais. Le défaut existait déjà pour un trade broker sécurisé manuellement ; la détection automatique l'aurait rendu systématique. La requête couvre désormais `OPEN` **et** `SECURED` — « ouvert » y signifie « pas encore clos », la même sémantique que `StatsRepository::getOpenTrades`.
 
+### Une partielle synchronisée alimente `trades.pnl` (corrigé le 2026-08-11)
+
+Une sortie partielle découverte par la synchro était écrite dans `partial_exits`
+et s'arrêtait là : `trades.pnl` restait `NULL` jusqu'à la clôture de la position.
+Or tout ce qui filtre sur `pnl IS NOT NULL` — cartes KPI, calendrier de P&L —
+était donc **aveugle à de l'argent déjà encaissé**. Constaté en env de test : un
+take profit de 406.13 pris à 20:29 n'apparaissait nulle part dans les chiffres
+du jour.
+
+Le chemin manuel tient ce total courant depuis toujours (« realized metrics are
+computed on EVERY exit so the running P&L is visible immediately for swing
+trades », `TradeService::close()`). La synchro était simplement incohérente avec
+lui : elle l'alimente maintenant à chaque jambe qui atterrit.
+
+**Sauf à la clôture.** Là, le broker annonce le total de la position, swap et
+commissions compris, et ce chiffre fait autorité — `transitionToClosed()` l'écrit
+et la remontée ne doit pas l'écraser par la somme des jambes. La remontée n'est
+donc branchée que sur les deux chemins « position ouverte », et seulement quand
+une jambe a réellement été insérée : le planificateur repasse toutes les minutes
+et réannonce les mêmes sorties.
+
 ### Taille affichée dans le bloc « En cours » du dashboard
 
 `positions.size` porte la taille **d'origine**, `trades.remaining_size` ce qu'il reste après les sorties partielles. Le panneau « En cours » du dashboard lisait `size` — il annonçait donc 2.5 contrats sur un short déjà à moitié soldé au TP1, alors qu'il n'en tournait plus que 1.5. Le défaut est ancien mais était invisible : avant la reconstruction de la taille d'origine, les deux colonnes étaient toujours égales sur les positions synchronisées. `remaining_size` était d'ailleurs déjà remontée par `StatsRepository::getOpenTrades()`, simplement jamais affichée.

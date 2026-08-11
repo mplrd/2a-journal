@@ -4,6 +4,7 @@ namespace Tests\Unit\Services\Broker;
 
 use App\Enums\ExitType;
 use App\Enums\TradeStatus;
+use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\TradeRepository;
 use App\Services\Broker\BrokerOpenSyncService;
@@ -13,13 +14,28 @@ class BrokerOpenSyncServiceTest extends TestCase
 {
     private PositionRepository $positionRepo;
     private TradeRepository $tradeRepo;
+    private PartialExitRepository $partialExitRepo;
     private BrokerOpenSyncService $service;
 
     protected function setUp(): void
     {
         $this->positionRepo = $this->createMock(PositionRepository::class);
         $this->tradeRepo = $this->createMock(TradeRepository::class);
+        // No partial-exit repository by default: the legacy connectors emit no
+        // exits[] and the tests below that do not exercise them must keep
+        // behaving as they always have.
         $this->service = new BrokerOpenSyncService($this->positionRepo, $this->tradeRepo);
+        $this->partialExitRepo = $this->createMock(PartialExitRepository::class);
+    }
+
+    /** The service as the broker connectors that walk fills get it. */
+    private function useServiceWithPartialExits(): void
+    {
+        $this->service = new BrokerOpenSyncService(
+            $this->positionRepo,
+            $this->tradeRepo,
+            $this->partialExitRepo,
+        );
     }
 
     private function makeOpenSnapshot(array $overrides = []): array
@@ -454,6 +470,145 @@ class BrokerOpenSyncServiceTest extends TestCase
             openSnapshot: [$this->makeOpenSnapshot(['tp_price' => null])],
             closedSnapshot: [],
         );
+    }
+
+    // ── Realized P&L of a partial taken on the broker ───────────────
+
+    public function testBanksTheRunningRealizedPnlWhenTheBrokerReportsAPartial(): void
+    {
+        $this->useServiceWithPartialExits();
+        // A partial exit the sync discovers was written to partial_exits and
+        // stopped there: trades.pnl stayed NULL until the position eventually
+        // closed. Everything filtering on `pnl IS NOT NULL` — the KPI cards,
+        // the P&L calendar — was therefore blind to money already banked.
+        // Observed on 2026-08-11: a take profit of 406.13 taken at 20:29
+        // appeared nowhere on that day's calendar.
+        //
+        // The manual path has always kept a running total ("realized metrics
+        // are computed on EVERY exit so the running P&L is visible immediately
+        // for swing trades"). The sync now does the same.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['pnl' => '120.50'],
+            ['pnl' => '406.13'],
+        ]);
+
+        $banked = null;
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$banked) {
+                if (array_key_exists('pnl', $data)) {
+                    $banked = (float) $data['pnl'];
+                }
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'exits' => [[
+                    'exit_price' => 60500.0, 'size' => 0.2, 'pnl' => 406.13,
+                    'closed_at' => '2026-08-11 20:29:51', 'external_id' => 'ctrader_deal_1',
+                ]],
+            ])],
+            closedSnapshot: [],
+        );
+
+        // Every leg on the trade, not just the one that arrived.
+        $this->assertSame(526.63, $banked);
+    }
+
+    public function testDoesNotRewriteTheTradeWhenNoNewLegArrived(): void
+    {
+        $this->useServiceWithPartialExits();
+        // The scheduler ticks every minute and re-reports the same exits. A
+        // rollup on every pass would be a write per tick per position, for
+        // nothing.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        // Already on file, so insertPartialExits skips it.
+        $this->partialExitRepo->method('existingExternalIdsForTrade')
+            ->willReturn(['ctrader_deal_1' => true]);
+        $this->partialExitRepo->expects($this->never())->method('findByTradeId');
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => !array_key_exists('pnl', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'exits' => [[
+                    'exit_price' => 60500.0, 'size' => 0.2, 'pnl' => 406.13,
+                    'closed_at' => '2026-08-11 20:29:51', 'external_id' => 'ctrader_deal_1',
+                ]],
+            ])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testTheBrokersClosingTotalIsNotReplacedByTheSumOfItsLegs(): void
+    {
+        $this->useServiceWithPartialExits();
+        // On a close the broker states the position's total, which accounts for
+        // swap and commission the individual legs may not carry. That figure is
+        // authoritative and the rollup must not overwrite it.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([['pnl' => '700.00']]);
+
+        $seen = [];
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$seen) {
+                if (array_key_exists('pnl', $data)) {
+                    $seen[] = (float) $data['pnl'];
+                }
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [],
+            closedSnapshot: [$this->makeClosedSnapshot([
+                'pnl' => 742.31,
+                'exits' => [[
+                    'exit_price' => 61500.0, 'size' => 0.5, 'pnl' => 700.00,
+                    'closed_at' => '2026-05-07 14:30:00', 'external_id' => 'ouinex_leg-1',
+                ]],
+            ])],
+        );
+
+        $this->assertSame([742.31], $seen, "the broker's total is the last word on a close");
     }
 
     // ── Stop loss at break-even → SECURED ───────────────────────────
