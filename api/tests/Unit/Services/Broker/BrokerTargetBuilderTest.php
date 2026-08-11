@@ -70,6 +70,7 @@ class BrokerTargetBuilderTest extends TestCase
             'points' => 4000.0,
             'price' => 62000.0,
             'size' => 0.5,
+            'source' => 'broker',
         ]], $targets);
     }
 
@@ -102,6 +103,64 @@ class BrokerTargetBuilderTest extends TestCase
 
         $this->assertSame(['TP1', 'TP2', 'TP3'], array_column($targets, 'label'));
         $this->assertSame([1.0, 1.0, 0.5], array_column($targets, 'size'));
+    }
+
+    public function testEveryLevelIsStampedAsComingFromTheBroker(): void
+    {
+        // The marker is what lets the sync tell its own objectives from one the
+        // user typed. Without it the diff froze both alike, so moving a take
+        // profit on the platform never reached the journal.
+        $targets = $this->decode(BrokerTargetBuilder::fromSnapshot([
+            'entry_price' => 58000.0,
+            'size' => 0.5,
+            'targets' => [
+                ['price' => 60000.0, 'size' => 0.2],
+                ['price' => 62000.0, 'size' => 0.3],
+            ],
+        ]));
+
+        $this->assertSame(['broker', 'broker'], array_column($targets, 'source'));
+    }
+
+    // ── Who owns the stored objectives ──────────────────────────────
+
+    public function testNothingStoredIsTheBrokersToFill(): void
+    {
+        $this->assertTrue(BrokerTargetBuilder::isBrokerOwned(null));
+        $this->assertTrue(BrokerTargetBuilder::isBrokerOwned(''));
+        $this->assertTrue(BrokerTargetBuilder::isBrokerOwned('[]'));
+    }
+
+    public function testASetWrittenEntirelyByTheSyncStaysTheBrokers(): void
+    {
+        $this->assertTrue(BrokerTargetBuilder::isBrokerOwned(
+            '[{"id":"tp1","price":62000,"size":0.5,"source":"broker"}]'
+        ));
+    }
+
+    public function testAnObjectiveWithoutTheMarkerBelongsToTheUser(): void
+    {
+        // What the trade form writes, and what every row written before the
+        // marker existed looks like once the migration has left it alone.
+        $this->assertFalse(BrokerTargetBuilder::isBrokerOwned(
+            '[{"id":"tp1","price":62000,"size":0.5}]'
+        ));
+    }
+
+    public function testOneUserLevelInTheSetProtectsTheWholeSet(): void
+    {
+        // The column is written whole, so ownership is all-or-nothing: a single
+        // hand-typed level means the sync must not rewrite the list.
+        $this->assertFalse(BrokerTargetBuilder::isBrokerOwned(
+            '[{"id":"tp1","price":62000,"source":"broker"},{"id":"tp2","price":63000}]'
+        ));
+    }
+
+    public function testUnreadableStoredTargetsAreLeftAlone(): void
+    {
+        // Conservative on purpose: what cannot be read cannot be shown to be
+        // the broker's, and overwriting it would destroy it.
+        $this->assertFalse(BrokerTargetBuilder::isBrokerOwned('{not json'));
     }
 
     public function testPointsAreADistanceWhicheverWayTheTradeGoes(): void

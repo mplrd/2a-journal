@@ -18,6 +18,12 @@ namespace App\Services\Broker;
  */
 final class BrokerTargetBuilder
 {
+    /**
+     * Stamped on every level the sync writes, so the diff can tell its own
+     * objectives from one the user typed — see isBrokerOwned().
+     */
+    public const SOURCE = 'broker';
+
     public static function fromSnapshot(array $row): ?string
     {
         // An objective closes the row as it stands NOW, so sizes are measured
@@ -51,9 +57,66 @@ final class BrokerTargetBuilder
                 'points' => round(abs((float) $level['price'] - $entryPrice), 5),
                 'price' => (float) $level['price'],
                 'size' => (float) ($level['size'] ?? $rowSize),
+                'source' => self::SOURCE,
             ];
         }
 
         return json_encode($targets);
+    }
+
+    /**
+     * Whether the stored objectives are the sync's to rewrite.
+     *
+     * True when there is nothing stored, or when EVERY level carries the
+     * broker marker. The column is written whole, so ownership is
+     * all-or-nothing: one hand-typed level protects the entire list.
+     *
+     * This replaces an "only fill an empty slot" rule that could not tell the
+     * two origins apart. It froze a synced objective exactly like a typed one:
+     * once written it was never read again, so moving a take profit on the
+     * platform never reached the journal. Objectives the broker owns must
+     * follow the broker; objectives the user typed are theirs.
+     *
+     * Unreadable JSON returns false on purpose — what cannot be shown to be
+     * the broker's must not be overwritten.
+     */
+    public static function isBrokerOwned(mixed $stored): bool
+    {
+        if ($stored === null || $stored === '') {
+            return true;
+        }
+
+        $levels = is_array($stored) ? $stored : json_decode((string) $stored, true);
+        if (!is_array($levels)) {
+            return false;
+        }
+        if ($levels === []) {
+            return true;
+        }
+
+        foreach ($levels as $level) {
+            if (!is_array($level) || ($level['source'] ?? null) !== self::SOURCE) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Strip the marker from every level: saving objectives from a form is the
+     * user taking ownership of them, whatever they were before.
+     */
+    public static function withoutSource(array $levels): array
+    {
+        return array_map(
+            function ($level) {
+                if (is_array($level)) {
+                    unset($level['source']);
+                }
+                return $level;
+            },
+            $levels,
+        );
     }
 }

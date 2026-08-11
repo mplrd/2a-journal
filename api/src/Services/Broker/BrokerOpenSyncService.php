@@ -177,12 +177,15 @@ class BrokerOpenSyncService
         ];
 
         // Objectives are the user's the moment they type one, same contract as
-        // setup and notes. A broker take profit only fills an empty slot.
-        if ($this->hasNoTargets($existing)) {
-            $brokerTargets = BrokerTargetBuilder::fromSnapshot($snapshot);
-            if ($brokerTargets !== null) {
-                $positionFields['targets'] = $brokerTargets;
-            }
+        // setup and notes — but an objective the SYNC wrote belongs to the
+        // broker and has to follow it. The old rule ("only fill an empty
+        // slot") could not tell the two apart, so it froze both: a take profit
+        // moved on the platform never reached the journal, and one removed
+        // there stayed on file for good. Ownership is now carried in the JSON
+        // itself, and a broker-owned set is rewritten from the snapshot —
+        // including to null when the broker no longer has an objective.
+        if (BrokerTargetBuilder::isBrokerOwned($existing['targets'] ?? null)) {
+            $positionFields['targets'] = BrokerTargetBuilder::fromSnapshot($snapshot);
         }
 
         $this->positionRepo->update((int) $existing['position_id'], $positionFields);
@@ -216,18 +219,6 @@ class BrokerOpenSyncService
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
-    }
-
-    /** True when the journal holds no objective for this position yet. */
-    private function hasNoTargets(array $existing): bool
-    {
-        $stored = $existing['targets'] ?? null;
-        if ($stored === null || $stored === '') {
-            return true;
-        }
-        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
-
-        return empty($decoded);
     }
 
     /**

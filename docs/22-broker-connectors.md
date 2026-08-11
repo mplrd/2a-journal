@@ -251,9 +251,24 @@ Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui cou
 
 **Les tailles se mesurent sur le restant, jamais sur l'origine reconstruite** (corrigé le 2026-08-11). Un take profit clôture la position telle qu'elle est *maintenant*. Le calcul partait de `size` — le restant plus toutes les sorties partielles — si bien qu'une position déjà allégée annonçait un objectif plus gros qu'elle. Constaté en env de test : un short GER40 descendu à 1 lot sur 2.5 affichait un TP pour 2.5. Le reliquat laissé au `takeProfit` de la position se calcule donc lui aussi sur le restant, moins ce que prennent les paliers étagés.
 
-**Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
+**Règle : un objectif suit son propriétaire** (revu le 2026-08-11).
 
-> Limite connue : `hasNoTargets()` ne distingue pas un objectif **saisi** d'un objectif **synchronisé**. Il gèle les deux, alors qu'un objectif venu du broker devrait suivre le broker. Voir `docs/evolutions.md`.
+La règle d'origine était « un TP broker ne remplit qu'un emplacement vide », par analogie avec `setup` et `notes`. Elle ne distinguait pas un objectif **saisi** d'un objectif **synchronisé** et gelait les deux : une fois le premier niveau écrit, `targets` n'était plus jamais relu. Déplacer un take profit sur la plateforme n'atteignait donc jamais le journal, et en retirer un y laissait l'ancien niveau indéfiniment.
+
+L'origine est désormais portée par le JSON lui-même. Chaque niveau écrit par la synchro reçoit `"source": "broker"` (`BrokerTargetBuilder::SOURCE`), et `isBrokerOwned()` décide :
+
+| État de `positions.targets` | La synchro réécrit ? |
+|---|---|
+| Vide ou `[]` | Oui |
+| Tous les niveaux marqués `broker` | Oui — **y compris à `null`** si le broker n'a plus d'objectif |
+| Au moins un niveau sans marqueur | Non |
+| JSON illisible | Non — ce qu'on ne sait pas lire ne doit pas être écrasé |
+
+La possession est **tout ou rien** : la colonne s'écrit d'un bloc, donc un seul niveau saisi protège la liste entière.
+
+**Éditer depuis un formulaire, c'est en prendre possession.** `PositionService::update()` et `OrderService` retirent le marqueur de tous les niveaux qu'ils enregistrent (`BrokerTargetBuilder::withoutSource()`). La passe suivante les laisse tranquilles.
+
+**Migration 038** estampille les lignes déjà en base — restreinte à ce qu'on peut prouver : `external_id` **et** `import_batch_id` non nuls, seul profil sur lequel les diffs broker écrivent `targets`. Sans elle, l'existant serait traité comme saisi à la main, donc gelé pour toujours.
 
 **Les ordres en attente écrivent aussi leurs objectifs** (ajouté le 2026-08-11). `normalizeCtraderOpenOrder()` produit un `tp_price` depuis toujours et `BrokerOrderSyncService` ne persistait que `sl_price` : la construction du JSON vivait en privé dans `BrokerOpenSyncService`, donc le chemin des ordres ne savait pas écrire un objectif. Le take profit d'un ordre était normalisé puis jeté, et la vue Ordres n'avait aucune colonne pour l'afficher.
 

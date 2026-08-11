@@ -13,6 +13,7 @@ use App\Repositories\AccountRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
+use App\Services\Broker\BrokerTargetBuilder;
 
 class PositionService
 {
@@ -136,6 +137,10 @@ class PositionService
             $targets = is_string($data['targets']) ? json_decode($data['targets'], true) : $data['targets'];
             if (is_array($targets)) {
                 $targets = $this->calculateTargetPrices($targets, $entryPrice, $direction);
+                // Saving from the form is the user taking ownership: whatever
+                // the broker sync may have stamped on these levels goes, and
+                // the next pass leaves them alone.
+                $targets = BrokerTargetBuilder::withoutSource($targets);
                 $data['targets'] = json_encode($targets);
             }
         }
