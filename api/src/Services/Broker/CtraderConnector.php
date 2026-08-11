@@ -739,30 +739,30 @@ class CtraderConnector implements ConnectorInterface
 
     /**
      * The take profit price an order defines, or null when it defines none.
-     * A LIMIT closing order triggers at `limitPrice`; a protective order states
-     * its objective in `takeProfit`, and holds only `stopLoss` when it is
-     * purely a stop.
+     *
+     * Read from the fields, not from the order type. Keying on the type was
+     * what lost every staged level: a partial take profit is placed as a
+     * STOP_LOSS_TAKE_PROFIT order (ProtoOAOrderType = 4), not a LIMIT, and it
+     * carries its trigger in `limitPrice` with no `takeProfit` field at all —
+     * so the reader looked for an objective in the one place it never is.
+     * Captured from a real account on 2026-08-11:
+     *
+     *   type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=0|takeProfit=0
+     *   type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=1|takeProfit=0
+     *
+     * The proto comments `limitPrice` as "valid only for LIMIT orders". The
+     * platform says otherwise, and the platform is what we read.
+     *
+     * `stopPrice` is never an objective, whatever the type: the second shape
+     * above is one order carrying both the level and its protection, and
+     * reading its stop would invent a target below a long's entry. An order
+     * holding a stop and nothing else therefore yields null and stays out.
      */
     private function takeProfitLevelOf(array $order): ?float
     {
-        $price = $this->isLimitOrder($order['orderType'] ?? null)
-            ? ($order['limitPrice'] ?? null)
-            : ($order['takeProfit'] ?? null);
+        $price = $order['takeProfit'] ?? $order['limitPrice'] ?? null;
 
         return $price !== null && (float) $price > 0 ? (float) $price : null;
-    }
-
-    /**
-     * cTrader may serialize orderType as its enum name or its integer code
-     * (LIMIT = 2), same tolerance as everywhere else in this connector.
-     */
-    private function isLimitOrder(mixed $orderType): bool
-    {
-        if (is_int($orderType) || (is_string($orderType) && ctype_digit($orderType))) {
-            return (int) $orderType === 2;
-        }
-
-        return strtoupper(str_replace('ORDER_TYPE_', '', (string) $orderType)) === 'LIMIT';
     }
 
     /**

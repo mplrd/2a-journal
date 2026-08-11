@@ -241,7 +241,26 @@ Seule `fetchOpenPositions` l'active : `fetchOpenOrders` écarte les ordres de cl
 
 cTrader annonce jusqu'à **cinq** niveaux par position, chacun avec sa quantité ([Trade protections](https://help.ctrader.com/ctrader-web/trading/protections/)).
 
-La collecte est donc volontairement large : un ordre de clôture compte comme niveau dès qu'il expose un prix de TP — `limitPrice` pour un `LIMIT`, `takeProfit` pour un ordre protecteur. Un ordre ne portant qu'un `stopLoss` n'est pas un objectif et reste dehors. Les niveaux sont dédoublonnés par prix, puisque le `takeProfit` de la position en reflète un et que deux ordres peuvent rapporter le même.
+La collecte est donc volontairement large : un ordre de clôture compte comme niveau dès qu'il expose un prix de TP. Les niveaux sont dédoublonnés par prix, puisque le `takeProfit` de la position en reflète un et que deux ordres peuvent rapporter le même.
+
+#### Un palier partiel est un `STOP_LOSS_TAKE_PROFIT`, pas un `LIMIT` (corrigé le 2026-08-11)
+
+La lecture du niveau s'appuyait sur le **type** de l'ordre : `limitPrice` pour un `LIMIT` (type 2), `takeProfit` sinon. Aucun palier n'était jamais trouvé.
+
+Le diagnostic `take_profit_levels_unresolved`, enfin visible une fois les logs des workers réémis, a donné la forme exacte de ce qu'envoie un vrai compte :
+
+```
+type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=0|takeProfit=0
+type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=1|takeProfit=0
+```
+
+**Type 4 = `STOP_LOSS_TAKE_PROFIT`** (vérifié sur `OpenApiModelMessages.proto`, qui fait foi). Un palier partiel n'est donc pas un ordre `LIMIT` : c'est un ordre de protection lié à la position, qui porte son déclencheur dans **`limitPrice`** et **aucun champ `takeProfit`**. Le lecteur cherchait l'objectif au seul endroit où il ne se trouve jamais, et l'utilisateur ne voyait qu'un objectif — en réalité le **dernier** palier de son plan, numéroté TP1 faute de concurrents.
+
+`takeProfitLevelOf()` lit désormais les **champs** et non le type : `takeProfit` s'il est là, `limitPrice` sinon. `isLimitOrder()` n'avait plus d'appelant et a été supprimée.
+
+`stopPrice` n'est jamais un objectif, quel que soit le type — la seconde forme ci-dessus est un ordre portant à la fois le palier et sa protection, et lire son stop inventerait un objectif sous l'entrée d'un achat. Un ordre ne portant qu'un stop reste donc dehors.
+
+> Le proto commente `limitPrice` « valid only for LIMIT orders ». La plateforme dit autre chose, et c'est la plateforme qu'on lit.
 
 **Un diagnostic couvre le cas non résolu.** Si une position annonce un `takeProfit` sans qu'aucun niveau ne soit lisible, `reportUnresolvedTakeProfits()` journalise la **forme** des ordres rattachés — types et champs de prix présents, jamais les prix, volumes ou identifiants. Silencieux en nominal. C'est le seul moyen d'apprendre la représentation réelle sans demander une resynchro à l'aveugle.
 
