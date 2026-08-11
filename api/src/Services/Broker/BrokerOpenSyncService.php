@@ -5,6 +5,7 @@ namespace App\Services\Broker;
 use App\Enums\BrokerProvider;
 use App\Enums\Direction;
 use App\Enums\ExitType;
+use App\Enums\PositionType;
 use App\Enums\TradeStatus;
 use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
@@ -118,10 +119,10 @@ class BrokerOpenSyncService
             'targets' => $this->brokerTargets($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
-            'position_type' => 'TRADE',
+            'position_type' => PositionType::TRADE->value,
         ]);
 
-        $trade = $this->tradeRepo->create([
+        $tradeFields = [
             'position_id' => $position['id'],
             // BingX /user/positions doesn't expose an open time on the live
             // snapshot, so normalizeBingxOpenPosition returns null and we
@@ -134,7 +135,20 @@ class BrokerOpenSyncService
             'opened_at' => $row['opened_at'] ?? date('Y-m-d H:i:s'),
             'remaining_size' => $row['remaining_size'] ?? $row['size'],
             'status' => TradeStatus::OPEN->value,
-        ]);
+        ];
+
+        // A position can already be protected the first time we see it, and
+        // the same rule has to apply here as on the update path. Left out, the
+        // status depended on something arbitrary: a position the closed-deals
+        // import had materialised earlier in the same run was found existing
+        // and promoted, one arriving only in the open snapshot was filed OPEN
+        // and stayed wrong until the next pass.
+        if ($this->stopProtectsEntry($row, (float) ($row['entry_price'] ?? 0))) {
+            $tradeFields['status'] = TradeStatus::SECURED->value;
+            $tradeFields['be_reached'] = 1;
+        }
+
+        $trade = $this->tradeRepo->create($tradeFields);
 
         // BingX (and any connector that reconstructs from fills) may emit
         // an exits[] array on still-open positions — partial closes that

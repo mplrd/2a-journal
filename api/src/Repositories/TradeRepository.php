@@ -14,11 +14,16 @@ class TradeRepository
         $this->pdo = $pdo;
     }
 
+    /**
+     * `be_reached` is settable at creation, not only by a later update: a
+     * broker position can already be protected the first time we see it, and
+     * the flag has to land with the SECURED status rather than a pass later.
+     */
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO trades (position_id, source_order_id, opened_at, remaining_size, status)
-             VALUES (:position_id, :source_order_id, :opened_at, :remaining_size, :status)'
+            'INSERT INTO trades (position_id, source_order_id, opened_at, remaining_size, status, be_reached)
+             VALUES (:position_id, :source_order_id, :opened_at, :remaining_size, :status, :be_reached)'
         );
         $stmt->execute([
             'position_id' => $data['position_id'],
@@ -26,6 +31,7 @@ class TradeRepository
             'opened_at' => $data['opened_at'],
             'remaining_size' => $data['remaining_size'],
             'status' => $data['status'] ?? TradeStatus::OPEN->value,
+            'be_reached' => (int) ($data['be_reached'] ?? 0),
         ]);
 
         return $this->findById((int) $this->pdo->lastInsertId());

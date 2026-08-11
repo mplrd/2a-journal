@@ -247,13 +247,19 @@ La collecte est donc volontairement large : un ordre de clôture compte comme ni
 
 **Tri par distance à l'entrée**, ce qui couvre les deux sens d'un coup : un long prend ses profits au-dessus de son entrée, un short en dessous — « le plus proche d'abord » est croissant dans un cas, décroissant dans l'autre. Les paliers sont ensuite numérotés TP1..TPn dans cet ordre.
 
-Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors toute la taille.
+Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors tout ce qui reste ouvert.
+
+**Les tailles se mesurent sur le restant, jamais sur l'origine reconstruite** (corrigé le 2026-08-11). Un take profit clôture la position telle qu'elle est *maintenant*. Le calcul partait de `size` — le restant plus toutes les sorties partielles — si bien qu'une position déjà allégée annonçait un objectif plus gros qu'elle. Constaté en env de test : un short GER40 descendu à 1 lot sur 2.5 affichait un TP pour 2.5. Le reliquat laissé au `takeProfit` de la position se calcule donc lui aussi sur le restant, moins ce que prennent les paliers étagés.
 
 **Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
 
 **Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.
 
 **Promotion uniquement, jamais de rétrogradation.** Un trade peut aussi avoir été sécurisé à la main via une sortie de type BE ; ramener le stop en arrière sur la plateforme ne doit pas effacer cette décision.
+
+**À l'insertion aussi, pas seulement à la mise à jour** (corrigé le 2026-08-11). La règle ne vivait que sur le chemin `updateBrokerFields()`. Une position déjà protégée la première fois qu'on la voyait était donc classée `OPEN`, et ne se corrigeait qu'à la passe suivante.
+
+Le pire n'était pas le retard mais l'incohérence : le statut dépendait de si l'import des deals clôturés avait matérialisé la position **plus tôt dans la même passe**. Dans ce cas la réconciliation du snapshot la trouvait existante et la promouvait ; sinon `insertNewOpen()` la créait `OPEN`. Constaté en env de test le 2026-08-11 — deux positions DAX correctes, une position NAS au stop tout aussi protecteur restée `OPEN` pendant vingt minutes, jusqu'à la passe automatique suivante. `insertNewOpen()` évalue maintenant `stopProtectsEntry()` comme l'autre chemin, et `TradeRepository::create()` accepte `be_reached` pour que le drapeau parte avec le statut.
 
 **Prérequis corrigé au passage : `findOpenByExternalIdPrefixInAccount` ne voyait que les `OPEN`.** Or `apply()` **insère** toute ligne du snapshot qu'il ne retrouve pas. Un trade passé `SECURED` devenait donc invisible au diff : la synchro suivante créait un **doublon** de la position, et sa clôture ne transitionnait jamais. Le défaut existait déjà pour un trade broker sécurisé manuellement ; la détection automatique l'aurait rendu systématique. La requête couvre désormais `OPEN` **et** `SECURED` — « ouvert » y signifie « pas encore clos », la même sémantique que `StatsRepository::getOpenTrades`.
 

@@ -195,7 +195,7 @@ class DealNormalizer
             'size' => $size,
             'remaining_size' => round($remaining, 5),
             'exits' => $exits,
-            'targets' => $this->ctraderTargets($position, $size),
+            'targets' => $this->ctraderTargets($position, round($remaining, 5)),
             'sl_price' => isset($position['stopLoss']) ? (float) $position['stopLoss'] : null,
             'tp_price' => isset($position['takeProfit']) ? (float) $position['takeProfit'] : null,
             'opened_at' => $this->msTimestampToDatetime((int) ($trade['openTimestamp'] ?? 0)),
@@ -219,9 +219,15 @@ class DealNormalizer
      * takes profit above its entry, a short below it, so "nearest first" is
      * ascending in one case and descending in the other.
      *
+     * Sizes are measured against what is still OPEN, never against the rebuilt
+     * original: a take profit closes the position as it stands now. Using the
+     * original made a position already trimmed to 1 lot advertise an objective
+     * for the 2.5 it once was.
+     *
+     * @param  float $remainingSize Volume still open, not the rebuilt original.
      * @return list<array{price: float, size: float}>
      */
-    private function ctraderTargets(array $position, float $positionSize): array
+    private function ctraderTargets(array $position, float $remainingSize): array
     {
         $entry = (float) ($position['price'] ?? 0);
 
@@ -245,10 +251,10 @@ class DealNormalizer
         // leftover size — the whole position when nothing else is staged.
         $own = $position['takeProfit'] ?? null;
         if ($own !== null && (float) $own > 0 && !isset($targets[(string) (float) $own])) {
-            $leftover = round($positionSize - $stagedSize, 5);
+            $leftover = round($remainingSize - $stagedSize, 5);
             $targets[(string) (float) $own] = [
                 'price' => (float) $own,
-                'size' => $leftover > 0 ? $leftover : $positionSize,
+                'size' => $leftover > 0 ? $leftover : $remainingSize,
             ];
         }
 

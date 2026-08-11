@@ -14,7 +14,7 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Menu from 'primevue/menu'
 import OrderForm from '@/components/order/OrderForm.vue'
-import { formatSize } from '@/utils/format'
+import { formatPrice, formatSize } from '@/utils/format'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
@@ -468,7 +468,7 @@ function statusSeverity(status) {
       </Column>
       <Column field="sl_price" :header="t('positions.sl_price')">
         <template #body="{ data }">
-          {{ Number(data.sl_price).toLocaleString() }}
+          {{ formatPrice(data.sl_price) }}
         </template>
       </Column>
       <Column v-if="!isCompact" field="status" :header="t('orders.status')">
@@ -561,7 +561,7 @@ function statusSeverity(status) {
             </div>
             <div>
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
-              <div class="font-mono tabular-nums">{{ Number(item.sl_price).toLocaleString() }}</div>
+              <div class="font-mono tabular-nums">{{ formatPrice(item.sl_price) }}</div>
             </div>
           </div>
           <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">

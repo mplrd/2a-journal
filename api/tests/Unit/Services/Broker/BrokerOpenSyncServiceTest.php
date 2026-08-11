@@ -403,6 +403,85 @@ class BrokerOpenSyncServiceTest extends TestCase
         );
     }
 
+    public function testSecuresAPositionThatIsAlreadyProtectedWhenFirstSeen(): void
+    {
+        // The gap this closes: the promotion lived only on the update path, so
+        // a position whose stop already protects the entry the first time we
+        // see it was filed as OPEN and stayed wrong until the next pass.
+        //
+        // Which pass got it right was effectively arbitrary — a position the
+        // closed-deals import had already materialised earlier in the same run
+        // was found existing and promoted, one that arrived only in the open
+        // snapshot was not. Observed on the test environment on 2026-08-11:
+        // two DAX positions correct, a NAS position with the same stop-to-entry
+        // relationship reported OPEN for twenty minutes.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(
+                fn($data) => ($data['status'] ?? null) === TradeStatus::SECURED->value
+                    && ($data['be_reached'] ?? null) === 1,
+            ));
+
+        $stats = $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60000.0])],
+            closedSnapshot: [],
+        );
+
+        $this->assertSame(1, $stats['inserted']);
+    }
+
+    public function testInsertLeavesAPositionOpenWhenItsStopStillCarriesRisk(): void
+    {
+        // The mirror of the test above: promoting on insert must not promote
+        // everything. The default snapshot's stop sits 1000 below a long entry.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(
+                fn($data) => ($data['status'] ?? null) === TradeStatus::OPEN->value
+                    && !array_key_exists('be_reached', $data),
+            ));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testSecuresAShortOnInsertOnceItsStopIsBelowEntry(): void
+    {
+        // Direction inverts the comparison on the insert path too — this is the
+        // exact shape of the NAS position that went unflagged.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(
+                fn($data) => ($data['status'] ?? null) === TradeStatus::SECURED->value,
+            ));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'direction' => 'SELL',
+                'entry_price' => 29843.43,
+                'sl_price' => 29840.84,
+            ])],
+            closedSnapshot: [],
+        );
+    }
+
     public function testPromotesToSecuredWhenTheStopLocksInProfit(): void
     {
         // A stop pushed past entry guarantees a gain — same single status, per
