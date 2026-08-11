@@ -60,6 +60,129 @@ class BrokerSyncSupervisorServiceTest extends TestCase
         ];
     }
 
+    /**
+     * BrokerLogger and the forwarding both write through error_log(), the
+     * portable stderr-ish sink. Point it at a file for the duration of the
+     * call and read back what landed.
+     *
+     * Writing to a FILE makes error_log() prepend "[date UTC] " to every line —
+     * a prefix that does not exist when the same call goes to stderr, which is
+     * where it goes in production. Strip it.
+     *
+     * The trailing \r goes too: the file is written with Windows line endings,
+     * and splitting on "\n" alone leaves a carriage return that no terminal
+     * shows and that makes an exact comparison fail on lines which look
+     * identical.
+     *
+     * @return list<string>
+     */
+    private function captureErrorLog(callable $run): array
+    {
+        $file = tempnam(sys_get_temp_dir(), 'supervisorlog');
+        $previous = ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+
+        $contents = file_get_contents($file) ?: '';
+        unlink($file);
+
+        return array_values(array_map(
+            fn($l) => preg_replace('/^\[[^\]]+\]\s*/', '', rtrim($l, "\r")),
+            array_filter(explode("\n", $contents), fn($l) => trim($l) !== ''),
+        ));
+    }
+
+    // ── A worker's diagnostics have to reach the container stream ───
+
+    public function testForwardsTheDiagnosticsOfAWorkerThatSucceeded(): void
+    {
+        // The defect this closes: the pool captures each child's stderr so the
+        // summary can be read off stdout, and a successful child's capture was
+        // then dropped on the floor. Everything a connector reported during a
+        // working sync — take_profit_levels_unresolved, the cTrader request
+        // budget, every warning — was written correctly and reached nobody.
+        // Verified against the test environment on 2026-08-11: 360 scheduler
+        // log lines over six hours, not one of them from a worker.
+        $this->connectionRepo->method('countActive')->willReturn(2);
+        $this->connectionRepo->method('countDueForAutoSync')->willReturn(2);
+
+        $diagnostic = '{"job":"ctrader","event":"take_profit_levels_unresolved","orders_in_payload":4}';
+        $this->pool->results = [
+            array_merge($this->workerSummary(), ['stderr' => $diagnostic]),
+        ];
+
+        $lines = $this->captureErrorLog(
+            fn() => $this->makeSupervisor()->run($this->config(['workers' => 1])),
+        );
+
+        $this->assertContains($diagnostic, $lines);
+    }
+
+    public function testForwardsEveryLineAndNamesTheWorkerItCameFrom(): void
+    {
+        // Several workers run at once, so a line nobody can attribute is half
+        // a diagnostic. The origin goes on its own line rather than inside the
+        // child's, which must stay byte-for-byte what the connector wrote.
+        $this->connectionRepo->method('countActive')->willReturn(4);
+        $this->connectionRepo->method('countDueForAutoSync')->willReturn(4);
+
+        $this->pool->results = [
+            array_merge($this->workerSummary(), ['stderr' => "first line\nsecond line"]),
+            array_merge($this->workerSummary(), ['stderr' => 'from the other one']),
+        ];
+
+        $lines = $this->captureErrorLog(
+            fn() => $this->makeSupervisor()->run($this->config(['workers' => 2])),
+        );
+
+        $this->assertContains('first line', $lines);
+        $this->assertContains('second line', $lines);
+        $this->assertContains('from the other one', $lines);
+        $this->assertNotEmpty(array_filter($lines, fn($l) => str_contains($l, 'worker_index')));
+    }
+
+    public function testStaysSilentForAWorkerThatWroteNothing(): void
+    {
+        // A quiet run is the nominal case: it must not add a line per worker
+        // to a log that already ticks every minute.
+        $this->connectionRepo->method('countActive')->willReturn(2);
+        $this->connectionRepo->method('countDueForAutoSync')->willReturn(2);
+
+        $this->pool->results = [$this->workerSummary()];
+
+        $lines = $this->captureErrorLog(
+            fn() => $this->makeSupervisor()->run($this->config(['workers' => 1])),
+        );
+
+        $this->assertSame([], $lines);
+    }
+
+    public function testStillForwardsTheDiagnosticsOfAWorkerThatDied(): void
+    {
+        // A dead child's stderr was the one case already reported, truncated
+        // to 2000 characters because it was the only trace left. It travels
+        // the same path as the rest now, and the failure line stays for the
+        // exit code.
+        $this->connectionRepo->method('countActive')->willReturn(2);
+        $this->connectionRepo->method('countDueForAutoSync')->willReturn(2);
+
+        $this->pool->results = [
+            ['exit_code' => 255, 'stdout' => '', 'stderr' => 'PHP Fatal error: out of memory'],
+        ];
+
+        $lines = $this->captureErrorLog(
+            fn() => $this->makeSupervisor()->run($this->config(['workers' => 1])),
+        );
+
+        $this->assertContains('PHP Fatal error: out of memory', $lines);
+        $this->assertNotEmpty(array_filter($lines, fn($l) => str_contains($l, 'worker_failed')));
+    }
+
     // ── Nothing to do: never pay for a process ──────────────────
 
     public function testDisabledFlagSpawnsNoWorker(): void

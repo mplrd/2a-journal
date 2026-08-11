@@ -224,12 +224,40 @@ tour déborde l'intervalle, plutôt qu'après. Un worker qui meurt ou n'imprime 
 de JSON exploitable est compté dans `worker_errors` et ne fait pas échouer le
 tour.
 
-**Contrepartie à connaître** : la sortie d'erreur d'un enfant ne coule plus
-directement dans `/var/log/cron.log`, le pool la capture. Une ligne
-`worker_failed` la réémet via `BrokerLogger`, tronquée à 2000 caractères — assez
-pour la ligne d'erreur fatale et les premières frames, pas pour une trace
-complète. Si un diagnostic l'exige, lancer un worker à la main dans le conteneur
-(`php cli/sync-brokers.php --worker`) donne la sortie entière.
+### La sortie d'erreur des workers est réémise (corrigé le 2026-08-11)
+
+Le pool **doit** capturer la sortie de chaque enfant : c'est sur son stdout que
+le superviseur lit le résumé du tour. Elle ne coule donc plus directement dans
+le flux du conteneur.
+
+Première version : seule la sortie d'un enfant **mort** était réémise, dans la
+ligne `worker_failed`, tronquée à 2000 caractères. Sur un worker qui réussit,
+tout ce qu'il avait écrit était capturé puis **jeté**.
+
+C'est-à-dire l'essentiel des diagnostics, puisqu'une synchro qui rapporte une
+anomalie n'échoue pas pour autant : `take_profit_levels_unresolved` (écrit
+exprès pour identifier la forme des ordres cTrader), le budget de requêtes de
+l'évol #22, tout avertissement de connecteur. Écrits correctement, n'arrivant
+nulle part. Vérifié en env de test le 2026-08-11 : **360 lignes du service
+`scheduler` sur six heures, aucune venant d'un worker.** Conséquence pratique :
+un défaut de synchro n'était diagnosticable qu'en local.
+
+`forwardWorkerDiagnostics()` réémet donc la sortie de **chaque** enfant, quel
+que soit son sort :
+
+- les lignes partent **verbatim** par `error_log()`, pas par `BrokerLogger` :
+  l'enfant les a déjà formatées, et les réencapsuler enfouirait un diagnostic
+  JSON dans une deuxième enveloppe JSON ;
+- une ligne d'en-tête `worker_output` les précède avec `worker_index` —
+  plusieurs workers tournent en même temps, et une ligne qu'on ne peut pas
+  attribuer ne vaut qu'à moitié ;
+- plafond de **200 lignes** par enfant et par tour, pour qu'un enfant parti en
+  boucle de journalisation ne noie pas le flux ;
+- **silence total** quand l'enfant n'a rien écrit : le superviseur tourne toutes
+  les minutes, il ne doit pas ajouter une ligne par worker à chaque tick.
+
+`worker_failed` ne porte plus la copie tronquée du stderr — elle est désormais
+juste au-dessus, entière — et garde le code de sortie.
 
 ### Réglage
 
