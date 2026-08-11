@@ -84,6 +84,118 @@ class BrokerOrderSyncServiceTest extends TestCase
         $this->assertSame(0, $stats['cancelled']);
     }
 
+    // ── The order's take profit → positions.targets ─────────────────
+
+    public function testInsertStoresThePendingOrdersTakeProfitAsATarget(): void
+    {
+        // The connectors normalize tp_price on a pending order and nothing
+        // consumed it: only the open-position path knew how to write targets,
+        // so an order's objective was neither stored nor displayed. A pending
+        // order has no partial exit, so the level covers its whole size.
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')->willReturn([]);
+        $this->orderRepo->method('create')->willReturn(['id' => 7001]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(function ($data) {
+                $targets = json_decode($data['targets'] ?? '', true);
+
+                // Values, not types: json_encode writes a whole float as an
+                // integer literal, so 4000.0 comes back as 4000.
+                return is_array($targets)
+                    && count($targets) === 1
+                    && $targets[0]['id'] === 'tp1'
+                    && $targets[0]['label'] === 'TP1'
+                    && (float) $targets[0]['points'] === 4000.0
+                    && (float) $targets[0]['price'] === 62000.0
+                    && (float) $targets[0]['size'] === 0.5;
+            }))
+            ->willReturn(['id' => 2001]);
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openOrdersSnapshot: [$this->makeOpenOrderSnapshot()], // entry 58000, tp 62000, size 0.5
+            closedOrdersSnapshot: [],
+        );
+    }
+
+    public function testInsertStoresNoTargetWhenTheOrderCarriesNoTakeProfit(): void
+    {
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')->willReturn([]);
+        $this->orderRepo->method('create')->willReturn(['id' => 7001]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->with($this->callback(fn($data) => ($data['targets'] ?? null) === null))
+            ->willReturn(['id' => 2001]);
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openOrdersSnapshot: [$this->makeOpenOrderSnapshot(['tp_price' => null])],
+            closedOrdersSnapshot: [],
+        );
+    }
+
+    public function testUpdateRefreshesTheTargetFromTheBroker(): void
+    {
+        // Unconditionally, unlike the open-position path. A synced pending
+        // order is broker-owned end to end — its entry, size and stop are
+        // already refreshed here, and its objective is no different. There is
+        // no user-typed objective to protect: the row came from the broker.
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_order_ord-1' => [
+                    'order_id' => 7001,
+                    'position_id' => 2001,
+                    'external_id' => 'ouinex_order_ord-1',
+                    'expires_at' => '2026-06-01 00:00:00',
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(2001, $this->callback(function ($data) {
+                $targets = json_decode($data['targets'] ?? '', true);
+
+                return is_array($targets) && (float) $targets[0]['price'] === 63000.0;
+            }));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openOrdersSnapshot: [$this->makeOpenOrderSnapshot(['tp_price' => 63000.0])],
+            closedOrdersSnapshot: [],
+        );
+    }
+
+    public function testUpdateClearsTheTargetWhenTheBrokerDropsIt(): void
+    {
+        // Removing the take profit on the platform must remove the objective
+        // here too, not leave a stale one behind.
+        $this->orderRepo->method('findPendingByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_order_ord-1' => [
+                    'order_id' => 7001,
+                    'position_id' => 2001,
+                    'external_id' => 'ouinex_order_ord-1',
+                    'expires_at' => '2026-06-01 00:00:00',
+                ],
+            ]);
+
+        $this->positionRepo->expects($this->once())
+            ->method('update')
+            ->with(2001, $this->callback(fn($data) => array_key_exists('targets', $data) && $data['targets'] === null));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openOrdersSnapshot: [$this->makeOpenOrderSnapshot(['tp_price' => null])],
+            closedOrdersSnapshot: [],
+        );
+    }
+
     public function testInsertKeepsTheBrokersOwnPlacementTime(): void
     {
         // The connectors normalize created_at — when the order was actually
@@ -159,7 +271,9 @@ class BrokerOrderSyncServiceTest extends TestCase
         $this->positionRepo->expects($this->once())
             ->method('update')
             ->with(2001, $this->callback(function ($data) {
-                $allowed = ['entry_price', 'size', 'sl_price', 'direction', 'symbol'];
+                // targets joined this list on 2026-08-11: a pending order's
+                // take profit is a broker-owned field like the rest.
+                $allowed = ['entry_price', 'size', 'sl_price', 'direction', 'symbol', 'targets'];
                 foreach (array_keys($data) as $key) {
                     if (!in_array($key, $allowed, true)) {
                         return false;

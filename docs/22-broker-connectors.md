@@ -253,6 +253,14 @@ Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui cou
 
 **Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
 
+> Limite connue : `hasNoTargets()` ne distingue pas un objectif **saisi** d'un objectif **synchronisé**. Il gèle les deux, alors qu'un objectif venu du broker devrait suivre le broker. Voir `docs/evolutions.md`.
+
+**Les ordres en attente écrivent aussi leurs objectifs** (ajouté le 2026-08-11). `normalizeCtraderOpenOrder()` produit un `tp_price` depuis toujours et `BrokerOrderSyncService` ne persistait que `sl_price` : la construction du JSON vivait en privé dans `BrokerOpenSyncService`, donc le chemin des ordres ne savait pas écrire un objectif. Le take profit d'un ordre était normalisé puis jeté, et la vue Ordres n'avait aucune colonne pour l'afficher.
+
+La construction est extraite dans **`BrokerTargetBuilder::fromSnapshot()`**, partagée par les deux diffs. Un ordre en attente n'a pas de sortie partielle : son objectif couvre sa taille entière.
+
+**Sur le chemin des ordres, `targets` est rafraîchi sans condition** — contrairement aux positions. Il n'y a pas d'objectif saisi à protéger sur un ordre synchronisé : la ligne vient du broker, et son entrée, sa taille et son stop sont déjà repris du snapshot sur ce même chemin. Retirer le take profit sur la plateforme l'efface donc ici aussi, au lieu de laisser un objectif périmé.
+
 **Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.
 
 **Promotion uniquement, jamais de rétrogradation.** Un trade peut aussi avoir été sécurisé à la main via une sortie de type BE ; ramener le stop en arrière sur la plateforme ne doit pas effacer cette décision.

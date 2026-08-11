@@ -983,4 +983,40 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
+## Un objectif synchronisé est gelé comme s'il avait été saisi
+
+**Contexte** : constaté en env de test le 2026-08-11, sur une position cTrader dont le TP venait entièrement de la synchro.
+
+`BrokerOpenSyncService::updateBrokerFields()` n'écrit `targets` que si `hasNoTargets($existing)` — un TP broker ne remplit qu'un emplacement vide, pour ne pas écraser ce que l'utilisateur a tapé. Mais **rien ne distingue les deux origines** : le garde gèle aussi bien un objectif saisi qu'un objectif venu du broker. Une fois le premier écrit, il n'est plus jamais relu, donc déplacer son take profit sur la plateforme ne se voit pas dans le journal.
+
+Le correctif de la taille du 2026-08-11 (objectifs mesurés sur le restant) ne répare donc **que les lignes créées après**, pas celles déjà en base.
+
+Le chemin des ordres en attente n'a pas ce problème : il rafraîchit sans condition, un ordre synchronisé étant intégralement au broker (voir `docs/22-broker-connectors.md`).
+
+**À faire** : marquer l'origine dans le JSON — un `source: 'broker'` sur les entrées écrites par la synchro — et ne rafraîchir que celles-là. **Décision en attente** : les objectifs déjà en base n'ont pas ce marqueur ; les traiter comme « broker » (donc rafraîchis, ce qui répare les lignes existantes) ou comme « utilisateur » (donc gelés) est un choix produit.
+
+**Fichiers** : `api/src/Services/Broker/BrokerOpenSyncService.php`, `api/src/Services/Broker/BrokerTargetBuilder.php`.
+
+**Repéré le** : 2026-08-11. **Priorité** : haute — un objectif faux affiché est pire qu'un objectif absent.
+
+---
+
+## Les diagnostics des workers de synchro partent à la poubelle
+
+**Contexte** : constaté le 2026-08-11 en cherchant pourquoi les TP partiels cTrader ne remontent pas.
+
+`BrokerSyncSupervisorService` capture le stderr de chaque worker dans une chaîne et ne le journalise **que si le worker échoue** (`:74-84`), tronqué à 2000 caractères. Sur un worker qui réussit, tout ce qu'il a écrit est jeté. Vérifié côté Railway : 360 lignes du service `scheduler` sur 6 h, **zéro ligne de worker**.
+
+Partent donc à la poubelle : `take_profit_levels_unresolved` (un diagnostic écrit exprès pour comprendre la forme des ordres cTrader), le budget de requêtes de l'évol #22, et tout avertissement de connecteur sur une passe par ailleurs réussie.
+
+**Conséquence directe** : on ne peut pas diagnostiquer un défaut de synchro en env de test autrement qu'en devinant.
+
+**À faire** : réémettre le stderr d'un worker réussi dans le flux du superviseur, ou faire écrire les workers directement dans le flux du conteneur.
+
+**Fichiers** : `api/src/Services/Broker/BrokerSyncSupervisorService.php`, `api/src/Services/Broker/ProcessPool*`.
+
+**Repéré le** : 2026-08-11. **Priorité** : haute — bloque le diagnostic des TP partiels et de tout le reste.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

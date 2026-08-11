@@ -116,7 +116,7 @@ class BrokerOpenSyncService
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
             'sl_price' => $row['sl_price'] ?? null,
-            'targets' => $this->brokerTargets($row),
+            'targets' => BrokerTargetBuilder::fromSnapshot($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
             'position_type' => PositionType::TRADE->value,
@@ -179,7 +179,7 @@ class BrokerOpenSyncService
         // Objectives are the user's the moment they type one, same contract as
         // setup and notes. A broker take profit only fills an empty slot.
         if ($this->hasNoTargets($existing)) {
-            $brokerTargets = $this->brokerTargets($snapshot);
+            $brokerTargets = BrokerTargetBuilder::fromSnapshot($snapshot);
             if ($brokerTargets !== null) {
                 $positionFields['targets'] = $brokerTargets;
             }
@@ -216,47 +216,6 @@ class BrokerOpenSyncService
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
-    }
-
-    /**
-     * The broker's take profit as a positions.targets payload, or null when
-     * there is none.
-     *
-     * There is no tp_price column — objectives live in that JSON — so the entry
-     * mirrors what the trade form writes (id, label, points, price, size) and a
-     * synced objective renders like any other. `points` is the distance from
-     * entry, which is the unit the form edits in; the size is the whole
-     * position, since a broker take profit closes it outright.
-     */
-    private function brokerTargets(array $row): ?string
-    {
-        // A connector that resolves a staged exit plan hands over `targets`,
-        // one entry per level with its own size — cTrader's server-side partial
-        // take profits, for instance. Connectors reporting a single level fall
-        // back to tp_price, which then covers the whole position.
-        $levels = $row['targets'] ?? [];
-        if (empty($levels)) {
-            $takeProfit = $row['tp_price'] ?? null;
-            if ($takeProfit === null || (float) $takeProfit <= 0) {
-                return null;
-            }
-            $levels = [['price' => (float) $takeProfit, 'size' => (float) $row['size']]];
-        }
-
-        $entryPrice = (float) $row['entry_price'];
-        $targets = [];
-        foreach ($levels as $index => $level) {
-            $rank = $index + 1;
-            $targets[] = [
-                'id' => 'tp' . $rank,
-                'label' => 'TP' . $rank,
-                'points' => round(abs((float) $level['price'] - $entryPrice), 5),
-                'price' => (float) $level['price'],
-                'size' => (float) ($level['size'] ?? $row['size']),
-            ];
-        }
-
-        return json_encode($targets);
     }
 
     /** True when the journal holds no objective for this position yet. */

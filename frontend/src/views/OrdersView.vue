@@ -15,6 +15,7 @@ import Tag from 'primevue/tag'
 import Menu from 'primevue/menu'
 import OrderForm from '@/components/order/OrderForm.vue'
 import { formatPrice, formatSize } from '@/utils/format'
+import { firstTargetPrice } from '@/utils/targets'
 import { useSetupCategory } from '@/utils/setupCategory'
 import EmptyState from '@/components/common/EmptyState.vue'
 import BadgeFilter from '@/components/common/BadgeFilter.vue'
@@ -444,7 +445,7 @@ function statusSeverity(status) {
       </Column>
       <Column field="entry_price" :header="t('positions.entry_price')">
         <template #body="{ data }">
-          {{ Number(data.entry_price).toLocaleString() }}
+          {{ formatPrice(data.entry_price) }}
         </template>
       </Column>
       <Column field="size" :header="t('positions.size')">
@@ -469,6 +470,13 @@ function statusSeverity(status) {
       <Column field="sl_price" :header="t('positions.sl_price')">
         <template #body="{ data }">
           {{ formatPrice(data.sl_price) }}
+        </template>
+      </Column>
+      <!-- The broker's take profit on a pending order: normalized by the
+           connectors, but written nowhere and shown nowhere until 2026-08-11. -->
+      <Column field="targets" :header="t('positions.targets')">
+        <template #body="{ data }">
+          {{ formatPrice(firstTargetPrice(data.targets)) }}
         </template>
       </Column>
       <Column v-if="!isCompact" field="status" :header="t('orders.status')">
@@ -550,10 +558,12 @@ function statusSeverity(status) {
             </div>
           </div>
           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-2">{{ accountName(item.account_id) }}</div>
-          <div class="grid grid-cols-3 gap-x-3 text-sm">
+          <!-- Two by two on a phone, four across from sm: adding the objective
+               to a three-column grid left it alone on a second row. -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-2 text-sm">
             <div>
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.entry_price') }}</div>
-              <div class="font-mono tabular-nums">{{ Number(item.entry_price).toLocaleString() }}</div>
+              <div class="font-mono tabular-nums">{{ formatPrice(item.entry_price) }}</div>
             </div>
             <div>
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.size') }}</div>
@@ -562,6 +572,10 @@ function statusSeverity(status) {
             <div>
               <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.sl_price') }}</div>
               <div class="font-mono tabular-nums">{{ formatPrice(item.sl_price) }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('positions.targets') }}</div>
+              <div class="font-mono tabular-nums">{{ formatPrice(firstTargetPrice(item.targets)) }}</div>
             </div>
           </div>
           <div v-if="parseSetup(item.setup).length > 0" class="mt-2 flex flex-wrap gap-1">
