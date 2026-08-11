@@ -596,45 +596,106 @@ class StatsRepository
         return $stmt->fetchAll();
     }
 
+    /**
+     * Realized P&L per calendar day, each amount on the day it was banked.
+     *
+     * A trade is NOT one amount on one date. Its legs come off on the days they
+     * come off, and the calendar has to show them there. Attributing the whole
+     * of `trades.pnl` to a single date — the close, or failing that the last
+     * partial exit — made the money MOVE: bank 400 at TP1 on Monday, take TP2
+     * on Wednesday, and Monday silently loses its 400 to Wednesday. Already
+     * wrong on real history, on every trade whose plan spans more than a day.
+     *
+     * Two contributions, summed per day:
+     *
+     *   1. every partial exit, on DATE(pe.exited_at);
+     *   2. what the CLOSE realized beyond those legs, on DATE(t.closed_at) —
+     *      `t.pnl` minus the legs already counted.
+     *
+     * The residual covers the two cases the legs cannot: a trade closed without
+     * ever recording a partial (its whole P&L lands on the close), and a total
+     * the broker states above the sum of its legs, swap and commission
+     * included. It is zero for a trade fully described by its legs, which is
+     * the overwhelming majority, and such rows are dropped rather than counted
+     * as a day's activity.
+     *
+     * Two queries rather than one UNION: the filter has to apply to a DIFFERENT
+     * date column on each side — a leg is filtered on its own exit date, not on
+     * its trade's — and a named placeholder cannot appear twice with emulated
+     * prepares off. Merging in PHP also keeps GROUP BY away from the correlated
+     * subquery that ONLY_FULL_GROUP_BY rejects in production.
+     *
+     * @return list<array{date: string, trade_count: int, total_pnl: float}>
+     */
     public function getDailyPnl(int $userId, array $filters = []): array
     {
-        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        // A leg belongs to the day it was taken, so that is what a date range
+        // filters on here.
+        [$legWhere, $legParams] = $this->buildWhereClause($userId, $filters, 'pe.exited_at');
+        $legs = $this->pdo->prepare(
+            "SELECT DATE(pe.exited_at) AS `date`, t.id AS trade_id, pe.pnl AS pnl
+             FROM partial_exits pe
+             INNER JOIN trades t ON t.id = pe.trade_id
+             INNER JOIN positions p ON p.id = t.position_id
+             {$legWhere}"
+        );
+        $legs->execute($legParams);
 
-        // Same realized date as every other aggregate: closed_at for a finished
-        // trade, otherwise the last partial exit. Grouping on closed_at alone
-        // sent whatever was banked at TP1 on a still-running trade into a NULL
-        // bucket the calendar cannot place — while the KPI cards, which filter
-        // on `pnl IS NOT NULL` with no status condition, counted it. Two totals
-        // on the same screen disagreed by exactly that amount.
-        $eff = $this->effectiveDate();
+        [$closeWhere, $closeParams] = $this->buildWhereClause($userId, $filters, 't.closed_at');
+        $residuals = $this->pdo->prepare(
+            "SELECT DATE(t.closed_at) AS `date`, t.id AS trade_id,
+                    t.pnl - COALESCE(
+                        (SELECT SUM(pe.pnl) FROM partial_exits pe WHERE pe.trade_id = t.id), 0
+                    ) AS pnl
+             FROM trades t
+             INNER JOIN positions p ON p.id = t.position_id
+             {$closeWhere} AND t.closed_at IS NOT NULL"
+        );
+        $residuals->execute($closeParams);
 
-        // GROUP BY on the ALIAS, never on the expression again. effectiveDate()
-        // carries a correlated subquery, and under MySQL's ONLY_FULL_GROUP_BY —
-        // on by default, and on in production — the server does not recognise
-        // the SELECT expression and the GROUP BY expression as the same thing
-        // once a subquery is inside. It then sees t.closed_at as a bare
-        // nonaggregated column and refuses the whole query:
-        //
-        //   1055 Expression #1 of SELECT list is not in GROUP BY clause and
-        //   contains nonaggregated column 't.closed_at' …
-        //
-        // Every stats endpoint returned 500 in production while the suite
-        // stayed green: the tests run on MariaDB, which accepts this form even
-        // WITH only_full_group_by set — so no local sql_mode setting can guard
-        // it. Grouping by the alias is what the sibling aggregates already do
-        // (GROUP BY period, GROUP BY bucket) and it sidesteps the matching
-        // entirely.
-        $sql = "SELECT DATE({$eff}) AS `date`,
-                       COUNT(*) AS trade_count,
-                       COALESCE(SUM(t.pnl), 0) AS total_pnl
-                FROM trades t
-                INNER JOIN positions p ON p.id = t.position_id
-                {$where}
-                GROUP BY `date`
-                ORDER BY `date` ASC";
+        $byDate = [];
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll();
+        // A leg always counts, even at exactly zero: an exit taken at
+        // breakeven happened, and the day it happened is a day of activity.
+        foreach ($legs->fetchAll() as $row) {
+            $this->addToDay($byDate, $row);
+        }
+
+        // A residual at zero is not an event, it is an artefact: the trade was
+        // fully described by its legs and they have already been counted.
+        // Recording it would invent a day of activity on the close date.
+        foreach ($residuals->fetchAll() as $row) {
+            if (round((float) $row['pnl'], 2) === 0.0) {
+                continue;
+            }
+            $this->addToDay($byDate, $row);
+        }
+
+        $result = [];
+        foreach ($byDate as $date => $bucket) {
+            $result[] = [
+                'date' => $date,
+                // Trades that realized something that day, counted once even
+                // when several of their legs came off on it.
+                'trade_count' => count($bucket['trades']),
+                'total_pnl' => round($bucket['pnl'], 2),
+            ];
+        }
+
+        usort($result, fn($a, $b) => strcmp($a['date'], $b['date']));
+
+        return $result;
+    }
+
+    /**
+     * @param array<string, array{pnl: float, trades: array<int, true>}> $byDate
+     * @param array{date: string, trade_id: int|string, pnl: string|float} $row
+     */
+    private function addToDay(array &$byDate, array $row): void
+    {
+        $date = (string) $row['date'];
+        $byDate[$date] ??= ['pnl' => 0.0, 'trades' => []];
+        $byDate[$date]['pnl'] += (float) $row['pnl'];
+        $byDate[$date]['trades'][(int) $row['trade_id']] = true;
     }
 }

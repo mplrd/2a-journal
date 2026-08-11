@@ -154,7 +154,9 @@ class BrokerOpenSyncService
         // an exits[] array on still-open positions — partial closes that
         // happened before the position fully closes. Persist them as
         // partial_exits rows so the journal reflects the real activity.
-        $this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []);
+        if ($this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []) > 0) {
+            $this->bankRealizedFromExits((int) $trade['id']);
+        }
     }
 
     /**
@@ -218,7 +220,12 @@ class BrokerOpenSyncService
 
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
-        $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
+        // Only when a leg actually landed: the scheduler ticks every minute and
+        // re-reports the same exits, so an unconditional rollup would be one
+        // write per tick per position, for nothing.
+        if ($this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []) > 0) {
+            $this->bankRealizedFromExits((int) $existing['trade_id']);
+        }
     }
 
     /**
@@ -244,17 +251,19 @@ class BrokerOpenSyncService
      * external_id against what's already attached to the trade. No-op when
      * the partial-exit repository wasn't injected (legacy connectors).
      */
-    private function insertPartialExits(int $tradeId, array $exits): void
+    private function insertPartialExits(int $tradeId, array $exits): int
     {
         if (empty($exits) || $this->partialExitRepo === null) {
-            return;
+            return 0;
         }
+        $inserted = 0;
         $existing = $this->partialExitRepo->existingExternalIdsForTrade($tradeId);
         foreach ($exits as $exit) {
             $externalId = $exit['external_id'] ?? null;
             if ($externalId !== null && isset($existing[$externalId])) {
                 continue;
             }
+            $inserted++;
             $this->partialExitRepo->create([
                 'trade_id' => $tradeId,
                 'exited_at' => $exit['closed_at'] ?? $exit['exited_at'] ?? date('Y-m-d H:i:s'),
@@ -265,6 +274,41 @@ class BrokerOpenSyncService
                 'external_id' => $externalId,
             ]);
         }
+
+        return $inserted;
+    }
+
+    /**
+     * Bank on the trade what its legs have realized so far.
+     *
+     * A partial exit the sync discovered was written to partial_exits and
+     * stopped there: `trades.pnl` stayed NULL until the position eventually
+     * closed. Every aggregate filtering on `pnl IS NOT NULL` — the KPI cards,
+     * the P&L calendar — was therefore blind to money already banked. Seen on
+     * 2026-08-11: a take profit of 406.13 taken at 20:29 appeared nowhere on
+     * that day's figures.
+     *
+     * The manual path has always kept this running total — "realized metrics
+     * are computed on EVERY exit so the running P&L is visible immediately for
+     * swing trades" (TradeService::close). The sync was simply inconsistent
+     * with it.
+     *
+     * Deliberately NOT called when a position closes: there the broker states
+     * the position's own total, which accounts for swap and commission the
+     * individual legs may not carry, and that figure is authoritative.
+     */
+    private function bankRealizedFromExits(int $tradeId): void
+    {
+        if ($this->partialExitRepo === null) {
+            return;
+        }
+
+        $realized = 0.0;
+        foreach ($this->partialExitRepo->findByTradeId($tradeId) as $exit) {
+            $realized += (float) ($exit['pnl'] ?? 0);
+        }
+
+        $this->tradeRepo->update($tradeId, ['pnl' => round($realized, 2)]);
     }
 
     /**

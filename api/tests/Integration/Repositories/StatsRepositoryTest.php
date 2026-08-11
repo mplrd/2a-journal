@@ -1150,10 +1150,13 @@ class StatsRepositoryTest extends TestCase
         }
     }
 
-    public function testGetDailyPnlStillDatesClosedTradesFromTheirClose(): void
+    public function testGetDailyPnlBanksALegOnTheDayItWasTakenNotTheCloseDay(): void
     {
-        // Guard the other side: a closed trade keeps being counted on its close
-        // date even though it also has partial exits on earlier days.
+        // This test asserted the opposite until 2026-08-11: a trade closed on
+        // the 10th counted its whole P&L on the 10th, even though the money had
+        // been banked on the 9th. That is what makes an amount MOVE between
+        // days as later legs come off, and it was already wrong on real
+        // history. The 40 was realized on the 9th; the close added nothing.
         $this->createTradeWithPartial(40.0, [
             'status' => 'CLOSED',
             'closed_at' => '2026-03-10 16:00:00',
@@ -1163,7 +1166,92 @@ class StatsRepositoryTest extends TestCase
         $result = $this->repo->getDailyPnl($this->userId);
 
         $this->assertCount(1, $result);
-        $this->assertSame('2026-03-10', $result[0]['date']);
+        $this->assertSame('2026-03-09', $result[0]['date']);
+        $this->assertEquals(40.0, (float) $result[0]['total_pnl']);
+    }
+
+    public function testGetDailyPnlSplitsATradeAcrossTheDaysItsLegsCameOff(): void
+    {
+        // The case the user saw coming: take a partial today, another tomorrow,
+        // and today must keep what today banked. Attributing the trade's whole
+        // P&L to one date moved the first amount onto the second day.
+        $trade = $this->createTradeWithPartial(400.0, [
+            'status' => 'SECURED',
+            'opened_at' => '2026-04-01 09:00:00',
+            'exited_at' => '2026-04-01 11:00:00',
+        ]);
+        $this->pdo->prepare(
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
+             VALUES (:t, '2026-04-03 15:00:00', 18700.00, 1.0, 'TP', 150.00)"
+        )->execute(['t' => (int) $trade['id']]);
+        // The running total the trade carries, as both paths maintain it.
+        $this->tradeRepo->update((int) $trade['id'], ['pnl' => 550.0]);
+
+        $indexed = [];
+        foreach ($this->repo->getDailyPnl($this->userId) as $row) {
+            $indexed[$row['date']] = $row;
+        }
+
+        $this->assertSame(['2026-04-01', '2026-04-03'], array_keys($indexed));
+        $this->assertEquals(400.0, (float) $indexed['2026-04-01']['total_pnl']);
+        $this->assertEquals(150.0, (float) $indexed['2026-04-03']['total_pnl']);
+    }
+
+    public function testGetDailyPnlPutsOnTheCloseDayWhatTheLegsDoNotCover(): void
+    {
+        // A close can realize more than the recorded legs: the broker states
+        // the position's own total, swap and commission included. That
+        // difference belongs to the close date, and must not be lost.
+        $trade = $this->createTradeWithPartial(100.0, [
+            'status' => 'CLOSED',
+            'closed_at' => '2026-05-20 17:00:00',
+            'exited_at' => '2026-05-19 10:00:00',
+        ]);
+        $this->tradeRepo->update((int) $trade['id'], ['pnl' => 130.0]);
+
+        $indexed = [];
+        foreach ($this->repo->getDailyPnl($this->userId) as $row) {
+            $indexed[$row['date']] = $row;
+        }
+
+        $this->assertEquals(100.0, (float) $indexed['2026-05-19']['total_pnl']);
+        $this->assertEquals(30.0, (float) $indexed['2026-05-20']['total_pnl']);
+    }
+
+    public function testGetDailyPnlCountsATradeClosedWithoutAnyLegOnItsCloseDay(): void
+    {
+        // Not every trade records a partial exit — a plain full close does not.
+        // Its whole P&L belongs to the close date.
+        $this->createClosedTrade(75.0, 'TP', ['closed_at' => '2026-06-02 14:00:00']);
+
+        $indexed = [];
+        foreach ($this->repo->getDailyPnl($this->userId) as $row) {
+            $indexed[$row['date']] = $row;
+        }
+
+        $this->assertArrayHasKey('2026-06-02', $indexed);
+        $this->assertEquals(75.0, (float) $indexed['2026-06-02']['total_pnl']);
+    }
+
+    public function testGetDailyPnlCountsATradeOnceHoweverManyLegsItTookThatDay(): void
+    {
+        // trade_count is "trades that realized something that day", not a count
+        // of exits — two legs on one day is one trade on the calendar.
+        $trade = $this->createTradeWithPartial(60.0, [
+            'status' => 'SECURED',
+            'exited_at' => '2026-07-08 09:30:00',
+        ]);
+        $this->pdo->prepare(
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
+             VALUES (:t, '2026-07-08 14:00:00', 18650.00, 0.5, 'TP', 20.00)"
+        )->execute(['t' => (int) $trade['id']]);
+        $this->tradeRepo->update((int) $trade['id'], ['pnl' => 80.0]);
+
+        $result = $this->repo->getDailyPnl($this->userId);
+
+        $this->assertCount(1, $result);
+        $this->assertSame(1, (int) $result[0]['trade_count']);
+        $this->assertEquals(80.0, (float) $result[0]['total_pnl']);
     }
 
     // ── BE threshold classification ─────────────────────────────
