@@ -5,6 +5,7 @@ namespace App\Core;
 class Response
 {
     private int $statusCode;
+    /** @var array{success: bool, data?: array|null, error?: array, meta?: array} */
     private array $body;
     private array $headers = [];
 
@@ -14,7 +15,16 @@ class Response
         $this->body = $body;
     }
 
-    public static function success(array $data = [], ?array $meta = null, int $status = 200): self
+    /**
+     * `$data` is nullable because "found nothing, and that is a normal answer"
+     * is a real case — asking an account whether it has a broker connection,
+     * for one. Typed as a plain array, that answer raised a TypeError and a
+     * legitimate 200 came out as a 500.
+     *
+     * Null rather than an empty array on purpose: `[]` is truthy in JavaScript,
+     * so a client would read "nothing here" as "here is something".
+     */
+    public static function success(?array $data = [], ?array $meta = null, int $status = 200): self
     {
         $body = ['success' => true, 'data' => $data];
         if ($meta !== null) {

@@ -18,7 +18,11 @@ abstract class Controller
         }
     }
 
-    protected function jsonSuccess(array $data = [], ?array $meta = null, int $status = 200): Response
+    /**
+     * `$data` is nullable so an endpoint whose honest answer is "there is
+     * nothing here" can say so with a 200 — see Response::success().
+     */
+    protected function jsonSuccess(?array $data = [], ?array $meta = null, int $status = 200): Response
     {
         return Response::success($data, $meta, $status);
     }

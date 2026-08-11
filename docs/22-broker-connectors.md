@@ -311,12 +311,22 @@ Pas de clés API partagées au niveau de l'application. Les credentials sont sto
 | POST | `/broker/connections` | Créer connexion (cTrader ou MetaApi) |
 | PUT | `/broker/connections/{id}` | Reconfigurer les identifiants sur place (voir `85-broker-connection-reconfigure.md`) |
 | POST | `/broker/ctrader/accounts` | Lister les comptes cTrader d'un access token (voir `86-ctrader-account-discovery.md`) |
-| GET | `/broker/connections?account_id=X` | Statut connexion |
+| GET | `/broker/connections?account_id=X` | Statut connexion — `data: null` quand le compte n'en a pas (voir plus bas) |
 | POST | `/broker/connections/{id}/sync` | **Demander** une sync. Réponse **202** immédiate, la synchro est exécutée par le scheduler au tick suivant (< 1 min). Voir `89-broker-sync-parallelisation.md`. |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |
 | GET | `/broker/connections/{id}/logs` | Historique syncs |
 
 La création et la reconfiguration renvoient toutes deux `connection_test: { success, error }` : le résultat du `testConnection()` du provider, exécuté **sans bloquer** l'enregistrement.
+
+### « Pas de connexion » est une réponse, pas une erreur (corrigé le 2026-08-11)
+
+`GET /broker/connections?account_id=X` renvoyait **500** dès que le compte n'avait pas encore de connexion — donc pour tout compte avant sa première. `findForAccount()` rend `null` dans ce cas, et `Controller::jsonSuccess()` typait son paramètre `array` : `TypeError`, et un 200 parfaitement légitime sortait en 500.
+
+Le défaut datait du **03/04**, quand les routes broker ont été écrites (le code d'alors passait littéralement `jsonSuccess(null)`), et `Response::success()` est typée `array` depuis le commit initial du 10/02. Il est resté invisible quatre mois parce que le front l'avale : `BrokerConnectionPanel.vue` fait `catch { connection.value = null }`, ce qui affiche « pas de connexion » — l'état correct par accident. Seuls les logs saignaient.
+
+`Response::success()` et `jsonSuccess()` acceptent désormais `?array` et émettent `"data": null`.
+
+**Pas `[]`** : un tableau vide est *truthy* en JavaScript, le panneau croirait à une connexion existante. Absent et vide sont deux réponses différentes, la première seule convient ici.
 
 ## Tables
 
