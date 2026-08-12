@@ -122,7 +122,7 @@ Actuellement les comportements métier sont pilotés par des env vars Railway. P
 **Conservation en env var (non migrés)** :
 - Secrets : `JWT_SECRET`, `BROKER_ENCRYPTION_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`
 - Connectivité : `DB_*`, `CORS_ORIGINS`, `FRONTEND_URL`, `APP_URL`, `METAAPI_BASE_URL`, `CTRADER_WS_*`
-- Environnement : `APP_ENV`, `APP_DEBUG`
+- Environnement : `APP_ENV` (`APP_DEBUG` supprimé à l'étape 92 — voir `docs/92-journalisation-erreurs.md`)
 - Bootstrap : `INITIAL_ADMIN_EMAIL` (action "set-once", pas une feature)
 
 **Pattern de résolution** (implémenté côté backend) :

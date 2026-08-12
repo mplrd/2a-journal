@@ -366,7 +366,8 @@ Variables à renseigner dans Railway (mode Live Stripe) :
 - `STRIPE_PRICE_ID=price_...` (le Price Live recréé)
 - `FRONTEND_URL=https://<url-prod>`
 - `BILLING_GRACE_DAYS=14`
-- `APP_DEBUG=false` (impératif en prod pour éviter de leaker les stack traces)
+
+> `APP_DEBUG` n'existe plus depuis l'étape [92](92-journalisation-erreurs.md). Il ne pilotait qu'une chose : renvoyer le message, le fichier et la ligne de l'exception **au client** sur une 500. Les exceptions non gérées partent désormais dans le log serveur, donc plus rien n'a besoin d'être divulgué pour diagnostiquer — et le réglage qu'on pouvait oublier en position ouverte a été supprimé plutôt que documenté.
 
 ### Rotation / revocation de clés
 

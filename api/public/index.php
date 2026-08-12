@@ -5,6 +5,7 @@ declare(strict_types=1);
 // ── Autoloader ──────────────────────────────────────────────────
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use App\Core\ErrorLogger;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\Router;
@@ -61,9 +62,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     exit;
 }
 
-// ── App config ──────────────────────────────────────────────────
-$appConfig = require __DIR__ . '/../config/app.php';
-
 // ── Routing ─────────────────────────────────────────────────────
 try {
     $router = new Router();
@@ -76,29 +74,16 @@ try {
     $response = Response::error($e->getErrorCode(), $e->getMessageKey(), $e->getField(), $e->getStatusCode());
     $response->send();
 } catch (\Throwable $e) {
-    $data = ['code' => 'INTERNAL_ERROR', 'message_key' => 'error.internal'];
-    if ($appConfig['debug']) {
-        $data['debug'] = [
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ];
-    }
-    $response = Response::error(
-        $data['code'],
-        $data['message_key'],
-        null,
-        500
-    );
-    // For debug mode, we need to build the response manually to include debug info
-    if ($appConfig['debug']) {
-        http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'error' => $data,
-        ], JSON_UNESCAPED_UNICODE);
-    } else {
-        $response->send();
-    }
+    // The cause goes to the server log and nowhere else. It used to go to the
+    // *client* instead, behind APP_DEBUG — the only way to see why a 500
+    // happened, which made a debug switch the price of diagnosing production.
+    // Now that the exception is recorded here, that trade-off is gone: the
+    // response carries no detail, in any environment, with no switch to get
+    // wrong.
+    ErrorLogger::logThrowable('api', 'unhandled_exception', $e, [
+        'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+        'path' => ErrorLogger::redactPath($_SERVER['REQUEST_URI'] ?? null),
+    ]);
+
+    Response::error('INTERNAL_ERROR', 'error.internal', null, 500)->send();
 }
