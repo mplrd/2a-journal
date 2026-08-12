@@ -268,7 +268,18 @@ type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=1|takeProfit=0
 
 Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors tout ce qui reste ouvert.
 
-**Les tailles se mesurent sur le restant, jamais sur l'origine reconstruite** (corrigé le 2026-08-11). Un take profit clôture la position telle qu'elle est *maintenant*. Le calcul partait de `size` — le restant plus toutes les sorties partielles — si bien qu'une position déjà allégée annonçait un objectif plus gros qu'elle. Constaté en env de test : un short GER40 descendu à 1 lot sur 2.5 affichait un TP pour 2.5. Le reliquat laissé au `takeProfit` de la position se calcule donc lui aussi sur le restant, moins ce que prennent les paliers étagés.
+**Les tailles se mesurent sur le restant, jamais sur l'origine reconstruite** (corrigé le 2026-08-11). Un take profit clôture la position telle qu'elle est *maintenant*. Le calcul partait de `size` — le restant plus toutes les sorties partielles — si bien qu'une position déjà allégée annonçait un objectif plus gros qu'elle. Constaté en env de test : un short GER40 descendu à 1 lot sur 2.5 affichait un TP pour 2.5.
+
+**Le plan entier tient dans le restant, pas seulement chaque palier** (corrigé le 2026-08-12). Borner le seul reliquat du `takeProfit` de la position ne suffisait pas : les volumes portés par les ordres de protection étaient repris tels quels, et leur somme pouvait dépasser ce que la position détient encore. Constaté en env de test : un short NAS ouvert à 2.5 lots et allégé à 1.5 annonçait des objectifs pour 0.75 + 1.5 = **2.25**.
+
+Les volumes du broker ne sont donc plus lus comme une autorité mais comme une **demande**, et le volume restant comme le **budget** du plan :
+
+1. les paliers sont servis **du plus proche au plus lointain** — l'ordre dans lequel ils se déclencheraient réellement ;
+2. chacun prend au plus ce que les précédents laissent ;
+3. le `takeProfit` de la position ne demande rien : il prend le reste, ce qui vaut toute la position quand rien n'est étagé ;
+4. un palier auquel il ne reste rien à clôturer est **retiré** — il ne pourrait jamais se déclencher sur du volume détenu.
+
+Sur le cas NAS ci-dessus, le plan devient 0.75 + 0.75 = 1.5, soit exactement ce qui est ouvert. L'invariant tient quelle que soit la forme réelle envoyée par la plateforme, ce qui est précisément le point : la représentation des paliers n'est pas documentée, et la somme observée ne permettait pas de trancher entre « les volumes sont figés à la création » et « le reliquat était calculé sur un restant périmé ».
 
 **Règle : un objectif suit son propriétaire** (revu le 2026-08-11).
 
