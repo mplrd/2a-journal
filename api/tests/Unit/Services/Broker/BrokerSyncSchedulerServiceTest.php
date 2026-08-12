@@ -123,7 +123,12 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $this->connectionRepo->expects($this->once())->method('incrementFailures')->with(2);
         $this->connectionRepo->expects($this->never())->method('markError');
 
-        $result = $scheduler->runDueConnections();
+        // A failure now writes a diagnostic line; swallow it so it does not
+        // land in PHPUnit's own output, where it would read as an error.
+        $result = null;
+        $this->captureErrorLog(function () use ($scheduler, &$result) {
+            $result = $scheduler->runDueConnections();
+        });
 
         $this->assertSame(5, $result['total_active']);
         $this->assertSame(2, $result['processed']);
@@ -151,7 +156,10 @@ class BrokerSyncSchedulerServiceTest extends TestCase
             ->method('markError')
             ->with(7, $this->stringContains('oauth expired'));
 
-        $result = $scheduler->runDueConnections();
+        $result = null;
+        $this->captureErrorLog(function () use ($scheduler, &$result) {
+            $result = $scheduler->runDueConnections();
+        });
 
         $this->assertSame(1, $result['processed']);
         $this->assertSame(0, $result['success']);
@@ -315,5 +323,112 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $result = $scheduler->runDueConnections();
 
         $this->assertSame(42, $result['interval_minutes']);
+    }
+
+    // ── A failed connection has to say why ──────────────────────
+
+    public function testLogsTheCauseOfAConnectionThatFailedToSync(): void
+    {
+        // The defect this closes: the catch below only bumped a counter. The
+        // exception message went nowhere, so a connection failing on every
+        // single pass was invisible in the container stream — observed in the
+        // test environment, where a cTrader connection logged a FAILED sync
+        // every 20 minutes and the reason could only be read from the database.
+        $scheduler = $this->makeScheduler();
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$this->connectionRow(20, 2)]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+        $this->syncService->method('sync')->willThrowException(
+            new RuntimeException('cTrader token refresh failed')
+        );
+
+        $lines = $this->captureErrorLog(fn() => $scheduler->runDueConnections());
+
+        $this->assertCount(1, $lines);
+        $entry = json_decode($lines[0], true);
+
+        $this->assertSame('broker-sync', $entry['job']);
+        $this->assertSame('connection_sync_failed', $entry['event']);
+        $this->assertSame(20, $entry['connection_id']);
+        $this->assertSame('cTrader token refresh failed', $entry['message']);
+        $this->assertSame(RuntimeException::class, $entry['class']);
+    }
+
+    public function testSaysWhetherTheFailureTrippedTheBreaker(): void
+    {
+        // Deactivation is the consequence worth grepping for: it is the moment
+        // a user silently stops being synced.
+        $scheduler = $this->makeScheduler(['max_consecutive_failures' => 3]);
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$this->connectionRow(7, 2, 2)]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+        $this->syncService->method('sync')->willThrowException(new RuntimeException('oauth expired'));
+
+        $lines = $this->captureErrorLog(fn() => $scheduler->runDueConnections());
+        $entry = json_decode($lines[0], true);
+
+        $this->assertTrue($entry['deactivated']);
+        $this->assertSame(3, $entry['consecutive_failures']);
+    }
+
+    public function testWritesNothingWhenEveryConnectionSucceeds(): void
+    {
+        // This runs every minute. A nominal pass must not add a single line.
+        $scheduler = $this->makeScheduler();
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$this->connectionRow(1, 10)]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+        $this->syncService->method('sync')->willReturn([]);
+
+        $lines = $this->captureErrorLog(fn() => $scheduler->runDueConnections());
+
+        $this->assertSame([], $lines);
+    }
+
+    public function testDoesNotLogARateLimitDeferralAsAFailure(): void
+    {
+        // A frequency ban is expected pacing, not a defect: logging it as a
+        // failure every pass would train the reader to ignore the channel.
+        $scheduler = $this->makeScheduler();
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$this->connectionRow(1, 10)]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+        $this->syncService->method('sync')->willThrowException(
+            new BrokerRateLimitException('throttled', 1781512502872, '/openApi/swap/v2/trade/allOrders')
+        );
+
+        $lines = $this->captureErrorLog(fn() => $scheduler->runDueConnections());
+
+        $this->assertSame([], $lines);
+    }
+
+    /**
+     * ErrorLogger writes through error_log(). Point it at a file for the
+     * duration of the call and read back what landed, stripping the
+     * "[date UTC] " prefix error_log() adds when the sink is a file (it does
+     * not when the sink is stderr, which is production) and the trailing \r
+     * left by Windows line endings.
+     *
+     * @return list<string>
+     */
+    private function captureErrorLog(callable $run): array
+    {
+        $file = tempnam(sys_get_temp_dir(), 'schedulerlog');
+        $previous = ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+
+        $contents = file_get_contents($file) ?: '';
+        unlink($file);
+
+        return array_values(array_map(
+            fn($l) => preg_replace('/^\[[^\]]+\]\s*/', '', rtrim($l, "\r")),
+            array_filter(explode("\n", $contents), fn($l) => trim($l) !== ''),
+        ));
     }
 }

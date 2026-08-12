@@ -858,7 +858,9 @@ Le cache de noms de symboles introduit avec le correctif (`CtraderConnector::$sy
 
 ---
 
-## Les 500 de l'API ne laissent aucune trace
+## ✅ TRAITÉ — Les 500 de l'API ne laissent aucune trace
+
+**Traité le 2026-08-12** — voir [92-journalisation-erreurs.md](92-journalisation-erreurs.md). `App\Core\ErrorLogger` écrit une ligne JSON sur stderr, au format de `BrokerLogger`, branchée sur `index.php` **et** sur le `catch (Throwable)` de `BrokerSyncSchedulerService` — ce second trou masquait un échec de synchro qui se répétait toutes les 20 minutes en env de test. La trace est reconstruite à la main pour ne jamais porter les arguments d'appel, et le chemin est assaini (le jeton du webhook TradingView voyage dans l'URL). **`APP_DEBUG` a été supprimé dans la foulée** : il n'existait que pour renvoyer la cause au client, ce dont on n'a plus besoin. Entrée conservée pour l'historique.
 
 **Contexte** : découvert le 2026-08-09 pendant le diagnostic ci-dessus.
 
