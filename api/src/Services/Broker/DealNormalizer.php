@@ -195,7 +195,7 @@ class DealNormalizer
             'size' => $size,
             'remaining_size' => round($remaining, 5),
             'exits' => $exits,
-            'targets' => $this->ctraderTargets($position, $size),
+            'targets' => $this->ctraderTargets($position, round($remaining, 5)),
             'sl_price' => isset($position['stopLoss']) ? (float) $position['stopLoss'] : null,
             'tp_price' => isset($position['takeProfit']) ? (float) $position['takeProfit'] : null,
             'opened_at' => $this->msTimestampToDatetime((int) ($trade['openTimestamp'] ?? 0)),
@@ -219,41 +219,67 @@ class DealNormalizer
      * takes profit above its entry, a short below it, so "nearest first" is
      * ascending in one case and descending in the other.
      *
+     * Sizes are measured against what is still OPEN, never against the rebuilt
+     * original: a take profit closes the position as it stands now. Using the
+     * original made a position already trimmed to 1 lot advertise an objective
+     * for the 2.5 it once was.
+     *
+     * That bound is enforced across the whole plan, not level by level. The
+     * volumes carried by the protection orders are read as what each step
+     * REQUESTS, and the position's remaining volume is what the plan has to
+     * spend: levels are served nearest first — the order they would actually
+     * fill — each taking at most what the earlier ones leave, and one with
+     * nothing left to close is dropped. Trusting the volumes as reported had a
+     * NAS short down to 1.5 lots advertise objectives for 2.25 (2026-08-12).
+     *
+     * @param  float $remainingSize Volume still open, not the rebuilt original.
      * @return list<array{price: float, size: float}>
      */
-    private function ctraderTargets(array $position, float $positionSize): array
+    private function ctraderTargets(array $position, float $remainingSize): array
     {
         $entry = (float) ($position['price'] ?? 0);
 
-        $targets = [];
-        $stagedSize = 0.0;
+        $levels = [];
         foreach ($position['takeProfitOrders'] ?? [] as $order) {
             $price = (float) ($order['price'] ?? 0);
             if ($price <= 0) {
                 continue;
             }
-            $size = round($this->ctraderVolumeToLots($order['volume'] ?? 0, $position['lotSize'] ?? null), 5);
-            $targets[(string) $price] = ['price' => $price, 'size' => $size];
-            $stagedSize += $size;
+            $levels[(string) $price] = [
+                'price' => $price,
+                'size' => round($this->ctraderVolumeToLots($order['volume'] ?? 0, $position['lotSize'] ?? null), 5),
+            ];
         }
 
         // The position's own takeProfit is NOT merely a fallback: when levels
         // are staged it is the LAST of them, the one closing whatever the
         // earlier steps leave behind. Treating it as an either/or reported a
         // single objective on a position that had several. It is skipped when a
-        // staged order already sits at that price, and otherwise carries the
-        // leftover size — the whole position when nothing else is staged.
+        // staged order already sits at that price, and asks for no volume of
+        // its own — a null size means "whatever is left", which is the whole
+        // position when nothing else is staged.
         $own = $position['takeProfit'] ?? null;
-        if ($own !== null && (float) $own > 0 && !isset($targets[(string) (float) $own])) {
-            $leftover = round($positionSize - $stagedSize, 5);
-            $targets[(string) (float) $own] = [
-                'price' => (float) $own,
-                'size' => $leftover > 0 ? $leftover : $positionSize,
-            ];
+        if ($own !== null && (float) $own > 0 && !isset($levels[(string) (float) $own])) {
+            $levels[(string) (float) $own] = ['price' => (float) $own, 'size' => null];
         }
 
-        $targets = array_values($targets);
-        usort($targets, fn($a, $b) => abs($a['price'] - $entry) <=> abs($b['price'] - $entry));
+        $levels = array_values($levels);
+        usort($levels, fn($a, $b) => abs($a['price'] - $entry) <=> abs($b['price'] - $entry));
+
+        $budget = round($remainingSize, 5);
+        $targets = [];
+        foreach ($levels as $level) {
+            if ($budget <= 0) {
+                break;
+            }
+            $size = $level['size'] === null ? $budget : min($level['size'], $budget);
+            $size = round($size, 5);
+            if ($size <= 0) {
+                continue;
+            }
+            $targets[] = ['price' => $level['price'], 'size' => $size];
+            $budget = round($budget - $size, 5);
+        }
 
         return $targets;
     }

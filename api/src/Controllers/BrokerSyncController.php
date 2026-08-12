@@ -69,6 +69,21 @@ class BrokerSyncController extends Controller
     }
 
     /**
+     * The app credentials the user already has stored, per provider — what the
+     * connect dialog needs before any connection exists on this account.
+     *
+     * A second cTrader connection then opens with the four app credentials
+     * already filled and folded away, leaving only the account to pick. Secret
+     * values never cross: each comes back as a set/unset flag.
+     */
+    public function sharedCredentials(Request $request): Response
+    {
+        return $this->jsonSuccess(
+            $this->connectionService->sharedCredentialsForUser($request->getAttribute('user_id')),
+        );
+    }
+
+    /**
      * Get connection for an account, or every connection of the user.
      */
     public function connections(Request $request): Response

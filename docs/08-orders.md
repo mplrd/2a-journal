@@ -129,6 +129,37 @@ Chaque transition de statut est enregistrée dans `status_history` (entity_type 
 - Filtres : compte, statut
 - Actions par ligne : exécuter (si PENDING), annuler (si PENDING), supprimer
 
+#### Un stop absent s'affiche `-`, pas `0` (corrigé le 2026-08-11)
+
+`sl_price` est nullable : un ordre peut être posé sans stop. La vue rendait
+`Number(data.sl_price).toLocaleString()`, or `Number(null)` vaut **0** en
+JavaScript — un ordre sans stop annonçait donc **un stop à 0**. Sur un champ de
+risque, la lecture est trompeuse et dangereuse.
+
+Les deux emplacements (colonne du tableau et carte compacte) passent par
+`formatPrice()` de `@/utils/format`, qui suit la convention déjà posée par
+`formatSize()` : `null`, `''` et non-numérique donnent `-`. Un prix que l'API
+envoie réellement à 0 s'affiche toujours `0` — absent et nul sont deux choses
+différentes.
+
+#### Colonne « Objectifs » (ajoutée le 2026-08-11)
+
+Le take profit d'un ordre en attente n'était **ni stocké ni affiché**. Les
+connecteurs le normalisaient bien (`DealNormalizer::normalizeCtraderOpenOrder`
+produit un `tp_price`), mais `BrokerOrderSyncService` ne persistait que
+`sl_price` : seul le chemin des positions ouvertes savait écrire
+`positions.targets`. La donnée était donc jetée à chaque synchro, et la vue
+n'avait aucune colonne pour la montrer.
+
+Le tableau et la carte compacte affichent désormais le prix de l'objectif le
+plus proche, via `firstTargetPrice()` de `@/utils/targets` — qui accepte la
+colonne JSON en chaîne comme en tableau déjà parsé, et rend `null` (donc `-`)
+plutôt que `0` quand il n'y a pas d'objectif. Clé i18n `positions.targets`,
+déjà présente en fr et en.
+
+La carte compacte passe de 3 à 4 champs : `grid-cols-2 sm:grid-cols-4`, pour
+que le quatrième ne se retrouve pas seul sur une deuxième ligne.
+
 ### Composant OrderForm
 
 - Dialog PrimeVue pour création uniquement

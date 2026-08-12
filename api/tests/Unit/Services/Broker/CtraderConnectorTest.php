@@ -251,6 +251,98 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame(1.0, $targets[1]['size']);
     }
 
+    public function testFetchOpenPositionsReadsPartialTakeProfitsStagedAsStopLossTakeProfitOrders(): void
+    {
+        // The shape a real cTrader account actually sends, captured from the
+        // test environment on 2026-08-11 once the worker diagnostics reached
+        // the logs:
+        //
+        //   type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=0|takeProfit=0
+        //   type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=1|takeProfit=0
+        //
+        // A staged partial take profit is NOT a LIMIT order: it is a
+        // STOP_LOSS_TAKE_PROFIT (ProtoOAOrderType = 4), and it carries its
+        // trigger in limitPrice — never in takeProfit, which is absent. The
+        // level reader keyed on the order type and only accepted limitPrice
+        // from a LIMIT (type 2), so every one of these fell through to a
+        // takeProfit field that does not exist and was dropped. The user saw a
+        // single objective, which was in fact the LAST level of their plan.
+        //
+        // The proto comments limitPrice as "valid only for LIMIT orders". The
+        // platform says otherwise, and the platform is what we read.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        'orderId' => 900, 'positionId' => 331, 'orderType' => 4,
+                        'closingOrder' => true, 'limitPrice' => 26600.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 100, 'tradeSide' => 'SELL'],
+                    ],
+                    [
+                        // Same type, and this one also protects: the stop rides
+                        // along on the same order. limitPrice is still the
+                        // objective, stopPrice is not.
+                        'orderId' => 901, 'positionId' => 331, 'orderType' => 4,
+                        'closingOrder' => true, 'limitPrice' => 26450.0, 'stopPrice' => 26200.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 150, 'tradeSide' => 'SELL'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $targets = $result['positions'][0]['targets'];
+        $this->assertCount(2, $targets);
+        $this->assertSame(26450.0, $targets[0]['price']);
+        $this->assertSame(1.5, $targets[0]['size']);
+        $this->assertSame(26600.0, $targets[1]['price']);
+        $this->assertSame(1.0, $targets[1]['size']);
+    }
+
+    public function testFetchOpenPositionsStillIgnoresAProtectiveOrderThatOnlyStops(): void
+    {
+        // The counterpart, with the numeric order type the platform really
+        // sends: an order carrying a stop and no objective is not a level.
+        // Reading its stopPrice as a take profit would invent an objective
+        // below the entry of a long.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, [
+                'position' => [[
+                    'positionId' => 331,
+                    'price' => 26386.34,
+                    'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'BUY', 'openTimestamp' => 1785907740000],
+                ]],
+                'order' => [
+                    [
+                        'orderId' => 902, 'positionId' => 331, 'orderType' => 4,
+                        'closingOrder' => true, 'stopPrice' => 26200.0,
+                        'tradeData' => ['symbolId' => 5, 'volume' => 250, 'tradeSide' => 'SELL'],
+                    ],
+                ],
+            ]),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GER40.cash']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 100]]]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $result = $connector->fetchOpenPositions(['ctid_trader_account_id' => 1, 'access_token' => 'tok']);
+
+        $this->assertSame([], $result['positions'][0]['targets']);
+    }
+
     public function testFetchOpenPositionsCollectsProtectiveOrdersCarryingATakeProfit(): void
     {
         // cTrader stages up to five take profit levels per position, each with

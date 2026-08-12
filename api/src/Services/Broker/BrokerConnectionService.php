@@ -22,12 +22,17 @@ use App\Repositories\BrokerConnectionRepository;
  * updateCredentials() therefore edits in place: same row, same id, same
  * cursor, same logs — only the credentials change, and the status is reset so
  * the connection can sync again.
+ *
+ * Credentials themselves live in two places since docs/91: what the provider
+ * declares `shared` belongs to the user and is stored once, the rest belongs to
+ * the connection. BrokerCredentialStore is the only thing that knows it — every
+ * method here handles one flat credentials array, as before.
  */
 class BrokerConnectionService
 {
     public function __construct(
         private BrokerConnectionRepository $connectionRepo,
-        private CredentialEncryptionService $crypto,
+        private BrokerCredentialStore $credentials,
         private BrokerCredentialMapper $mapper,
         private ConnectorRegistry $connectors,
     ) {}
@@ -47,9 +52,15 @@ class BrokerConnectionService
             throw new ValidationException('broker.error.already_connected', 'account_id');
         }
 
-        $credentials = $this->mapper->build($provider, $body);
+        // merge() rather than build(): the user's app credentials for this
+        // provider may already be stored, in which case the dialog sends only
+        // the account and the rest falls back to what is shared. A provider
+        // that shares nothing gets an empty base, which makes this exactly the
+        // build() it used to be — including the required-field errors.
+        $shared = $this->credentials->sharedFor($userId, $provider);
+        $credentials = $this->mapper->merge($provider, $shared, $body);
         $this->assertBrokerAccountFree($userId, $provider, $credentials);
-        $encrypted = $this->crypto->encrypt($credentials);
+        $encrypted = $this->credentials->store($userId, $provider, $credentials);
 
         $connection = $this->connectionRepo->create([
             'user_id' => $userId,
@@ -61,7 +72,7 @@ class BrokerConnectionService
         ]);
 
         return [
-            'connection' => $this->present($connection, $credentials),
+            'connection' => $this->present($connection, $credentials, $this->sharedCount($userId, $provider)),
             'connection_test' => $this->testCredentials($provider, $credentials),
         ];
     }
@@ -84,10 +95,13 @@ class BrokerConnectionService
             throw new ValidationException('broker.error.no_credential_change', 'credentials');
         }
 
-        $existing = $this->decryptOrEmpty($connection);
+        $existing = $this->credentials->forConnection($connection);
         $credentials = $this->mapper->merge($provider, $existing, $body);
         $this->assertBrokerAccountFree($userId, $provider, $credentials, $connectionId);
-        $encrypted = $this->crypto->encrypt($credentials);
+        // Editing a shared credential here rewrites it for every connection of
+        // this provider — by design, since that is what makes one secret
+        // rotation enough. The dialog says how many, from credentials_shared_count.
+        $encrypted = $this->credentials->store($userId, $provider, $credentials);
 
         // Reset the failure state in the same write: fresh credentials mean the
         // previous error no longer describes the connection, and leaving it on
@@ -101,7 +115,11 @@ class BrokerConnectionService
         $this->connectionRepo->resetFailures($connectionId);
 
         return [
-            'connection' => $this->present($this->connectionRepo->findById($connectionId), $credentials),
+            'connection' => $this->present(
+                $this->connectionRepo->findById($connectionId),
+                $credentials,
+                $this->sharedCount($userId, $provider),
+            ),
             'connection_test' => $this->testCredentials($provider, $credentials),
         ];
     }
@@ -147,7 +165,10 @@ class BrokerConnectionService
                 continue;
             }
 
-            $theirs = (string) ($this->decryptOrEmpty($other)[$identity['key']] ?? '');
+            // ownOf(), not forConnection(): an identity credential is never
+            // shared by definition, so the connection row alone answers this —
+            // and reading it avoids one shared-row lookup per connection.
+            $theirs = (string) ($this->credentials->ownOf($other)[$identity['key']] ?? '');
             if ($theirs !== '' && $theirs === $mine) {
                 throw new ValidationException(
                     'broker.error.broker_account_already_connected',
@@ -169,16 +190,63 @@ class BrokerConnectionService
             return null;
         }
 
-        return $this->present($connection, $this->decryptOrEmpty($connection));
+        return $this->present(
+            $connection,
+            $this->credentials->forConnection($connection),
+            $this->sharedCount($userId, $connection['provider']),
+        );
     }
 
     /** @return array<int, array> */
     public function findAllForUser(int $userId): array
     {
+        $connections = $this->connectionRepo->findAllByUserId($userId);
+        // Every connection of the user is already in hand, so the per-provider
+        // tally costs nothing — no need to ask the database once per row.
+        $tally = array_count_values(array_column($connections, 'provider'));
+
         return array_map(
-            fn(array $c) => $this->present($c, $this->decryptOrEmpty($c)),
-            $this->connectionRepo->findAllByUserId($userId),
+            fn(array $c) => $this->present(
+                $c,
+                $this->credentials->forConnection($c),
+                $tally[$c['provider']] ?? 0,
+            ),
+            $connections,
         );
+    }
+
+    /**
+     * The app credentials this user already has stored, per provider, as the
+     * client may see them — no secret values, just the non-secret identifiers
+     * and a set/unset flag each, plus how many connections they feed.
+     *
+     * This is what lets the *create* dialog arrive prefilled: on a second
+     * cTrader connection there is nothing to type but the account. Providers
+     * that share nothing never appear here.
+     *
+     * @return array<string, array>
+     */
+    public function sharedCredentialsForUser(int $userId): array
+    {
+        $tally = array_count_values(
+            array_column($this->connectionRepo->findAllByUserId($userId), 'provider'),
+        );
+
+        $shared = [];
+
+        foreach ($this->credentials->allSharedFor($userId) as $provider => $credentials) {
+            $fields = $this->mapper->sharedFields($provider);
+            if ($fields === []) {
+                continue;
+            }
+
+            $shared[$provider] = $this->mapper->publicView($provider, $credentials) + [
+                'credentials_shared_fields' => $fields,
+                'credentials_shared_count' => $tally[$provider] ?? 0,
+            ];
+        }
+
+        return $shared;
     }
 
     /**
@@ -201,10 +269,15 @@ class BrokerConnectionService
      */
     public function discoverCtraderAccounts(int $userId, array $body): array
     {
-        $existing = [];
         if (!empty($body['connection_id'])) {
             $connection = $this->requireOwnedConnection((int) $body['connection_id'], $userId);
-            $existing = $this->decryptOrEmpty($connection);
+            $existing = $this->credentials->forConnection($connection);
+        } else {
+            // No connection yet — but the app credentials may already be
+            // stored from an earlier one. Without this fallback the picker
+            // would be the single place a second connection still forced the
+            // user to retype a secret.
+            $existing = $this->credentials->sharedFor($userId, BrokerProvider::CTRADER->value);
         }
 
         // The account list is keyed by access token, not by account, so the
@@ -235,9 +308,30 @@ class BrokerConnectionService
         }
     }
 
+    /**
+     * Delete a connection, and the provider's shared app credentials with it
+     * once it was the last one.
+     *
+     * Without that second step, disconnecting every cTrader account would still
+     * leave a usable access token and client secret in the database, for a
+     * broker the user believes they have unplugged. A connection that remains
+     * keeps the row: it is still using it.
+     */
     public function deleteConnection(int $connectionId): void
     {
+        $connection = $this->connectionRepo->findById($connectionId);
+        if (!$connection) {
+            return;
+        }
+
         $this->connectionRepo->delete($connectionId);
+
+        $userId = (int) $connection['user_id'];
+        $provider = $connection['provider'];
+
+        if ($this->connectionRepo->countByUserAndProvider($userId, $provider) === 0) {
+            $this->credentials->forget($userId, $provider);
+        }
     }
 
     public function requireOwnedConnection(int $connectionId, int $userId): array
@@ -319,9 +413,24 @@ class BrokerConnectionService
     }
 
     /**
-     * Strip the ciphertext and attach the safe credential view.
+     * How many of the user's connections draw on the same shared credentials.
+     * Revoked ones are counted: they still read that row, so an edit still
+     * reaches them, and the banner is about what an edit changes.
      */
-    private function present(array $connection, array $credentials): array
+    private function sharedCount(int $userId, string $provider): int
+    {
+        return $this->connectionRepo->countByUserAndProvider($userId, $provider);
+    }
+
+    /**
+     * Strip the ciphertext and attach the safe credential view.
+     *
+     * `credentials_shared_fields` and `credentials_shared_count` are what let
+     * the dialog fold the shared block away and warn before an edit: without
+     * naming the count, changing a token from the second connection would
+     * silently rewrite the first — the one trap sharing introduces.
+     */
+    private function present(array $connection, array $credentials, int $sharedCount): array
     {
         unset($connection['credentials_encrypted'], $connection['credentials_iv']);
 
@@ -332,26 +441,13 @@ class BrokerConnectionService
             $connection['last_sync_error'] = $this->sanitizeTestError($connection['last_sync_error']);
         }
 
-        return $connection + $this->mapper->publicView($connection['provider'], $credentials);
-    }
+        $sharedFields = $this->mapper->sharedFields($connection['provider']);
 
-    /**
-     * Decrypt a connection's credentials, tolerating failure.
-     *
-     * A row encrypted under a rotated BROKER_ENCRYPTION_KEY must stay listable
-     * — and therefore reconfigurable or deletable — rather than fataling the
-     * whole accounts screen. An empty array simply means "nothing to prefill,
-     * every field must be retyped", which merge() then enforces.
-     */
-    private function decryptOrEmpty(array $connection): array
-    {
-        try {
-            return $this->crypto->decrypt(
-                $connection['credentials_encrypted'],
-                $connection['credentials_iv'],
-            );
-        } catch (\Throwable) {
-            return [];
-        }
+        return $connection
+            + $this->mapper->publicView($connection['provider'], $credentials)
+            + [
+                'credentials_shared_fields' => $sharedFields,
+                'credentials_shared_count' => $sharedFields === [] ? 0 : $sharedCount,
+            ];
     }
 }

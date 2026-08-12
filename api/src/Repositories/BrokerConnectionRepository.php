@@ -227,6 +227,24 @@ class BrokerConnectionRepository
         )->execute(['id' => $id]);
     }
 
+    /**
+     * How many connections this user holds on a provider — every status
+     * included.
+     *
+     * Backs two things: the "these credentials feed N connections" banner, and
+     * the decision to forget the shared app credentials once the count reaches
+     * zero. A REVOKED connection counts because it still reads that row.
+     */
+    public function countByUserAndProvider(int $userId, string $provider): int
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM broker_connections WHERE user_id = :user_id AND provider = :provider"
+        );
+        $stmt->execute(['user_id' => $userId, 'provider' => $provider]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
     public function countActive(): int
     {
         $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM broker_connections WHERE status = :status");

@@ -5,6 +5,7 @@ namespace App\Services\Broker;
 use App\Enums\BrokerProvider;
 use App\Enums\Direction;
 use App\Enums\ExitType;
+use App\Enums\PositionType;
 use App\Enums\TradeStatus;
 use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
@@ -115,13 +116,13 @@ class BrokerOpenSyncService
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
             'sl_price' => $row['sl_price'] ?? null,
-            'targets' => $this->brokerTargets($row),
+            'targets' => BrokerTargetBuilder::fromSnapshot($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
-            'position_type' => 'TRADE',
+            'position_type' => PositionType::TRADE->value,
         ]);
 
-        $trade = $this->tradeRepo->create([
+        $tradeFields = [
             'position_id' => $position['id'],
             // BingX /user/positions doesn't expose an open time on the live
             // snapshot, so normalizeBingxOpenPosition returns null and we
@@ -134,13 +135,29 @@ class BrokerOpenSyncService
             'opened_at' => $row['opened_at'] ?? date('Y-m-d H:i:s'),
             'remaining_size' => $row['remaining_size'] ?? $row['size'],
             'status' => TradeStatus::OPEN->value,
-        ]);
+        ];
+
+        // A position can already be protected the first time we see it, and
+        // the same rule has to apply here as on the update path. Left out, the
+        // status depended on something arbitrary: a position the closed-deals
+        // import had materialised earlier in the same run was found existing
+        // and promoted, one arriving only in the open snapshot was filed OPEN
+        // and stayed wrong until the next pass.
+        if ($this->stopProtectsEntry($row, (float) ($row['entry_price'] ?? 0))) {
+            $tradeFields['status'] = TradeStatus::SECURED->value;
+            $tradeFields['be_reached'] = 1;
+        }
+
+        $trade = $this->tradeRepo->create($tradeFields);
 
         // BingX (and any connector that reconstructs from fills) may emit
         // an exits[] array on still-open positions — partial closes that
         // happened before the position fully closes. Persist them as
         // partial_exits rows so the journal reflects the real activity.
+        // A position discovered here carries no sl_points: nobody has typed a
+        // risk on it yet, so its risk/reward stays unknown until they do.
         $this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []);
+        $this->bankRealizedFromExits((int) $trade['id'], $row, null, []);
     }
 
     /**
@@ -163,12 +180,15 @@ class BrokerOpenSyncService
         ];
 
         // Objectives are the user's the moment they type one, same contract as
-        // setup and notes. A broker take profit only fills an empty slot.
-        if ($this->hasNoTargets($existing)) {
-            $brokerTargets = $this->brokerTargets($snapshot);
-            if ($brokerTargets !== null) {
-                $positionFields['targets'] = $brokerTargets;
-            }
+        // setup and notes — but an objective the SYNC wrote belongs to the
+        // broker and has to follow it. The old rule ("only fill an empty
+        // slot") could not tell the two apart, so it froze both: a take profit
+        // moved on the platform never reached the journal, and one removed
+        // there stayed on file for good. Ownership is now carried in the JSON
+        // itself, and a broker-owned set is rewritten from the snapshot —
+        // including to null when the broker no longer has an objective.
+        if (BrokerTargetBuilder::isBrokerOwned($existing['targets'] ?? null)) {
+            $positionFields['targets'] = BrokerTargetBuilder::fromSnapshot($snapshot);
         }
 
         $this->positionRepo->update((int) $existing['position_id'], $positionFields);
@@ -201,60 +221,17 @@ class BrokerOpenSyncService
 
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
+        // Reconciled on every pass, not only on the one that inserts a leg —
+        // see bankRealizedFromExits for why that gate had to go. The snapshot
+        // is authoritative for entry price and size; sl_points is the user's
+        // and only the row holds it.
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
-    }
-
-    /**
-     * The broker's take profit as a positions.targets payload, or null when
-     * there is none.
-     *
-     * There is no tp_price column — objectives live in that JSON — so the entry
-     * mirrors what the trade form writes (id, label, points, price, size) and a
-     * synced objective renders like any other. `points` is the distance from
-     * entry, which is the unit the form edits in; the size is the whole
-     * position, since a broker take profit closes it outright.
-     */
-    private function brokerTargets(array $row): ?string
-    {
-        // A connector that resolves a staged exit plan hands over `targets`,
-        // one entry per level with its own size — cTrader's server-side partial
-        // take profits, for instance. Connectors reporting a single level fall
-        // back to tp_price, which then covers the whole position.
-        $levels = $row['targets'] ?? [];
-        if (empty($levels)) {
-            $takeProfit = $row['tp_price'] ?? null;
-            if ($takeProfit === null || (float) $takeProfit <= 0) {
-                return null;
-            }
-            $levels = [['price' => (float) $takeProfit, 'size' => (float) $row['size']]];
-        }
-
-        $entryPrice = (float) $row['entry_price'];
-        $targets = [];
-        foreach ($levels as $index => $level) {
-            $rank = $index + 1;
-            $targets[] = [
-                'id' => 'tp' . $rank,
-                'label' => 'TP' . $rank,
-                'points' => round(abs((float) $level['price'] - $entryPrice), 5),
-                'price' => (float) $level['price'],
-                'size' => (float) ($level['size'] ?? $row['size']),
-            ];
-        }
-
-        return json_encode($targets);
-    }
-
-    /** True when the journal holds no objective for this position yet. */
-    private function hasNoTargets(array $existing): bool
-    {
-        $stored = $existing['targets'] ?? null;
-        if ($stored === null || $stored === '') {
-            return true;
-        }
-        $decoded = is_array($stored) ? $stored : json_decode((string) $stored, true);
-
-        return empty($decoded);
+        $this->bankRealizedFromExits(
+            (int) $existing['trade_id'],
+            $snapshot,
+            isset($existing['sl_points']) ? (float) $existing['sl_points'] : null,
+            $existing,
+        );
     }
 
     /**
@@ -280,17 +257,19 @@ class BrokerOpenSyncService
      * external_id against what's already attached to the trade. No-op when
      * the partial-exit repository wasn't injected (legacy connectors).
      */
-    private function insertPartialExits(int $tradeId, array $exits): void
+    private function insertPartialExits(int $tradeId, array $exits): int
     {
         if (empty($exits) || $this->partialExitRepo === null) {
-            return;
+            return 0;
         }
+        $inserted = 0;
         $existing = $this->partialExitRepo->existingExternalIdsForTrade($tradeId);
         foreach ($exits as $exit) {
             $externalId = $exit['external_id'] ?? null;
             if ($externalId !== null && isset($existing[$externalId])) {
                 continue;
             }
+            $inserted++;
             $this->partialExitRepo->create([
                 'trade_id' => $tradeId,
                 'exited_at' => $exit['closed_at'] ?? $exit['exited_at'] ?? date('Y-m-d H:i:s'),
@@ -301,6 +280,104 @@ class BrokerOpenSyncService
                 'external_id' => $externalId,
             ]);
         }
+
+        return $inserted;
+    }
+
+    /**
+     * Bank on the trade what its legs have realized so far.
+     *
+     * A partial exit the sync discovered was written to partial_exits and
+     * stopped there: `trades.pnl` stayed NULL until the position eventually
+     * closed. Every aggregate filtering on `pnl IS NOT NULL` — the KPI cards,
+     * the P&L calendar — was therefore blind to money already banked. Seen on
+     * 2026-08-11: a take profit of 406.13 taken at 20:29 appeared nowhere on
+     * that day's figures.
+     *
+     * The manual path has always kept this running total — "realized metrics
+     * are computed on EVERY exit so the running P&L is visible immediately for
+     * swing trades" (TradeService::close). The sync was simply inconsistent
+     * with it.
+     *
+     * Runs on EVERY pass, not only the one that inserts a leg. Gating it on a
+     * fresh arrival left behind every trade whose legs predated the rollup —
+     * no later pass inserts anything, so nothing ever fires again and `pnl`
+     * stays NULL for good. Trade 10059 sat like that with 406.13 realized and
+     * invisible (2026-08-12). What keeps the scheduler's every-minute tick from
+     * becoming a write per position is the comparison below, not the gate.
+     *
+     * The three figures move together because the statistics read them apart:
+     * win, loss and breakeven are classified on `pnl_percent` alone, so a trade
+     * carrying `pnl` without it counts in the win rate's denominator and in
+     * none of its buckets. Formulas mirror TradeService::calculateRealizedMetrics.
+     *
+     * Deliberately NOT called when a position closes: there the broker states
+     * the position's own total, which accounts for swap and commission the
+     * individual legs may not carry, and that figure is authoritative.
+     *
+     * @param array $context Broker snapshot — entry price and size to measure against.
+     * @param float|null $slPoints Risk per unit, the user's to state; null leaves R:R unknown.
+     * @param array $onFile What the trade already holds, to avoid rewriting it unchanged.
+     */
+    private function bankRealizedFromExits(
+        int $tradeId,
+        array $context,
+        ?float $slPoints,
+        array $onFile,
+    ): void {
+        if ($this->partialExitRepo === null) {
+            return;
+        }
+
+        $exits = $this->partialExitRepo->findByTradeId($tradeId);
+
+        // No leg means nothing realized, and NULL is what says so. A zero would
+        // enrol every untouched open position in the statistics as a breakeven.
+        if ($exits === []) {
+            return;
+        }
+
+        $realized = 0.0;
+        foreach ($exits as $exit) {
+            $realized += (float) ($exit['pnl'] ?? 0);
+        }
+
+        $entrySize = (float) ($context['size'] ?? 0);
+        $entryValue = (float) ($context['entry_price'] ?? 0) * $entrySize;
+        $riskAmount = $entrySize * (float) ($slPoints ?? 0);
+
+        // Rounded to the precision of their columns — DECIMAL(15,2) and two
+        // DECIMAL(8,4) — so a value read back compares equal to the one that
+        // wrote it. Rounding finer than the column would make every tick look
+        // like a change and defeat the comparison below.
+        $metrics = [
+            'pnl' => round($realized, 2),
+            'pnl_percent' => $entryValue > 0 ? round(($realized / $entryValue) * 100, 4) : 0.0,
+            'risk_reward' => $riskAmount > 0 ? round($realized / $riskAmount, 4) : null,
+        ];
+
+        foreach ($metrics as $field => $value) {
+            if ($this->differsFromFile($onFile[$field] ?? null, $value)) {
+                $this->tradeRepo->update($tradeId, $metrics);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Whether a freshly computed figure differs from what the trade holds.
+     *
+     * NULL is a value here, not an absence: a risk/reward is legitimately
+     * unknown while no risk has been typed, and going from unknown to known —
+     * or back — is a change worth writing.
+     */
+    private function differsFromFile(mixed $stored, ?float $computed): bool
+    {
+        if ($stored === null || $computed === null) {
+            return $stored !== $computed;
+        }
+
+        return (float) $stored !== $computed;
     }
 
     /**

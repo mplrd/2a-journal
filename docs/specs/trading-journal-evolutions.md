@@ -138,6 +138,28 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - **Priorité** : **critique** — c'est le seul point du backlog dont la conséquence est la perte d'un compte de trading réel, chez un prop firm.
 - **Statut au 2026-08-09** : le fond et deux garde-fous sur trois sont livrés sur `fix/ctrader-request-budget`, **validés par les tests uniquement**. Rien n'a encore tourné contre un vrai cTrader : le flag broker et les identifiants réels rendent la vérification impossible en local, elle ne peut avoir lieu qu'en env de test. C'est la ligne `sync_request_budget` dans les logs qui permettra de la faire — sans elle, on ne pourrait que relire le code, exactement comme il a fallu le faire pour instruire l'incident.
 
+### 23. Identifiants d'application partagés entre les connexions d'un même provider
+
+- **Déclencheur** : un utilisateur ayant deux comptes cTrader saisit deux fois `client_id`, `client_secret`, `access_token` et `refresh_token`, alors que seul le `ctidTraderAccountId` diffère entre les deux connexions. Constaté le 2026-08-09.
+- **Conséquences aujourd'hui** : double saisie ; une rotation de secret à répercuter manuellement sur chaque connexion ; et un refresh OAuth par connexion là où un seul suffirait — ce dernier point rejoignant directement l'évol #22 (budget de requêtes).
+- **Principe retenu : une configuration portée par le provider, pas un cas particulier cTrader.** Un flag `shared` dans `BrokerCredentialMapper::SPEC`, à côté du flag `identity` déjà en place. Toute la feature en découle, et un provider qui ne déclare rien garde exactement son comportement actuel.
+
+  | Provider | `shared` (niveau utilisateur) | `identity` (niveau connexion) |
+  |---|---|---|
+  | cTrader | `client_id`, `client_secret`, `access_token`, `refresh_token` | `ctid_trader_account_id` |
+  | MetaApi | `api_token` | `metaapi_account_id` |
+  | Ouinex | — | `service_api_key` |
+  | BingX | — | `api_key` |
+
+  Ouinex et BingX n'ont rien à partager : chez eux la clé d'API **est** le compte. Ils traversent le chantier sans changer de comportement — c'est le test de la généricité.
+- **Modèle** : table `broker_credentials` (`user_id`, `provider`, `credentials_encrypted`, `credentials_iv`), unique sur le couple. `broker_connections` ne garde que son identifiant de compte. La fusion des deux se fait au moment de servir un connecteur, donc `ConnectorInterface` est inchangée.
+- **Migration** : création de la table **puis purge des connexions existantes** — décision prise le 2026-08-09, personne n'utilise le broker en dehors de l'env de test. Conséquence assumée : `sync_logs` est en `ON DELETE CASCADE` sur `broker_connections`, l'historique des passes de synchro part avec. Les trades et positions sont rattachés aux **comptes**, pas aux connexions : ils survivent intégralement. Le curseur de synchro étant perdu, la passe suivante rebalaie l'historique sans réimporter (déduplication sur `external_id`).
+- **UX — tout reste dans la modale de synchro**, décision du 2026-08-09 après arbitrage entre trois options. Le partage est un fait de stockage, il ne doit imposer aucune navigation supplémentaire : à la première connexion on saisit les tokens comme aujourd'hui ; aux suivantes ils arrivent déjà remplis et repliés, et il ne reste que le compte broker à choisir. **Un bandeau doit dire combien de connexions ces identifiants alimentent** — sans lui, modifier un token depuis la connexion n°2 changerait silencieusement la n°1, ce qui est précisément le piège du partage.
+- **Fichiers** : `api/src/Services/Broker/BrokerCredentialMapper.php`, `BrokerConnectionService.php`, `BrokerSyncService.php`, nouvelle migration, `frontend/src/components/broker/`.
+- **Priorité** : moyenne — confort de saisie, mais avec un gain réel sur le budget de requêtes et sur la rotation des secrets.
+- **Statut au 2026-08-10 : livré** (`docs/91-broker-shared-credentials.md`), migration 036 appliquée en local. **Validé par les tests uniquement** — comme tout le domaine broker, le flag et les identifiants réels interdisent la vérification en local.
+- **Découvert en chemin** : le partage du `refresh_token` cTrader créait une course. cTrader fait tourner ce token à chaque usage, donc deux connexions synchronisées dans le même tick de scheduler présentaient le même token, et la seconde échouait sur un token déjà consommé — basculement en `ERROR`, exactement le mode de panne de l'évol #22. Fermé par un saut du refresh quand les identifiants partagés ont moins de 300 s. Ce saut est aussi le premier gain concret de l'évol #22 : un appel de refresh pour tout le provider d'un utilisateur au lieu d'un par connexion, dans le cas concurrent. **Le cas général reste à traiter dans #22** : une connexion isolée qui synchronise toutes les 15 minutes redemande toujours un token à chaque passe, alors que rien n'a expiré.
+
 ## Architecture / UX
 
 ### 19. Widgets autonomes avec chargement indépendant

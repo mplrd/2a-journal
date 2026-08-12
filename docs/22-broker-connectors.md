@@ -241,21 +241,134 @@ Seule `fetchOpenPositions` l'active : `fetchOpenOrders` écarte les ordres de cl
 
 cTrader annonce jusqu'à **cinq** niveaux par position, chacun avec sa quantité ([Trade protections](https://help.ctrader.com/ctrader-web/trading/protections/)).
 
-La collecte est donc volontairement large : un ordre de clôture compte comme niveau dès qu'il expose un prix de TP — `limitPrice` pour un `LIMIT`, `takeProfit` pour un ordre protecteur. Un ordre ne portant qu'un `stopLoss` n'est pas un objectif et reste dehors. Les niveaux sont dédoublonnés par prix, puisque le `takeProfit` de la position en reflète un et que deux ordres peuvent rapporter le même.
+La collecte est donc volontairement large : un ordre de clôture compte comme niveau dès qu'il expose un prix de TP. Les niveaux sont dédoublonnés par prix, puisque le `takeProfit` de la position en reflète un et que deux ordres peuvent rapporter le même.
+
+#### Un palier partiel est un `STOP_LOSS_TAKE_PROFIT`, pas un `LIMIT` (corrigé le 2026-08-11)
+
+La lecture du niveau s'appuyait sur le **type** de l'ordre : `limitPrice` pour un `LIMIT` (type 2), `takeProfit` sinon. Aucun palier n'était jamais trouvé.
+
+Le diagnostic `take_profit_levels_unresolved`, enfin visible une fois les logs des workers réémis, a donné la forme exacte de ce qu'envoie un vrai compte :
+
+```
+type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=0|takeProfit=0
+type=4|boundToPosition=1|closing=1|limitPrice=1|stopPrice=1|takeProfit=0
+```
+
+**Type 4 = `STOP_LOSS_TAKE_PROFIT`** (vérifié sur `OpenApiModelMessages.proto`, qui fait foi). Un palier partiel n'est donc pas un ordre `LIMIT` : c'est un ordre de protection lié à la position, qui porte son déclencheur dans **`limitPrice`** et **aucun champ `takeProfit`**. Le lecteur cherchait l'objectif au seul endroit où il ne se trouve jamais, et l'utilisateur ne voyait qu'un objectif — en réalité le **dernier** palier de son plan, numéroté TP1 faute de concurrents.
+
+`takeProfitLevelOf()` lit désormais les **champs** et non le type : `takeProfit` s'il est là, `limitPrice` sinon. `isLimitOrder()` n'avait plus d'appelant et a été supprimée.
+
+`stopPrice` n'est jamais un objectif, quel que soit le type — la seconde forme ci-dessus est un ordre portant à la fois le palier et sa protection, et lire son stop inventerait un objectif sous l'entrée d'un achat. Un ordre ne portant qu'un stop reste donc dehors.
+
+> Le proto commente `limitPrice` « valid only for LIMIT orders ». La plateforme dit autre chose, et c'est la plateforme qu'on lit.
 
 **Un diagnostic couvre le cas non résolu.** Si une position annonce un `takeProfit` sans qu'aucun niveau ne soit lisible, `reportUnresolvedTakeProfits()` journalise la **forme** des ordres rattachés — types et champs de prix présents, jamais les prix, volumes ou identifiants. Silencieux en nominal. C'est le seul moyen d'apprendre la représentation réelle sans demander une resynchro à l'aveugle.
 
 **Tri par distance à l'entrée**, ce qui couvre les deux sens d'un coup : un long prend ses profits au-dessus de son entrée, un short en dessous — « le plus proche d'abord » est croissant dans un cas, décroissant dans l'autre. Les paliers sont ensuite numérotés TP1..TPn dans cet ordre.
 
-Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors toute la taille.
+Sans aucun ordre étagé, on retombe sur le `takeProfit` de la position, qui couvre alors tout ce qui reste ouvert.
 
-**Règle : un TP broker ne remplit qu'un emplacement vide.** Même contrat que `setup` et `notes` — ce que l'utilisateur a saisi lui appartient. La requête du diff relit donc `targets` pour le vérifier.
+**Les tailles se mesurent sur le restant, jamais sur l'origine reconstruite** (corrigé le 2026-08-11). Un take profit clôture la position telle qu'elle est *maintenant*. Le calcul partait de `size` — le restant plus toutes les sorties partielles — si bien qu'une position déjà allégée annonçait un objectif plus gros qu'elle. Constaté en env de test : un short GER40 descendu à 1 lot sur 2.5 affichait un TP pour 2.5.
+
+**Le plan entier tient dans le restant, pas seulement chaque palier** (corrigé le 2026-08-12). Borner le seul reliquat du `takeProfit` de la position ne suffisait pas : les volumes portés par les ordres de protection étaient repris tels quels, et leur somme pouvait dépasser ce que la position détient encore. Constaté en env de test : un short NAS ouvert à 2.5 lots et allégé à 1.5 annonçait des objectifs pour 0.75 + 1.5 = **2.25**.
+
+Les volumes du broker ne sont donc plus lus comme une autorité mais comme une **demande**, et le volume restant comme le **budget** du plan :
+
+1. les paliers sont servis **du plus proche au plus lointain** — l'ordre dans lequel ils se déclencheraient réellement ;
+2. chacun prend au plus ce que les précédents laissent ;
+3. le `takeProfit` de la position ne demande rien : il prend le reste, ce qui vaut toute la position quand rien n'est étagé ;
+4. un palier auquel il ne reste rien à clôturer est **retiré** — il ne pourrait jamais se déclencher sur du volume détenu.
+
+Sur le cas NAS ci-dessus, le plan devient 0.75 + 0.75 = 1.5, soit exactement ce qui est ouvert. L'invariant tient quelle que soit la forme réelle envoyée par la plateforme, ce qui est précisément le point : la représentation des paliers n'est pas documentée, et la somme observée ne permettait pas de trancher entre « les volumes sont figés à la création » et « le reliquat était calculé sur un restant périmé ».
+
+**Règle : un objectif suit son propriétaire** (revu le 2026-08-11).
+
+La règle d'origine était « un TP broker ne remplit qu'un emplacement vide », par analogie avec `setup` et `notes`. Elle ne distinguait pas un objectif **saisi** d'un objectif **synchronisé** et gelait les deux : une fois le premier niveau écrit, `targets` n'était plus jamais relu. Déplacer un take profit sur la plateforme n'atteignait donc jamais le journal, et en retirer un y laissait l'ancien niveau indéfiniment.
+
+L'origine est désormais portée par le JSON lui-même. Chaque niveau écrit par la synchro reçoit `"source": "broker"` (`BrokerTargetBuilder::SOURCE`), et `isBrokerOwned()` décide :
+
+| État de `positions.targets` | La synchro réécrit ? |
+|---|---|
+| Vide ou `[]` | Oui |
+| Tous les niveaux marqués `broker` | Oui — **y compris à `null`** si le broker n'a plus d'objectif |
+| Au moins un niveau sans marqueur | Non |
+| JSON illisible | Non — ce qu'on ne sait pas lire ne doit pas être écrasé |
+
+La possession est **tout ou rien** : la colonne s'écrit d'un bloc, donc un seul niveau saisi protège la liste entière.
+
+**Éditer depuis un formulaire, c'est en prendre possession.** `PositionService::update()` et `OrderService` retirent le marqueur de tous les niveaux qu'ils enregistrent (`BrokerTargetBuilder::withoutSource()`). La passe suivante les laisse tranquilles.
+
+**Migration 038** estampille les lignes déjà en base — restreinte à ce qu'on peut prouver : `external_id` **et** `import_batch_id` non nuls, seul profil sur lequel les diffs broker écrivent `targets`. Sans elle, l'existant serait traité comme saisi à la main, donc gelé pour toujours.
+
+**Les ordres en attente écrivent aussi leurs objectifs** (ajouté le 2026-08-11). `normalizeCtraderOpenOrder()` produit un `tp_price` depuis toujours et `BrokerOrderSyncService` ne persistait que `sl_price` : la construction du JSON vivait en privé dans `BrokerOpenSyncService`, donc le chemin des ordres ne savait pas écrire un objectif. Le take profit d'un ordre était normalisé puis jeté, et la vue Ordres n'avait aucune colonne pour l'afficher.
+
+La construction est extraite dans **`BrokerTargetBuilder::fromSnapshot()`**, partagée par les deux diffs. Un ordre en attente n'a pas de sortie partielle : son objectif couvre sa taille entière.
+
+**Sur le chemin des ordres, `targets` est rafraîchi sans condition** — contrairement aux positions. Il n'y a pas d'objectif saisi à protéger sur un ordre synchronisé : la ligne vient du broker, et son entrée, sa taille et son stop sont déjà repris du snapshot sur ce même chemin. Retirer le take profit sur la plateforme l'efface donc ici aussi, au lieu de laisser un objectif périmé.
 
 **Le stop à l'entrée passe le trade en `SECURED`.** Déplacer son stop à l'entrée est ce qui retire réellement le risque, et le broker le rapporte comme un niveau qu'on synchronise déjà. La comparaison s'inverse selon le sens : un long est protégé dès que son stop **monte** à l'entrée, un short dès qu'il y **descend**. Un stop poussé au-delà (gain garanti) compte pareil — décision produit : « plus de risque » est un seul état.
 
 **Promotion uniquement, jamais de rétrogradation.** Un trade peut aussi avoir été sécurisé à la main via une sortie de type BE ; ramener le stop en arrière sur la plateforme ne doit pas effacer cette décision.
 
+**À l'insertion aussi, pas seulement à la mise à jour** (corrigé le 2026-08-11). La règle ne vivait que sur le chemin `updateBrokerFields()`. Une position déjà protégée la première fois qu'on la voyait était donc classée `OPEN`, et ne se corrigeait qu'à la passe suivante.
+
+Le pire n'était pas le retard mais l'incohérence : le statut dépendait de si l'import des deals clôturés avait matérialisé la position **plus tôt dans la même passe**. Dans ce cas la réconciliation du snapshot la trouvait existante et la promouvait ; sinon `insertNewOpen()` la créait `OPEN`. Constaté en env de test le 2026-08-11 — deux positions DAX correctes, une position NAS au stop tout aussi protecteur restée `OPEN` pendant vingt minutes, jusqu'à la passe automatique suivante. `insertNewOpen()` évalue maintenant `stopProtectsEntry()` comme l'autre chemin, et `TradeRepository::create()` accepte `be_reached` pour que le drapeau parte avec le statut.
+
 **Prérequis corrigé au passage : `findOpenByExternalIdPrefixInAccount` ne voyait que les `OPEN`.** Or `apply()` **insère** toute ligne du snapshot qu'il ne retrouve pas. Un trade passé `SECURED` devenait donc invisible au diff : la synchro suivante créait un **doublon** de la position, et sa clôture ne transitionnait jamais. Le défaut existait déjà pour un trade broker sécurisé manuellement ; la détection automatique l'aurait rendu systématique. La requête couvre désormais `OPEN` **et** `SECURED` — « ouvert » y signifie « pas encore clos », la même sémantique que `StatsRepository::getOpenTrades`.
+
+### Une partielle synchronisée alimente `trades.pnl` (corrigé le 2026-08-11)
+
+Une sortie partielle découverte par la synchro était écrite dans `partial_exits`
+et s'arrêtait là : `trades.pnl` restait `NULL` jusqu'à la clôture de la position.
+Or tout ce qui filtre sur `pnl IS NOT NULL` — cartes KPI, calendrier de P&L —
+était donc **aveugle à de l'argent déjà encaissé**. Constaté en env de test : un
+take profit de 406.13 pris à 20:29 n'apparaissait nulle part dans les chiffres
+du jour.
+
+Le chemin manuel tient ce total courant depuis toujours (« realized metrics are
+computed on EVERY exit so the running P&L is visible immediately for swing
+trades », `TradeService::close()`). La synchro était simplement incohérente avec
+lui : elle l'alimente maintenant à chaque jambe qui atterrit.
+
+**Sauf à la clôture.** Là, le broker annonce le total de la position, swap et
+commissions compris, et ce chiffre fait autorité — `transitionToClosed()` l'écrit
+et la remontée ne doit pas l'écraser par la somme des jambes. La remontée n'est
+donc branchée que sur les deux chemins « position ouverte ».
+
+#### La remontée tourne à chaque passe, plus seulement à l'arrivée d'une jambe (corrigé le 2026-08-12)
+
+Le déclenchement était conditionné à « une jambe vient d'être insérée », pour
+éviter une écriture par tic du planificateur. Cette garde laissait de côté
+**tout trade dont les jambes précèdent la remontée elle-même** — c'est-à-dire
+tous ceux existants au moment de sa livraison. Aucune passe ultérieure n'insère
+plus rien sur ces lignes, donc plus rien ne redéclenche le calcul : `pnl` y
+reste `NULL` définitivement.
+
+Constaté en env de test le 2026-08-12 : le trade 10059 portait 406.13 encaissés
+la veille et `pnl` à `NULL`. Le correctif de la veille était bien déployé — il
+ne pouvait simplement rien pour cette ligne. Quatre trades dans ce cas.
+
+La remontée est donc **rejouée à chaque passe** et n'écrit que si le chiffre a
+bougé. C'est la comparaison, et non la garde, qui protège du tic à la minute :
+`findOpenByExternalIdPrefixInAccount` remonte `pnl`, `pnl_percent`,
+`risk_reward` et `sl_points` pour comparer et recalculer sans second aller-retour.
+
+**Une position sans jambe n'est pas touchée** : elle n'a rien réalisé, et c'est
+`NULL` qui le dit. Y écrire un zéro inscrirait chaque position ouverte intacte
+dans les statistiques comme un trade à l'équilibre.
+
+**Les trois chiffres bougent ensemble.** Gagnant / perdant / BE se classe sur
+`pnl_percent` **seul** (`StatsRepository`). N'alimenter que `pnl` mettait le
+trade au dénominateur du taux de réussite et dans aucune de ses catégories :
+compté, jamais classé. `pnl_percent` et `risk_reward` sont donc écrits avec,
+selon les formules de `TradeService::calculateRealizedMetrics`. `sl_points`
+n'étant jamais renseigné par la synchro, `risk_reward` reste `NULL` tant que
+l'utilisateur n'a pas saisi son risque — ce qui est la réponse honnête.
+
+**Migration 039** reprend les lignes déjà en base : trades non clôturés, avec
+jambes, `pnl IS NULL`. Restreinte aux non-clôturés parce que sur un trade fermé
+c'est le total du broker qui fait autorité. Vérifié avant écriture : aucun trade
+`CLOSED` n'est dans ce cas, ni en test ni en local. Idempotente.
 
 ### Taille affichée dans le bloc « En cours » du dashboard
 
@@ -282,12 +395,22 @@ Pas de clés API partagées au niveau de l'application. Les credentials sont sto
 | POST | `/broker/connections` | Créer connexion (cTrader ou MetaApi) |
 | PUT | `/broker/connections/{id}` | Reconfigurer les identifiants sur place (voir `85-broker-connection-reconfigure.md`) |
 | POST | `/broker/ctrader/accounts` | Lister les comptes cTrader d'un access token (voir `86-ctrader-account-discovery.md`) |
-| GET | `/broker/connections?account_id=X` | Statut connexion |
+| GET | `/broker/connections?account_id=X` | Statut connexion — `data: null` quand le compte n'en a pas (voir plus bas) |
 | POST | `/broker/connections/{id}/sync` | **Demander** une sync. Réponse **202** immédiate, la synchro est exécutée par le scheduler au tick suivant (< 1 min). Voir `89-broker-sync-parallelisation.md`. |
 | DELETE | `/broker/connections/{id}` | Supprimer connexion |
 | GET | `/broker/connections/{id}/logs` | Historique syncs |
 
 La création et la reconfiguration renvoient toutes deux `connection_test: { success, error }` : le résultat du `testConnection()` du provider, exécuté **sans bloquer** l'enregistrement.
+
+### « Pas de connexion » est une réponse, pas une erreur (corrigé le 2026-08-11)
+
+`GET /broker/connections?account_id=X` renvoyait **500** dès que le compte n'avait pas encore de connexion — donc pour tout compte avant sa première. `findForAccount()` rend `null` dans ce cas, et `Controller::jsonSuccess()` typait son paramètre `array` : `TypeError`, et un 200 parfaitement légitime sortait en 500.
+
+Le défaut datait du **03/04**, quand les routes broker ont été écrites (le code d'alors passait littéralement `jsonSuccess(null)`), et `Response::success()` est typée `array` depuis le commit initial du 10/02. Il est resté invisible quatre mois parce que le front l'avale : `BrokerConnectionPanel.vue` fait `catch { connection.value = null }`, ce qui affiche « pas de connexion » — l'état correct par accident. Seuls les logs saignaient.
+
+`Response::success()` et `jsonSuccess()` acceptent désormais `?array` et émettent `"data": null`.
+
+**Pas `[]`** : un tableau vide est *truthy* en JavaScript, le panneau croirait à une connexion existante. Absent et vide sont deux réponses différentes, la première seule convient ici.
 
 ## Tables
 

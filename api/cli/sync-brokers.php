@@ -189,6 +189,15 @@ try {
     );
 
     $crypto = new CredentialEncryptionService($brokerConfig['encryption_key']);
+    // The scheduler resolves credentials the same way the HTTP path does:
+    // connection row plus the user's shared app credentials (docs/91). It also
+    // writes a refreshed cTrader access token back to the shared row, so the
+    // user's other connections do not each burn a refresh call of their own.
+    $brokerCredentialStore = new \App\Services\Broker\BrokerCredentialStore(
+        new \App\Repositories\BrokerCredentialRepository($pdo),
+        $crypto,
+        new \App\Services\Broker\BrokerCredentialMapper(),
+    );
     $metaApiConnector = new MetaApiConnector(
         new \GuzzleHttp\Client(),
         $brokerConfig['metaapi']['base_url']
@@ -212,7 +221,7 @@ try {
         $syncLogRepo,
         $importService,
         new RowGroupingService(),
-        $crypto,
+        $brokerCredentialStore,
         $ctraderConnector,
         $metaApiConnector,
         $ouinexConnector,
