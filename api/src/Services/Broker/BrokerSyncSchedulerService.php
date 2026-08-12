@@ -2,6 +2,7 @@
 
 namespace App\Services\Broker;
 
+use App\Core\ErrorLogger;
 use App\Enums\SyncStatus;
 use App\Exceptions\BrokerRateLimitException;
 use App\Repositories\BrokerConnectionRepository;
@@ -88,10 +89,26 @@ class BrokerSyncSchedulerService
                 $this->connectionRepo->incrementFailures($id);
                 $failed++;
 
-                if ($previousFailures + 1 >= $maxFailures) {
+                $streak = $previousFailures + 1;
+                $trippedBreaker = $streak >= $maxFailures;
+
+                if ($trippedBreaker) {
                     $this->connectionRepo->markError($id, $e->getMessage());
                     $deactivated++;
                 }
+
+                // Nothing but the counters used to survive this block. The
+                // exception reached no one, so a connection failing on every
+                // single pass stayed invisible in the container stream — the
+                // shape observed in the test environment, where the cause could
+                // only be read back from sync_logs. The streak and the breaker
+                // go out with it: deactivation is the moment a user silently
+                // stops being synced, and it is what one greps for.
+                ErrorLogger::logThrowable('broker-sync', 'connection_sync_failed', $e, [
+                    'connection_id' => $id,
+                    'consecutive_failures' => $streak,
+                    'deactivated' => $trippedBreaker,
+                ]);
             }
         }
 
