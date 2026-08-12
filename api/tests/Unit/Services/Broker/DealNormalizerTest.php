@@ -757,6 +757,61 @@ class DealNormalizerTest extends TestCase
         $this->assertSame([0.5, 1.5], array_map(fn($t) => $t['size'], $row['targets']));
     }
 
+    public function testNormalizeCtraderOpenPositionNeverPromisesMoreVolumeThanIsStillOpen(): void
+    {
+        // Real shape, test environment, 2026-08-12: a NAS short opened at 2.5
+        // lots and trimmed to 1.5 by a take profit still advertised objectives
+        // for 0.75 + 1.5 = 2.25 lots — more volume than it holds.
+        //
+        // The platform's protection orders are not a reliable statement of what
+        // each step will close once a step has already fired, so their volumes
+        // are read as a request, not as an authority. The invariant is the
+        // position's: objectives cannot close what is no longer open. Levels
+        // are served nearest first — the order they would actually fill — and
+        // each takes at most what the earlier ones leave.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 336,
+            'price' => 29843.43,
+            'symbolName' => 'US100',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 12, 'volume' => 150, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            'partialExits' => [['size' => 1.0]],
+            'takeProfitOrders' => [
+                ['price' => 26343.43, 'volume' => 75],
+                ['price' => 22843.43, 'volume' => 150],
+            ],
+        ]);
+
+        $this->assertSame(2.5, $row['size']);
+        $this->assertSame(1.5, $row['remaining_size']);
+
+        $sizes = array_map(fn($t) => (float) $t['size'], $row['targets']);
+        // The near level is served in full, the far one gets what is left.
+        $this->assertSame([0.75, 0.75], $sizes);
+        $this->assertSame(1.5, array_sum($sizes));
+    }
+
+    public function testNormalizeCtraderOpenPositionDropsALevelWithNothingLeftToClose(): void
+    {
+        // The nearer level already accounts for everything still open, so the
+        // far one would close nothing. Listing it would show an objective the
+        // position can never reach holding any volume.
+        $row = $this->normalizer->normalizeCtraderOpenPosition([
+            'positionId' => 337,
+            'price' => 26415.24,
+            'takeProfit' => 22000.0,
+            'symbolName' => 'GER40',
+            'lotSize' => 100,
+            'tradeData' => ['symbolId' => 331, 'volume' => 100, 'tradeSide' => 'SELL', 'openTimestamp' => 1785907740000],
+            'takeProfitOrders' => [
+                ['price' => 26000.0, 'volume' => 250],
+            ],
+        ]);
+
+        $this->assertSame([26000.0], array_map(fn($t) => $t['price'], $row['targets']));
+        $this->assertSame([1.0], array_map(fn($t) => (float) $t['size'], $row['targets']));
+    }
+
     public function testNormalizeCtraderOpenPositionHasNoTargetsWithoutAnyTakeProfit(): void
     {
         $row = $this->normalizer->normalizeCtraderOpenPosition([

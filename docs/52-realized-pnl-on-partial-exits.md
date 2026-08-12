@@ -84,6 +84,24 @@ répété quand les requêtes préparées émulées sont désactivées. Fusionne
 évite au passage le `GROUP BY` sur l'expression à sous-requête que
 `ONLY_FULL_GROUP_BY` refuse en production.
 
+### Découper par jour ne sert à rien si le trade est filtré en amont (2026-08-12)
+
+`buildWhereClause()` impose `t.pnl IS NOT NULL` à **toutes** les agrégations, y
+compris à la requête des jambes. Une jambe n'est donc datée correctement que si
+son trade porte déjà un réalisé.
+
+C'est ce qui a fait croire le découpage inopérant après sa livraison. Le trade
+NAS 10059 avait bien sa sortie partielle de 406.13 horodatée au 11/08 dans
+`partial_exits`, mais `trades.pnl` était resté `NULL` : la remontée côté synchro
+ne se déclenchait qu'à l'insertion d'une jambe, et cette jambe lui était
+antérieure (voir `docs/22-broker-connectors.md`). Le trade entier était donc
+invisible pour toutes les statistiques — l'argent n'allait pas au mauvais jour,
+il n'allait **nulle part**. Le calendrier affichait 498.00 au 11/08 au lieu de
+904.13.
+
+Les deux mécanismes sont indissociables : le découpage décide *quel jour*, la
+remontée décide *si le trade existe* aux yeux des agrégats.
+
 ### Migration 015 — Backfill SECURED existants
 
 Sur les bases déployées avant ce release, des trades SECURED peuvent exister avec `pnl IS NULL` mais des `partial_exits.pnl` valorisés. La migration 015 reconstitue les agrégats avec les mêmes formules que `calculateRealizedMetrics()` :

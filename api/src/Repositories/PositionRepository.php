@@ -173,10 +173,16 @@ class PositionRepository
         // targets is read back because a broker take profit must never
         // overwrite an objective the user typed; the other broker-side fields
         // are taken from the snapshot, which is authoritative for them.
+        //
+        // sl_points and the three realized figures come back so the running
+        // rollup can be computed AND compared without a second round-trip: it
+        // runs on every pass now, and what keeps that from being a write per
+        // tick is knowing what is already on file.
         $stmt = $this->pdo->prepare(
             'SELECT p.id AS position_id, p.external_id, p.entry_price, p.size,
-                    p.sl_price, p.direction, p.symbol, p.targets,
-                    t.id AS trade_id, t.status AS trade_status
+                    p.sl_price, p.sl_points, p.direction, p.symbol, p.targets,
+                    t.id AS trade_id, t.status AS trade_status,
+                    t.pnl, t.pnl_percent, t.risk_reward
              FROM positions p
              INNER JOIN trades t ON t.position_id = p.id
              WHERE p.account_id = :account_id
