@@ -529,18 +529,124 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->assertSame(526.63, $banked);
     }
 
-    public function testDoesNotRewriteTheTradeWhenNoNewLegArrived(): void
+    public function testBanksLegsThatAnEarlierPassAlreadyRecorded(): void
     {
         $this->useServiceWithPartialExits();
-        // The scheduler ticks every minute and re-reports the same exits. A
-        // rollup on every pass would be a write per tick per position, for
-        // nothing.
+        // The rollup used to fire only in the pass that inserted a leg. Any
+        // trade whose legs were already on file — every one of them when the
+        // rollup shipped after the legs did — kept `pnl` NULL for good: no
+        // later pass inserts anything, so nothing ever triggered it again.
+        //
+        // Observed on the test environment on 2026-08-12: trade 10059 carried
+        // a 406.13 take profit taken the day before and `pnl` NULL, so
+        // `pnl IS NOT NULL` hid it from every statistic, the calendar included.
+        // The money was nowhere. Reconciling on each pass makes it self-healing.
         $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
             ->willReturn([
                 'ouinex_mp-1' => [
                     'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
                     'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
-                    'targets' => null, 'trade_id' => 5001,
+                    'targets' => null, 'trade_id' => 5001, 'sl_points' => null,
+                    'pnl' => null, 'pnl_percent' => null, 'risk_reward' => null,
+                    'trade_status' => TradeStatus::SECURED->value,
+                ],
+            ]);
+
+        // Nothing new to insert: the leg is already on file.
+        $this->partialExitRepo->method('existingExternalIdsForTrade')
+            ->willReturn(['ctrader_deal_1' => true]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([['pnl' => '406.13']]);
+
+        $banked = null;
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$banked) {
+                if (array_key_exists('pnl', $data)) {
+                    $banked = (float) $data['pnl'];
+                }
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'exits' => [[
+                    'exit_price' => 60500.0, 'size' => 0.2, 'pnl' => 406.13,
+                    'closed_at' => '2026-08-11 20:29:51', 'external_id' => 'ctrader_deal_1',
+                ]],
+            ])],
+            closedSnapshot: [],
+        );
+
+        $this->assertSame(406.13, $banked);
+    }
+
+    public function testBanksThePercentAndRiskRewardAlongsideTheRealizedTotal(): void
+    {
+        $this->useServiceWithPartialExits();
+        // Win, loss and breakeven are classified on `pnl_percent`, never on
+        // `pnl`. Banking the total alone put the trade in the win-rate
+        // denominator and in none of its buckets — a trade counted but
+        // classified nowhere. The three figures the manual path writes on every
+        // exit are written here too, from the same formulas.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001, 'sl_points' => '1000.00',
+                    'pnl' => null, 'pnl_percent' => null, 'risk_reward' => null,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([['pnl' => '300.00']]);
+
+        $written = null;
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$written) {
+                if (array_key_exists('pnl', $data)) {
+                    $written = $data;
+                }
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'exits' => [[
+                    'exit_price' => 60500.0, 'size' => 0.2, 'pnl' => 300.0,
+                    'closed_at' => '2026-08-11 20:29:51', 'external_id' => 'ctrader_deal_1',
+                ]],
+            ])],
+            closedSnapshot: [],
+        );
+
+        $this->assertSame(300.0, (float) $written['pnl']);
+        // 300 / (60000 * 0.5) * 100
+        $this->assertSame(1.0, (float) $written['pnl_percent']);
+        // 300 / (0.5 * 1000)
+        $this->assertSame(0.6, (float) $written['risk_reward']);
+    }
+
+    public function testDoesNotRewriteTheTradeWhenTheRealizedTotalHasNotMoved(): void
+    {
+        $this->useServiceWithPartialExits();
+        // The scheduler ticks every minute and re-reports the same legs. The
+        // rollup now runs on every pass, so what keeps it from being a write
+        // per tick per position is the comparison, not a gate on new arrivals:
+        // an unchanged figure is not written back.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001, 'sl_points' => null,
+                    'pnl' => '406.13', 'pnl_percent' => '1.3538', 'risk_reward' => null,
                     'trade_status' => TradeStatus::OPEN->value,
                 ],
             ]);
@@ -548,7 +654,7 @@ class BrokerOpenSyncServiceTest extends TestCase
         // Already on file, so insertPartialExits skips it.
         $this->partialExitRepo->method('existingExternalIdsForTrade')
             ->willReturn(['ctrader_deal_1' => true]);
-        $this->partialExitRepo->expects($this->never())->method('findByTradeId');
+        $this->partialExitRepo->method('findByTradeId')->willReturn([['pnl' => '406.13']]);
 
         $this->tradeRepo->expects($this->once())
             ->method('update')
@@ -563,6 +669,38 @@ class BrokerOpenSyncServiceTest extends TestCase
                     'closed_at' => '2026-08-11 20:29:51', 'external_id' => 'ctrader_deal_1',
                 ]],
             ])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testDoesNotBankAnythingOnAPositionThatHasTakenNothingOff(): void
+    {
+        $this->useServiceWithPartialExits();
+        // A position with no leg has realized nothing, and `pnl` NULL is what
+        // says so. Writing a zero would enrol every untouched open position in
+        // the statistics as a breakeven trade.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'targets' => null, 'trade_id' => 5001, 'sl_points' => null,
+                    'pnl' => null, 'pnl_percent' => null, 'risk_reward' => null,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([]);
+
+        $this->tradeRepo->expects($this->once())
+            ->method('update')
+            ->with(5001, $this->callback(fn($data) => !array_key_exists('pnl', $data)));
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot()],
             closedSnapshot: [],
         );
     }

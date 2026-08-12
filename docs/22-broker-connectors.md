@@ -333,9 +333,42 @@ lui : elle l'alimente maintenant à chaque jambe qui atterrit.
 **Sauf à la clôture.** Là, le broker annonce le total de la position, swap et
 commissions compris, et ce chiffre fait autorité — `transitionToClosed()` l'écrit
 et la remontée ne doit pas l'écraser par la somme des jambes. La remontée n'est
-donc branchée que sur les deux chemins « position ouverte », et seulement quand
-une jambe a réellement été insérée : le planificateur repasse toutes les minutes
-et réannonce les mêmes sorties.
+donc branchée que sur les deux chemins « position ouverte ».
+
+#### La remontée tourne à chaque passe, plus seulement à l'arrivée d'une jambe (corrigé le 2026-08-12)
+
+Le déclenchement était conditionné à « une jambe vient d'être insérée », pour
+éviter une écriture par tic du planificateur. Cette garde laissait de côté
+**tout trade dont les jambes précèdent la remontée elle-même** — c'est-à-dire
+tous ceux existants au moment de sa livraison. Aucune passe ultérieure n'insère
+plus rien sur ces lignes, donc plus rien ne redéclenche le calcul : `pnl` y
+reste `NULL` définitivement.
+
+Constaté en env de test le 2026-08-12 : le trade 10059 portait 406.13 encaissés
+la veille et `pnl` à `NULL`. Le correctif de la veille était bien déployé — il
+ne pouvait simplement rien pour cette ligne. Quatre trades dans ce cas.
+
+La remontée est donc **rejouée à chaque passe** et n'écrit que si le chiffre a
+bougé. C'est la comparaison, et non la garde, qui protège du tic à la minute :
+`findOpenByExternalIdPrefixInAccount` remonte `pnl`, `pnl_percent`,
+`risk_reward` et `sl_points` pour comparer et recalculer sans second aller-retour.
+
+**Une position sans jambe n'est pas touchée** : elle n'a rien réalisé, et c'est
+`NULL` qui le dit. Y écrire un zéro inscrirait chaque position ouverte intacte
+dans les statistiques comme un trade à l'équilibre.
+
+**Les trois chiffres bougent ensemble.** Gagnant / perdant / BE se classe sur
+`pnl_percent` **seul** (`StatsRepository`). N'alimenter que `pnl` mettait le
+trade au dénominateur du taux de réussite et dans aucune de ses catégories :
+compté, jamais classé. `pnl_percent` et `risk_reward` sont donc écrits avec,
+selon les formules de `TradeService::calculateRealizedMetrics`. `sl_points`
+n'étant jamais renseigné par la synchro, `risk_reward` reste `NULL` tant que
+l'utilisateur n'a pas saisi son risque — ce qui est la réponse honnête.
+
+**Migration 039** reprend les lignes déjà en base : trades non clôturés, avec
+jambes, `pnl IS NULL`. Restreinte aux non-clôturés parce que sur un trade fermé
+c'est le total du broker qui fait autorité. Vérifié avant écriture : aucun trade
+`CLOSED` n'est dans ce cas, ni en test ni en local. Idempotente.
 
 ### Taille affichée dans le bloc « En cours » du dashboard
 

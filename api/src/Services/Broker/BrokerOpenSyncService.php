@@ -154,9 +154,10 @@ class BrokerOpenSyncService
         // an exits[] array on still-open positions — partial closes that
         // happened before the position fully closes. Persist them as
         // partial_exits rows so the journal reflects the real activity.
-        if ($this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []) > 0) {
-            $this->bankRealizedFromExits((int) $trade['id']);
-        }
+        // A position discovered here carries no sl_points: nobody has typed a
+        // risk on it yet, so its risk/reward stays unknown until they do.
+        $this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []);
+        $this->bankRealizedFromExits((int) $trade['id'], $row, null, []);
     }
 
     /**
@@ -220,12 +221,17 @@ class BrokerOpenSyncService
 
         $this->tradeRepo->update((int) $existing['trade_id'], $tradeFields);
 
-        // Only when a leg actually landed: the scheduler ticks every minute and
-        // re-reports the same exits, so an unconditional rollup would be one
-        // write per tick per position, for nothing.
-        if ($this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []) > 0) {
-            $this->bankRealizedFromExits((int) $existing['trade_id']);
-        }
+        // Reconciled on every pass, not only on the one that inserts a leg —
+        // see bankRealizedFromExits for why that gate had to go. The snapshot
+        // is authoritative for entry price and size; sl_points is the user's
+        // and only the row holds it.
+        $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
+        $this->bankRealizedFromExits(
+            (int) $existing['trade_id'],
+            $snapshot,
+            isset($existing['sl_points']) ? (float) $existing['sl_points'] : null,
+            $existing,
+        );
     }
 
     /**
@@ -293,22 +299,85 @@ class BrokerOpenSyncService
      * swing trades" (TradeService::close). The sync was simply inconsistent
      * with it.
      *
+     * Runs on EVERY pass, not only the one that inserts a leg. Gating it on a
+     * fresh arrival left behind every trade whose legs predated the rollup —
+     * no later pass inserts anything, so nothing ever fires again and `pnl`
+     * stays NULL for good. Trade 10059 sat like that with 406.13 realized and
+     * invisible (2026-08-12). What keeps the scheduler's every-minute tick from
+     * becoming a write per position is the comparison below, not the gate.
+     *
+     * The three figures move together because the statistics read them apart:
+     * win, loss and breakeven are classified on `pnl_percent` alone, so a trade
+     * carrying `pnl` without it counts in the win rate's denominator and in
+     * none of its buckets. Formulas mirror TradeService::calculateRealizedMetrics.
+     *
      * Deliberately NOT called when a position closes: there the broker states
      * the position's own total, which accounts for swap and commission the
      * individual legs may not carry, and that figure is authoritative.
+     *
+     * @param array $context Broker snapshot — entry price and size to measure against.
+     * @param float|null $slPoints Risk per unit, the user's to state; null leaves R:R unknown.
+     * @param array $onFile What the trade already holds, to avoid rewriting it unchanged.
      */
-    private function bankRealizedFromExits(int $tradeId): void
-    {
+    private function bankRealizedFromExits(
+        int $tradeId,
+        array $context,
+        ?float $slPoints,
+        array $onFile,
+    ): void {
         if ($this->partialExitRepo === null) {
             return;
         }
 
+        $exits = $this->partialExitRepo->findByTradeId($tradeId);
+
+        // No leg means nothing realized, and NULL is what says so. A zero would
+        // enrol every untouched open position in the statistics as a breakeven.
+        if ($exits === []) {
+            return;
+        }
+
         $realized = 0.0;
-        foreach ($this->partialExitRepo->findByTradeId($tradeId) as $exit) {
+        foreach ($exits as $exit) {
             $realized += (float) ($exit['pnl'] ?? 0);
         }
 
-        $this->tradeRepo->update($tradeId, ['pnl' => round($realized, 2)]);
+        $entrySize = (float) ($context['size'] ?? 0);
+        $entryValue = (float) ($context['entry_price'] ?? 0) * $entrySize;
+        $riskAmount = $entrySize * (float) ($slPoints ?? 0);
+
+        // Rounded to the precision of their columns — DECIMAL(15,2) and two
+        // DECIMAL(8,4) — so a value read back compares equal to the one that
+        // wrote it. Rounding finer than the column would make every tick look
+        // like a change and defeat the comparison below.
+        $metrics = [
+            'pnl' => round($realized, 2),
+            'pnl_percent' => $entryValue > 0 ? round(($realized / $entryValue) * 100, 4) : 0.0,
+            'risk_reward' => $riskAmount > 0 ? round($realized / $riskAmount, 4) : null,
+        ];
+
+        foreach ($metrics as $field => $value) {
+            if ($this->differsFromFile($onFile[$field] ?? null, $value)) {
+                $this->tradeRepo->update($tradeId, $metrics);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Whether a freshly computed figure differs from what the trade holds.
+     *
+     * NULL is a value here, not an absence: a risk/reward is legitimately
+     * unknown while no risk has been typed, and going from unknown to known —
+     * or back — is a change worth writing.
+     */
+    private function differsFromFile(mixed $stored, ?float $computed): bool
+    {
+        if ($stored === null || $computed === null) {
+            return $stored !== $computed;
+        }
+
+        return (float) $stored !== $computed;
     }
 
     /**
