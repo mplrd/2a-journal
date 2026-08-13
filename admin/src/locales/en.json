@@ -119,6 +119,7 @@
         "broker_sync_interval_minutes": "Min minutes between two syncs of the same connection",
         "broker_sync_max_failures": "Consecutive failures before auto-deactivation",
         "broker_sync_workers": "How many sync processes run in parallel (default 4, max 16)",
+        "broker_daily_request_budget": "Requests one connection may spend at its broker per day (default 1500, 0 = unlimited). Guards against a prop firm disabling the account",
         "email_verification_enabled": "Require email verification on registration",
         "mail_enabled": "Enable email delivery (password reset, notifications, etc.)",
         "mail_from_address": "From address for outgoing emails",

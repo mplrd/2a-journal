@@ -4,6 +4,7 @@ namespace App\Services\Broker;
 
 use App\Core\ErrorLogger;
 use App\Enums\SyncStatus;
+use App\Exceptions\BrokerDailyBudgetException;
 use App\Exceptions\BrokerRateLimitException;
 use App\Repositories\BrokerConnectionRepository;
 use Throwable;
@@ -77,6 +78,13 @@ class BrokerSyncSchedulerService
 
                 $this->connectionRepo->resetFailures($id);
                 $success++;
+            } catch (BrokerDailyBudgetException $e) {
+                // Our own decision to stop asking, taken to protect the trading
+                // account — not a defect of the connection. Same treatment as a
+                // broker's frequency ban: leave the failure streak alone and
+                // let the counter roll over at UTC midnight. Already logged
+                // once by the sync service, with the spend and the cap.
+                $deferred++;
             } catch (BrokerRateLimitException $e) {
                 // A broker frequency ban is NOT a connection failure: the
                 // connector paces requests to avoid it, and the next cron run

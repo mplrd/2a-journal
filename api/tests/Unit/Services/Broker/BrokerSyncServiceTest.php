@@ -876,6 +876,108 @@ class BrokerSyncServiceTest extends TestCase
         $this->makeServiceWithRepo($repo)->requestSync(1, 10);
     }
 
+    // ── Daily request budget (evolution #22) ────────────────────
+
+    public function testSyncRefusesToRunOnceTheDailyBudgetIsSpent(): void
+    {
+        // FTMO disabled a real trading account on 2026-08-07 past roughly 2 000
+        // server requests in a day, with no EA attached — only this sync. The
+        // budget is the last guard of evolution #22: stop asking rather than
+        // lose the account.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('requestsSpentToday')->willReturn(1500);
+
+        // Nothing may happen: no reservation, no sync log, no broker call.
+        $repo->expects($this->never())->method('claimForSync');
+        $this->syncLogRepo->expects($this->never())->method('create');
+
+        $service = $this->makeServiceWithRepo($repo, null, 1500);
+
+        try {
+            $service->sync(1, 10);
+            $this->fail('Expected BrokerDailyBudgetException');
+        } catch (\App\Exceptions\BrokerDailyBudgetException $e) {
+            $this->assertSame(1500, $e->getSpent());
+            $this->assertSame(1500, $e->getBudget());
+        }
+    }
+
+    public function testSyncRunsWhileTheBudgetIsNotSpent(): void
+    {
+        // The measured spend on 2026-08-13 was 648 requests a day per
+        // connection, well under the cap. The guard must be invisible there.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('requestsSpentToday')->willReturn(648);
+        $repo->method('claimForSync')->willReturn(true);
+        $this->primeSyncStubsOn($repo);
+
+        $result = $this->makeServiceWithRepo($repo, null, 1500)->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
+    public function testABudgetOfZeroNeverStopsASync(): void
+    {
+        // 0 means "no cap": the setting has to be switchable off without
+        // editing code, and that is also the default for anyone who never
+        // touches it.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('requestsSpentToday')->willReturn(999999);
+        $repo->method('claimForSync')->willReturn(true);
+        $this->primeSyncStubsOn($repo);
+
+        $result = $this->makeServiceWithRepo($repo, null, 0)->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
+    public function testTheRequestsARunSpentAreCounted(): void
+    {
+        // Whatever the connector reports having put on the wire is what the
+        // counter grows by — the same figure the sync_request_budget line
+        // carries.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('requestsSpentToday')->willReturn(0);
+        $repo->method('claimForSync')->willReturn(true);
+        $this->primeSyncStubsOn($repo);
+
+        $repo->expects($this->once())->method('addRequestsSpent')->with(1, 9);
+
+        $this->captureErrorLog(
+            fn() => $this->makeServiceWithRepo($repo, new RequestBudgetSpyConnector([]), 1500)->sync(1, 10),
+        );
+    }
+
+    public function testTheBudgetLineIsTaggedWithTheConnectionProvider(): void
+    {
+        // The line used to be hardcoded to job="ctrader". MetaTrader covers the
+        // same brokers, so it will feed the same counter through the same
+        // getRequestCounts() contract — and its requests must not be filed
+        // under cTrader's name.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+        $repo->method('requestsSpentToday')->willReturn(0);
+        $repo->method('claimForSync')->willReturn(true);
+        $this->primeSyncStubsOn($repo);
+
+        $lines = $this->captureErrorLog(
+            fn() => $this->makeServiceWithRepo($repo, new RequestBudgetSpyConnector([]), 1500)->sync(1, 10),
+        );
+
+        $budgetLines = array_values(array_filter(
+            array_map(fn($l) => json_decode($l, true), $lines),
+            fn($e) => is_array($e) && ($e['event'] ?? null) === 'sync_request_budget',
+        ));
+
+        $this->assertCount(1, $budgetLines);
+        $this->assertSame('ctrader', $budgetLines[0]['job']);
+        $this->assertSame(9, $budgetLines[0]['requests']);
+    }
+
     /** primeSyncStubs against a bespoke repository mock. */
     private function primeSyncStubsOn(BrokerConnectionRepository $repo): void
     {
@@ -893,6 +995,7 @@ class BrokerSyncServiceTest extends TestCase
     private function makeServiceWithRepo(
         BrokerConnectionRepository $repo,
         ?ConnectorInterface $ctrader = null,
+        int $dailyRequestBudget = 0,
     ): BrokerSyncService {
         return new BrokerSyncService(
             $repo,
@@ -906,6 +1009,9 @@ class BrokerSyncServiceTest extends TestCase
             $this->bingxConnector,
             $this->openSyncService,
             $this->orderSyncService,
+            null,
+            null,
+            $dailyRequestBudget,
         );
     }
 
