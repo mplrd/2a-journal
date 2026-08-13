@@ -45,7 +45,7 @@ Tickets restants à traiter / arbitrer / clarifier.
 | ID | Titre | Type | Priorité | Effort | Statut |
 |----|-------|------|----------|--------|--------|
 | [B-03](#b-03) | Champ "prix d'entrée" obligatoire en import custom mais non utilisé | Bug | — | — | 🚫 |
-| [E-02](#e-02) | Source d'import : Ouinex | Évol | Moyenne | Moyen | ⏳ |
+| [E-02](#e-02) | Source d'import : Ouinex — Phase 1 (dérivés) livrée, reste le spot | Évol | Moyenne | Moyen | 🟢 |
 | [E-03](#e-03) | Espace "questions / remarques" pour utilisateurs | Évol | Moyenne | Moyen | 🟡 |
 | [E-04](#e-04) | Imports scindés / sélection des données à analyser | Évol | À arbitrer | Élevé | 🟡 |
 | [E-09](#e-09) | Source d'import : IG | Évol | Moyenne | Moyen | 🟡 |
@@ -100,14 +100,15 @@ Tickets restants à traiter / arbitrer / clarifier.
 - **Livré** : édition inline du label **et** de la catégorie dans la grid (icône crayon → `<InputText>` + `<Select>` + ✓/✗, patch minimal). Cf. `docs/53-setup-inline-edit.md`.
 
 <a id="e-02"></a>
-#### E-02. Source d'import : Ouinex — ⏳ _(en cours, branche `feat/import-ouinex`)_
+#### E-02. Source d'import : Ouinex — 🟢 _(Phase 1 livrée, reste la Phase 2 spot)_
 
 > "Faudrait peut-être proposer en sources d'import 'ouinex' (…) non ?"
 
 - **Type** : nouvelle intégration broker.
 - **Pivot architectural** (2026-05-05) : Ouinex est une **API GraphQL**, pas un broker qui exporte un format CSV exploitable (export order-by-order, incompatible avec le pipeline d'import round-trip). On raccroche au pattern `ConnectorInterface` du broker-sync existant (cTrader / MetaApi), pas au pipeline d'import fichier.
 - **Plan détaillé** : `docs/evolutions.md#e-02--connexion-ouinex-broker-sync-pas-import-fichier` — découpé en Phase 1 (derivatives, mapping direct depuis `closed_margin_positions`) + Phase 2 (spot, nécessite un `LegPairingService` FIFO).
-- **Branche** : `feat/import-ouinex` (créée 2026-05-05, en attente de la passe de fixs sur develop avant de démarrer le code).
+- **Phase 1 livrée** (doc `docs/63-broker-sync-ouinex.md`) : connecteur enregistré, positions clôturées en incrémental, snapshots des positions ouvertes et des ordres en attente, dialogue de connexion dédié côté front. **Jamais validée contre un vrai compte Ouinex** — validée par les tests, pas par l'usage, comme tout le domaine broker.
+- **Phase 2 (spot, pairing FIFO)** : non commencée. C'est ce qui reste sous ce ticket.
 - **Lien** : voir aussi [E-09](#e-09) (IG, autre intégration mentionnée dans le même retour — même approche probablement).
 
 <a id="e-03"></a>
