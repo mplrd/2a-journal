@@ -105,6 +105,36 @@ class BrokerCredentialStore
     }
 
     /**
+     * Reserve the right to renew this user's token for a provider.
+     *
+     * True when there is nothing shared: a provider that keeps no shared row —
+     * Ouinex, BingX, or a user's very first connection — has no token for two
+     * syncs to fight over, so reserving must never become a reason not to
+     * refresh. That would turn a race fix into a silent expiry.
+     *
+     * Otherwise the reservation is a conditional UPDATE and exactly one caller
+     * wins it. See {@see \App\Repositories\BrokerCredentialRepository::claimRefresh()}.
+     */
+    public function claimSharedRefresh(int $userId, string $provider, int $staleAfterSeconds): bool
+    {
+        if ($this->credentialRepo->findByUserAndProvider($userId, $provider) === null) {
+            return true;
+        }
+
+        return $this->credentialRepo->claimRefresh($userId, $provider, $staleAfterSeconds);
+    }
+
+    /**
+     * Release the reservation. A no-op UPDATE when the user has no shared row,
+     * which is cheaper than threading "did I really take a claim?" back through
+     * the caller.
+     */
+    public function releaseSharedRefresh(int $userId, string $provider): void
+    {
+        $this->credentialRepo->releaseRefresh($userId, $provider);
+    }
+
+    /**
      * Persist a full credentials array: the shared part goes to the user's row,
      * and the connection-scoped part comes back encrypted for the caller to
      * write onto the connection.

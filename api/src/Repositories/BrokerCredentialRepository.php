@@ -104,6 +104,67 @@ class BrokerCredentialRepository
     }
 
     /**
+     * Reserve the right to renew this user's token for this provider. Returns
+     * false when another sync already holds it.
+     *
+     * The WHERE clause IS the lock — one conditional UPDATE, so two workers
+     * racing can never both come back true. That is the whole point: the
+     * freshness check it backs up (`secondsSinceRefresh`) is a clock reading,
+     * and a clock reading only separates STAGGERED syncs. Two workers starting
+     * in the same second both read "nobody renewed recently", both call the
+     * broker, and cTrader rotates the refresh token on use — so the second one
+     * presents a token that is already spent.
+     *
+     * A claim older than $staleAfterSeconds is taken over, so a worker killed
+     * mid-refresh cannot freeze renewals for the user's whole provider.
+     *
+     * rowCount() is rows actually changed — PDO is not configured with
+     * MYSQL_ATTR_FOUND_ROWS. Same convention as
+     * BrokerConnectionRepository::claimForSync().
+     */
+    public function claimRefresh(int $userId, string $provider, int $staleAfterSeconds): bool
+    {
+        // Clamped and injected as an integer literal: MariaDB does not accept a
+        // bound parameter inside an INTERVAL expression.
+        if ($staleAfterSeconds < 1) {
+            $staleAfterSeconds = 1;
+        } elseif ($staleAfterSeconds > 86400) {
+            $staleAfterSeconds = 86400;
+        }
+
+        // UTC_TIMESTAMP() on both sides against a DATETIME column, so the
+        // comparison never depends on the MySQL session timezone.
+        $stmt = $this->pdo->prepare(
+            "UPDATE broker_credentials
+             SET refreshing_since = UTC_TIMESTAMP()
+             WHERE user_id = :user_id
+               AND provider = :provider
+               AND (refreshing_since IS NULL
+                    OR refreshing_since < UTC_TIMESTAMP() - INTERVAL {$staleAfterSeconds} SECOND)"
+        );
+        $stmt->execute(['user_id' => $userId, 'provider' => $provider]);
+
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Hand the reservation back, whether the renewal succeeded or threw.
+     *
+     * Without this, a failed refresh — a rotated client_secret, say — would
+     * keep every other connection of that provider from renewing until the
+     * claim went stale. The stale window is a safety net for a killed process,
+     * not the normal way out.
+     */
+    public function releaseRefresh(int $userId, string $provider): void
+    {
+        $this->pdo->prepare(
+            "UPDATE broker_credentials
+             SET refreshing_since = NULL
+             WHERE user_id = :user_id AND provider = :provider"
+        )->execute(['user_id' => $userId, 'provider' => $provider]);
+    }
+
+    /**
      * Drop the stored credentials. Called when the user's last connection for
      * that provider goes away: "disconnect" must not leave a usable access
      * token in the database for a broker the user believes they unplugged.
