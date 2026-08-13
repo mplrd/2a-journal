@@ -483,6 +483,13 @@ CREATE TABLE IF NOT EXISTS broker_connections (
     -- UTC_TIMESTAMP(), sans conversion de fuseau de session.
     syncing_since DATETIME NULL DEFAULT NULL,
     sync_requested_at DATETIME NULL DEFAULT NULL,
+    -- Compteur quotidien de requêtes chez le broker (cf. migration 041 et
+    -- évolution #22). `requests_counted_on` porte le jour du compteur, ce qui
+    -- rend la remise à zéro implicite : un incrément un autre jour écrase au
+    -- lieu d'additionner. Par CONNEXION et non par provider — le plafond d'une
+    -- prop firm porte sur un compte de trading, quel que soit le protocole.
+    requests_today INT UNSIGNED NOT NULL DEFAULT 0,
+    requests_counted_on DATE NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

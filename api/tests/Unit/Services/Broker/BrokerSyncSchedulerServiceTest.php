@@ -198,6 +198,44 @@ class BrokerSyncSchedulerServiceTest extends TestCase
         $this->assertSame(1, $result['deferred']);
     }
 
+    // ── Spending the daily budget is a pause, not a fault ───────
+
+    public function testDailyBudgetExhaustionDefersWithoutTrippingBreaker(): void
+    {
+        // Refusing to sync is our own decision, taken to protect the trading
+        // account — FTMO disabled a real one for request volume. Counting it as
+        // a failure would eventually deactivate a perfectly healthy connection
+        // for doing exactly what it was told.
+        $scheduler = $this->makeScheduler();
+
+        // Already at the failure threshold: a normal exception here would
+        // deactivate.
+        $conn = $this->connectionRow(4, 20, 2);
+
+        $this->connectionRepo->method('findDueForAutoSync')->willReturn([$conn]);
+        $this->connectionRepo->method('countActive')->willReturn(1);
+        $this->syncService->method('sync')->willThrowException(
+            new \App\Exceptions\BrokerDailyBudgetException('Daily request budget spent (1500/1500)', 1500, 1500)
+        );
+
+        $this->connectionRepo->expects($this->never())->method('incrementFailures');
+        $this->connectionRepo->expects($this->never())->method('markError');
+        $this->connectionRepo->expects($this->never())->method('resetFailures');
+
+        $lines = $this->captureErrorLog(function () use ($scheduler, &$result) {
+            $result = $scheduler->runDueConnections();
+        });
+
+        $this->assertSame(1, $result['processed']);
+        $this->assertSame(0, $result['success']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(0, $result['deactivated']);
+        $this->assertSame(1, $result['deferred']);
+
+        // And it must not be logged as a connection failure either.
+        $this->assertSame([], $lines);
+    }
+
     // ── Already syncing: reservation held elsewhere ─────────────
 
     public function testConnectionAlreadySyncingIsCountedApart(): void

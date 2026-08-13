@@ -161,6 +161,60 @@ class BrokerConnectionRepository
     }
 
     /**
+     * Requests this connection has already spent at the broker today, 0 when
+     * the stored count belongs to an earlier day.
+     *
+     * The counter carries the day it was written for, so the daily reset is
+     * implicit — no purge job, no sliding window. UTC_DATE() on both sides,
+     * like syncing_since, so the boundary never depends on the session
+     * timezone.
+     */
+    public function requestsSpentToday(int $id): int
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT IF(requests_counted_on = UTC_DATE(), requests_today, 0)
+             FROM broker_connections
+             WHERE id = :id"
+        );
+        $stmt->execute(['id' => $id]);
+        $spent = $stmt->fetchColumn();
+
+        return $spent === false || $spent === null ? 0 : (int) $spent;
+    }
+
+    /**
+     * Add to today's request count, starting a fresh day when the stored count
+     * belongs to an earlier one.
+     *
+     * One conditional UPDATE rather than read-then-write: several workers can
+     * finish syncs of the same user seconds apart, and a read-then-write would
+     * lose one of the increments — undercounting the very thing the budget
+     * exists to bound.
+     *
+     * Counting is per CONNECTION, not per provider: a prop firm's cap applies
+     * to a trading account whatever protocol reads it. MetaTrader covers the
+     * same brokers as cTrader and feeds the same counter as soon as it exposes
+     * getRequestCounts().
+     */
+    public function addRequestsSpent(int $id, int $count): void
+    {
+        // A connector with no request counter reports 0. Stamping a counting
+        // day for it would be a lie, and it would cost a write on every sync.
+        if ($count <= 0) {
+            return;
+        }
+
+        // Two placeholders for one value: emulated prepares are off, and PDO
+        // refuses a named parameter used twice in the same statement.
+        $this->pdo->prepare(
+            "UPDATE broker_connections
+             SET requests_today = IF(requests_counted_on = UTC_DATE(), requests_today + :added, :fresh),
+                 requests_counted_on = UTC_DATE()
+             WHERE id = :id"
+        )->execute(['id' => $id, 'added' => $count, 'fresh' => $count]);
+    }
+
+    /**
      * Reserve a connection for a sync run. Returns false when another run
      * already holds it.
      *

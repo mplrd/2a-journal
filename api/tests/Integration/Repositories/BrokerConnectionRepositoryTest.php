@@ -387,4 +387,68 @@ class BrokerConnectionRepositoryTest extends TestCase
         $row = $this->repo->findById((int) $conn['id']);
         $this->assertNotNull($row['sync_requested_at'], 'The click must survive to the next tick');
     }
+
+    // ── Daily request budget (evolution #22) ────────────────────
+
+    public function testAConnectionThatNeverSyncedHasSpentNothing(): void
+    {
+        $conn = $this->createConnection();
+
+        $this->assertSame(0, $this->repo->requestsSpentToday((int) $conn['id']));
+    }
+
+    public function testRequestsAccumulateWithinTheSameDay(): void
+    {
+        $conn = $this->createConnection();
+
+        $this->repo->addRequestsSpent((int) $conn['id'], 9);
+        $this->repo->addRequestsSpent((int) $conn['id'], 9);
+
+        $this->assertSame(18, $this->repo->requestsSpentToday((int) $conn['id']));
+    }
+
+    public function testYesterdaysCountIsReplacedRatherThanAddedTo(): void
+    {
+        // The reset is implicit: the counter carries the day it belongs to, so
+        // an increment on a different day overwrites instead of adding. No
+        // purge job, no sliding window to maintain.
+        $conn = $this->createConnection();
+        $this->repo->addRequestsSpent((int) $conn['id'], 1400);
+
+        $this->pdo->prepare(
+            "UPDATE broker_connections
+             SET requests_counted_on = UTC_DATE() - INTERVAL 1 DAY
+             WHERE id = :id"
+        )->execute(['id' => (int) $conn['id']]);
+
+        // Yesterday's spend must not count against today's budget...
+        $this->assertSame(0, $this->repo->requestsSpentToday((int) $conn['id']));
+
+        // ...and the first increment of the new day starts from it, not from 1400.
+        $this->repo->addRequestsSpent((int) $conn['id'], 9);
+        $this->assertSame(9, $this->repo->requestsSpentToday((int) $conn['id']));
+    }
+
+    public function testTheCounterIsScopedToOneConnection(): void
+    {
+        $first = $this->createConnection();
+        $second = $this->createConnection();
+
+        $this->repo->addRequestsSpent((int) $first['id'], 9);
+
+        $this->assertSame(9, $this->repo->requestsSpentToday((int) $first['id']));
+        $this->assertSame(0, $this->repo->requestsSpentToday((int) $second['id']));
+    }
+
+    public function testAddingNothingIsANoOp(): void
+    {
+        // A provider with no request counter reports 0; that must not stamp a
+        // counting day and must not cost a write.
+        $conn = $this->createConnection();
+
+        $this->repo->addRequestsSpent((int) $conn['id'], 0);
+
+        $row = $this->repo->findById((int) $conn['id']);
+        $this->assertNull($row['requests_counted_on']);
+    }
 }

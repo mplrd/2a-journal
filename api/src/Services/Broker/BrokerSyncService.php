@@ -5,6 +5,7 @@ namespace App\Services\Broker;
 use App\Enums\BrokerProvider;
 use App\Enums\ConnectionStatus;
 use App\Enums\SyncStatus;
+use App\Exceptions\BrokerDailyBudgetException;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\BrokerConnectionRepository;
@@ -62,6 +63,12 @@ class BrokerSyncService
         private BrokerOrderSyncService $orderSyncService,
         private ?AccountRepository $accountRepo = null,
         private ?\App\Repositories\UserRepository $userRepo = null,
+        /**
+         * Requests a single connection may spend at its broker in one UTC day.
+         * 0 disables the cap, which is also what every provider without a
+         * request counter gets in practice.
+         */
+        private int $dailyRequestBudget = 0,
     ) {}
 
     /**
@@ -86,6 +93,43 @@ class BrokerSyncService
             'status' => SyncStatus::QUEUED->value,
             'syncing' => ($connection['syncing_since'] ?? null) !== null,
         ];
+    }
+
+    /**
+     * Stop the run when this connection has already spent its allowance at the
+     * broker today.
+     *
+     * The cap is per connection, not per provider: a prop firm counts requests
+     * against a trading account whatever protocol reads it. MetaTrader covers
+     * the same brokers as cTrader and lands on this same counter as soon as it
+     * exposes getRequestCounts() — nothing here is cTrader-specific.
+     *
+     * A provider with no request counter never grows the counter, so the cap
+     * never fires for it. That is the intended shape: this guards against a
+     * measured spend, not a guessed one.
+     */
+    private function assertDailyBudgetLeft(int $connectionId): void
+    {
+        if ($this->dailyRequestBudget <= 0) {
+            return;
+        }
+
+        $spent = $this->connectionRepo->requestsSpentToday($connectionId);
+        if ($spent < $this->dailyRequestBudget) {
+            return;
+        }
+
+        BrokerLogger::event('broker-sync', 'daily_budget_reached', [
+            'connection_id' => $connectionId,
+            'spent' => $spent,
+            'budget' => $this->dailyRequestBudget,
+        ]);
+
+        throw new BrokerDailyBudgetException(
+            "Daily request budget spent ({$spent}/{$this->dailyRequestBudget})",
+            $spent,
+            $this->dailyRequestBudget,
+        );
     }
 
     /**
@@ -116,6 +160,12 @@ class BrokerSyncService
     public function sync(int $connectionId, int $userId): array
     {
         $connection = $this->requireSyncableConnection($connectionId, $userId);
+
+        // Before anything is reserved or logged: a run refused for budget is a
+        // run that never happened, not one that failed. Checked here rather
+        // than after the claim so a capped connection costs neither a
+        // reservation nor a sync_logs row every minute.
+        $this->assertDailyBudgetLeft($connectionId);
 
         // One sync at a time per connection. Nothing else serialises the manual
         // click against the scheduled run, and two concurrent runs on the same
@@ -384,11 +434,22 @@ class BrokerSyncService
             if (isset($connector) && method_exists($connector, 'getRequestCounts')) {
                 $spent = $connector->getRequestCounts();
                 if (($spent['total'] ?? 0) > 0) {
-                    BrokerLogger::event('ctrader', 'sync_request_budget', [
-                        'connection_id' => $connectionId,
-                        'requests' => $spent['total'],
-                        'by_type' => $spent['by_type'] ?? [],
-                    ]);
+                    // The provider, not a hardcoded "ctrader": MetaTrader covers
+                    // the same brokers and will report through this same
+                    // contract, and requests filed under another protocol's name
+                    // are worse than none.
+                    BrokerLogger::event(
+                        strtolower((string) ($connection['provider'] ?? 'broker')),
+                        'sync_request_budget',
+                        [
+                            'connection_id' => $connectionId,
+                            'requests' => $spent['total'],
+                            'by_type' => $spent['by_type'] ?? [],
+                        ],
+                    );
+
+                    // Same figure feeds the daily counter the next run reads.
+                    $this->connectionRepo->addRequestsSpent($connectionId, (int) $spent['total']);
                 }
             }
 

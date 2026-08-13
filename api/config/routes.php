@@ -446,6 +446,11 @@ $brokerSyncService = new BrokerSyncService(
     $brokerOrderSyncService,
     $accountRepo,
     $userRepo,
+    // The manual click spends the same broker allowance as the scheduler, so it
+    // answers to the same cap. Admin BO setting first, env var second, then the
+    // config default.
+    (int) ($platformSettingsService->resolve('broker_daily_request_budget')
+        ?? $brokerConfig['daily_request_budget']),
 );
 $brokerConnectionService = new BrokerConnectionService(
     $brokerConnectionRepo,
