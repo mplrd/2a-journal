@@ -100,6 +100,7 @@ class CtraderConnectorTest extends TestCase
             self::frame(self::APP_AUTH_RES),
             self::frame(self::ACCOUNT_AUTH_RES),
             self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 1, 'symbolName' => 'EURUSD']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 1, 'lotSize' => 10000000]]]),
             self::frame(self::ERROR_RES, ['errorCode' => 'NOT_ENOUGH_MONEY', 'description' => 'Insufficient margin']),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
@@ -698,12 +699,19 @@ class CtraderConnectorTest extends TestCase
 
     public function testPlaceMarketBuyOrderConvertsLotToVolumeAndReturnsOrderId(): void
     {
+        // 0.10 lot of EURUSD, whose lotSize is 10,000,000 hundredths of the
+        // base unit, is 1,000,000 — the exact inverse of the read path's
+        // volume / lotSize. The old `size * 100` sent 10, an order a hundred
+        // thousand times too small that the broker rejects under its minimum.
         $ws = $this->makeWsStub([
             self::frame(self::APP_AUTH_RES),
             self::frame(self::ACCOUNT_AUTH_RES),
             self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [
                 ['symbolId' => 1, 'symbolName' => 'EURUSD'],
                 ['symbolId' => 2, 'symbolName' => 'GBPUSD'],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [
+                ['symbolId' => 1, 'lotSize' => 10000000],
             ]]),
             self::frame(self::EXECUTION_EVENT, ['order' => [
                 'orderId' => 1100,
@@ -728,13 +736,67 @@ class CtraderConnectorTest extends TestCase
         $this->assertSame('ORDER_STATUS_FILLED', $result['status']);
 
         // The NewOrder payload is nested under `payload`, payloadType numeric.
-        $sent = json_decode($ws->sentMessages[3], true);
+        $sent = json_decode($ws->sentMessages[4], true);
         $this->assertSame(2106, $sent['payloadType']);
         $this->assertSame(1, $sent['payload']['symbolId']);
         $this->assertSame('MARKET', $sent['payload']['orderType']);
         $this->assertSame('BUY', $sent['payload']['tradeSide']);
-        $this->assertSame(10, $sent['payload']['volume']);
+        $this->assertSame(1000000, $sent['payload']['volume']);
         $this->assertSame(1.0950, $sent['payload']['stopLoss']);
+    }
+
+    public function testPlaceOrderOnAnIndexIsUnchangedByTheLotSizeLookup(): void
+    {
+        // An index CFD has lotSize 100, so `size * 100` happened to be right —
+        // which is why the defect never showed on the accounts in use. The fix
+        // must leave this case exactly where it was.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 7, 'symbolName' => 'GER40']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 7, 'lotSize' => 100]]]),
+            self::frame(self::EXECUTION_EVENT, ['order' => ['orderId' => 9, 'orderStatus' => 'ORDER_STATUS_FILLED']]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->placeOrder(
+            ['ctid_trader_account_id' => 1, 'access_token' => 't'],
+            ['symbol' => 'GER40', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 1.5],
+        );
+
+        $sent = json_decode($ws->sentMessages[4], true);
+        $this->assertSame(150, $sent['payload']['volume']);
+    }
+
+    public function testPlaceOrderFallsBackToUnitsWhenTheLotSizeIsUnknown(): void
+    {
+        // Mirrors the read path, which divides by 100 when the lookup fails —
+        // "hundredths of the base unit" being the field's documented meaning.
+        // The fallback can only under-size an order, never over-size it, so the
+        // broker rejects it rather than filling something unintended.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 3, 'symbolName' => 'EURUSD']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => []]),
+            self::frame(self::EXECUTION_EVENT, ['order' => ['orderId' => 4, 'orderStatus' => 'ORDER_STATUS_FILLED']]),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $lines = $this->captureErrorLog(fn() => $connector->placeOrder(
+            ['ctid_trader_account_id' => 1, 'access_token' => 't'],
+            ['symbol' => 'EURUSD', 'direction' => 'BUY', 'order_type' => 'MARKET', 'size' => 2.0],
+        ));
+
+        $sent = json_decode($ws->sentMessages[4], true);
+        $this->assertSame(200, $sent['payload']['volume']);
+
+        // A silent fallback on an OUTBOUND order is exactly what one does not
+        // want to discover after the fact.
+        $this->assertCount(1, $lines);
+        $entry = json_decode($lines[0], true);
+        $this->assertSame('lot_size_unresolved', $entry['event']);
+        $this->assertSame('EURUSD', $entry['symbol']);
     }
 
     public function testPlaceLimitOrderIncludesLimitPrice(): void
@@ -743,6 +805,7 @@ class CtraderConnectorTest extends TestCase
             self::frame(self::APP_AUTH_RES),
             self::frame(self::ACCOUNT_AUTH_RES),
             self::frame(self::SYMBOLS_LIST_RES, ['symbol' => [['symbolId' => 5, 'symbolName' => 'GBPUSD']]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 5, 'lotSize' => 10000000]]]),
             self::frame(self::EXECUTION_EVENT, ['order' => ['orderId' => 200, 'orderStatus' => 'ORDER_STATUS_ACCEPTED']]),
         ]);
         $connector = new CtraderConnector($this->config, $ws);
@@ -752,10 +815,11 @@ class CtraderConnectorTest extends TestCase
             ['symbol' => 'GBPUSD', 'direction' => 'SELL', 'order_type' => 'LIMIT', 'size' => 1.0, 'entry_price' => 1.27],
         );
 
-        $sent = json_decode($ws->sentMessages[3], true);
+        $sent = json_decode($ws->sentMessages[4], true);
         $this->assertSame('LIMIT', $sent['payload']['orderType']);
         $this->assertSame('SELL', $sent['payload']['tradeSide']);
         $this->assertSame(1.27, $sent['payload']['limitPrice']);
+        $this->assertSame(10000000, $sent['payload']['volume']);
     }
 
     public function testUnknownSymbolThrowsBrokerOrderException(): void
@@ -820,15 +884,90 @@ class CtraderConnectorTest extends TestCase
         $sentFull = json_decode($ws1->sentMessages[2], true);
         $this->assertArrayNotHasKey('volume', $sentFull['payload']);
 
+        // A partial close carries a volume, so it needs the same lot-size
+        // conversion as placeOrder — and the position is the only thing that
+        // says which symbol to convert against.
         $ws2 = $this->makeWsStub([
             self::frame(self::APP_AUTH_RES),
             self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => [
+                ['positionId' => 99, 'tradeData' => ['symbolId' => 1]],
+            ]]),
+            self::frame(self::SYMBOL_BY_ID_RES, ['symbol' => [['symbolId' => 1, 'lotSize' => 10000000]]]),
             self::frame(self::EXECUTION_EVENT, ['executionType' => 'ORDER_PARTIAL_FILL']),
         ]);
         $connector2 = new CtraderConnector($this->config, $ws2);
-        $connector2->closePosition(['ctid_trader_account_id' => 1, 'access_token' => 't'], 'pos-99', 0.5);
-        $sentPartial = json_decode($ws2->sentMessages[2], true);
-        $this->assertSame(50, $sentPartial['payload']['volume']);
+        $connector2->closePosition(['ctid_trader_account_id' => 1, 'access_token' => 't'], '99', 0.5);
+        $sentPartial = json_decode($ws2->sentMessages[4], true);
+        $this->assertSame(5000000, $sentPartial['payload']['volume']);
+    }
+
+    public function testPartialCloseFallsBackToUnitsWhenThePositionIsUnknown(): void
+    {
+        // The position may have been closed between the decision and the call.
+        // Falling back keeps the old behaviour rather than refusing outright,
+        // and cTrader will reject a volume it disagrees with anyway.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::RECONCILE_RES, ['position' => []]),
+            self::frame(self::EXECUTION_EVENT, ['executionType' => 'ORDER_PARTIAL_FILL']),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $lines = $this->captureErrorLog(
+            fn() => $connector->closePosition(['ctid_trader_account_id' => 1, 'access_token' => 't'], '99', 0.5),
+        );
+
+        $sent = json_decode($ws->sentMessages[3], true);
+        $this->assertSame(50, $sent['payload']['volume']);
+        $this->assertCount(1, $lines);
+        $this->assertSame('lot_size_unresolved', json_decode($lines[0], true)['event']);
+    }
+
+    /**
+     * BrokerLogger writes through error_log(). Point it at a file for the call
+     * and read back what landed, stripping the "[date UTC] " prefix error_log()
+     * adds for a file sink — it does not when the sink is stderr, which is
+     * production — and the \r left by Windows line endings.
+     *
+     * @return list<string>
+     */
+    private function captureErrorLog(callable $run): array
+    {
+        $file = tempnam(sys_get_temp_dir(), 'ctraderlog');
+        $previous = ini_get('error_log');
+        ini_set('error_log', $file);
+
+        try {
+            $run();
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+
+        $contents = file_get_contents($file) ?: '';
+        unlink($file);
+
+        return array_values(array_map(
+            fn($l) => preg_replace('/^\[[^\]]+\]\s*/', '', rtrim($l, "\r")),
+            array_filter(explode("\n", $contents), fn($l) => trim($l) !== ''),
+        ));
+    }
+
+    public function testFullCloseDoesNotLookUpAnyLotSize(): void
+    {
+        // Volume 0 means "close everything" to cTrader: there is nothing to
+        // convert, so the extra round-trips must not happen.
+        $ws = $this->makeWsStub([
+            self::frame(self::APP_AUTH_RES),
+            self::frame(self::ACCOUNT_AUTH_RES),
+            self::frame(self::EXECUTION_EVENT, ['executionType' => 'ORDER_FILLED']),
+        ]);
+        $connector = new CtraderConnector($this->config, $ws);
+
+        $connector->closePosition(['ctid_trader_account_id' => 1, 'access_token' => 't'], '99');
+
+        $this->assertCount(3, $ws->sentMessages);
     }
 
     // ── Account discovery (ProtoOAGetAccountListByAccessTokenReq) ───
