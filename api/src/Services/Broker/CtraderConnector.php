@@ -1182,10 +1182,11 @@ class CtraderConnector implements ConnectorInterface
         return $this->withAuthenticatedSession($credentials, function (WsClient $ws, int $accountId) use ($order, $direction, $orderTypeProto) {
             $symbolId = $this->resolveSymbolId($ws, $accountId, (string) $order['symbol']);
 
-            // cTrader expresses volume in 1/100 lots (one lot = 100k for FX,
-            // 100 for index CFDs etc.). The caller passes a fractional lot
-            // ("size = 0.10") so we multiply by 100 and floor to int.
-            $volume = (int) floor(((float) $order['size']) * 100);
+            $volume = $this->lotsToVolume(
+                (float) $order['size'],
+                $this->lotSizeForSymbolId($ws, $accountId, $symbolId),
+                ['symbol' => (string) $order['symbol'], 'symbol_id' => $symbolId],
+            );
             if ($volume <= 0) {
                 throw new \App\Exceptions\BrokerOrderException(
                     'cTrader requires a positive integer volume (100 = 0.01 lot)',
@@ -1258,7 +1259,13 @@ class CtraderConnector implements ConnectorInterface
             // 0 = full close in ProtoOAClosePositionReq semantics — but we
             // forward an explicit volume when the caller wants partial close.
             if ($sizeOverride !== null) {
-                $partial = (int) floor($sizeOverride * 100);
+                // Only a partial close carries a volume, so only it needs the
+                // conversion — and only it pays for the two lookups below.
+                $partial = $this->lotsToVolume(
+                    $sizeOverride,
+                    $this->lotSizeForPosition($ws, $accountId, (int) $externalPositionId),
+                    ['position_id' => $externalPositionId],
+                );
                 if ($partial <= 0) {
                     throw new \App\Exceptions\BrokerOrderException(
                         'cTrader partial close requires a positive volume',
@@ -1367,6 +1374,98 @@ class CtraderConnector implements ConnectorInterface
             "cTrader symbol '{$symbolName}' not found on account {$accountId}",
             'UNKNOWN_SYMBOL',
         );
+    }
+
+    /**
+     * Turn a lot count into the volume cTrader expects, the exact inverse of
+     * the read path's `volume / lotSize` (see DealNormalizer).
+     *
+     * ProtoOADeal.volume, ProtoOATradeData.volume and ProtoOASymbol.lotSize are
+     * all expressed in hundredths of the base unit. One lot is therefore
+     * `lotSize` of them — 10,000,000 on a FX pair, 100 on a typical index CFD.
+     *
+     * This used to be a flat `* 100`, which is only right when a lot happens to
+     * be one unit. Index CFDs fit that by accident, which is why the defect
+     * never surfaced; on EURUSD it sent 10 where 1,000,000 was meant, an order
+     * a hundred thousand times too small.
+     *
+     * When the lot size cannot be resolved we fall back to that same `* 100`,
+     * mirroring the read path's own fallback. It can only ever under-size an
+     * order, never over-size it, so the broker rejects it instead of filling
+     * something unintended — but it is logged, because a silent fallback on an
+     * outbound order is exactly what nobody wants to discover afterwards.
+     *
+     * @param array<string, mixed> $context diagnostic crumbs for the log line
+     */
+    private function lotsToVolume(float $lots, int $lotSize, array $context = []): int
+    {
+        if ($lotSize <= 0) {
+            BrokerLogger::failure('ctrader', 'lot_size_unresolved', $context + [
+                'lots' => $lots,
+                'fallback' => 'units',
+            ]);
+
+            return (int) floor($lots * 100);
+        }
+
+        return (int) floor($lots * $lotSize);
+    }
+
+    /**
+     * ProtoOASymbol.lotSize for one symbol, 0 when it cannot be resolved.
+     *
+     * ProtoOASymbolsListReq only returns ProtoOALightSymbol, which carries the
+     * id and the name but no lot size — hence the separate by-id call. Memoised
+     * in the same cache the sync path fills, so a run that already resolved the
+     * symbol pays nothing.
+     */
+    private function lotSizeForSymbolId(WsClient $ws, int $accountId, int $symbolId): int
+    {
+        $cached = $this->lotSizeCache[$accountId][$symbolId] ?? null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $response = $this->sendAndReceive($ws, 'ProtoOASymbolByIdReq', [
+            'ctidTraderAccountId' => $accountId,
+            'symbolId' => [$symbolId],
+        ]);
+
+        foreach ($response['symbol'] ?? [] as $symbol) {
+            if ((int) ($symbol['symbolId'] ?? 0) === $symbolId) {
+                $lotSize = (int) ($symbol['lotSize'] ?? 0);
+                $this->lotSizeCache[$accountId][$symbolId] = $lotSize;
+
+                return $lotSize;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * The lot size of the symbol a live position is on, 0 when the position is
+     * not in the snapshot.
+     *
+     * A close request names a position, not a symbol, so the snapshot is the
+     * only thing that says what to convert against. Returning 0 — and letting
+     * the caller fall back — is deliberate: a position can legitimately have
+     * closed between the decision to close it and this call, and refusing
+     * outright would be worse than sending a volume cTrader will judge itself.
+     */
+    private function lotSizeForPosition(WsClient $ws, int $accountId, int $positionId): int
+    {
+        $reconcile = $this->reconcile($ws, $accountId);
+
+        foreach ($reconcile['position'] ?? [] as $position) {
+            if ((int) ($position['positionId'] ?? 0) === $positionId) {
+                $symbolId = (int) ($position['tradeData']['symbolId'] ?? 0);
+
+                return $symbolId > 0 ? $this->lotSizeForSymbolId($ws, $accountId, $symbolId) : 0;
+            }
+        }
+
+        return 0;
     }
 
     /**
