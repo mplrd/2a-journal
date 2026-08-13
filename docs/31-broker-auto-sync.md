@@ -122,12 +122,20 @@ BrokerSyncSchedulerService::runDueConnections()
     │
     ├─ Pour chaque connexion, en try/catch isolé :
     │     ├─ Réservée ailleurs → SKIPPED, compté en already_syncing, rien d'autre
+    │     ├─ Budget du jour épuisé → compté en deferred, rien d'autre
+    │     ├─ Rate limit broker    → compté en deferred, rien d'autre
     │     ├─ Succès  → BrokerSyncService::sync() + resetFailures(id)
-    │     └─ Échec   → incrementFailures(id)
+    │     └─ Échec   → incrementFailures(id) + ligne connection_sync_failed
     │                 Si consecutive_failures atteint max → markError(id) + status=ERROR
     │
     └─ Émet un résumé JSON sur stdout (logs Railway)
 ```
+
+Le `catch` n'écrivait longtemps **que** le compteur : la cause de l'échec
+n'atteignait personne, et une connexion en échec à chaque passe restait
+invisible dans le flux du conteneur. Il émet désormais une ligne
+`connection_sync_failed` portant la connexion, la série d'échecs en cours et un
+booléen `deactivated` — voir [92](92-journalisation-erreurs.md).
 
 ### Exemple de sortie JSON
 
@@ -152,6 +160,7 @@ le superviseur les agrège.
 | `success` | Parmi les `processed`, combien ont été syncées avec succès. |
 | `failed` | Parmi les `processed`, combien ont échoué (incrémente `consecutive_failures`). |
 | `already_syncing` | Parmi les `processed`, combien tenaient déjà une réservation prise ailleurs (clic UI, autre worker). Ni succès ni échec : aucun travail n'a eu lieu, le compteur d'échecs n'est pas touché. Voir [89-broker-sync-parallelisation.md](89-broker-sync-parallelisation.md). |
+| `deferred` | Parmi les `processed`, combien ont été **reportées volontairement**, sans échec ni disjoncteur. Deux causes : un bannissement de fréquence côté broker (cadencement attendu, cf. [77](77-bingx-rate-limit-pacing.md)), ou le **budget quotidien de requêtes atteint** (cf. [95](95-budget-quotidien-de-requetes-broker.md)). Dans les deux cas la connexion reste `ACTIVE` et repart d'elle-même. |
 | `deactivated` | Parmi les `failed`, combien ont atteint le seuil `BROKER_SYNC_MAX_FAILURES` et sont passées en `status=ERROR`. |
 | `interval_minutes` | Valeur effective de `BROKER_SYNC_INTERVAL_MINUTES` appliquée par ce run. Permet de vérifier d'un coup d'œil que l'env var est bien lue. |
 

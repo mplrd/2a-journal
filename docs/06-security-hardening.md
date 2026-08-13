@@ -53,6 +53,8 @@ Headers de sécurité ajoutés sur toutes les réponses API :
 
 Protection contre les attaques par force brute sur les endpoints d'authentification.
 
+> **L'adresse utilisée comme clé de comptage a longtemps été la mauvaise.** Derrière Cloudflare et l'edge Railway, `REMOTE_ADDR` est une adresse interne : les quotas décrits ici étaient mutualisés entre tous les utilisateurs au lieu d'être individuels. Corrigé à l'étape [96](96-adresse-ip-reelle-du-visiteur.md), qui dérive l'adresse réelle du visiteur — les quotas ci-dessous ne sont vraiment « par IP » que depuis là.
+
 #### Architecture
 
 ```
@@ -60,6 +62,8 @@ Request → RateLimitMiddleware → Controller
               ↓
     RateLimitRepository (DB)
 ```
+
+L'adresse vient de `Request::getClientIp()`, résolue par `App\Core\ClientIpResolver` (cf. étape 96).
 
 #### Table `rate_limits`
 

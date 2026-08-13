@@ -67,7 +67,7 @@ try {
     $router = new Router();
     require __DIR__ . '/../config/routes.php';
 
-    $request = Request::capture();
+    $request = Request::capture($securityConfig['trusted_proxies'] ?? []);
     $response = $router->dispatch($request);
     $response->send();
 } catch (HttpException $e) {
