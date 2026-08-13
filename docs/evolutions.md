@@ -52,6 +52,26 @@ Le même problème existe pour `symbols` (`uk_symbols_user_code`) et probablemen
 
 ### E-02 — Connexion Ouinex (broker-sync, pas import fichier)
 
+> **Statut au 2026-08-13 — Phase 1 LIVRÉE, Phase 2 à faire.**
+>
+> **Phase 1 : livrée**, doc [63](63-broker-sync-ouinex.md). Vérifié dans le code :
+> `OuinexConnector` enregistré dans `ConnectorRegistry`, `BrokerSyncService` et
+> `TradingViewWebhookService` ; `BrokerProvider::OUINEX` dans l'enum ; quatre
+> normalizers dédiés ; **31 tests unitaires** ; côté front `OuinexConnectDialog.vue`,
+> le panneau de connexion, les clés fr/en et leurs tests. La livraison **dépasse**
+> le scope décrit plus bas : elle couvre aussi le snapshot des positions ouvertes,
+> celui des ordres en attente et les ordres récemment finalisés, là où la Phase 1
+> ne prévoyait que `closed_margin_positions`.
+>
+> **Mais jamais validée contre un vrai compte Ouinex** — comme tout le domaine
+> broker, le flag et les identifiants réels rendent la vérification impossible en
+> local. Validée par les tests, pas par l'usage.
+>
+> **Phase 2 : rien.** Aucune trace de spot ni de pairing FIFO dans le connecteur.
+> Le plan ci-dessous reste valable tel quel.
+>
+> La branche `feat/import-ouinex` mentionnée plus bas n'a plus lieu d'être.
+
 **Contexte** : ticket initial `retours-beta-tests.md#E-02` formulé "Source d'import : Ouinex". Après lecture de la doc Ouinex (collection Postman publique servie sous `api.ouinex.com`) le 2026-05-05, **pivot architectural assumé** : Ouinex est une API GraphQL (`https://live-api.ouinex.com/graphql`), pas un broker qui exporte un format CSV exploitable. L'export CSV existe (`orders-history_*.csv`) mais c'est de l'**order-by-order** (un leg par ligne, pas du round-trip), incompatible avec le pipeline d'import actuel qui attend des lignes round-trip type FTMO (entry_price + exit_price + pnl sur la même ligne).
 
 → On raccroche au pattern `ConnectorInterface` existant (`api/src/Services/Broker/`, déjà utilisé par `CtraderConnector` et `MetaApiConnector`), pas au pipeline `import/`. UX : ajout d'Ouinex au dropdown des providers dans le form de connexion broker au niveau du compte (entrée déjà présente pour cTrader / MetaApi).
@@ -97,7 +117,7 @@ Le même problème existe pour `symbols` (`uk_symbols_user_code`) et probablemen
 - Conversions, dust : à voir si on les ignore ou si on les remonte.
 
 **Repéré le** : 2026-05-05.
-**Priorité** : Phase 1 = haute (déclenchera la livraison E-02 partielle), Phase 2 = moyenne (peut attendre la fin de Phase 1 et un peu de feedback user).
+**Priorité** : Phase 1 = **livrée** (voir le statut en tête d'entrée) ; il ne lui reste qu'une validation contre un vrai compte, qui viendra avec celle des autres connecteurs. Phase 2 = moyenne, à reprioriser sur retour d'usage — personne n'a encore demandé le spot.
 
 ---
 
@@ -603,7 +623,9 @@ Chaque trade importé omet donc ses frais. L'écart est invisible trade par trad
 
 ---
 
-## Rate limiting — l'API ne voit jamais l'IP réelle du visiteur
+## ✅ TRAITÉ — Rate limiting — l'API ne voit jamais l'IP réelle du visiteur
+
+**Traité le 2026-08-13** — voir [96-adresse-ip-reelle-du-visiteur.md](96-adresse-ip-reelle-du-visiteur.md). `App\Core\ClientIpResolver` dérive l'adresse de `CF-Connecting-IP` puis `X-Forwarded-For`, **uniquement** depuis un hop de confiance, avec parcours de droite à gauche pour ne pas gober une entrée forgée en tête de chaîne. Une seule plage déclarée — `100.64.0.0/10`, le réseau interne Railway — livrée **par défaut**, donc aucune variable à poser ; les plages Cloudflare sont volontairement absentes puisque PHP ne les voit jamais dans `REMOTE_ADDR`. Vérifié au passage qu'aucun `*.up.railway.app` n'expose l'API en contournant Cloudflare, sans quoi l'en-tête aurait été falsifiable. Entrée conservée pour l'historique.
 
 **Signalé à traiter en priorité le 2026-08-03.**
 

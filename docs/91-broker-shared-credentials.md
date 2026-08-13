@@ -123,6 +123,18 @@ au caractère près celui de `build()`, erreurs de validation comprises.
 
 ### La course au refresh — une régression évitée
 
+> **⚠️ Cette section décrit un garde-fou qui ne suffisait pas.** La fenêtre de
+> fraîcheur ci-dessous est une lecture d'horloge : elle ne départage que des
+> synchros **décalées**. Deux workers démarrés dans la même seconde lisent tous
+> les deux « personne n'a renouvelé récemment » et consomment le même token.
+> Constaté en environnement de test le 2026-08-13 — une connexion en échec à
+> **chaque** passe, la perdante alternant. Remplacé par une réservation
+> atomique (`refreshing_since`, migration 041) : voir
+> [93](93-course-refresh-token-partage.md). La fenêtre de 300 s reste en place
+> et garde son utilité — elle évite la réservation elle-même quand un
+> renouvellement vient d'aboutir. Section conservée telle quelle pour
+> l'historique du raisonnement.
+
 cTrader **fait tourner le refresh token à chaque usage**. Une fois ce token
 partagé, deux connexions synchronisées dans le même tick de scheduler
 présenteraient le même token : la seconde utiliserait un token déjà consommé
