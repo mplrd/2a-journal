@@ -36,6 +36,18 @@ class BrokerSyncService
      */
     public const SHARED_CREDENTIAL_FRESHNESS_SECONDS = 300;
 
+    /**
+     * Au-delà de ce délai, la réservation du renouvellement est considérée
+     * abandonnée et reprise par la synchro suivante.
+     *
+     * Une minute : un renouvellement est un unique appel HTTP, donc largement
+     * assez, et assez court pour qu'un worker tué ne gèle pas les
+     * renouvellements du provider plus d'un tour de cron. La réservation est
+     * de toute façon rendue explicitement, succès ou échec — ce délai n'est
+     * qu'un filet.
+     */
+    public const REFRESH_CLAIM_TTL_SECONDS = 60;
+
     public function __construct(
         private BrokerConnectionRepository $connectionRepo,
         private SyncLogRepository $syncLogRepo,
@@ -149,27 +161,50 @@ class BrokerSyncService
                 self::SHARED_CREDENTIAL_FRESHNESS_SECONDS,
             );
 
-            if (!$justRenewed) {
-                $refreshed = $connector->refreshCredentials($credentials);
-                if ($refreshed !== $credentials) {
-                    // A renewed access token is a shared credential, so it
-                    // lands on the user's row and every other connection of
-                    // this provider picks it up on its next pass.
-                    //
-                    // This is the only call site allowed to pass fromRefresh:
-                    // it is what stamps refreshed_at and therefore opens the
-                    // skip window above for the user's other connections.
-                    $encrypted = $this->credentials->store(
+            // The freshness check above only separates STAGGERED syncs. Two
+            // workers starting in the same second both read "nobody renewed
+            // recently" — neither has finished — then both call the broker, and
+            // the loser presents a token the winner has already spent. The
+            // reservation is what settles a tie: one conditional UPDATE, one
+            // winner. The loser carries on with the access token it holds, which
+            // a concurrent renewal does not invalidate — only the refresh token
+            // rotates.
+            $claimed = !$justRenewed && $this->credentials->claimSharedRefresh(
+                (int) $connection['user_id'],
+                $connection['provider'],
+                self::REFRESH_CLAIM_TTL_SECONDS,
+            );
+
+            if ($claimed) {
+                try {
+                    $refreshed = $connector->refreshCredentials($credentials);
+                    if ($refreshed !== $credentials) {
+                        // A renewed access token is a shared credential, so it
+                        // lands on the user's row and every other connection of
+                        // this provider picks it up on its next pass.
+                        //
+                        // This is the only call site allowed to pass fromRefresh:
+                        // it is what stamps refreshed_at and therefore opens the
+                        // skip window above for the user's other connections.
+                        $encrypted = $this->credentials->store(
+                            (int) $connection['user_id'],
+                            $connection['provider'],
+                            $refreshed,
+                            fromRefresh: true,
+                        );
+                        $this->connectionRepo->update($connectionId, [
+                            'credentials_encrypted' => $encrypted['ciphertext'],
+                            'credentials_iv' => $encrypted['iv'],
+                        ]);
+                        $credentials = $refreshed;
+                    }
+                } finally {
+                    // Even on a throw: a genuinely bad secret must not keep the
+                    // user's other connections from ever renewing.
+                    $this->credentials->releaseSharedRefresh(
                         (int) $connection['user_id'],
                         $connection['provider'],
-                        $refreshed,
-                        fromRefresh: true,
                     );
-                    $this->connectionRepo->update($connectionId, [
-                        'credentials_encrypted' => $encrypted['ciphertext'],
-                        'credentials_iv' => $encrypted['iv'],
-                    ]);
-                    $credentials = $refreshed;
                 }
             }
 

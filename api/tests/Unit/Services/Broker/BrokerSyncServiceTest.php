@@ -286,6 +286,149 @@ class BrokerSyncServiceTest extends TestCase
         $this->service->sync(1, 10);
     }
 
+    // ── Two workers racing for the same shared refresh token ────
+
+    /**
+     * Make findByUserAndProvider() answer with a row that looks like a real
+     * one. A bare ['user_id' => 10] is enough to make claimSharedRefresh() see
+     * "there is something shared", but sharedFor() then decrypts the row and a
+     * stub without a blob makes it read undefined keys.
+     */
+    private function stubSharedCtraderRow(): void
+    {
+        $blob = $this->crypto->encrypt([
+            'client_id' => '30528',
+            'client_secret' => 'sEcReT',
+            'access_token' => 'tok',
+            'refresh_token' => 'ref',
+        ]);
+
+        $this->credentialRepo->method('findByUserAndProvider')->willReturn([
+            'user_id' => 10,
+            'provider' => 'CTRADER',
+            'credentials_encrypted' => $blob['ciphertext'],
+            'credentials_iv' => $blob['iv'],
+        ]);
+    }
+
+    public function testSyncSkipsTheRefreshWhenAnotherWorkerHoldsTheClaim(): void
+    {
+        // The freshness window only covers STAGGERED syncs. Two workers that
+        // start in the same second both read "nobody renewed recently" —
+        // neither has finished yet — then both call cTrader, which rotates the
+        // refresh token on use. The loser presents a spent token and throws.
+        //
+        // Observed on every pass in the test environment: one FAILED plus two
+        // SUCCESS, with the losing connection alternating.
+        $connection = $this->makeConnection('CTRADER', [
+            'access_token' => 'tok', 'refresh_token' => 'ref', 'ctid_trader_account_id' => 123,
+        ]);
+        $this->stubOpenSnapshotDefaults($this->ctraderConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        // Shared row exists, nothing renewed it recently, and the other worker
+        // already holds the reservation.
+        $this->stubSharedCtraderRow();
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(null);
+        $this->credentialRepo->method('claimRefresh')->willReturn(false);
+
+        // The loser must not spend the token — and must not fail either: its
+        // own access token is still valid, since a refresh rotates only the
+        // refresh token.
+        $this->ctraderConnector->expects($this->never())->method('refreshCredentials');
+        $this->ctraderConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
+        $result = $this->service->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SUCCESS->value, $result['status']);
+    }
+
+    public function testSyncRefreshesWhenItWinsTheClaim(): void
+    {
+        $connection = $this->makeConnection('CTRADER', [
+            'access_token' => 'tok', 'refresh_token' => 'ref', 'ctid_trader_account_id' => 123,
+        ]);
+        $this->stubOpenSnapshotDefaults($this->ctraderConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->stubSharedCtraderRow();
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(null);
+        $this->credentialRepo->method('claimRefresh')->willReturn(true);
+
+        // Winning the claim is not enough: it has to be handed back, or the
+        // next pass waits out the whole stale-claim window for nothing.
+        $this->credentialRepo->expects($this->once())->method('releaseRefresh');
+
+        $this->ctraderConnector->expects($this->once())
+            ->method('refreshCredentials')
+            ->willReturnArgument(0);
+        $this->ctraderConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
+        $this->service->sync(1, 10);
+    }
+
+    public function testSyncHandsTheClaimBackEvenWhenTheRefreshThrows(): void
+    {
+        // A genuinely bad client_secret must not leave the reservation held:
+        // every other connection of that provider would then skip its refresh
+        // until the claim goes stale.
+        $connection = $this->makeConnection('CTRADER', [
+            'access_token' => 'tok', 'refresh_token' => 'ref', 'ctid_trader_account_id' => 123,
+        ]);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->stubSharedCtraderRow();
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(null);
+        $this->credentialRepo->method('claimRefresh')->willReturn(true);
+        $this->credentialRepo->expects($this->once())->method('releaseRefresh');
+
+        $this->ctraderConnector->method('refreshCredentials')
+            ->willThrowException(new \RuntimeException('cTrader token refresh failed'));
+
+        $this->expectException(\RuntimeException::class);
+
+        $this->service->sync(1, 10);
+    }
+
+    public function testSyncRefreshesWhenThereIsNoSharedRowToReserve(): void
+    {
+        // BingX and Ouinex keep no shared row, so there is nothing to
+        // serialise: reserving must never become a reason not to refresh.
+        $connection = $this->makeConnection('BINGX', ['api_key' => 'k', 'api_secret' => 's']);
+        $this->stubOpenSnapshotDefaults($this->bingxConnector);
+        $this->connectionRepo->method('findById')->willReturn($connection);
+        $this->syncLogRepo->method('create')->willReturn(['id' => 1]);
+
+        $this->credentialRepo->method('findByUserAndProvider')->willReturn(null);
+        $this->credentialRepo->method('secondsSinceRefresh')->willReturn(null);
+        $this->credentialRepo->expects($this->never())->method('claimRefresh');
+
+        $this->bingxConnector->expects($this->once())
+            ->method('refreshCredentials')
+            ->willReturnArgument(0);
+        $this->bingxConnector->method('fetchDeals')
+            ->willReturn(['deals' => [], 'cursor' => null, 'raw_count' => 0]);
+        $this->importService->method('importNormalizedPositions')->willReturn([
+            'batch_id' => 1, 'imported_positions' => 0, 'imported_trades' => 0,
+            'skipped_duplicates' => 0, 'skipped_errors' => 0, 'errors' => [],
+        ]);
+
+        $this->service->sync(1, 10);
+    }
+
     public function testSyncPassesCursorForIncrementalSync(): void
     {
         $connection = $this->makeConnection();
