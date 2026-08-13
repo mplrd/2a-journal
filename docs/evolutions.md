@@ -904,7 +904,9 @@ La colonne est ajoutée par la migration `023_partial_exits_external_id.sql` mai
 
 ---
 
-## cTrader — `placeOrder` convertit encore le volume en dur
+## ✅ TRAITÉ — cTrader — `placeOrder` convertit encore le volume en dur
+
+**Traité le 2026-08-13** — voir [94-ctrader-volume-des-ordres-sortants.md](94-ctrader-volume-des-ordres-sortants.md). `lotsToVolume()` calcule `lots × lotSize`, l'inverse exact de la lecture, avec un `ProtoOASymbolByIdReq` pour résoudre la taille de lot (`ProtoOALightSymbol` ne la porte pas) et un repli `× 100` journalisé. **La clôture partielle de `closePosition()` avait le même défaut** et est corrigée aussi : elle résout le symbole via le snapshot, la position étant tout ce que la requête nomme. Entrée conservée pour l'historique.
 
 **Contexte** : repéré en corrigeant la conversion de volume côté **lecture** (2026-08-06). Le read path calcule désormais `lots = volume / lotSize`, la valeur exacte du symbole. `placeOrder` (`CtraderConnector:808`) fait toujours `size * 100` — les deux sens du connecteur ne parlent donc plus la même langue.
 
