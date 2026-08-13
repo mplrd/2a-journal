@@ -121,6 +121,9 @@ try {
     $syncInterval = $platformSettings->resolve('broker_sync_interval_minutes');
     $maxFailures = $platformSettings->resolve('broker_sync_max_failures');
     $workers = $platformSettings->resolve('broker_sync_workers');
+    // Not in the required list below: an unset budget means "no cap", which is
+    // the behaviour every provider without a request counter already has.
+    $dailyRequestBudget = $platformSettings->resolve('broker_daily_request_budget');
 
     if ($syncInterval === null || $maxFailures === null) {
         $missing = [];
@@ -233,6 +236,8 @@ try {
         // manual sync writes them in the user's timezone — the same position
         // would drift by the offset depending on which path last touched it.
         new \App\Repositories\UserRepository($pdo),
+        // Admin BO setting first, env var second, then the config default.
+        (int) ($dailyRequestBudget ?? $brokerConfig['daily_request_budget']),
     );
 
     $scheduler = new BrokerSyncSchedulerService(

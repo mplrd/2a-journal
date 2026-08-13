@@ -119,6 +119,7 @@
         "broker_sync_interval_minutes": "Fréquence min entre deux syncs d'une même connexion (minutes)",
         "broker_sync_max_failures": "Nombre d'échecs consécutifs avant désactivation auto",
         "broker_sync_workers": "Nombre de processus de synchro lancés en parallèle (défaut 4, max 16)",
+        "broker_daily_request_budget": "Requêtes qu'une connexion peut dépenser chez son broker par jour (défaut 1500, 0 = illimité). Protège d'une désactivation de compte par la prop firm",
         "email_verification_enabled": "Force la vérification de l'email à l'inscription",
         "mail_enabled": "Active l'envoi d'emails (reset password, notifications, etc.)",
         "mail_from_address": "Adresse expéditeur des emails sortants",

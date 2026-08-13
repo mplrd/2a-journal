@@ -50,6 +50,11 @@ class PlatformSettingsService
                 'env_var' => 'BROKER_SYNC_WORKERS',
                 'description' => 'admin.settings.desc.broker_sync_workers',
             ],
+            'broker_daily_request_budget' => [
+                'type' => SettingType::INT->value,
+                'env_var' => 'BROKER_DAILY_REQUEST_BUDGET',
+                'description' => 'admin.settings.desc.broker_daily_request_budget',
+            ],
             'email_verification_enabled' => [
                 'type' => SettingType::BOOL->value,
                 'env_var' => 'EMAIL_VERIFICATION_ENABLED',
