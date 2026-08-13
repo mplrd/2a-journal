@@ -1071,7 +1071,6 @@ INSERT INTO symbols (code, name, type, point_value, currency) VALUES
 **api/.env**
 ```env
 APP_ENV=development
-APP_DEBUG=true
 APP_URL=http://localhost/trading-journal/api/public
 
 DB_HOST=localhost
