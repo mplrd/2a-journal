@@ -33,7 +33,12 @@ class Request
         $this->contentLength = $contentLength;
     }
 
-    public static function capture(): self
+    /**
+     * @param list<string> $trustedProxies CIDR ranges or bare addresses whose
+     *                                     forwarded headers may be believed.
+     *                                     Empty — the default — means none.
+     */
+    public static function capture(array $trustedProxies = []): self
     {
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
@@ -82,7 +87,11 @@ class Request
             $headers['AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
         }
 
-        $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        // REMOTE_ADDR is the last hop, which behind Cloudflare and Railway is
+        // never the visitor. The forwarded headers are only believed when the
+        // request reached us from a hop the configuration trusts; with no
+        // trusted range set, this is exactly REMOTE_ADDR as before.
+        $clientIp = ClientIpResolver::resolve($_SERVER, $trustedProxies);
         $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
 
         return new self($method, $uri, $body, $_GET, $headers, $clientIp, $_COOKIE, $_FILES, $rawBodyString, $contentLength);

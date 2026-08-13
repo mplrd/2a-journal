@@ -623,7 +623,9 @@ Chaque trade importé omet donc ses frais. L'écart est invisible trade par trad
 
 ---
 
-## Rate limiting — l'API ne voit jamais l'IP réelle du visiteur
+## ✅ TRAITÉ — Rate limiting — l'API ne voit jamais l'IP réelle du visiteur
+
+**Traité le 2026-08-13** — voir [96-adresse-ip-reelle-du-visiteur.md](96-adresse-ip-reelle-du-visiteur.md). `App\Core\ClientIpResolver` dérive l'adresse de `CF-Connecting-IP` puis `X-Forwarded-For`, **uniquement** depuis un hop de confiance, avec parcours de droite à gauche pour ne pas gober une entrée forgée en tête de chaîne. Une seule plage déclarée — `100.64.0.0/10`, le réseau interne Railway — livrée **par défaut**, donc aucune variable à poser ; les plages Cloudflare sont volontairement absentes puisque PHP ne les voit jamais dans `REMOTE_ADDR`. Vérifié au passage qu'aucun `*.up.railway.app` n'expose l'API en contournant Cloudflare, sans quoi l'en-tête aurait été falsifiable. Entrée conservée pour l'historique.
 
 **Signalé à traiter en priorité le 2026-08-03.**
 

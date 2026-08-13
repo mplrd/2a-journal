@@ -92,4 +92,51 @@ class RequestTest extends TestCase
 
         $this->assertSame('127.0.0.1', $request->getClientIp());
     }
+
+    // ── capture() and the real client address ───────────────────────
+
+    public function testCaptureIgnoresForwardedHeadersWhenNoProxyIsTrusted(): void
+    {
+        // The default, and what local and test environments run: no proxy in
+        // front, so a forwarded header is just something a caller sent.
+        $this->withServer([
+            'REMOTE_ADDR' => '203.0.113.7',
+            'HTTP_CF_CONNECTING_IP' => '198.51.100.1',
+        ], function () {
+            $this->assertSame('203.0.113.7', Request::capture()->getClientIp());
+        });
+    }
+
+    public function testCaptureUsesTheForwardedAddressFromATrustedProxy(): void
+    {
+        // Wiring check: the ranges reach ClientIpResolver, which has its own
+        // suite for the matching rules.
+        $this->withServer([
+            'REMOTE_ADDR' => '100.64.0.14',
+            'HTTP_CF_CONNECTING_IP' => '198.51.100.1',
+        ], function () {
+            $this->assertSame(
+                '198.51.100.1',
+                Request::capture(['100.64.0.0/10'])->getClientIp(),
+            );
+        });
+    }
+
+    /**
+     * capture() reads superglobals, so swap $_SERVER for the call and put the
+     * original back whatever happens.
+     *
+     * @param array<string, mixed> $server
+     */
+    private function withServer(array $server, callable $run): void
+    {
+        $original = $_SERVER;
+        $_SERVER = $server + ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/test'];
+
+        try {
+            $run();
+        } finally {
+            $_SERVER = $original;
+        }
+    }
 }
