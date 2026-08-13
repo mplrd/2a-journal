@@ -449,6 +449,13 @@ CREATE TABLE IF NOT EXISTS broker_credentials (
     -- par l'utilisateur peut dater de plusieurs mois. DATETIME, pas TIMESTAMP :
     -- écrit et comparé en UTC_TIMESTAMP(), sans conversion de fuseau de session.
     refreshed_at DATETIME NULL DEFAULT NULL,
+    -- Réservation du renouvellement : un UPDATE conditionnel sur
+    -- refreshing_since sert de verrou (cf. migration 040). `refreshed_at` seul
+    -- ne départage que des synchros décalées ; deux workers démarrés dans la
+    -- même seconde le lisent tous les deux comme « rien de récent » et
+    -- consomment le même refresh token, que cTrader fait tourner à chaque
+    -- usage. Même convention UTC que syncing_since.
+    refreshing_since DATETIME NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

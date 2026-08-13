@@ -376,6 +376,94 @@ class BrokerSharedCredentialsTest extends TestCase
         $this->assertFalse($this->store->sharedRenewedWithin($this->userId, 'BINGX', 300));
     }
 
+    // ── Two syncs racing for the same renewal ───────────────────────
+
+    public function testOnlyOneOfTwoConcurrentRefreshesWinsTheClaim(): void
+    {
+        // The defect this closes. The freshness window is a clock reading, so
+        // it only separates STAGGERED syncs: two workers starting in the same
+        // second both saw "nobody renewed recently", both called cTrader, and
+        // since cTrader rotates the refresh token on use, the loser presented a
+        // token already spent — one FAILED plus two SUCCESS on every pass in
+        // the test environment, with the losing connection alternating.
+        $this->createCtrader($this->accountId, 7589848);
+
+        $first = $this->store->claimSharedRefresh($this->userId, 'CTRADER', 60);
+        $second = $this->store->claimSharedRefresh($this->userId, 'CTRADER', 60);
+
+        $this->assertTrue($first);
+        $this->assertFalse($second, 'the second worker must not spend the token too');
+    }
+
+    public function testHandingTheClaimBackLetsTheNextPassRenew(): void
+    {
+        $this->createCtrader($this->accountId, 7589848);
+
+        $this->assertTrue($this->store->claimSharedRefresh($this->userId, 'CTRADER', 60));
+        $this->store->releaseSharedRefresh($this->userId, 'CTRADER');
+
+        $this->assertTrue(
+            $this->store->claimSharedRefresh($this->userId, 'CTRADER', 60),
+            'a released claim must not make the next pass wait out the stale window',
+        );
+    }
+
+    public function testAStaleClaimIsTakenOver(): void
+    {
+        // A worker killed mid-refresh must not freeze renewals for the user's
+        // whole provider.
+        $this->createCtrader($this->accountId, 7589848);
+        $this->assertTrue($this->store->claimSharedRefresh($this->userId, 'CTRADER', 60));
+
+        $this->pdo->prepare(
+            "UPDATE broker_credentials
+             SET refreshing_since = UTC_TIMESTAMP() - INTERVAL 120 SECOND
+             WHERE user_id = :user_id AND provider = 'CTRADER'"
+        )->execute(['user_id' => $this->userId]);
+
+        $this->assertTrue($this->store->claimSharedRefresh($this->userId, 'CTRADER', 60));
+    }
+
+    public function testTheClaimIsScopedToTheUser(): void
+    {
+        // One user renewing must never hold up another one's sync. The second
+        // user needs a cTrader row of their own for this to prove anything —
+        // with no row at all the claim would be granted for the unrelated
+        // reason that there is nothing to reserve.
+        $this->createCtrader($this->accountId, 7589848);
+
+        $otherAccount = $this->seedAccount($this->otherUserId);
+        $this->service->createConnection($this->otherUserId, $otherAccount, 'CTRADER', [
+            'client_id' => '99999',
+            'client_secret' => 'their-own',
+            'access_token' => 'tok',
+            'refresh_token' => 'refresh',
+            'account_id_ctrader' => 7589850,
+        ]);
+
+        $this->assertTrue($this->store->claimSharedRefresh($this->userId, 'CTRADER', 60));
+        $this->assertFalse($this->store->claimSharedRefresh($this->userId, 'CTRADER', 60));
+
+        $this->assertTrue(
+            $this->store->claimSharedRefresh($this->otherUserId, 'CTRADER', 60),
+            'a claim held by one user must not block another',
+        );
+    }
+
+    public function testAProviderWithoutSharedCredentialsAlwaysWinsTheClaim(): void
+    {
+        // BingX keeps no shared row, so there is no token for two syncs to
+        // fight over. Reserving must never become a reason not to refresh —
+        // that would turn a race fix into a silent token expiry.
+        $this->service->createConnection($this->userId, $this->accountId, 'BINGX', [
+            'api_key' => 'k',
+            'api_secret' => 's',
+        ]);
+
+        $this->assertTrue($this->store->claimSharedRefresh($this->userId, 'BINGX', 60));
+        $this->assertTrue($this->store->claimSharedRefresh($this->userId, 'BINGX', 60));
+    }
+
     // ── Disconnecting must actually revoke ──────────────────────────
 
     public function testDisconnectingOneOfTwoConnectionsKeepsTheSharedCredentials(): void
