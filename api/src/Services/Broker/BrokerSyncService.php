@@ -69,6 +69,12 @@ class BrokerSyncService
          * request counter gets in practice.
          */
         private int $dailyRequestBudget = 0,
+        /**
+         * Auto-sync interval, handed to the reservation so a connection is
+         * synced at most once per tick. Null — the default — keeps the
+         * historical behaviour, for callers entitled to sync on demand.
+         */
+        private ?int $autoSyncIntervalMinutes = null,
     ) {}
 
     /**
@@ -172,7 +178,11 @@ class BrokerSyncService
         // connection import the same deals twice — the dedup is per-batch, not
         // cross-batch. The reservation is also what lets the scheduler fan out
         // across several workers without splitting the work up front.
-        if (!$this->connectionRepo->claimForSync($connectionId, self::SYNC_CLAIM_TTL_SECONDS)) {
+        if (!$this->connectionRepo->claimForSync(
+            $connectionId,
+            self::SYNC_CLAIM_TTL_SECONDS,
+            $this->autoSyncIntervalMinutes,
+        )) {
             return $this->alreadySyncingResult();
         }
 

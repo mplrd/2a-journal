@@ -238,6 +238,10 @@ try {
         new \App\Repositories\UserRepository($pdo),
         // Admin BO setting first, env var second, then the config default.
         (int) ($dailyRequestBudget ?? $brokerConfig['daily_request_budget']),
+        // Handed to the reservation so a connection is synced at most once per
+        // tick: every worker walks the same due list, and without this the one
+        // arriving second re-syncs what the first has just finished.
+        (int) $syncInterval,
     );
 
     $scheduler = new BrokerSyncSchedulerService(

@@ -227,8 +227,24 @@ class BrokerConnectionRepository
      * A claim older than $staleAfterSeconds is taken over: a worker killed
      * mid-run must not lock its connection forever. Keep the window generous
      * enough that a slow-but-alive sync is never doubled.
+     *
+     * `$minIntervalMinutes` additionally refuses a connection already synced
+     * within that interval, which is what keeps ONE sync per connection per
+     * tick. Every worker freezes the due list at startup and walks it whole, so
+     * the reservation alone only prevents simultaneity, not repetition: the
+     * worker arriving second finds the connection free again — the first has
+     * finished and released it — and syncs it over. Seen in the test
+     * environment as three sync_logs rows per pass for two connections, and 72
+     * requests against 36 on the daily counter.
+     *
+     * A pending manual request still wins: someone is watching a spinner, and
+     * the same statement consumes the request, so the next worker of that tick
+     * finds neither a pending request nor a stale last_sync_at and stops.
+     *
+     * Omitting the interval keeps the historical behaviour, for callers
+     * entitled to sync on demand.
      */
-    public function claimForSync(int $id, int $staleAfterSeconds): bool
+    public function claimForSync(int $id, int $staleAfterSeconds, ?int $minIntervalMinutes = null): bool
     {
         // Clamped to [1, 86400] and injected as an integer literal: MariaDB does
         // not accept a bound parameter inside an INTERVAL expression (same
@@ -237,6 +253,17 @@ class BrokerConnectionRepository
             $staleAfterSeconds = 1;
         } elseif ($staleAfterSeconds > 86400) {
             $staleAfterSeconds = 86400;
+        }
+
+        // Exactly the predicate findDueForAutoSync() selects on, so a
+        // connection can never be picked by the list and then refused by the
+        // claim for a different reason than "someone got here first".
+        $dueClause = '';
+        if ($minIntervalMinutes !== null) {
+            $interval = $this->clampInterval($minIntervalMinutes);
+            $dueClause = "AND (sync_requested_at IS NOT NULL
+                               OR last_sync_at IS NULL
+                               OR last_sync_at < UTC_TIMESTAMP() - INTERVAL {$interval} MINUTE)";
         }
 
         // UTC_TIMESTAMP() on both sides, and syncing_since is a DATETIME, so the
@@ -252,7 +279,8 @@ class BrokerConnectionRepository
                  sync_requested_at = NULL
              WHERE id = :id
                AND (syncing_since IS NULL
-                    OR syncing_since < UTC_TIMESTAMP() - INTERVAL {$staleAfterSeconds} SECOND)"
+                    OR syncing_since < UTC_TIMESTAMP() - INTERVAL {$staleAfterSeconds} SECOND)
+               {$dueClause}"
         );
         $stmt->execute(['id' => $id]);
 
