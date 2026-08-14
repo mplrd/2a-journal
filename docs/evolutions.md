@@ -926,6 +926,21 @@ La colonne est ajoutée par la migration `023_partial_exits_external_id.sql` mai
 
 ---
 
+## Ordres sortants cTrader — à exercer quand les robots seront testés
+
+**Contexte** : la conversion de volume des ordres sortants a été corrigée le 2026-08-13 (voir [94](94-ctrader-volume-des-ordres-sortants.md) et l'entrée traitée ci-dessous), mais **elle n'a jamais été exercée** : les robots sont éteints, donc `placeOrder()` et la clôture partielle n'ont jamais tourné contre un vrai compte. Validées par les tests, pas par l'usage.
+
+**À vérifier le jour où l'on testera les robots** :
+
+- le volume reçu par le broker correspond bien à la taille demandée — c'est tout le sujet du correctif, `lots × lotSize` ;
+- **aucune ligne `lot_size_unresolved` n'apparaît** dans les logs. Si elle sort, c'est que la taille de lot n'a pas pu être résolue et que le repli `× 100` s'est appliqué : correct sur un indice CFD, cent mille fois trop petit sur une paire FX ;
+- la clôture partielle envoie le bon volume, elle passe par le snapshot `Reconcile` pour trouver le symbole de la position ;
+- au passage, le coût : un `placeOrder` vaut 5 requêtes et une clôture partielle 5 aussi, à confronter au budget quotidien (évolution #22) si un robot devient bavard.
+
+**Repéré le** : 2026-08-14. **Priorité** : bloquant avant d'armer un robot sur un compte réel, nulle tant qu'ils sont inactifs.
+
+---
+
 ## ✅ TRAITÉ — cTrader — `placeOrder` convertit encore le volume en dur
 
 **Traité le 2026-08-13** — voir [94-ctrader-volume-des-ordres-sortants.md](94-ctrader-volume-des-ordres-sortants.md). `lotsToVolume()` calcule `lots × lotSize`, l'inverse exact de la lecture, avec un `ProtoOASymbolByIdReq` pour résoudre la taille de lot (`ProtoOALightSymbol` ne la porte pas) et un repli `× 100` journalisé. **La clôture partielle de `closePosition()` avait le même défaut** et est corrigée aussi : elle résout le symbole via le snapshot, la position étant tout ce que la requête nomme. Entrée conservée pour l'historique.
