@@ -876,6 +876,42 @@ class BrokerSyncServiceTest extends TestCase
         $this->makeServiceWithRepo($repo)->requestSync(1, 10);
     }
 
+    // ── One sync per connection per tick ────────────────────────
+
+    public function testSyncAsksTheClaimToRefuseAConnectionAlreadySyncedThisTick(): void
+    {
+        // Every worker walks the whole due list, so the reservation alone only
+        // stops simultaneity: the worker arriving second finds the connection
+        // released and syncs it again. Handing the interval to the claim is
+        // what makes it one sync per connection per tick.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+
+        $repo->expects($this->once())
+            ->method('claimForSync')
+            ->with(1, BrokerSyncService::SYNC_CLAIM_TTL_SECONDS, 15)
+            ->willReturn(false);
+
+        $result = $this->makeServiceWithRepo($repo, null, 0, 15)->sync(1, 10);
+
+        $this->assertSame(SyncStatus::SKIPPED->value, $result['status']);
+    }
+
+    public function testWithoutAConfiguredIntervalTheClaimIsLeftAsItWas(): void
+    {
+        // The manual path and anything else that may sync on demand keep the
+        // historical behaviour.
+        $repo = $this->createMock(BrokerConnectionRepository::class);
+        $repo->method('findById')->willReturn($this->makeConnection('CTRADER'));
+
+        $repo->expects($this->once())
+            ->method('claimForSync')
+            ->with(1, BrokerSyncService::SYNC_CLAIM_TTL_SECONDS, null)
+            ->willReturn(false);
+
+        $this->makeServiceWithRepo($repo)->sync(1, 10);
+    }
+
     // ── Daily request budget (evolution #22) ────────────────────
 
     public function testSyncRefusesToRunOnceTheDailyBudgetIsSpent(): void
@@ -996,6 +1032,7 @@ class BrokerSyncServiceTest extends TestCase
         BrokerConnectionRepository $repo,
         ?ConnectorInterface $ctrader = null,
         int $dailyRequestBudget = 0,
+        ?int $autoSyncIntervalMinutes = null,
     ): BrokerSyncService {
         return new BrokerSyncService(
             $repo,
@@ -1012,6 +1049,7 @@ class BrokerSyncServiceTest extends TestCase
             null,
             null,
             $dailyRequestBudget,
+            $autoSyncIntervalMinutes,
         );
     }
 

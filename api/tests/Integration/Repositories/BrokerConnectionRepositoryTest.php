@@ -388,6 +388,75 @@ class BrokerConnectionRepositoryTest extends TestCase
         $this->assertNotNull($row['sync_requested_at'], 'The click must survive to the next tick');
     }
 
+    // ── One sync per connection per tick ────────────────────────
+
+    public function testClaimRefusesAConnectionAlreadySyncedThisInterval(): void
+    {
+        // The defect this closes: every worker freezes the due list at startup
+        // and walks it whole. The one that reaches a connection second finds it
+        // free again — the first has finished and released it — and syncs it
+        // over. Observed in the test environment as three sync_logs rows per
+        // pass for two connections, and 72 requests against 36 on the daily
+        // counter: one connection paying twice for the same work.
+        $conn = $this->createConnection();
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s'));
+
+        $this->assertFalse($this->repo->claimForSync((int) $conn['id'], 900, 15));
+    }
+
+    public function testClaimAcceptsAConnectionWhoseLastSyncIsOldEnough(): void
+    {
+        $conn = $this->createConnection();
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s', time() - 3600));
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900, 15));
+    }
+
+    public function testClaimAcceptsAConnectionThatNeverSynced(): void
+    {
+        $conn = $this->createConnection();
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900, 15));
+    }
+
+    public function testAPendingManualRequestBeatsTheInterval(): void
+    {
+        // Someone is watching a spinner. A click must sync even seconds after
+        // an automatic pass, which is exactly what the interval would refuse.
+        $conn = $this->createConnection();
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s'));
+        $this->repo->requestSync((int) $conn['id']);
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900, 15));
+    }
+
+    public function testTheManualRequestIsConsumedSoASecondWorkerCannotReuseIt(): void
+    {
+        // The claim clears sync_requested_at in the same statement, so the
+        // second worker of the tick sees a fresh last_sync_at and no pending
+        // request — and stops. Without that, a click would license one extra
+        // sync per worker.
+        $conn = $this->createConnection();
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s'));
+        $this->repo->requestSync((int) $conn['id']);
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900, 15));
+        $this->repo->releaseSync((int) $conn['id']);
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s'));
+
+        $this->assertFalse($this->repo->claimForSync((int) $conn['id'], 900, 15));
+    }
+
+    public function testWithoutAnIntervalTheClaimIgnoresTheLastSync(): void
+    {
+        // The historical signature, still used where a caller is entitled to
+        // sync on demand.
+        $conn = $this->createConnection();
+        $this->setLastSyncAt((int) $conn['id'], gmdate('Y-m-d H:i:s'));
+
+        $this->assertTrue($this->repo->claimForSync((int) $conn['id'], 900));
+    }
+
     // ── Daily request budget (evolution #22) ────────────────────
 
     public function testAConnectionThatNeverSyncedHasSpentNothing(): void
