@@ -123,24 +123,60 @@ class StatsRepository
         return str_replace(':be_threshold', $literal, $sql);
     }
 
+    /**
+     * Win / loss / breakeven classification, stated once for every aggregate
+     * that reports the three figures.
+     *
+     * The breakeven band is a percentage of the entry value, so it can only be
+     * applied to a trade that carries one. A trade whose entry value could not
+     * be worked out has `pnl_percent` NULL — an import with no price is the way
+     * in ({@see \App\Services\Import\ImportService::createImportedTrade}) — and
+     * comparing NULL to the threshold answers NULL, which is neither true nor
+     * false. Such a trade used to fall into none of the three buckets while
+     * still counting in `COUNT(*)`, the win rate's denominator: the pie showed
+     * fewer trades than the total, and the rate was quietly dragged down.
+     *
+     * The sign of the P&L is what remains once the percentage is gone, and it
+     * is enough to tell a winner from a loser. `t.pnl` is never NULL here —
+     * {@see buildWhereClause()} makes that the inclusion criterion — so the
+     * three expressions are mutually exclusive and always add up to the count.
+     */
+    private function isWin(): string
+    {
+        return '(CASE WHEN t.pnl_percent IS NULL THEN t.pnl > 0 ELSE t.pnl_percent > :be_threshold END)';
+    }
+
+    private function isLoss(): string
+    {
+        return '(CASE WHEN t.pnl_percent IS NULL THEN t.pnl < 0 ELSE t.pnl_percent < -:be_threshold END)';
+    }
+
+    private function isBreakeven(): string
+    {
+        return '(CASE WHEN t.pnl_percent IS NULL THEN t.pnl = 0'
+             . ' ELSE t.pnl_percent BETWEEN -:be_threshold AND :be_threshold END)';
+    }
+
     public function getOverview(int $userId, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
 
+        [$win, $loss, $be] = [$this->isWin(), $this->isLoss(), $this->isBreakeven()];
+
         $sql = "SELECT
                     COUNT(*) AS total_trades,
                     COALESCE(SUM(t.pnl), 0) AS total_pnl,
-                    SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) AS winning_trades,
-                    SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN 1 ELSE 0 END) AS losing_trades,
-                    SUM(CASE WHEN t.pnl_percent BETWEEN -:be_threshold AND :be_threshold THEN 1 ELSE 0 END) AS be_trades,
+                    SUM(CASE WHEN {$win} THEN 1 ELSE 0 END) AS winning_trades,
+                    SUM(CASE WHEN {$loss} THEN 1 ELSE 0 END) AS losing_trades,
+                    SUM(CASE WHEN {$be} THEN 1 ELSE 0 END) AS be_trades,
                     CASE WHEN COUNT(*) > 0
-                        THEN ROUND(SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+                        THEN ROUND(SUM(CASE WHEN {$win} THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
                         ELSE 0
                     END AS win_rate,
-                    CASE WHEN SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END) > 0
+                    CASE WHEN SUM(CASE WHEN {$loss} THEN ABS(t.pnl) ELSE 0 END) > 0
                         THEN ROUND(
-                            SUM(CASE WHEN t.pnl_percent > :be_threshold THEN t.pnl ELSE 0 END)
-                            / SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END),
+                            SUM(CASE WHEN {$win} THEN t.pnl ELSE 0 END)
+                            / SUM(CASE WHEN {$loss} THEN ABS(t.pnl) ELSE 0 END),
                             2
                         )
                         ELSE NULL
@@ -206,9 +242,9 @@ class StatsRepository
         [$where, $params] = $this->buildWhereClause($userId, $filters);
 
         $sql = "SELECT
-                    SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) AS win,
-                    SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN 1 ELSE 0 END) AS loss,
-                    SUM(CASE WHEN t.pnl_percent BETWEEN -:be_threshold AND :be_threshold THEN 1 ELSE 0 END) AS be
+                    SUM(CASE WHEN {$this->isWin()} THEN 1 ELSE 0 END) AS win,
+                    SUM(CASE WHEN {$this->isLoss()} THEN 1 ELSE 0 END) AS loss,
+                    SUM(CASE WHEN {$this->isBreakeven()} THEN 1 ELSE 0 END) AS be
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 $where";
@@ -245,19 +281,21 @@ class StatsRepository
 
     private function dimensionStatsSelect(): string
     {
+        [$win, $loss] = [$this->isWin(), $this->isLoss()];
+
         return "COUNT(*) AS total_trades,
-                SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) AS wins,
-                SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN 1 ELSE 0 END) AS losses,
+                SUM(CASE WHEN {$win} THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN {$loss} THEN 1 ELSE 0 END) AS losses,
                 CASE WHEN COUNT(*) > 0
-                    THEN ROUND(SUM(CASE WHEN t.pnl_percent > :be_threshold THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+                    THEN ROUND(SUM(CASE WHEN {$win} THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
                     ELSE 0
                 END AS win_rate,
                 COALESCE(SUM(t.pnl), 0) AS total_pnl,
                 ROUND(AVG(t.risk_reward), 2) AS avg_rr,
-                CASE WHEN SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END) > 0
+                CASE WHEN SUM(CASE WHEN {$loss} THEN ABS(t.pnl) ELSE 0 END) > 0
                     THEN ROUND(
-                        SUM(CASE WHEN t.pnl_percent > :be_threshold THEN t.pnl ELSE 0 END)
-                        / SUM(CASE WHEN t.pnl_percent < -:be_threshold THEN ABS(t.pnl) ELSE 0 END),
+                        SUM(CASE WHEN {$win} THEN t.pnl ELSE 0 END)
+                        / SUM(CASE WHEN {$loss} THEN ABS(t.pnl) ELSE 0 END),
                         2
                     )
                     ELSE NULL
