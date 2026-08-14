@@ -238,6 +238,24 @@ Recommandation : **renommer en `asset`** — plus naturel pour un utilisateur no
 
 ---
 
+### Calendrier : le compteur d'une case dit des jours-trades, pas des trades
+
+**Contexte** : chaque case du calendrier affiche un nombre de trades pour la journée. Un trade sorti en plusieurs fois, à des jours différents, encaisse sur chacun de ces jours — il apparaît donc légitimement dans plusieurs cases. Le décompte est dédoublonné **à l'intérieur** d'une journée, pas entre journées.
+
+Résultat : additionner les cases du mois donne un total **supérieur** au nombre de trades du tableau de bord, sans que rien à l'écran ne l'explique. Un rapporteur a compté 53 là où le dashboard en annonçait 42 : 11 de ses trades étaient sortis sur deux jours. Les deux chiffres sont justes, ils ne répondent simplement pas à la même question.
+
+C'est devenu visible avec le correctif du 2026-08-12 qui banque chaque sortie sur le jour où elle a réellement eu lieu — avant, un trade n'était rattaché qu'à un seul jour.
+
+**À faire** : lever l'ambiguïté côté UI. Pistes, par coût croissant :
+- une info-bulle sur le compteur de la case (« trades ayant encaissé ce jour-là ») ;
+- un libellé explicite plutôt qu'un nombre nu ;
+- un total mensuel affiché en pied de calendrier, dédoublonné celui-là, qui raccorde au tableau de bord.
+
+**Repéré le** : 2026-08-14 (analyse du ticket support #39).
+**Priorité** : moyenne — aucun chiffre n'est faux, mais c'est un générateur de tickets « il me manque des trades ».
+
+---
+
 ## Page « Robots » / « Bots de trading » dans le menu principal
 
 **Contexte** : aujourd'hui les webhooks TradingView sont accessibles via un bouton ⚡ sur la grille des comptes (`AccountsView`) → dialog par compte → liste de webhooks → modale d'historique **par webhook**. Pour un utilisateur avec plusieurs comptes et plusieurs webhooks, voir « ce qui s'est passé récemment » oblige à cliquer compte par compte, webhook par webhook. Pas scalable.

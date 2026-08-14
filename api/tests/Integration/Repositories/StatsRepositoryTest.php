@@ -114,8 +114,11 @@ class StatsRepositoryTest extends TestCase
         $riskReward = $pnl > 0 ? abs($pnl) / 50.0 : ($pnl < 0 ? -abs($pnl) / 50.0 : 0);
 
         $entryValue = $entryPrice * $size;
+        // An explicit null must reach the column as NULL: that is the state an
+        // import leaves behind when it cannot work out the entry value, and the
+        // classification has to cope with it.
         $pnlPercent = array_key_exists('pnl_percent', $overrides)
-            ? (float) $overrides['pnl_percent']
+            ? ($overrides['pnl_percent'] === null ? null : (float) $overrides['pnl_percent'])
             : ($entryValue > 0 ? round($pnl / $entryValue * 100, 4) : 0.0);
 
         $closedAt = $overrides['closed_at'] ?? '2026-01-15 11:00:00';
@@ -374,6 +377,78 @@ class StatsRepositoryTest extends TestCase
 
         $this->assertSame(2, $dist['win']);
         $this->assertSame(1, $dist['loss']);
+        $this->assertSame(1, $dist['be']);
+    }
+
+    // ── Trades carrying a P&L but no percentage ─────────────────
+    // The BE threshold is a percentage of the entry value, so a trade whose
+    // entry value is unknown has no percentage to compare it against. Such a
+    // trade still counts as closed, and used to land in no bucket at all while
+    // weighing on the win rate's denominator. Falling back to the sign of the
+    // P&L keeps it classified.
+
+    public function testATradeWithoutPercentageIsClassifiedOnTheSignOfItsPnl(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['pnl_percent' => null]);
+        $this->createClosedTrade(-50.0, 'SL', ['pnl_percent' => null]);
+        $this->createClosedTrade(0.0, 'BE', ['pnl_percent' => null]);
+
+        $dist = $this->repo->getWinLossDistribution($this->userId);
+
+        $this->assertSame(1, $dist['win']);
+        $this->assertSame(1, $dist['loss']);
+        $this->assertSame(1, $dist['be']);
+    }
+
+    public function testTheOverviewBucketsAddUpToTheTotalWhenAPercentageIsMissing(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(-50.0, 'SL');
+        $this->createClosedTrade(300.0, 'TP', ['pnl_percent' => null]);
+        $this->createClosedTrade(-20.0, 'SL', ['pnl_percent' => null]);
+
+        $overview = $this->repo->getOverview($this->userId);
+
+        $this->assertSame(4, $overview['total_trades']);
+        $this->assertSame(2, $overview['winning_trades']);
+        $this->assertSame(2, $overview['losing_trades']);
+        $this->assertSame(0, $overview['be_trades']);
+        $this->assertSame(
+            $overview['total_trades'],
+            $overview['winning_trades'] + $overview['losing_trades'] + $overview['be_trades'],
+            'Every trade must land in exactly one bucket'
+        );
+        $this->assertSame(50.0, $overview['win_rate']);
+        // 400 won against 70 lost — the trades without a percentage carry their
+        // amounts into the ratio too.
+        $this->assertSame(5.71, $overview['profit_factor']);
+    }
+
+    public function testADimensionBreakdownClassifiesATradeWithoutPercentage(): void
+    {
+        $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ', 'pnl_percent' => null]);
+        $this->createClosedTrade(-40.0, 'SL', ['symbol' => 'NASDAQ', 'pnl_percent' => null]);
+
+        $bySymbol = $this->repo->getStatsBySymbol($this->userId);
+
+        $this->assertCount(1, $bySymbol);
+        $this->assertSame(2, (int) $bySymbol[0]['total_trades']);
+        $this->assertSame(1, (int) $bySymbol[0]['wins']);
+        $this->assertSame(1, (int) $bySymbol[0]['losses']);
+        $this->assertSame(50.0, (float) $bySymbol[0]['win_rate']);
+    }
+
+    public function testTheBreakevenThresholdStillAppliesToTradesThatHaveAPercentage(): void
+    {
+        // 0.5% band: a +0.2% trade is breakeven, and a trade with no percentage
+        // is never swallowed by the band — its sign decides.
+        $this->createClosedTrade(37.0, 'TP', ['pnl_percent' => 0.2]);
+        $this->createClosedTrade(1.0, 'TP', ['pnl_percent' => null]);
+
+        $dist = $this->repo->getWinLossDistribution($this->userId, ['be_threshold_percent' => 0.5]);
+
+        $this->assertSame(1, $dist['win']);
+        $this->assertSame(0, $dist['loss']);
         $this->assertSame(1, $dist['be']);
     }
 
