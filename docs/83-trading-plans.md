@@ -28,6 +28,7 @@ Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** 
 
 | Filtre | Champ | Règle | Inactif si |
 |---|---|---|---|
+| **Instrument** | `symbol` | Le symbole du signal doit être celui que vise le plan | `NULL` (tous instruments) |
 | **Sens** | `allowed_direction` | Le sens du signal doit être celui autorisé | `NULL` (les deux sens) |
 | **Zones de prix** | `trading_plan_zones[]` | Pour le sens du signal : s'il existe ≥1 zone de ce sens, l'`entry_price` doit tomber dans au moins une | aucune zone pour ce sens |
 | **Fenêtres horaires** | `trading_plan_windows[]` | L'heure du signal (en TZ du plan) doit tomber dans ≥1 fenêtre | aucune fenêtre |
@@ -43,7 +44,8 @@ Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** 
 
 - Un robot suit **0..N plans** via la table de liaison `robot_plans`.
 - **0 plan** ⇒ aucun filtre, le robot exécute tout signal reçu (comportement v1 des robots).
-- **≥1 plan** ⇒ un signal est **applicable s'il l'est pour au moins un** des plans (**OR**). Cas d'usage : un robot avec un plan « DAX » + un plan « Nasdaq », chaque signal matche son marché. Le rejet `OUT_OF_PLAN` n'intervient que si le signal échoue à **tous** les plans attachés.
+- **≥1 plan** ⇒ un signal est **applicable s'il l'est pour au moins un** des plans (**OR**). Cas d'usage : un robot avec un plan « DAX » + un plan « Nasdaq », chaque signal matche son marché — c'est le filtre **instrument** qui l'assure (cf. [99](99-plan-instrument-cible.md)). Le rejet `OUT_OF_PLAN` n'intervient que si le signal échoue à **tous** les plans attachés.
+  > ⚠️ Avant la migration 042 ce cas d'usage n'était **pas** réellement implémenté : aucune table ne nommait d'instrument, et un signal dont le prix tombait par hasard dans une zone d'un autre marché passait le filtre. Les plans créés avant restent à `symbol = NULL` (tous instruments) tant que l'utilisateur ne les précise pas.
 
 ## Adhérence sur ordre & trade manuels (le plan sans robot)
 
@@ -77,7 +79,7 @@ Le rejet est tracé dans `tradingview_alert_events` (audit visible dans l'histor
 
 ## Modèle de données (migration 033)
 
-- **`trading_plans`** : `id, user_id, name, allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`.
+- **`trading_plans`** : `id, user_id, name, symbol VARCHAR(50) NULL, allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`. La colonne `symbol` est ajoutée par la **migration 042** (cf. [99](99-plan-instrument-cible.md)).
 - **`trading_plan_zones`** : `id, plan_id FK, direction ENUM('BUY','SELL'), low_price DECIMAL(15,5), high_price DECIMAL(15,5)`.
 - **`trading_plan_windows`** : `id, plan_id FK, days_mask SMALLINT UNSIGNED, start_time TIME, end_time TIME`.
 - **`robot_plans`** : `robot_id, plan_id, PK(robot_id, plan_id)`, FK cascade des deux côtés.
