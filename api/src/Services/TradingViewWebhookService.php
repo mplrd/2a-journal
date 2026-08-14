@@ -297,11 +297,12 @@ class TradingViewWebhookService
         }
 
         $direction = (string) $payload['direction'];
+        $symbol = (string) $payload['symbol'];
         $entryPrice = (float) $payload['entry_price'];
         $riskPercent = $this->riskCalculator->computePercent(
             $userId,
             $accountId,
-            (string) $payload['symbol'],
+            $symbol,
             (float) $payload['size'],
             (float) $payload['sl_points'],
         );
@@ -309,7 +310,7 @@ class TradingViewWebhookService
 
         $firstReason = null;
         foreach ($plans as $plan) {
-            $reason = $this->planEvaluator->evaluate($plan, $direction, $entryPrice, $riskPercent, $now);
+            $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now);
             if ($reason === null) {
                 return null; // applicable to this plan → accept (OR across plans)
             }

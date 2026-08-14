@@ -86,7 +86,7 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->connector = new FakeConnector();
 
         $planRepo = new TradingPlanRepository($this->pdo);
-        $this->planService = new TradingPlanService($planRepo);
+        $this->planService = new TradingPlanService($planRepo, new SymbolRepository($this->pdo));
         $riskCalculator = new SignalRiskCalculator(
             new SymbolRepository($this->pdo),
             new SymbolAccountSettingsRepository($this->pdo),
@@ -423,6 +423,46 @@ class TradingViewWebhookFlowTest extends TestCase
         $events = $this->fetchAllEvents();
         $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
         $this->assertStringContainsString('zone', (string) end($events)['error_message']);
+    }
+
+    /**
+     * The defect the instrument filter exists for (docs/83). The zone covers the
+     * signal's entry price, so before the filter this signal sailed through and
+     * an order went to the broker — on an instrument the plan never targeted.
+     */
+    public function testASignalOnAnotherInstrumentIsRejectedEvenWhenItsPriceFallsInAZone(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('GBPUSD', 1.0);
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'GBPUSD',
+            'zones' => [['direction' => 'BUY', 'low_price' => 1.0900, 'high_price' => 1.1100]],
+        ])]);
+
+        // Signal is EURUSD at 1.1000 — inside the zone, wrong instrument.
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('EURUSD', (string) end($events)['error_message']);
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+    }
+
+    public function testAPlanTargetingTheSignalsInstrumentStillApplies(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 1.0);
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'EURUSD',
+            'zones' => [['direction' => 'BUY', 'low_price' => 1.0900, 'high_price' => 1.1100]],
+        ])]);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
     }
 
     public function testSignalApplicableToAtLeastOnePlanIsProcessed(): void

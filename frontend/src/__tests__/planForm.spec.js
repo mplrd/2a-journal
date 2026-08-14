@@ -57,5 +57,30 @@ describe('planForm conversions', () => {
     expect(f.zones).toEqual([])
     expect(f.windows).toEqual([])
     expect(f.allowed_direction).toBeNull()
+    expect(f.symbol).toBeNull()
+  })
+
+  // The instrument a plan targets: a zone is a pair of bare prices and means
+  // nothing without it. null = every instrument (a plan's prior behaviour).
+  it('planToForm carries the targeted instrument', () => {
+    expect(planToForm({ id: 1, name: 'Nasdaq', symbol: 'NASDAQ' }).symbol).toBe('NASDAQ')
+  })
+
+  it('planToForm leaves the instrument null when the plan targets none', () => {
+    expect(planToForm({ id: 1, name: 'Any' }).symbol).toBeNull()
+  })
+
+  it('formToPayload sends the instrument back', () => {
+    const payload = formToPayload({
+      id: null,
+      name: 'Nasdaq',
+      symbol: 'NASDAQ',
+      allowed_direction: null,
+      timezone: 'UTC',
+      max_risk_percent: null,
+      zones: [],
+      windows: [],
+    })
+    expect(payload.symbol).toBe('NASDAQ')
   })
 })

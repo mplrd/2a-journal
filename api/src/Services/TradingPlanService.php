@@ -7,6 +7,7 @@ use App\Enums\PlanStatus;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\SymbolRepository;
 use App\Repositories\TradingPlanRepository;
 use DateTimeZone;
 use Throwable;
@@ -22,7 +23,10 @@ class TradingPlanService
     private const MAX_ZONES = 50;
     private const MAX_WINDOWS = 50;
 
-    public function __construct(private TradingPlanRepository $repo) {}
+    public function __construct(
+        private TradingPlanRepository $repo,
+        private SymbolRepository $symbolRepo,
+    ) {}
 
     /** @return array<int,array> assembled active plans of the user */
     public function listForUser(int $userId): array
@@ -46,6 +50,7 @@ class TradingPlanService
         $plan = $this->repo->create([
             'user_id' => $userId,
             'name' => $clean['name'],
+            'symbol' => $clean['symbol'],
             'allowed_direction' => $clean['allowed_direction'],
             'timezone' => $clean['timezone'],
             'max_risk_percent' => $clean['max_risk_percent'],
@@ -65,6 +70,7 @@ class TradingPlanService
 
         $this->repo->update($planId, [
             'name' => $clean['name'],
+            'symbol' => $clean['symbol'],
             'allowed_direction' => $clean['allowed_direction'],
             'timezone' => $clean['timezone'],
             'max_risk_percent' => $clean['max_risk_percent'],
@@ -88,12 +94,26 @@ class TradingPlanService
 
     // ── Validation / normalization ────────────────────────────────
 
-    /** @return array{name:string,allowed_direction:?string,timezone:?string,max_risk_percent:?float,zones:array,windows:array} */
+    /** @return array{name:string,symbol:?string,allowed_direction:?string,timezone:?string,max_risk_percent:?float,zones:array,windows:array} */
     private function validate(int $userId, array $data): array
     {
         $name = trim((string) ($data['name'] ?? ''));
         if ($name === '' || mb_strlen($name) > 120) {
             throw new ValidationException('plan.error.invalid_name', 'name');
+        }
+
+        // Instrument ciblé, optionnel (NULL = tous). Il doit faire partie des
+        // actifs de l'utilisateur : une faute de frappe ferait autrement rejeter
+        // la totalité des signaux, sans que rien ne le signale. On stocke la
+        // forme canonique de l'actif pour que la comparaison au signal soit
+        // toujours faite sur la même écriture.
+        $symbol = $this->nullableString($data['symbol'] ?? null);
+        if ($symbol !== null) {
+            $asset = $this->symbolRepo->findByUserAndCode($userId, $symbol);
+            if ($asset === null) {
+                throw new ValidationException('plan.error.invalid_symbol', 'symbol');
+            }
+            $symbol = (string) $asset['code'];
         }
 
         $allowedDirection = $this->nullableString($data['allowed_direction'] ?? null);
@@ -116,6 +136,7 @@ class TradingPlanService
 
         return [
             'name' => $name,
+            'symbol' => $symbol,
             'allowed_direction' => $allowedDirection,
             'timezone' => $timezone,
             'max_risk_percent' => $maxRisk,

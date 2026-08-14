@@ -19,6 +19,7 @@ export function blankPlanForm() {
   return {
     id: null,
     name: '',
+    symbol: null,
     allowed_direction: null,
     timezone: 'Europe/Paris',
     max_risk_percent: null,
@@ -31,6 +32,8 @@ export function planToForm(plan) {
   return {
     id: plan.id,
     name: plan.name,
+    // The instrument the plan targets; null = every instrument.
+    symbol: plan.symbol ?? null,
     allowed_direction: plan.allowed_direction ?? null,
     timezone: plan.timezone ?? 'Europe/Paris',
     max_risk_percent: plan.max_risk_percent != null ? Number(plan.max_risk_percent) : null,
@@ -50,6 +53,7 @@ export function planToForm(plan) {
 export function formToPayload(f) {
   return {
     name: f.name.trim(),
+    symbol: f.symbol,
     allowed_direction: f.allowed_direction,
     timezone: f.timezone,
     max_risk_percent: f.max_risk_percent,

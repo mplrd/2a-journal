@@ -6,6 +6,7 @@ use App\Core\Database;
 use App\Enums\PlanStatus;
 use App\Exceptions\ValidationException;
 use App\Repositories\RobotRepository;
+use App\Repositories\SymbolRepository;
 use App\Repositories\TradingPlanRepository;
 use App\Services\TradingPlanService;
 use PDO;
@@ -34,7 +35,7 @@ class TradingPlanServiceTest extends TestCase
 
         $this->repo = new TradingPlanRepository($this->pdo);
         $this->robotRepo = new RobotRepository($this->pdo);
-        $this->service = new TradingPlanService($this->repo);
+        $this->service = new TradingPlanService($this->repo, new SymbolRepository($this->pdo));
 
         $this->userId = $this->seedUser('plan-owner@test.com');
         $this->otherUserId = $this->seedUser('plan-intruder@test.com');
@@ -72,6 +73,61 @@ class TradingPlanServiceTest extends TestCase
         $this->assertCount(2, $plan['zones']);
         $this->assertCount(1, $plan['windows']);
         $this->assertSame('09:00:00', $plan['windows'][0]['start_time']);
+    }
+
+    // ── Instrument ciblé ──────────────────────────────────────────
+
+    public function testCreateStoresTheTargetedInstrument(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDAQ']));
+
+        $this->assertSame('NASDAQ', $plan['symbol']);
+    }
+
+    public function testAPlanWithoutAnInstrumentKeepsItNull(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData());
+
+        $this->assertNull($plan['symbol']);
+    }
+
+    /**
+     * A typo would otherwise reject every single signal, silently: the plan
+     * would target an instrument that never arrives.
+     */
+    public function testAnInstrumentTheUserDoesNotOwnIsRefused(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDQ']));
+    }
+
+    public function testAnotherUsersInstrumentIsRefused(): void
+    {
+        $this->seedSymbol($this->otherUserId, 'NASDAQ');
+
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDAQ']));
+    }
+
+    public function testTheInstrumentIsStoredInItsCanonicalForm(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['symbol' => ' nasdaq ']));
+
+        $this->assertSame('NASDAQ', $plan['symbol']);
+    }
+
+    public function testUpdateCanClearTheInstrument(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDAQ']));
+
+        $updated = $this->service->update($this->userId, (int) $plan['id'], $this->fullPlanData(['symbol' => null]));
+
+        $this->assertNull($updated['symbol']);
     }
 
     public function testCreateNormalizesZoneBounds(): void
@@ -189,10 +245,20 @@ class TradingPlanServiceTest extends TestCase
         return (int) $this->pdo->lastInsertId();
     }
 
+    private function seedSymbol(int $userId, string $code): int
+    {
+        $this->pdo->prepare(
+            "INSERT INTO symbols (user_id, code, name, type, point_value, currency)
+             VALUES (:u, :code, :code2, 'INDEX', 1, 'USD')"
+        )->execute(['u' => $userId, 'code' => $code, 'code2' => $code]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
     private function wipeTables(): void
     {
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=0');
         foreach ([
+            'symbols',
             'robot_plans',
             'trading_plan_zones',
             'trading_plan_windows',

@@ -521,7 +521,7 @@ $robotService = new RobotService(
     $webhooksConfig['tradingview_base_url'],
 );
 $robotController = new RobotController($robotService);
-$planService = new TradingPlanService($planRepo);
+$planService = new TradingPlanService($planRepo, $symbolRepo);
 $planController = new TradingPlanController($planService);
 $tvWebhookIngestRateLimit = new RateLimitMiddleware(
     $rateLimitRepo,

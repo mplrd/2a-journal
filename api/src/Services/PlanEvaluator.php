@@ -20,6 +20,7 @@ use DateTimeZone;
  * configuration is absent. The plan array is the DB-native shape assembled by
  * TradingPlanRepository:
  *   [
+ *     'symbol'            => 'NASDAQ'|null,   null = every instrument
  *     'allowed_direction' => 'BUY'|'SELL'|null,
  *     'timezone'          => 'Europe/Paris'|null,
  *     'max_risk_percent'  => float|string|null,
@@ -32,14 +33,45 @@ class PlanEvaluator
     public function evaluate(
         array $plan,
         string $direction,
+        string $symbol,
         float $entryPrice,
         ?float $riskPercent,
         DateTimeImmutable $now,
     ): ?string {
-        return $this->checkDirection($plan, $direction)
+        return $this->checkSymbol($plan, $symbol)
+            ?? $this->checkDirection($plan, $direction)
             ?? $this->checkZones($plan, $direction, $entryPrice)
             ?? $this->checkWindows($plan, $now)
             ?? $this->checkRisk($plan, $riskPercent);
+    }
+
+    /**
+     * The signal's instrument must be the one the plan targets (NULL = any).
+     *
+     * Checked FIRST, and deliberately so: a zone is a pair of bare prices, and
+     * every other filter is only meaningful once we know the plan speaks about
+     * this instrument at all. When it doesn't, naming the instrument is also the
+     * only useful reason to hand back.
+     *
+     * Without this filter a signal on an instrument the plan never targeted,
+     * whose price happened to land in a zone, passed straight through to the
+     * broker — the wrong way round for a safeguard.
+     */
+    private function checkSymbol(array $plan, string $symbol): ?string
+    {
+        $target = $plan['symbol'] ?? null;
+        if ($target === null || $target === '') {
+            return null;
+        }
+        if (strcasecmp(trim($symbol), trim((string) $target)) === 0) {
+            return null;
+        }
+        // The reason is stored (plan_adherence_reason, alert event error_message)
+        // and the signal's symbol arrives from the webhook payload, whose
+        // presence is validated but not its length. Clamp what comes from
+        // outside rather than write it through verbatim.
+        $seen = mb_strimwidth(trim($symbol), 0, 50, '…');
+        return "symbol {$seen} not covered (plan targets {$target})";
     }
 
     /** The signal side must match the plan's allowed side (NULL = both). */

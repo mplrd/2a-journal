@@ -18,12 +18,13 @@ class TradingPlanRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO trading_plans (user_id, name, allowed_direction, timezone, max_risk_percent)
-             VALUES (:user_id, :name, :allowed_direction, :timezone, :max_risk_percent)"
+            "INSERT INTO trading_plans (user_id, name, symbol, allowed_direction, timezone, max_risk_percent)
+             VALUES (:user_id, :name, :symbol, :allowed_direction, :timezone, :max_risk_percent)"
         );
         $stmt->execute([
             'user_id' => $data['user_id'],
             'name' => $data['name'],
+            'symbol' => $data['symbol'] ?? null,
             'allowed_direction' => $data['allowed_direction'] ?? null,
             'timezone' => $data['timezone'] ?? null,
             'max_risk_percent' => $data['max_risk_percent'] ?? null,
@@ -76,6 +77,7 @@ class TradingPlanRepository
         $stmt = $this->pdo->prepare(
             "UPDATE trading_plans
              SET name = :name,
+                 symbol = :symbol,
                  allowed_direction = :allowed_direction,
                  timezone = :timezone,
                  max_risk_percent = :max_risk_percent
@@ -84,6 +86,7 @@ class TradingPlanRepository
         $stmt->execute([
             'id' => $id,
             'name' => $data['name'],
+            'symbol' => $data['symbol'] ?? null,
             'allowed_direction' => $data['allowed_direction'] ?? null,
             'timezone' => $data['timezone'] ?? null,
             'max_risk_percent' => $data['max_risk_percent'] ?? null,

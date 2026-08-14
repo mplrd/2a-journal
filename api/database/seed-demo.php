@@ -145,8 +145,10 @@ echo "Created " . count($setups) . " setups\n";
 // A DAX intraday frame with buy/sell price zones (zones-only: no window/risk,
 // both directions). Some seeded DAX orders/trades fall inside it, some outside,
 // so the adherence badge + filter have realistic data to show right away.
-$pdo->prepare("INSERT INTO trading_plans (user_id, name, timezone, status)
-    VALUES (:uid, 'DAX intraday', 'Europe/Paris', 'ACTIVE')")
+// Le plan vise explicitement le DAX (migration 042, docs/99) : c'est ce que
+// $planAdherenceFor codait déjà en dur juste en dessous.
+$pdo->prepare("INSERT INTO trading_plans (user_id, name, symbol, timezone, status)
+    VALUES (:uid, 'DAX intraday', 'DAX', 'Europe/Paris', 'ACTIVE')")
     ->execute(['uid' => $userId]);
 $planId = (int) $pdo->lastInsertId();
 

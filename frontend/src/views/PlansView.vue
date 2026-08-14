@@ -13,6 +13,7 @@ import ToggleButton from 'primevue/togglebutton'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import { plansService } from '@/services/plans'
+import { symbolsService } from '@/services/symbols'
 import { blankPlanForm, planToForm, formToPayload } from '@/utils/planForm'
 import { formatZoneRange, formatWindowTime, daysMaskToLabel } from '@/utils/planDisplay'
 
@@ -25,6 +26,7 @@ const confirm = useConfirm()
 
 const plans = ref([])
 const loading = ref(false)
+const symbols = ref([])
 
 const showEditor = ref(false)
 const saving = ref(false)
@@ -42,6 +44,14 @@ const directionOptions = computed(() => [
 const zoneDirectionOptions = computed(() => [
   { label: t('common.buy'), value: 'BUY' },
   { label: t('common.sell'), value: 'SELL' },
+])
+
+// The instrument the plan targets. A zone is a pair of bare prices, so it only
+// means something once the instrument is named. "Every instrument" stays
+// available: that is what plans created before this field did.
+const symbolOptions = computed(() => [
+  { label: t('plan.any_symbol'), value: null },
+  ...symbols.value.map((s) => ({ label: s.code, value: s.code })),
 ])
 
 const timezoneOptions = computed(() => {
@@ -91,6 +101,16 @@ async function load() {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
   } finally {
     loading.value = false
+  }
+
+  // The assets only feed the instrument picker. Losing them must not cost the
+  // user their plan list, so this failure stays quiet — the editor then offers
+  // "every instrument" alone, which is what a plan without one already means.
+  try {
+    const symbolsResp = await symbolsService.list()
+    symbols.value = symbolsResp.data ?? []
+  } catch {
+    symbols.value = []
   }
 }
 
@@ -189,6 +209,13 @@ onMounted(load)
       <Column :header="t('plan.field.filters')">
         <template #body="{ data }">
           <div class="flex flex-col gap-1 items-start">
+            <Tag
+              v-if="data.symbol"
+              :value="data.symbol"
+              severity="info"
+              icon="pi pi-bookmark"
+              data-testid="plan-symbol-tag"
+            />
             <div v-if="data.zones?.length" class="flex flex-wrap gap-1" data-testid="plan-zone-summary">
               <Tag v-for="(z, i) in capped(zoneSummary(data)).shown" :key="'z' + i" :value="z.text" :severity="z.severity" :icon="z.icon" />
               <Tag v-if="capped(zoneSummary(data)).extra" :value="t('plan.summary.more', { count: capped(zoneSummary(data)).extra })" severity="secondary" />
@@ -225,6 +252,18 @@ onMounted(load)
           <div>
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.name') }}</label>
             <InputText v-model="form.name" class="w-full" maxlength="120" :placeholder="t('plan.name_placeholder')" data-testid="plan-name-input" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">{{ t('plan.field.symbol') }}</label>
+            <Select
+              v-model="form.symbol"
+              :options="symbolOptions"
+              option-label="label"
+              option-value="value"
+              class="w-full"
+              data-testid="plan-symbol-select"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('plan.symbol_hint') }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.direction') }}</label>

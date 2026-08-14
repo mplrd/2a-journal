@@ -383,7 +383,7 @@ class OrderService
             $now = new DateTimeImmutable();
         }
 
-        $reason = $this->planEvaluator->evaluate($plan, $direction, $entryPrice, $riskPercent, $now);
+        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now);
         return [
             'plan_id' => $planId,
             'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,
