@@ -1216,7 +1216,7 @@
     "add_window": "Ajouter une plage",
     "max_risk_placeholder": "ex. 1",
     "max_plan_risk_placeholder": "ex. 5",
-    "max_risk_hint": "Rejette le signal si son risque (taille × points SL × valeur du point ÷ capital) dépasse ce pourcentage. Ignoré si la valeur du point n'est pas configurée pour le symbole.",
+    "max_risk_hint": "Rejette le signal si son risque (taille × points SL × valeur du point ÷ capital) dépasse ce pourcentage. La valeur du point vient de Mon compte › Mes actifs, et vaut 1 tant que vous ne la changez pas. Ignoré si le signal n'a pas de stop.",
     "max_plan_risk_hint": "Plafonne le risque de TOUTES les positions encore à risque sous ce plan sur le compte visé, signal entrant compris. Respecter 1 % par trade vingt fois de suite engage quand même 20 % : c'est ce plafond-là qui l'empêche. Un stop remonté à BE ne compte plus, un allègement ne compte que pour ce qu'il reste. Une position sans stop fait refuser le signal : son risque n'a pas de borne.",
     "field": {
       "name": "Nom",

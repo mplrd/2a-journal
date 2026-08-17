@@ -1042,19 +1042,19 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
-## Un plafond de risque inactif faute de valeur du point ne se voit nulle part
+## Le symbole d'un trade n'est pas contrôlé contre les actifs de l'utilisateur
 
-**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). Les deux plafonds de risque d'un plan sont **ignorés** quand le risque n'est pas chiffrable — valeur du point non configurée pour le symbole, ou capital du compte inconnu. C'est la bonne règle (on ne bloque jamais un signal sur une lacune technique) mais elle est **muette** : l'utilisateur croit son plafond actif, il ne l'est pas.
+**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). `positions.symbol` est une chaîne libre : `TradeService` et `OrderService` vérifient qu'elle est non vide et ≤ 50 caractères, rien de plus. L'interface ne laisse pas passer n'importe quoi (le champ *Instrument* est un sélecteur sur Mes actifs, avec un « + » pour en créer un), mais l'API accepte un symbole inconnu.
 
-Le cas voisin — une position **sans stop** sous le plan — a été traité dans le lot 4 : il fait désormais refuser le signal avec une raison explicite, au lieu de désactiver le plafond en silence. Reste ici la seule lacune de configuration.
+Conséquence : une position dont le symbole n'existe pas dans Mes actifs a un risque **non chiffrable**, ce qui désactive silencieusement les plafonds de risque du plan auquel elle serait rattachée.
 
-Portée réduite en pratique : depuis le lot 1 un plan vise un instrument, et le compte est le même pour toutes ses positions. Si la valeur du point manque, le plafond **par trade** est inerte lui aussi — les deux tombent ensemble, ce qui est au moins cohérent.
+Une remarque au passage sur la façon dont ce point a été trouvé : la doc 83 affirmait qu'un symbole « sans valeur du point configurée » désactivait le filtre de risque. C'était **faux** — `point_value` est `NOT NULL DEFAULT 1` et ne peut pas être ≤ 0 — et l'affirmation avait déjà été recopiée dans une infobulle utilisateur. Corrigé partout au lot 4.
 
-**À faire** : signaler un plafond inactif faute de données — pastille sur le plan, ou mention dans l'événement d'audit du webhook quand un filtre configuré n'a pas pu s'appliquer.
+**À faire** : soit valider le symbole contre les actifs à la création d'un trade/ordre par l'API, soit créer l'actif à la volée comme le fait l'import.
 
-**Fichiers** : `api/src/Services/PlanEvaluator.php`, `api/src/Services/PlanOpenRiskCalculator.php`, `frontend/src/views/PlansView.vue`.
+**Fichiers** : `api/src/Services/TradeService.php`, `api/src/Services/OrderService.php`.
 
-**Repéré le** : 2026-08-17. **Priorité** : moyenne — un garde-fou qu'on croit actif et qui ne l'est pas vaut moins que pas de garde-fou du tout.
+**Repéré le** : 2026-08-17. **Priorité** : basse — non atteignable depuis l'interface.
 
 ---
 

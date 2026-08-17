@@ -106,7 +106,7 @@ le vrai piège :
 |---|---|---|
 | un nombre | tout est mesurable | comparé au plafond |
 | `INF` | une position **sans stop** | signal **refusé**, raison explicite |
-| `null` | valeur du point non configurée, capital inconnu | filtre **ignoré** |
+| `null` | compte cramé (capital ≤ 0) | filtre **ignoré** |
 
 **Une position sans stop ne perd pas « une quantité inconnue », elle perd sans
 borne.** La compter pour zéro sous-compterait ; désactiver le plafond en silence
@@ -122,11 +122,31 @@ de ce filtre.
 
 Le cas `null` est d'une autre nature : rien ne dit que le risque est grand, on ne
 sait simplement pas le **chiffrer**. La règle déjà en vigueur pour le plafond par
-trade s'applique — on ne bloque jamais sur une lacune technique — et elle est ici
-cohérente : le risque du signal entrant butera sur exactement le même mur
-(même compte, donc même capital ; et depuis le [lot 1](99-plan-instrument-cible.md)
-un plan vise un instrument, donc la même valeur du point), donc les deux
-plafonds sont inertes ensemble, pas l'un sans l'autre.
+trade s'applique — on ne bloque jamais sur une lacune technique.
+
+> **La valeur du point n'en fait pas partie.** Les commentaires du plafond par
+> trade, la doc 83 et une infobulle de l'éditeur annonçaient toutes qu'un
+> symbole « sans valeur du point configurée » désactivait le filtre. C'est faux :
+> `symbols.point_value` et `symbol_account_settings.point_value` sont
+> `NOT NULL DEFAULT 1.00000`, `SymbolService` refuse une valeur ≤ 0 à l'écriture
+> (`:153` et `:190`), et tout nouvel utilisateur reçoit six actifs déjà
+> valorisés (DAX 25, NASDAQ 20, S&P 50, CAC 10, EURUSD 10, BTC 1). Un utilisateur
+> qui ne touche à rien a donc une valeur du point valide partout. La garde dans
+> `SignalRiskCalculator` protège d'une ligne éditée à la main, ce n'est pas un
+> cas à anticiper.
+
+Ce qui reste vraiment :
+
+- **Compte cramé** (`current_capital ≤ 0`). Un pourcentage d'un capital nul ne
+  veut rien dire, et il n'y a plus d'enveloppe à faire respecter. Le plafond par
+  trade est inerte pour la même raison — les deux tombent ensemble.
+- **Symbole absent de Mes actifs.** Non atteignable depuis l'application : le
+  champ *Instrument* d'un trade ou d'un ordre est un sélecteur sur les actifs de
+  l'utilisateur, avec un « + » pour en créer un à la volée. Il faut passer par
+  l'API directement.
+
+Aucun des deux ne justifie un avertissement à l'écran, ce que la version
+précédente de cette doc affirmait le contraire.
 
 ### La raison renvoyée
 

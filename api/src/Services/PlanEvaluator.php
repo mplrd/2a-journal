@@ -155,8 +155,8 @@ class PlanEvaluator
 
     /**
      * If the plan caps risk and the signal's risk was computable, reject when
-     * it exceeds the cap. A null riskPercent (point value not configured, or
-     * capital unknown) skips the filter rather than blocking the signal.
+     * it exceeds the cap. A null riskPercent (no stop on the signal, or a blown
+     * account) skips the filter rather than blocking the signal.
      */
     private function checkRisk(array $plan, ?float $riskPercent): ?string
     {
@@ -178,9 +178,10 @@ class PlanEvaluator
      * per-trade one is what the trader can act on immediately by sizing this
      * entry down, so it is the reason worth returning.
      *
-     * Either half missing (point value not configured, capital unknown) leaves
-     * the total UNMEASURABLE, and an unmeasurable total is not a breach — same
-     * rule as the per-trade cap: never block a signal on a technical gap.
+     * Either half missing leaves the total UNMEASURABLE, and an unmeasurable
+     * total is not a breach — same rule as the per-trade cap: never block a
+     * signal on a technical gap. In practice that means a blown account, the
+     * point value never being the culprit (see PlanOpenRiskCalculator).
      *
      * INF is the other answer, and not the same one: a position under the plan
      * carries no stop, so its loss — and the total — has no bound. Waving that

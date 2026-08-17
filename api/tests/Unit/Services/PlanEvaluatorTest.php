@@ -265,7 +265,7 @@ class PlanEvaluatorTest extends TestCase
 
     public function testUncomputableRiskSkipsTheFilter(): void
     {
-        // riskPercent null (point value not configured) must NOT reject.
+        // riskPercent null (no stop on the signal, blown account) must NOT reject.
         $plan = $this->plan(['max_risk_percent' => 1.0]);
         $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ',1.0, null, $this->mondayTenUtc()));
     }

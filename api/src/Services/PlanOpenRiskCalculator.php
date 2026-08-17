@@ -22,12 +22,18 @@ use App\Repositories\PositionRepository;
  *          under-counted safeguard lets signals through; turning the cap off
  *          would leave the user believing an envelope that no longer holds.
  *          The evaluator refuses and says so.
- *   null   the exposure is UNMEASURABLE — point value not configured, capital
- *          unknown. A different animal from unbounded: nothing says the risk is
- *          large, we simply cannot price it. The evaluator then skips the
- *          filter rather than block on a technical gap, which is also the rule
- *          already in force for the per-trade cap — and the incoming signal's
- *          own risk hits the very same wall, so that cap is inert too.
+ *   null   the exposure is UNMEASURABLE. A different animal from unbounded:
+ *          nothing says the risk is large, we simply cannot price it. The
+ *          evaluator then skips the filter rather than block on a technical
+ *          gap, the rule already in force for the per-trade cap.
+ *
+ * The point value is NOT one of the ways to land on null, contrary to what the
+ * per-trade cap's own comments long claimed: both symbols.point_value and
+ * symbol_account_settings.point_value are NOT NULL DEFAULT 1, and SymbolService
+ * refuses a value <= 0 on both write paths. What is left is a symbol outside the
+ * user's assets — unreachable from the UI, whose symbol field is a picker over
+ * them — and an account whose capital is <= 0, which is a blown account, where
+ * a percentage of nothing means nothing and the per-trade cap is inert too.
  */
 class PlanOpenRiskCalculator
 {
