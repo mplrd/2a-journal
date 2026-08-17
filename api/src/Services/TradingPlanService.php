@@ -7,6 +7,7 @@ use App\Enums\PlanStatus;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\TradingPlanRepository;
 use DateTimeZone;
@@ -29,6 +30,7 @@ class TradingPlanService
         private TradingPlanRepository $repo,
         private SymbolRepository $symbolRepo,
         private ?PlanAdherenceEvaluator $adherenceEvaluator = null,
+        private ?AccountRepository $accountRepo = null,
     ) {}
 
     /** @return array<int,array> assembled active plans of the user */
@@ -119,8 +121,20 @@ class TradingPlanService
             throw new ValidationException('plan.error.invalid_price', 'entry_price');
         }
 
+        // Simulating writes nothing, and that is precisely how the account came
+        // to be unchecked: everywhere else it arrives with a trade being
+        // created, and TradeService::create refuses one that is not yours before
+        // anything reaches the evaluator. Here the caller hands over a bare id.
+        //
+        // Unchecked, the risk is priced against that account's capital and the
+        // reason quotes the percentage to three decimals — with size and stop
+        // under the caller's control, one request inverts to another user's
+        // capital, and account ids are sequential (docs/102).
+        //
+        // Same key for "not yours" and "does not exist", deliberately: telling
+        // them apart would answer which ids are taken.
         $accountId = (int) ($data['account_id'] ?? 0);
-        if ($accountId <= 0) {
+        if ($accountId <= 0 || $this->accountRepo === null || !$this->accountRepo->isOwnedBy($userId, $accountId)) {
             throw new ValidationException('plan.error.invalid_account', 'account_id');
         }
 

@@ -26,8 +26,8 @@ use App\Repositories\SymbolAccountSettingsRepository;
  *
  * What genuinely returns null: no stop (size or sl_points <= 0), a symbol that
  * resolves to no asset of the user's even through the aliases, a deleted
- * account, or a capital <= 0 — a blown account, where a percentage of nothing
- * means nothing.
+ * account, an account that is not the caller's, or a capital <= 0 — a blown
+ * account, where a percentage of nothing means nothing.
  */
 class SignalRiskCalculator
 {
@@ -58,24 +58,32 @@ class SignalRiskCalculator
             return null;
         }
 
+        // The account is resolved FIRST, and checked to be the caller's. Every
+        // number this method returns is a function of that account's capital,
+        // and the plan's rejection reason quotes the percentage to three
+        // decimals with a caller-controlled size and stop — so pricing an
+        // account belonging to someone else hands their capital straight back.
+        // Callers are meant to have checked: TradeService::create does, and
+        // TradingPlanService::evaluateDraft did not (docs/102).
+        $account = $this->accountRepo->findById($accountId);
+        if ($account === null || (int) ($account['user_id'] ?? 0) !== $userId) {
+            return null;
+        }
+        $capital = (float) ($account['current_capital'] ?? 0);
+        if ($capital <= 0) {
+            return null;
+        }
+
         // Per-account point value overrides the symbol default when present.
         // Both columns are NOT NULL DEFAULT 1, so this resolves to 1 for a user
-        // who never touched the setting — never to "unknown".
+        // who never touched the setting — never to "unknown". Read only once the
+        // account is known to be the caller's: it is a setting OF that account.
         $settings = $this->settingsRepo->findBySymbolAndAccount((int) $symbol['id'], $accountId);
         $pointValue = $settings !== null
             ? (float) $settings['point_value']
             : (float) ($symbol['point_value'] ?? 0);
         if ($pointValue <= 0) {
             return null; // unreachable through the API; guards a hand-edited row
-        }
-
-        $account = $this->accountRepo->findById($accountId);
-        if ($account === null) {
-            return null;
-        }
-        $capital = (float) ($account['current_capital'] ?? 0);
-        if ($capital <= 0) {
-            return null;
         }
 
         return ($size * $slPoints * $pointValue) / $capital * 100.0;

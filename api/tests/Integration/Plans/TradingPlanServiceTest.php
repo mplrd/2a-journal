@@ -49,10 +49,11 @@ class TradingPlanServiceTest extends TestCase
         // Same assembly as production, so the preview and the recorded verdict
         // can never disagree (docs/102).
         $resolver = new SymbolResolver($symbolRepo, new SymbolAliasRepository($this->pdo));
+        $accountRepo = new AccountRepository($this->pdo);
         $riskCalculator = new SignalRiskCalculator(
             $resolver,
             new SymbolAccountSettingsRepository($this->pdo),
-            new AccountRepository($this->pdo),
+            $accountRepo,
         );
         $this->service = new TradingPlanService(
             $this->repo,
@@ -64,6 +65,7 @@ class TradingPlanServiceTest extends TestCase
                 new PlanOpenRiskCalculator(new PositionRepository($this->pdo), $riskCalculator),
                 $resolver,
             ),
+            $accountRepo,
         );
 
         $this->userId = $this->seedUser('plan-owner@test.com');
@@ -401,6 +403,77 @@ class TradingPlanServiceTest extends TestCase
             'symbol' => 'DAX',
             'entry_price' => 24200,
         ]);
+    }
+
+    /**
+     * Simulating writes nothing, which is exactly why the account it names was
+     * never checked: everywhere else the account arrives with a trade being
+     * created, and TradeService::create refuses one that is not yours before
+     * anything reaches the evaluator. Here the caller hands over a bare id.
+     *
+     * Left open, the plan owner points the simulation at ANY account: the risk
+     * is priced against that account's capital, and the rejection reason spells
+     * the percentage out to three decimals ("risk 0.004% exceeds plan max
+     * 0.001%"). With size and stop under the caller's control, one request
+     * inverts to the other user's capital. Account ids are sequential.
+     */
+    public function testSimulatingAgainstAnotherUsersAccountIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData([
+            'max_risk_percent' => 0.001,
+        ]))['id'];
+
+        $this->expectException(ValidationException::class);
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->otherUserId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+            'size' => 1,
+            'sl_points' => 1,
+            'opened_at' => '2026-07-20 10:00:00',
+        ]);
+    }
+
+    /** An account that exists nowhere is refused the same way, and says no more. */
+    public function testSimulatingAgainstAnAccountThatDoesNotExistIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $this->expectException(ValidationException::class);
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => 999999999,
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ]);
+    }
+
+    /**
+     * The two refusals above must be told apart by nobody: "not yours" and
+     * "does not exist" carry the same key, or the endpoint becomes an oracle
+     * for which account ids are taken.
+     */
+    public function testAForeignAccountAndAMissingOneAreRefusedIdentically(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+        $draft = [
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ];
+
+        $keys = [];
+        foreach ([$this->seedAccount($this->otherUserId), 999999999] as $accountId) {
+            try {
+                $this->service->evaluateDraft($this->userId, $planId, $draft + ['account_id' => $accountId]);
+                $this->fail('Expected the draft to be refused');
+            } catch (ValidationException $e) {
+                $keys[] = $e->getMessageKey();
+            }
+        }
+
+        $this->assertSame($keys[0], $keys[1]);
     }
 
     // ── Helpers ───────────────────────────────────────────────────

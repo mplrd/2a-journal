@@ -550,7 +550,9 @@ $robotService = new RobotService(
     $webhooksConfig['tradingview_base_url'],
 );
 $robotController = new RobotController($robotService);
-$planService = new TradingPlanService($planRepo, $symbolRepo, $planAdherenceEvaluator);
+// $accountRepo : la simulation reçoit un account_id nu, sans trade pour porter
+// le contrôle de propriété que fait TradeService::create (docs/102).
+$planService = new TradingPlanService($planRepo, $symbolRepo, $planAdherenceEvaluator, $accountRepo);
 $planController = new TradingPlanController($planService);
 $tvWebhookIngestRateLimit = new RateLimitMiddleware(
     $rateLimitRepo,

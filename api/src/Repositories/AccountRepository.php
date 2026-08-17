@@ -89,6 +89,21 @@ class AccountRepository
         return $row ?: null;
     }
 
+    /**
+     * Ownership alone, without loading the account. For the callers that only
+     * need to refuse an id that is not the user's, and must not read anything
+     * off it before they do.
+     */
+    public function isOwnedBy(int $userId, int $accountId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM accounts
+             WHERE id = :id AND user_id = :uid AND deleted_at IS NULL'
+        );
+        $stmt->execute(['id' => $accountId, 'uid' => $userId]);
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
     public function findAllByUserId(int $userId, int $limit = 50, int $offset = 0): array
     {
         $countStmt = $this->pdo->prepare(

@@ -29,6 +29,48 @@ puis `size`, `sl_points`, `opened_at` (optionnels).
 - **`opened_at` absent** = maintenant, ce qui est le bon défaut pour un ordre :
   il est jugé à l'instant où on le pose.
 - Le plan doit appartenir à l'utilisateur et être actif (`403` / `404` sinon).
+- **Le compte aussi doit lui appartenir** (`422 plan.error.invalid_account`) —
+  voir la section suivante, ce point n'est pas une formalité.
+
+## Le compte visé doit appartenir à l'appelant
+
+Trouvé en audit de sécurité, avant livraison. La première version de l'endpoint
+validait `account_id > 0`, et rien d'autre.
+
+Partout ailleurs, l'`account_id` arrive **avec un trade qu'on crée**, et
+`TradeService::create` refuse un compte qui n'est pas le vôtre avant que quoi que
+ce soit n'atteigne l'évaluateur. Ici l'appelant tend un identifiant nu — c'est
+justement parce que la simulation n'écrit rien qu'elle n'héritait d'aucun de ces
+contrôles.
+
+Or le risque est chiffré **contre le capital du compte visé**, et la raison de
+rejet énonce le pourcentage à trois décimales :
+
+```
+risk 0.004% exceeds plan max 0.001%
+```
+
+Avec `size` et `sl_points` sous contrôle de l'appelant et une valeur du point
+qu'il connaît (c'est celle de **son** actif), l'égalité
+`risque% = taille × stop × valeur_du_point ÷ capital × 100` s'inverse : **une
+requête suffit à lire le capital du compte d'un autre utilisateur**. Les
+identifiants de compte sont des entiers séquentiels.
+
+Deux verrous, plutôt qu'un :
+
+1. **`TradingPlanService::evaluateDraft`** refuse un compte qui n'est pas celui
+   de l'appelant (`AccountRepository::isOwnedBy`, qui ignore les comptes
+   supprimés). « Pas à vous » et « n'existe pas » renvoient **la même clé** :
+   les distinguer répondrait à la question « quels identifiants sont pris ».
+2. **`SignalRiskCalculator`** ne chiffre plus un compte qui n'appartient pas à
+   l'utilisateur passé — il rend `null`, comme pour tout risque non calculable.
+   Le compte y est désormais résolu **en premier**, avant même la lecture de la
+   valeur du point : celle-ci est un réglage *de ce compte*, un identifiant
+   étranger n'a pas à l'interroger en chemin.
+
+Le second verrou vaut pour tout appelant futur : c'est la classe qui lit le
+capital, c'est donc là que la règle doit vivre — les trois appelants actuels
+(trade, ordre, simulation) n'ont plus à y penser.
 
 ## Le point qui compte : le même évaluateur
 
@@ -83,7 +125,15 @@ cosmétiques :
 **Intégration** — `TradingPlanServiceTest` : un brouillon dans le plan est
 annoncé comme tel ; hors du plan il revient avec sa raison ; **la simulation
 n'écrit rien** ; un formulaire à moitié rempli obtient une réponse ; le plan d'un
-autre utilisateur est refusé ; un sens manquant est refusé.
+autre utilisateur est refusé ; un sens manquant est refusé ; **le compte d'un
+autre utilisateur est refusé** ; un compte inexistant l'est aussi ; et les deux
+refus portent la **même clé**, pour ne pas servir d'oracle.
+
+**Unitaire** — `SignalRiskCalculatorTest` (nouveau) : le risque est chiffré
+contre le capital du compte ; un compte appartenant à quelqu'un d'autre n'est pas
+chiffré ; un compte inexistant non plus ; un compte étranger est refusé **avant**
+que ses réglages ne soient lus ; un compte à capital nul et un signal sans stop
+restent non chiffrables.
 
 **Front** — `usePlanPreview.spec.js` : rien tant qu'aucun plan n'est choisi ;
 rien tant qu'un des quatre champs obligatoires manque (un cas par champ) ; un
