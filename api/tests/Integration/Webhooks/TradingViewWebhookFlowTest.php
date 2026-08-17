@@ -30,8 +30,10 @@ use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\OrderService;
 use App\Services\PlanEvaluator;
+use App\Repositories\SymbolAliasRepository;
 use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
+use App\Services\SymbolResolver;
 use App\Services\TradingPlanService;
 use App\Services\TradingViewWebhookService;
 use PDO;
@@ -88,8 +90,12 @@ class TradingViewWebhookFlowTest extends TestCase
 
         $planRepo = new TradingPlanRepository($this->pdo);
         $this->planService = new TradingPlanService($planRepo, new SymbolRepository($this->pdo));
-        $riskCalculator = new SignalRiskCalculator(
+        $symbolResolver = new SymbolResolver(
             new SymbolRepository($this->pdo),
+            new SymbolAliasRepository($this->pdo),
+        );
+        $riskCalculator = new SignalRiskCalculator(
+            $symbolResolver,
             new SymbolAccountSettingsRepository($this->pdo),
             $accountRepo,
         );
@@ -115,6 +121,7 @@ class TradingViewWebhookFlowTest extends TestCase
             new PlanEvaluator(),
             $riskCalculator,
             new PlanOpenRiskCalculator($positionRepo, $riskCalculator),
+            $symbolResolver,
         );
 
         $this->userId = $this->seedUser();
@@ -451,6 +458,93 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
     }
 
+    /**
+     * The asset is the DAX; its symbol is whatever the broker calls it. A plan
+     * targets the asset, so an alert sending the broker's own symbol must be
+     * recognised rather than turned away — the false refusal the asset filter
+     * introduced, since symbol_aliases was wired into the CSV import only.
+     */
+    public function testAnAlertSendingTheBrokersSymbolStillMatchesThePlansAsset(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->seedAlias('FX:EURUSD.pro', 'EURUSD');
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'EURUSD',
+            'zones' => [['direction' => 'BUY', 'low_price' => 1.0900, 'high_price' => 1.1100]],
+        ])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'FX:EURUSD.pro';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /** The ticker is broker + symbol; only the symbol half names the asset. */
+    public function testATickerCarryingItsBrokerPrefixStillMatchesThePlansAsset(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->attachPlans($robotId, [$this->createPlan(['symbol' => 'EURUSD'])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'EIGHTCAP:EURUSD';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /**
+     * Resolution must not become a way in for anything: an alert on a genuinely
+     * different market is still refused, and the reason shows what it sent.
+     */
+    public function testAnUnresolvableSymbolIsStillRefusedAndShownAsSent(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->attachPlans($robotId, [$this->createPlan(['symbol' => 'EURUSD'])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'ACME:WHAT';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('ACME:WHAT', (string) end($events)['error_message']);
+    }
+
+    /**
+     * The same gap made the risk unpriceable, which switched the risk caps off
+     * without a word. Resolving the alias brings the cap back to life.
+     */
+    public function testTheRiskCapAppliesToASignalSentUnderTheBrokersSymbol(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->seedAlias('EURUSD.pro', 'EURUSD');
+        // 1 × 50 × 10 = 500 → 5% of the 10000 capital, well past the 0.1% cap.
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'EURUSD',
+            'max_risk_percent' => 0.1,
+        ])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'EURUSD.pro';
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('risk', (string) end($events)['error_message']);
+    }
+
     public function testAPlanTargetingTheSignalsInstrumentStillApplies(): void
     {
         ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
@@ -779,6 +873,15 @@ class TradingViewWebhookFlowTest extends TestCase
         (new TradingPlanRepository($this->pdo))->setRobotPlans($robotId, $planIds);
     }
 
+    /** A broker's own symbol for one of the user's assets. */
+    private function seedAlias(string $brokerSymbol, string $journalSymbol): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO symbol_aliases (user_id, broker_symbol, journal_symbol, broker_template)
+             VALUES (:u, :b, :j, 'MT5')"
+        )->execute(['u' => $this->userId, 'b' => $brokerSymbol, 'j' => $journalSymbol]);
+    }
+
     private function seedSymbol(string $code, float $pointValue): void
     {
         $this->pdo->prepare(
@@ -881,6 +984,7 @@ class TradingViewWebhookFlowTest extends TestCase
             'orders',
             'positions',
             'symbol_account_settings',
+            'symbol_aliases',
             'symbols',
             'accounts',
             'refresh_tokens',

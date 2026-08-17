@@ -45,6 +45,7 @@ class TradingViewWebhookService
         private PlanEvaluator $planEvaluator,
         private SignalRiskCalculator $riskCalculator,
         private PlanOpenRiskCalculator $openRiskCalculator,
+        private SymbolResolver $symbolResolver,
     ) {}
 
     /**
@@ -298,8 +299,20 @@ class TradingViewWebhookService
         }
 
         $direction = (string) $payload['direction'];
-        $symbol = (string) $payload['symbol'];
         $entryPrice = (float) $payload['entry_price'];
+
+        // The alert names the instrument the way its broker does — GER40 where
+        // the user's asset is DE40.CASH, or the full EIGHTCAP:GER40 ticker. The
+        // plan stores the user's own code, so compare on that. Both sides then
+        // speak the user's vocabulary, which is also what makes the rejection
+        // reason readable when it does not match.
+        //
+        // When nothing resolves, the raw symbol goes through: "not covered" is
+        // the right verdict, and showing exactly what arrived is the actionable
+        // half of it.
+        $rawSymbol = (string) $payload['symbol'];
+        $asset = $this->symbolResolver->resolve($userId, $rawSymbol);
+        $symbol = $asset !== null ? (string) $asset['code'] : $rawSymbol;
         $riskPercent = $this->riskCalculator->computePercent(
             $userId,
             $accountId,

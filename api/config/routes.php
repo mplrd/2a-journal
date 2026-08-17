@@ -105,6 +105,7 @@ use App\Services\SymbolService;
 use App\Services\PlanEvaluator;
 use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
+use App\Services\SymbolResolver;
 use App\Services\TradeService;
 use App\Services\TradingPlanService;
 use App\Services\TradingViewWebhookService;
@@ -346,12 +347,15 @@ $router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTex
 // records the plan it is placed under; the trade inherits it on execute (docs/83).
 $planRepo = new TradingPlanRepository($pdo);
 $planEvaluator = new PlanEvaluator();
-$signalRiskCalculator = new SignalRiskCalculator($symbolRepo, $symbolSettingsRepo, $accountRepo);
+// A signal names its instrument the way its broker does; the resolver brings it
+// back to the user's own asset, aliases included (docs/99).
+$symbolResolver = new SymbolResolver($symbolRepo, new SymbolAliasRepository($pdo));
+$signalRiskCalculator = new SignalRiskCalculator($symbolResolver, $symbolSettingsRepo, $accountRepo);
 $planOpenRiskCalculator = new PlanOpenRiskCalculator($positionRepo, $signalRiskCalculator);
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator, $symbolResolver);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -363,7 +367,7 @@ $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddl
 
 // ── Trades ─────────────────────────────────────────────────────
 // Plan deps ($planRepo / the two evaluators / the two risk calculators) above.
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator, $symbolResolver);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -513,6 +517,7 @@ $tvWebhookService = new TradingViewWebhookService(
     $planEvaluator,
     $signalRiskCalculator,
     $planOpenRiskCalculator,
+    $symbolResolver,
 );
 $tvWebhookController = new TradingViewWebhookController($tvWebhookService);
 $robotService = new RobotService(

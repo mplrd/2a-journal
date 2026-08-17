@@ -41,6 +41,7 @@ class TradeService
     private ?PlanEvaluator $planEvaluator;
     private ?SignalRiskCalculator $riskCalculator;
     private ?PlanOpenRiskCalculator $openRiskCalculator;
+    private ?SymbolResolver $symbolResolver;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -55,7 +56,8 @@ class TradeService
         ?TradingPlanRepository $planRepo = null,
         ?PlanEvaluator $planEvaluator = null,
         ?SignalRiskCalculator $riskCalculator = null,
-        ?PlanOpenRiskCalculator $openRiskCalculator = null
+        ?PlanOpenRiskCalculator $openRiskCalculator = null,
+        ?SymbolResolver $symbolResolver = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -70,6 +72,7 @@ class TradeService
         $this->planEvaluator = $planEvaluator;
         $this->riskCalculator = $riskCalculator;
         $this->openRiskCalculator = $openRiskCalculator;
+        $this->symbolResolver = $symbolResolver;
     }
 
     public function create(int $userId, array $data): array
@@ -718,6 +721,11 @@ class TradeService
         if ($plan === null) {
             throw new ValidationException('trades.error.invalid_plan', 'plan_id');
         }
+
+        // Same normalisation as the robot path: what is stored may be the
+        // broker's symbol for the asset the plan targets (docs/99).
+        $asset = $this->symbolResolver?->resolve($userId, $symbol);
+        $symbol = $asset !== null ? (string) $asset['code'] : $symbol;
 
         $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
 

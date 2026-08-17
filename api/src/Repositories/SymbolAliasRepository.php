@@ -46,6 +46,30 @@ class SymbolAliasRepository
         return $result ?: null;
     }
 
+    /**
+     * The mapping for a broker symbol whatever the template it was recorded
+     * under. The import writes aliases stamped with the broker it read
+     * (`broker_template`); a TradingView alert carries no such stamp, so a
+     * template-scoped lookup would never find them and the mapping would be
+     * useless outside the import — which is how it stayed until now.
+     *
+     * Ambiguity is answered with null rather than a guess: the same broker
+     * symbol recorded against two different assets means we cannot tell which
+     * one the signal is about, and picking one would silently trade under the
+     * wrong instrument.
+     */
+    public function findAnyByBrokerSymbol(int $userId, string $brokerSymbol): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT DISTINCT journal_symbol FROM symbol_aliases
+             WHERE user_id = :user_id AND broker_symbol = :broker_symbol"
+        );
+        $stmt->execute(['user_id' => $userId, 'broker_symbol' => $brokerSymbol]);
+        $rows = $stmt->fetchAll();
+
+        return count($rows) === 1 ? $rows[0] : null;
+    }
+
     public function findAllByUserId(int $userId): array
     {
         $stmt = $this->pdo->prepare("SELECT * FROM symbol_aliases WHERE user_id = :user_id ORDER BY broker_symbol");

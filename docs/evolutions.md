@@ -1042,20 +1042,17 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
-## Le filtre d'actif d'un plan compare des symboles bruts, sans passer par les alias
+## Les alias de symboles ne se créent que par l'import CSV
 
-**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/99, docs/100). Un actif (le DAX) est désigné par un **symbole** qui change d'un broker à l'autre (`GER40`, `DE40.CASH`), et le ticker complet est `broker:symbole` (`EIGHTCAP:GER40`). La table `symbol_aliases` existe exactement pour ça — `broker_template` + `broker_symbol` → `journal_symbol` — mais elle n'est branchée **que sur l'import CSV** (`ImportService`).
+**Contexte** : le lot 1 du chantier « plans » a fait de `symbol_aliases` une table du chemin robot (`SymbolResolver`, docs/99) — mais **rien ne permet d'y ajouter une entrée à la main**. Seul `ImportService` en écrit, en devinant le mapping pendant un import CSV.
 
-Conséquences sur le chemin robot :
+Un utilisateur dont les alertes envoient `GER40` alors que son actif est `DE40.CASH` n'a donc aucun moyen de le déclarer, sauf à faire un import qui contienne ce symbole. Le résolveur sait s'en servir, l'utilisateur ne sait pas en poser.
 
-- `PlanEvaluator::checkSymbol()` compare le symbole du signal au `code` stocké dans le plan, en égalité de chaînes. Une alerte TradingView qui envoie le symbole de son broker plutôt que celui saisi dans *Mes actifs* est **rejetée** — un faux refus qui n'existait pas avant le lot 1, puisqu'il n'y avait aucun filtre d'actif.
-- `SignalRiskCalculator::computePercent()` résout déjà le symbole par `findByUserAndCode()` : le même écart rend le risque non chiffrable et **désactive silencieusement les deux plafonds**. Celui-là est préexistant, et il invalide l'affirmation « cas non atteignable » de la première version de la doc 100.
+**À faire** : exposer les alias dans *Mes actifs* — une ligne « autres symboles » par actif, en lecture/écriture. La table est déjà là (`SymbolAliasRepository` a `upsert`, `findAllByUserId`, `delete`), il manque le contrôleur, les routes et l'écran.
 
-**À faire** : trancher si un plan vise un **actif** (et alors résoudre le symbole du signal via les actifs + alias avant comparaison, y compris pour le calcul du risque) ou un **symbole** littéral. Si actif : les alias sont aujourd'hui écrits avec un `broker_template`, une résolution webhook devra décider quoi en faire.
+**Fichiers** : `api/src/Repositories/SymbolAliasRepository.php`, `api/src/Services/SymbolService.php`, `frontend/src/views/SymbolsView.vue`.
 
-**Fichiers** : `api/src/Services/PlanEvaluator.php`, `api/src/Services/SignalRiskCalculator.php`, `api/src/Services/TradingViewWebhookService.php`, `api/src/Repositories/SymbolAliasRepository.php`.
-
-**Repéré le** : 2026-08-17. **Priorité** : haute — c'est le chemin principal de la fonctionnalité, et le faux refus est une régression du lot 1.
+**Repéré le** : 2026-08-17. **Priorité** : haute — sans ça, la résolution ne couvre que les utilisateurs passés par un import.
 
 ---
 

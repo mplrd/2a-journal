@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Repositories\AccountRepository;
 use App\Repositories\SymbolAccountSettingsRepository;
-use App\Repositories\SymbolRepository;
 
 /**
  * Computes the monetary risk of an incoming signal as a percentage of the
@@ -25,15 +24,15 @@ use App\Repositories\SymbolRepository;
  * sent a reader looking for a hole that does not exist, and the claim reached
  * two docs and a user-facing tooltip before anyone checked the schema.
  *
- * What genuinely returns null: no stop (size or sl_points <= 0), a symbol
- * outside the user's assets (the trade form is a picker over them, so this needs
- * the API), a deleted account, or a capital <= 0 — a blown account, where a
- * percentage of nothing means nothing.
+ * What genuinely returns null: no stop (size or sl_points <= 0), a symbol that
+ * resolves to no asset of the user's even through the aliases, a deleted
+ * account, or a capital <= 0 — a blown account, where a percentage of nothing
+ * means nothing.
  */
 class SignalRiskCalculator
 {
     public function __construct(
-        private SymbolRepository $symbolRepo,
+        private SymbolResolver $symbolResolver,
         private SymbolAccountSettingsRepository $settingsRepo,
         private AccountRepository $accountRepo,
     ) {}
@@ -49,7 +48,12 @@ class SignalRiskCalculator
             return null;
         }
 
-        $symbol = $this->symbolRepo->findByUserAndCode($userId, $symbolCode);
+        // Resolved, not looked up verbatim: a signal or a synced position names
+        // the instrument the way its broker does, and the user's own code is
+        // often another string for the same asset. Matching on the raw string
+        // made the risk unpriceable, which switched the plan's risk caps off
+        // without a word (docs/99).
+        $symbol = $this->symbolResolver->resolve($userId, $symbolCode);
         if ($symbol === null) {
             return null;
         }

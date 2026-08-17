@@ -140,19 +140,18 @@ Ce qui reste vraiment :
 - **Compte cramé** (`current_capital ≤ 0`). Un pourcentage d'un capital nul ne
   veut rien dire, et il n'y a plus d'enveloppe à faire respecter. Le plafond par
   trade est inerte pour la même raison — les deux tombent ensemble.
-- **Symbole absent de Mes actifs.** Depuis l'interface, le champ *Actif* d'un
-  trade, d'un ordre ou d'un plan est un sélecteur sur les actifs de
-  l'utilisateur : impossible d'y saisir autre chose. **Mais le chemin robot,
-  lui, écrit le symbole brut du signal** dans `positions.symbol`, et
-  `SignalRiskCalculator` le résout par `findByUserAndCode()` sans passer par les
-  alias. Une alerte qui envoie le symbole de son broker (`GER40`) au lieu de
-  celui saisi dans *Mes actifs* (`DE40.CASH`) rend donc le risque non chiffrable
-  et **désactive les deux plafonds en silence**.
+- **Symbole ne correspondant à aucun actif.** Depuis l'interface, le champ
+  *Actif* d'un trade, d'un ordre ou d'un plan est un sélecteur : impossible d'y
+  saisir autre chose. Le chemin robot, lui, écrit le symbole brut du signal dans
+  `positions.symbol` — mais `SignalRiskCalculator` le fait désormais passer par
+  `SymbolResolver` (actifs puis alias puis découpage du ticker, cf.
+  [99](99-plan-instrument-cible.md)). Il faut donc un symbole que **rien** ne
+  rattache à un actif de l'utilisateur.
   >
-  > ⚠️ Une version précédente de cette doc affirmait ce cas « non atteignable ».
-  > C'était faux : il l'est par le webhook, qui est justement le chemin principal
-  > de la fonctionnalité. Le fond du sujet — un plan vise-t-il un actif ou un
-  > symbole littéral ? — est ouvert dans `docs/evolutions.md`.
+  > ⚠️ Une version précédente de cette doc affirmait ce cas « non atteignable »,
+  > puis une autre l'a dit atteignable par le webhook. La seconde avait raison, et
+  > c'est ce qui a conduit à écrire `SymbolResolver` : le symbole du broker était
+  > la cause, et il est maintenant résolu.
 
 Aucun des deux ne justifie un avertissement à l'écran, ce que la version
 précédente de cette doc affirmait le contraire.

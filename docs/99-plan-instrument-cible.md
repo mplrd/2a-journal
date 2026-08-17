@@ -105,14 +105,60 @@ signal par ce même `findByUserAndCode()`.
   précisément le trou que ce champ bouche ; le laisser proposer à l'écran
   reviendrait à le présenter comme un choix légitime.
 
-> ⚠️ **Ce que le filtre compare est un symbole, pas un actif.** On choisit un
-> actif à l'écran, mais ce qui est stocké est son `code` et la comparaison est
-> une égalité de chaînes avec le symbole du signal. Les alias
-> (`symbol_aliases`) ne sont branchés **que sur l'import CSV** :
-> `TradingViewWebhookService` ne les consulte pas. Une alerte qui envoie le
-> symbole de son broker plutôt que celui saisi dans *Mes actifs* est donc
-> **rejetée**. Question ouverte, voir [100](100-plan-risque-cumule.md) et
-> `docs/evolutions.md`.
+## Le plan vise un actif, pas une chaîne de caractères
+
+Première version du lot 1 : `checkSymbol()` comparait le symbole du signal au
+`code` du plan en **égalité de chaînes**. Or un actif est désigné par un symbole
+qui change d'un broker à l'autre. Une alerte envoyant `GER40` là où l'actif est
+enregistré `DE40.CASH` était donc **rejetée** — un faux refus que le lot 1 avait
+introduit, puisqu'aucun filtre d'actif n'existait avant lui.
+
+Le même écart rendait le risque **non chiffrable** (`SignalRiskCalculator`
+résolvait déjà par `findByUserAndCode()`), ce qui **désactivait les deux
+plafonds de risque en silence**. Ce second défaut, lui, est antérieur au lot 1.
+
+La table `symbol_aliases` existait exactement pour ça — `broker_template` +
+`broker_symbol` → `journal_symbol` — mais n'était branchée **que sur l'import
+CSV**.
+
+### `SymbolResolver`
+
+Un service dédié ramène ce qu'un signal appelle un instrument à l'actif de
+l'utilisateur :
+
+1. la chaîne telle qu'elle arrive, cherchée dans les actifs (`symbols.code`) ;
+2. puis dans les alias, **tous templates confondus** — une alerte TradingView ne
+   porte aucun tampon de broker, donc une recherche par template ne trouverait
+   jamais les alias posés par l'import, ce qui les rendait inutiles hors import ;
+3. puis, si la chaîne était un **ticker** (`EIGHTCAP:GER40`), la même recherche
+   sur sa seule partie symbole.
+
+La forme qualifiée est essayée **avant** sa forme courte : un utilisateur qui a
+enregistré `EIGHTCAP:GER40` dans ses actifs l'a voulu ainsi.
+
+Deux refus délibérés :
+
+- **Alias ambigu** — le même symbole broker enregistré vers deux actifs
+  différents renvoie `null`. Choisir l'un des deux ferait trader sous le mauvais
+  instrument, en silence.
+- **Alias orphelin** — un alias survit à l'actif supprimé. Renvoyer un code dont
+  la ligne n'existe plus donnerait à l'appelant un symbole que rien ne peut
+  valoriser.
+
+### Où il est branché
+
+- **`SignalRiskCalculator`** résout au lieu de chercher le code verbatim : les
+  deux plafonds de risque redeviennent actifs quels que soient les symboles
+  reçus, y compris pour les positions déjà en base.
+- **`TradingViewWebhookService`** normalise le symbole du signal **avant**
+  d'appeler l'évaluateur. `PlanEvaluator` reste **pur** : il compare toujours
+  deux chaînes, mais les deux sont désormais le vocabulaire de l'utilisateur, ce
+  qui rend aussi la raison de rejet lisible. Si rien ne résout, le symbole brut
+  passe tel quel — « non couvert » est le bon verdict, et montrer exactement ce
+  qui est arrivé en est la moitié actionnable.
+- **`TradeService` / `OrderService`** font la même normalisation, pour qu'un
+  trade enregistré par l'API sous un symbole broker ne soit pas marqué hors plan
+  à tort.
 - **Un bouton « + » crée un actif sans quitter le plan**, exactement comme sur le
   formulaire de trade (même `SymbolForm`, même store). S'apercevoir au milieu
   d'un plan que l'actif manque ne doit pas envoyer l'utilisateur sur un autre
@@ -152,7 +198,17 @@ signal par ce même `findByUserAndCode()`.
 `TradingPlanServiceTest` : stockage, forme canonique, refus d'un symbole inconnu
 ou appartenant à un autre utilisateur, remise à « tous les instruments ».
 
-**Front** — `planForm.spec.js` : l'instrument fait l'aller-retour formulaire ↔ API.
+**Unitaires** — `SymbolResolverTest` : un code déjà à soi se résout à lui-même ;
+un symbole broker passe par son alias ; un ticker est coupé sur son préfixe ; la
+forme qualifiée prime sur la forme courte ; espaces et chaîne vide tolérés ;
+inconnu et alias orphelin renvoient `null`.
+
+**Intégration** — `TradingViewWebhookFlowTest` : une alerte envoyant le symbole
+de son broker matche le plan ; un ticker préfixé aussi ; un symbole
+irrésoluble reste refusé et s'affiche tel qu'envoyé ; le plafond de risque
+s'applique bien à un signal reçu sous le symbole du broker.
+
+**Front** — `planForm.spec.js` : l'actif fait l'aller-retour formulaire ↔ API.
 
 ## Points d'attention
 
