@@ -1042,17 +1042,22 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
-## Les alias de symboles ne se créent que par l'import CSV
+## Un actif ne porte qu'un seul symbole
 
-**Contexte** : le lot 1 du chantier « plans » a fait de `symbol_aliases` une table du chemin robot (`SymbolResolver`, docs/99) — mais **rien ne permet d'y ajouter une entrée à la main**. Seul `ImportService` en écrit, en devinant le mapping pendant un import CSV.
+**Contexte** : deux tables cohabitent et il faut les distinguer.
 
-Un utilisateur dont les alertes envoient `GER40` alors que son actif est `DE40.CASH` n'a donc aucun moyen de le déclarer, sauf à faire un import qui contienne ce symbole. Le résolveur sait s'en servir, l'utilisateur ne sait pas en poser.
+- **`symbols`** = les actifs de l'utilisateur. Une ligne = un actif, **un** symbole (`code`) et un nom. Créable à la main dans *Mes actifs*, ou à la volée depuis les sélecteurs (trade, ordre, position, et depuis le lot 1 le plan).
+- **`symbol_aliases`** = des symboles **supplémentaires**, ceux d'un broker, rattachés à un actif existant (`broker_symbol` + `broker_template` → `journal_symbol`). Aucune route, aucun contrôleur, aucun écran : seul `ImportService` en écrit, en devinant le mapping pendant un import CSV.
 
-**À faire** : exposer les alias dans *Mes actifs* — une ligne « autres symboles » par actif, en lecture/écriture. La table est déjà là (`SymbolAliasRepository` a `upsert`, `findAllByUserId`, `delete`), il manque le contrôleur, les routes et l'écran.
+En pratique ça ne bloque personne au quotidien : si les alertes envoient `GER40`, il suffit de saisir `GER40` comme symbole de l'actif. Le manque n'apparaît que si **le même actif est traité chez deux brokers qui le nomment différemment** : il faut alors créer deux actifs, saisir la valeur du point deux fois, et les statistiques se retrouvent coupées en deux pour un même marché.
+
+`SymbolResolver` (docs/99) sait déjà lire les alias — il ne les trouvera simplement que chez un utilisateur passé par un import.
+
+**À faire** : permettre de rattacher plusieurs symboles à un actif — une section « autres symboles » dans *Mes actifs*. Le repository a déjà `upsert`, `findAllByUserId` et `delete` ; il manque le service, le contrôleur, les routes et l'écran.
 
 **Fichiers** : `api/src/Repositories/SymbolAliasRepository.php`, `api/src/Services/SymbolService.php`, `frontend/src/views/SymbolsView.vue`.
 
-**Repéré le** : 2026-08-17. **Priorité** : haute — sans ça, la résolution ne couvre que les utilisateurs passés par un import.
+**Repéré le** : 2026-08-17. **Priorité** : basse — contournable en saisissant le bon symbole sur l'actif ; ne gêne que le multi-broker sur un même marché.
 
 ---
 
