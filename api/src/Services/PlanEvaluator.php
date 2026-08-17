@@ -20,26 +20,70 @@ use DateTimeZone;
  * configuration is absent. The plan array is the DB-native shape assembled by
  * TradingPlanRepository:
  *   [
+ *     'symbol'            => 'NASDAQ'|null,   null = every instrument
  *     'allowed_direction' => 'BUY'|'SELL'|null,
  *     'timezone'          => 'Europe/Paris'|null,
- *     'max_risk_percent'  => float|string|null,
+ *     'max_risk_percent'      => float|string|null,   per signal
+ *     'max_plan_risk_percent' => float|string|null,   cumulative, this signal included
  *     'zones'   => [['direction'=>'BUY','low_price'=>..,'high_price'=>..], ...],
  *     'windows' => [['days_mask'=>int,'start_time'=>'HH:MM:SS','end_time'=>'HH:MM:SS'], ...],
  *   ]
  */
 class PlanEvaluator
 {
+    /** Bounds spelled out in a rejection reason before it collapses to a count. */
+    private const MAX_BOUNDS_IN_REASON = 3;
+
+    /**
+     * $openRiskPercent is the risk already exposed under this plan on the target
+     * account. It trails $now rather than sitting next to $riskPercent so the
+     * callers that have nothing to sum — and the many tests written before the
+     * cumulative cap existed — keep their six-argument call unchanged.
+     */
     public function evaluate(
         array $plan,
         string $direction,
+        string $symbol,
         float $entryPrice,
         ?float $riskPercent,
         DateTimeImmutable $now,
+        ?float $openRiskPercent = null,
     ): ?string {
-        return $this->checkDirection($plan, $direction)
+        return $this->checkSymbol($plan, $symbol)
+            ?? $this->checkDirection($plan, $direction)
             ?? $this->checkZones($plan, $direction, $entryPrice)
             ?? $this->checkWindows($plan, $now)
-            ?? $this->checkRisk($plan, $riskPercent);
+            ?? $this->checkRisk($plan, $riskPercent)
+            ?? $this->checkCumulativeRisk($plan, $riskPercent, $openRiskPercent);
+    }
+
+    /**
+     * The signal's instrument must be the one the plan targets (NULL = any).
+     *
+     * Checked FIRST, and deliberately so: a zone is a pair of bare prices, and
+     * every other filter is only meaningful once we know the plan speaks about
+     * this instrument at all. When it doesn't, naming the instrument is also the
+     * only useful reason to hand back.
+     *
+     * Without this filter a signal on an instrument the plan never targeted,
+     * whose price happened to land in a zone, passed straight through to the
+     * broker — the wrong way round for a safeguard.
+     */
+    private function checkSymbol(array $plan, string $symbol): ?string
+    {
+        $target = $plan['symbol'] ?? null;
+        if ($target === null || $target === '') {
+            return null;
+        }
+        if (strcasecmp(trim($symbol), trim((string) $target)) === 0) {
+            return null;
+        }
+        // The reason is stored (plan_adherence_reason, alert event error_message)
+        // and the signal's symbol arrives from the webhook payload, whose
+        // presence is validated but not its length. Clamp what comes from
+        // outside rather than write it through verbatim.
+        $seen = mb_strimwidth(trim($symbol), 0, 50, '…');
+        return "symbol {$seen} not covered (plan targets {$target})";
     }
 
     /** The signal side must match the plan's allowed side (NULL = both). */
@@ -68,15 +112,25 @@ class PlanEvaluator
             return null;
         }
 
+        $bounds = [];
         foreach ($zones as $zone) {
             $low = min((float) $zone['low_price'], (float) $zone['high_price']);
             $high = max((float) $zone['low_price'], (float) $zone['high_price']);
             if ($entryPrice >= $low && $entryPrice <= $high) {
                 return null;
             }
+            $bounds[] = $this->trimNumber($low) . '-' . $this->trimNumber($high);
         }
 
-        return sprintf('entry %s outside %s zones', $this->trimNumber($entryPrice), $direction);
+        // Name the bounds that were used. "entry 25648 outside BUY zones" left
+        // the user to go and open the plan to find out by how much they missed,
+        // and against which zone.
+        return sprintf(
+            'entry %s outside %s zones (%s)',
+            $this->trimNumber($entryPrice),
+            $direction,
+            $this->summarize($bounds),
+        );
     }
 
     /**
@@ -98,6 +152,7 @@ class PlanEvaluator
             + (int) $local->format('i') * 60
             + (int) $local->format('s');
 
+        $today = [];
         foreach ($windows as $window) {
             if (((int) $window['days_mask'] & $dayBit) === 0) {
                 continue;
@@ -107,15 +162,26 @@ class PlanEvaluator
             if ($seconds >= $start && $seconds < $end) {
                 return null;
             }
+            $today[] = substr((string) $window['start_time'], 0, 5) . '-' . substr((string) $window['end_time'], 0, 5);
         }
 
-        return 'outside trading windows';
+        // No window at all on this weekday is a different problem from arriving
+        // between two of them, and the user cannot tell which from "outside
+        // trading windows" alone.
+        if ($today === []) {
+            return sprintf('%s not a trading day', $local->format('D'));
+        }
+        return sprintf(
+            'outside trading windows (%s, %s)',
+            $local->format('H:i'),
+            $this->summarize($today),
+        );
     }
 
     /**
      * If the plan caps risk and the signal's risk was computable, reject when
-     * it exceeds the cap. A null riskPercent (point value not configured, or
-     * capital unknown) skips the filter rather than blocking the signal.
+     * it exceeds the cap. A null riskPercent (no stop on the signal, or a blown
+     * account) skips the filter rather than blocking the signal.
      */
     private function checkRisk(array $plan, ?float $riskPercent): ?string
     {
@@ -127,6 +193,64 @@ class PlanEvaluator
             return sprintf('risk %.3f%% exceeds plan max %.3f%%', $riskPercent, (float) $max);
         }
         return null;
+    }
+
+    /**
+     * If the plan caps the risk it accepts to carry as a whole, reject when the
+     * signal would push the total past it.
+     *
+     * Checked LAST, and after the per-trade cap: when both are breached, the
+     * per-trade one is what the trader can act on immediately by sizing this
+     * entry down, so it is the reason worth returning.
+     *
+     * Either half missing leaves the total UNMEASURABLE, and an unmeasurable
+     * total is not a breach — same rule as the per-trade cap: never block a
+     * signal on a technical gap. In practice that means a blown account, the
+     * point value never being the culprit (see PlanOpenRiskCalculator).
+     *
+     * INF is the other answer, and not the same one: a position under the plan
+     * carries no stop, so its loss — and the total — has no bound. Waving that
+     * through would let the user keep believing an envelope that no longer
+     * holds, which is worse than refusing.
+     */
+    private function checkCumulativeRisk(array $plan, ?float $riskPercent, ?float $openRiskPercent): ?string
+    {
+        $max = $plan['max_plan_risk_percent'] ?? null;
+        if ($max === null || $riskPercent === null || $openRiskPercent === null) {
+            return null;
+        }
+        if (is_infinite($openRiskPercent)) {
+            return 'an open position under the plan has no stop: plan risk unbounded';
+        }
+
+        $total = $openRiskPercent + $riskPercent;
+        if ($total <= (float) $max) {
+            return null;
+        }
+        // Both halves are named: "5.300% exceeds 5%" alone would not tell the
+        // trader whether to close a position or shrink this one.
+        return sprintf(
+            'plan risk %.3f%% (open %.3f%% + signal %.3f%%) exceeds plan max %.3f%%',
+            $total,
+            $openRiskPercent,
+            $riskPercent,
+            (float) $max,
+        );
+    }
+
+    /**
+     * A few bounds, then a count. The reason is stored in a VARCHAR(255)
+     * (positions.plan_adherence_reason) and a plan may hold fifty zones, so
+     * listing them all would truncate the useful half of the sentence.
+     *
+     * @param array<int,string> $parts
+     */
+    private function summarize(array $parts): string
+    {
+        $shown = array_slice($parts, 0, self::MAX_BOUNDS_IN_REASON);
+        $extra = count($parts) - count($shown);
+
+        return implode(', ', $shown) . ($extra > 0 ? sprintf(' +%d', $extra) : '');
     }
 
     private function timeToSeconds(string $time): int

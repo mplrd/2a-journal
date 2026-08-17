@@ -30,7 +30,10 @@ use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\OrderService;
 use App\Services\PlanEvaluator;
+use App\Repositories\SymbolAliasRepository;
+use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
+use App\Services\SymbolResolver;
 use App\Services\TradingPlanService;
 use App\Services\TradingViewWebhookService;
 use PDO;
@@ -86,9 +89,13 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->connector = new FakeConnector();
 
         $planRepo = new TradingPlanRepository($this->pdo);
-        $this->planService = new TradingPlanService($planRepo);
-        $riskCalculator = new SignalRiskCalculator(
+        $this->planService = new TradingPlanService($planRepo, new SymbolRepository($this->pdo));
+        $symbolResolver = new SymbolResolver(
             new SymbolRepository($this->pdo),
+            new SymbolAliasRepository($this->pdo),
+        );
+        $riskCalculator = new SignalRiskCalculator(
+            $symbolResolver,
             new SymbolAccountSettingsRepository($this->pdo),
             $accountRepo,
         );
@@ -113,6 +120,8 @@ class TradingViewWebhookFlowTest extends TestCase
             $planRepo,
             new PlanEvaluator(),
             $riskCalculator,
+            new PlanOpenRiskCalculator($positionRepo, $riskCalculator),
+            $symbolResolver,
         );
 
         $this->userId = $this->seedUser();
@@ -425,6 +434,133 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertStringContainsString('zone', (string) end($events)['error_message']);
     }
 
+    /**
+     * The defect the instrument filter exists for (docs/83). The zone covers the
+     * signal's entry price, so before the filter this signal sailed through and
+     * an order went to the broker — on an instrument the plan never targeted.
+     */
+    public function testASignalOnAnotherInstrumentIsRejectedEvenWhenItsPriceFallsInAZone(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('GBPUSD', 1.0);
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'GBPUSD',
+            'zones' => [['direction' => 'BUY', 'low_price' => 1.0900, 'high_price' => 1.1100]],
+        ])]);
+
+        // Signal is EURUSD at 1.1000 — inside the zone, wrong instrument.
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('EURUSD', (string) end($events)['error_message']);
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+    }
+
+    /**
+     * The asset is the DAX; its symbol is whatever the broker calls it. A plan
+     * targets the asset, so an alert sending the broker's own symbol must be
+     * recognised rather than turned away — the false refusal the asset filter
+     * introduced, since symbol_aliases was wired into the CSV import only.
+     */
+    public function testAnAlertSendingTheBrokersSymbolStillMatchesThePlansAsset(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->seedAlias('FX:EURUSD.pro', 'EURUSD');
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'EURUSD',
+            'zones' => [['direction' => 'BUY', 'low_price' => 1.0900, 'high_price' => 1.1100]],
+        ])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'FX:EURUSD.pro';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /** The ticker is broker + symbol; only the symbol half names the asset. */
+    public function testATickerCarryingItsBrokerPrefixStillMatchesThePlansAsset(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->attachPlans($robotId, [$this->createPlan(['symbol' => 'EURUSD'])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'EIGHTCAP:EURUSD';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /**
+     * Resolution must not become a way in for anything: an alert on a genuinely
+     * different market is still refused, and the reason shows what it sent.
+     */
+    public function testAnUnresolvableSymbolIsStillRefusedAndShownAsSent(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->attachPlans($robotId, [$this->createPlan(['symbol' => 'EURUSD'])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'ACME:WHAT';
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('ACME:WHAT', (string) end($events)['error_message']);
+    }
+
+    /**
+     * The same gap made the risk unpriceable, which switched the risk caps off
+     * without a word. Resolving the alias brings the cap back to life.
+     */
+    public function testTheRiskCapAppliesToASignalSentUnderTheBrokersSymbol(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $this->seedAlias('EURUSD.pro', 'EURUSD');
+        // 1 × 50 × 10 = 500 → 5% of the 10000 capital, well past the 0.1% cap.
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'EURUSD',
+            'max_risk_percent' => 0.1,
+        ])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['symbol'] = 'EURUSD.pro';
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('risk', (string) end($events)['error_message']);
+    }
+
+    public function testAPlanTargetingTheSignalsInstrumentStillApplies(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 1.0);
+        $this->attachPlans($robotId, [$this->createPlan([
+            'symbol' => 'EURUSD',
+            'zones' => [['direction' => 'BUY', 'low_price' => 1.0900, 'high_price' => 1.1100]],
+        ])]);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
     public function testSignalApplicableToAtLeastOnePlanIsProcessed(): void
     {
         ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
@@ -492,7 +628,236 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertStringContainsString('risk', (string) end($events)['error_message']);
     }
 
+    // ── Plafond de risque cumulé ──────────────────────────────────
+    // Chaque signal respecte le plafond par trade et le total explose quand
+    // même : c'est ce qu'un robot construit en quelques minutes.
+
+    public function testASignalAloneNeverTripsTheCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        // Signal = 1 × 50 × 10 = 500 → 5% of the 10000 capital. Nothing else open.
+        $this->attachPlans($robotId, [$this->createPlan(['max_plan_risk_percent' => 8.0])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testAnOpenPositionUnderThePlanPushesTheSignalOverTheCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        // 5% already exposed + 5% incoming = 10% > 8%, while each entry on its
+        // own sits well inside anything a per-trade cap would allow.
+        $this->seedOpenTradeUnderPlan($planId, 1.0, 50.0);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('open', (string) end($events)['error_message']);
+        // The seeded exposure is a position, not an order: nothing was placed.
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+    }
+
+    public function testAPendingOrderUnderThePlanCountsTowardsTheCumulativeCap(): void
+    {
+        // The robot path creates PENDING orders first. Counting live trades only
+        // would let a whole burst of signals through — each seeing no exposure
+        // yet — and start counting once they fill, too late to refuse any.
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedPendingOrderUnderPlan($planId, 1.0, 50.0);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+    }
+
+    public function testAPositionOnAnotherAccountDoesNotCountTowardsTheCumulativeCap(): void
+    {
+        // A percentage only means something against one account's capital, so
+        // exposure taken elsewhere says nothing about this account's.
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedOpenTradeUnderPlan($planId, 1.0, 50.0, $this->seedAccount($this->userId));
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testACumulativeCapBelowTheTotalStillAcceptsWhenTheCapIsHighEnough(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 12.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedOpenTradeUnderPlan($planId, 1.0, 50.0);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /**
+     * A secured trade has its stop at breakeven — it can no longer lose, so it
+     * must stop weighing on the envelope. Charging it anyway would hold a robot
+     * back exactly when it protected early and the market proved it right.
+     */
+    public function testASecuredTradeNoLongerWeighsOnTheCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        // Same 5% position as the rejection case, but secured.
+        $this->seedTradeUnderPlan($planId, 1.0, 50.0, status: 'SECURED', beReached: 1);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /** Trimming a position halves what it can lose — and what it takes. */
+    public function testATrimmedTradeOnlyWeighsItsRemainingSize(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        // Entered at 1 lot (5%), half taken off: 2.5% left. 2.5 + 5 = 7.5 ≤ 8.
+        // On entry size it would read 10% and be refused.
+        $this->seedTradeUnderPlan($planId, 1.0, 50.0, remainingSize: 0.5);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /**
+     * A position with no stop can lose without limit. Counting it as zero would
+     * under-count; switching the cap off would leave the user believing an
+     * envelope that no longer holds. It is refused, and the reason says why.
+     */
+    public function testAStoplessPositionUnderThePlanRefusesTheSignalOutLoud(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedTradeUnderPlan($planId, 1.0, null);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('no stop', (string) end($events)['error_message']);
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+    }
+
+    public function testAStoplessPositionIsHarmlessWhenThePlanSetsNoCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan([]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedTradeUnderPlan($planId, 1.0, null);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
+
+    /** A trade carrying the plan, i.e. risk already on the table. */
+    private function seedTradeUnderPlan(
+        int $planId,
+        float $size,
+        ?float $slPoints,
+        ?int $accountId = null,
+        ?float $remainingSize = null,
+        string $status = 'OPEN',
+        int $beReached = 0,
+    ): void {
+        $positionId = $this->seedPositionUnderPlan($planId, $size, $slPoints, $accountId);
+        $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status, be_reached)
+             VALUES (:pid, NOW(), :size, :status, :be)"
+        )->execute([
+            'pid' => $positionId,
+            'size' => $remainingSize ?? $size,
+            'status' => $status,
+            'be' => $beReached,
+        ]);
+    }
+
+    private function seedOpenTradeUnderPlan(int $planId, float $size, float $slPoints, ?int $accountId = null): void
+    {
+        $this->seedTradeUnderPlan($planId, $size, $slPoints, $accountId);
+    }
+
+    private function seedPendingOrderUnderPlan(int $planId, float $size, float $slPoints): void
+    {
+        $positionId = $this->seedPositionUnderPlan($planId, $size, $slPoints);
+        $this->pdo->prepare("INSERT INTO orders (position_id, status) VALUES (:pid, 'PENDING')")
+            ->execute(['pid' => $positionId]);
+    }
+
+    private function seedPositionUnderPlan(int $planId, float $size, ?float $slPoints, ?int $accountId = null): int
+    {
+        $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, sl_points, position_type, plan_id)
+             VALUES (:u, :a, 'BUY', 'EURUSD', 1.1000, :size, :sl, 'TRADE', :plan)"
+        )->execute([
+            'u' => $this->userId,
+            'a' => $accountId ?? $this->accountId,
+            'size' => $size,
+            'sl' => $slPoints,
+            'plan' => $planId,
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
 
     private function createPlan(array $data): int
     {
@@ -506,6 +871,15 @@ class TradingViewWebhookFlowTest extends TestCase
     private function attachPlans(int $robotId, array $planIds): void
     {
         (new TradingPlanRepository($this->pdo))->setRobotPlans($robotId, $planIds);
+    }
+
+    /** A broker's own symbol for one of the user's assets. */
+    private function seedAlias(string $brokerSymbol, string $journalSymbol): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO symbol_aliases (user_id, broker_symbol, journal_symbol, broker_template)
+             VALUES (:u, :b, :j, 'MT5')"
+        )->execute(['u' => $this->userId, 'b' => $brokerSymbol, 'j' => $journalSymbol]);
     }
 
     private function seedSymbol(string $code, float $pointValue): void
@@ -610,6 +984,7 @@ class TradingViewWebhookFlowTest extends TestCase
             'orders',
             'positions',
             'symbol_account_settings',
+            'symbol_aliases',
             'symbols',
             'accounts',
             'refresh_tokens',

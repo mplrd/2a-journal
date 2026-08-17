@@ -24,4 +24,10 @@ export const plansService = {
   async archive(planId) {
     return api.delete(`/plans/${planId}`)
   },
+
+  // Read-only: confronts an entry being typed with the plan, without writing
+  // anything. Feeds the inline warning under the plan selector (docs/102).
+  async evaluate(planId, payload) {
+    return api.post(`/plans/${planId}/evaluate`, payload)
+  },
 }

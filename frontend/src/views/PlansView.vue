@@ -12,21 +12,32 @@ import Select from 'primevue/select'
 import ToggleButton from 'primevue/togglebutton'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
+import FieldHelpIcon from '@/components/common/FieldHelpIcon.vue'
+import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import { plansService } from '@/services/plans'
-import { blankPlanForm, planToForm, formToPayload } from '@/utils/planForm'
+import { useSymbolsStore } from '@/stores/symbols'
+import { useAccountsStore } from '@/stores/accounts'
+import { useSymbolAccountSettingsStore } from '@/stores/symbolAccountSettings'
+import { blankPlanForm, planToForm, formToPayload, isPlanFormValid, pointValueSummary } from '@/utils/planForm'
 import { formatZoneRange, formatWindowTime, daysMaskToLabel } from '@/utils/planDisplay'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 // Cap chips per group so a plan with many zones/windows can't blow up a row.
 const MAX_SUMMARY_CHIPS = 4
 
 const { t, locale } = useI18n()
+const { numberLocale } = useNumberLocale()
 const toast = useToast()
 const confirm = useConfirm()
+const symbolsStore = useSymbolsStore()
+const accountsStore = useAccountsStore()
+const settingsStore = useSymbolAccountSettingsStore()
 
 const plans = ref([])
 const loading = ref(false)
 
 const showEditor = ref(false)
+const showSymbolForm = ref(false)
 const saving = ref(false)
 const form = ref(blankPlanForm())
 
@@ -44,6 +55,15 @@ const zoneDirectionOptions = computed(() => [
   { label: t('common.sell'), value: 'SELL' },
 ])
 
+// The asset the plan targets. A zone is a pair of bare prices, so it only means
+// something once the asset is named — hence no "every asset" entry: a plan that
+// filters nothing by market is the hole this field closes. Plans stored before
+// it exist without one; editing such a plan asks for it.
+//
+// Same store, same option shape (label = name, value = code) as the trade and
+// order forms, so the picker reads identically wherever an asset is chosen.
+const symbolOptions = computed(() => symbolsStore.symbolOptions)
+
 const timezoneOptions = computed(() => {
   const set = new Set(BASE_TZ)
   if (form.value.timezone) set.add(form.value.timezone)
@@ -56,7 +76,7 @@ const dayLabels = computed(() => {
   return [0, 1, 2, 3, 4, 5, 6].map((i) => fmt.format(new Date(Date.UTC(2024, 0, 1 + i))))
 })
 
-const canSave = computed(() => form.value.name.trim().length > 0)
+const canSave = computed(() => isPlanFormValid(form.value))
 
 function directionLabel(value) {
   if (!value) return t('plan.direction.both')
@@ -78,9 +98,53 @@ function windowSummary(plan) {
   const allDays = t('plan.window.all_days')
   return (plan.windows ?? []).map((w) => `${daysMaskToLabel(w.days_mask, dayLabels.value, allDays)} ${formatWindowTime(w)}`.trim())
 }
+// "No filter" only holds when none of them is set — the list grew past what an
+// inline condition could carry without one of them being forgotten.
+function hasFilter(plan) {
+  return Boolean(plan.symbol)
+    || Boolean(plan.zones?.length)
+    || Boolean(plan.windows?.length)
+    || plan.max_risk_percent != null
+    || plan.max_plan_risk_percent != null
+}
 function capped(list) {
   return { shown: list.slice(0, MAX_SUMMARY_CHIPS), extra: Math.max(0, list.length - MAX_SUMMARY_CHIPS) }
 }
+// What a zone is for, then the bound rule — the surprise ("I typed 24400 then
+// 24000 and it flipped") lands on the same field, so it belongs in the same
+// help bubble rather than a second icon beside the first.
+const zonesHelp = computed(() => `${t('plan.zones_hint')} ${t('plan.zone_bounds_hint')}`)
+
+// The form holds the asset CODE (that is what the API takes); the point value
+// hangs off the row.
+const selectedSymbol = computed(
+  () => (symbolsStore.symbols ?? []).find((s) => s.code === form.value.symbol) ?? null,
+)
+
+// Read-only, and deliberately so: the plan has no account, so there is no one
+// cell to edit here. What it can do is say what its caps resolve to.
+const pointValues = computed(() => pointValueSummary(
+  selectedSymbol.value,
+  accountsStore.accounts ?? [],
+  settingsStore.getPointValue,
+))
+
+function formatPointValue(value) {
+  return Number(value).toLocaleString(numberLocale.value, { maximumFractionDigits: 5 })
+}
+
+const pointValueLine = computed(() => {
+  const summary = pointValues.value
+  if (!summary) return null
+  const asset = selectedSymbol.value.name || selectedSymbol.value.code
+  if (summary.uniform) {
+    return t('plan.point_value_uniform', { asset, value: formatPointValue(summary.value) })
+  }
+  const list = summary.entries
+    .map((e) => t('plan.point_value_entry', { value: formatPointValue(e.value), account: e.accountName }))
+    .join(' · ')
+  return t('plan.point_value_varies', { asset, list })
+})
 
 async function load() {
   loading.value = true
@@ -91,6 +155,41 @@ async function load() {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
   } finally {
     loading.value = false
+  }
+
+  // The assets only feed the asset picker. Losing them must not cost the user
+  // their plan list, so this failure stays quiet — the editor then says it has
+  // nothing to offer rather than showing an unexplained empty list, and the
+  // "+" button still lets one be created on the spot.
+  try {
+    await symbolsStore.fetchSymbols()
+  } catch {
+    // handled in the store; the picker simply stays empty
+  }
+
+  // Same rule for what the risk caps resolve to: informative, never load-bearing.
+  // Missing either one just hides the line.
+  try {
+    await Promise.all([
+      accountsStore.accounts?.length ? Promise.resolve() : accountsStore.fetchAccounts(),
+      settingsStore.fetchMatrix(),
+    ])
+  } catch {
+    // the point-value line simply stays hidden
+  }
+}
+
+// Create an asset without leaving the plan, exactly as the trade form does:
+// realising mid-plan that the asset is missing should not send the user to
+// another screen and lose what they were typing.
+async function handleSymbolCreate(data) {
+  try {
+    const created = await symbolsStore.createSymbol(data)
+    form.value.symbol = created.code
+    showSymbolForm.value = false
+    toast.add({ severity: 'success', summary: t('symbols.success.created'), life: 2500 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
   }
 }
 
@@ -189,6 +288,13 @@ onMounted(load)
       <Column :header="t('plan.field.filters')">
         <template #body="{ data }">
           <div class="flex flex-col gap-1 items-start">
+            <Tag
+              v-if="data.symbol"
+              :value="data.symbol"
+              severity="info"
+              icon="pi pi-bookmark"
+              data-testid="plan-symbol-tag"
+            />
             <div v-if="data.zones?.length" class="flex flex-wrap gap-1" data-testid="plan-zone-summary">
               <Tag v-for="(z, i) in capped(zoneSummary(data)).shown" :key="'z' + i" :value="z.text" :severity="z.severity" :icon="z.icon" />
               <Tag v-if="capped(zoneSummary(data)).extra" :value="t('plan.summary.more', { count: capped(zoneSummary(data)).extra })" severity="secondary" />
@@ -198,7 +304,13 @@ onMounted(load)
               <Tag v-if="capped(windowSummary(data)).extra" :value="t('plan.summary.more', { count: capped(windowSummary(data)).extra })" severity="secondary" />
             </div>
             <Tag v-if="data.max_risk_percent != null" :value="t('plan.tag.risk', { pct: Number(data.max_risk_percent) })" severity="warn" />
-            <span v-if="!data.zones?.length && !data.windows?.length && data.max_risk_percent == null" class="text-xs text-gray-400">{{ t('plan.tag.none') }}</span>
+            <Tag
+              v-if="data.max_plan_risk_percent != null"
+              :value="t('plan.tag.plan_risk', { pct: Number(data.max_plan_risk_percent) })"
+              severity="warn"
+              data-testid="plan-plan-risk-tag"
+            />
+            <span v-if="!hasFilter(data)" class="text-xs text-gray-400">{{ t('plan.tag.none') }}</span>
           </div>
         </template>
       </Column>
@@ -222,9 +334,35 @@ onMounted(load)
       <div class="flex flex-col gap-5">
         <!-- Basics -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div class="md:col-span-2">
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.name') }}</label>
             <InputText v-model="form.name" class="w-full" maxlength="120" :placeholder="t('plan.name_placeholder')" data-testid="plan-name-input" />
+          </div>
+          <div>
+            <label class="flex items-center gap-1 text-sm font-medium mb-1">
+              {{ t('plan.field.symbol') }}
+              <FieldHelpIcon :text="t('plan.symbol_hint')" testid="plan-symbol-help" />
+            </label>
+            <div class="flex gap-1">
+              <Select
+                v-model="form.symbol"
+                :options="symbolOptions"
+                option-label="label"
+                option-value="value"
+                class="w-full"
+                :placeholder="t('plan.symbol_placeholder')"
+                :empty-message="t('plan.no_symbols')"
+                data-testid="plan-symbol-select"
+              />
+              <Button
+                icon="pi pi-plus"
+                severity="secondary"
+                size="small"
+                v-tooltip.top="t('symbols.add_symbol')"
+                data-testid="plan-add-symbol"
+                @click="showSymbolForm = true"
+              />
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.direction') }}</label>
@@ -235,15 +373,17 @@ onMounted(load)
         <!-- Price zones -->
         <div>
           <div class="flex items-center justify-between mb-2">
-            <label class="text-sm font-medium">{{ t('plan.field.zones') }}</label>
+            <label class="flex items-center gap-1 text-sm font-medium">
+              {{ t('plan.field.zones') }}
+              <FieldHelpIcon :text="zonesHelp" testid="plan-zones-help" />
+            </label>
             <Button icon="pi pi-plus" :label="t('plan.add_zone')" size="small" text data-testid="plan-add-zone" @click="addZone" />
           </div>
-          <p class="text-xs text-gray-400 mb-2">{{ t('plan.zones_hint') }}</p>
           <div v-for="(zone, i) in form.zones" :key="i" class="flex items-center gap-2 mb-2" data-testid="plan-zone-row">
             <Select v-model="zone.direction" :options="zoneDirectionOptions" option-label="label" option-value="value" class="w-28" />
-            <InputNumber v-model="zone.low_price" :min="0" :maxFractionDigits="5" class="flex-1" :placeholder="t('plan.zone_low')" />
+            <InputNumber v-model="zone.low_price" :min="0" :maxFractionDigits="5" :locale="numberLocale" class="flex-1" :placeholder="t('plan.zone_low')" />
             <span class="text-gray-400">–</span>
-            <InputNumber v-model="zone.high_price" :min="0" :maxFractionDigits="5" class="flex-1" :placeholder="t('plan.zone_high')" />
+            <InputNumber v-model="zone.high_price" :min="0" :maxFractionDigits="5" :locale="numberLocale" class="flex-1" :placeholder="t('plan.zone_high')" />
             <Button icon="pi pi-times" size="small" text severity="danger" @click="removeZone(i)" />
           </div>
         </div>
@@ -251,7 +391,10 @@ onMounted(load)
         <!-- Time windows -->
         <div>
           <div class="flex items-center justify-between mb-2">
-            <label class="text-sm font-medium">{{ t('plan.field.windows') }}</label>
+            <label class="flex items-center gap-1 text-sm font-medium">
+              {{ t('plan.field.windows') }}
+              <FieldHelpIcon :text="t('plan.windows_hint')" testid="plan-windows-help" />
+            </label>
             <Button icon="pi pi-plus" :label="t('plan.add_window')" size="small" text data-testid="plan-add-window" @click="addWindow" />
           </div>
           <div v-if="form.windows.length" class="mb-3">
@@ -276,18 +419,43 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- Max risk -->
-        <div class="md:w-64">
-          <label class="block text-sm font-medium mb-1">{{ t('plan.field.max_risk') }}</label>
-          <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
-          <p class="text-xs text-gray-400 mt-1">{{ t('plan.max_risk_hint') }}</p>
+        <!-- Max risk: per signal, then over everything the plan still carries -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="flex items-center gap-1 text-sm font-medium mb-1">
+              {{ t('plan.field.max_risk') }}
+              <FieldHelpIcon :text="t('plan.max_risk_hint')" testid="plan-risk-help" />
+            </label>
+            <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" :locale="numberLocale" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
+          </div>
+          <div>
+            <label class="flex items-center gap-1 text-sm font-medium mb-1">
+              {{ t('plan.field.max_plan_risk') }}
+              <FieldHelpIcon :text="t('plan.max_plan_risk_hint')" testid="plan-plan-risk-help" />
+            </label>
+            <InputNumber v-model="form.max_plan_risk_percent" :min="0" :maxFractionDigits="3" :locale="numberLocale" suffix=" %" class="w-full" :placeholder="t('plan.max_plan_risk_placeholder')" data-testid="plan-plan-risk-input" />
+          </div>
         </div>
+
+        <!-- Both caps are a percentage of capital, converted to money by
+             point_value(asset, account) — and this plan has no account. Showing
+             what it resolves to per account is the only honest thing this
+             screen can say about it; editing belongs to My assets. -->
+        <p v-if="pointValueLine" class="text-xs text-gray-400" data-testid="plan-point-value-line">
+          {{ pointValueLine }}
+        </p>
       </div>
 
       <template #footer>
         <Button :label="t('common.cancel')" severity="secondary" @click="showEditor = false" />
         <Button :label="t('common.save')" :loading="saving" :disabled="!canSave" data-testid="plan-save" @click="save" />
       </template>
+
+      <SymbolForm
+        v-model:visible="showSymbolForm"
+        :loading="symbolsStore.loading"
+        @save="handleSymbolCreate"
+      />
     </Dialog>
   </div>
 </template>

@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\OrderStatus;
 use App\Enums\TradeStatus;
 use PDO;
 
@@ -203,6 +204,65 @@ class PositionRepository
         return $result;
     }
 
+    /**
+     * Positions still AT RISK under a plan on one account, for the cumulative
+     * risk cap (docs/83-trading-plans.md). "Still at risk" is narrower than
+     * "still open", and the difference is the whole point:
+     *
+     * - a PENDING order counts, at full size. Counting live trades only would
+     *   leave the filter blind on the path it exists for: a robot's signals
+     *   become orders first, so a burst of them would all pass — each seeing no
+     *   exposure yet — and only start counting once they filled, too late to
+     *   refuse any. A cancelled or expired order drops out on its own.
+     * - an OPEN trade counts at its REMAINING size. Trimming a position halves
+     *   what it can still lose, so it must halve what it takes from the
+     *   envelope.
+     * - a SECURED trade counts for NOTHING and is not returned at all. SECURED
+     *   means the stop was moved to breakeven, and TradeService says it in as
+     *   many words: "the remainder is risk-free". Charging it to the envelope
+     *   would hold a robot back precisely when it has protected early and the
+     *   market is proving it right.
+     *
+     * be_reached is checked alongside the status: the two move together today
+     * (markBeReached promotes OPEN to SECURED), and a broker sync setting one
+     * without the other must not resurrect a risk that no longer exists.
+     *
+     * @return array<int,array{id:int,symbol:string,size:string,sl_points:?string}>
+     */
+    public function findStillExposedByPlanAndAccount(
+        int $planId,
+        int $accountId,
+        ?int $excludePositionId = null,
+    ): array {
+        $params = [
+            'plan_id' => $planId,
+            'account_id' => $accountId,
+            'pending' => OrderStatus::PENDING->value,
+            'open' => TradeStatus::OPEN->value,
+        ];
+        $exclude = '';
+        if ($excludePositionId !== null) {
+            $exclude = ' AND p.id <> :exclude_id';
+            $params['exclude_id'] = $excludePositionId;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT p.id, p.symbol, p.sl_points,
+                    COALESCE(t.remaining_size, p.size) AS size
+             FROM positions p
+             LEFT JOIN orders o ON o.position_id = p.id
+             LEFT JOIN trades t ON t.position_id = p.id
+             WHERE p.plan_id = :plan_id
+               AND p.account_id = :account_id' . $exclude . '
+               AND (
+                     o.status = :pending
+                     OR (t.status = :open AND t.be_reached = 0 AND t.remaining_size > 0)
+                   )'
+        );
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
     public function findAggregatedByUserId(int $userId, array $filters = []): array
     {
         $where = 'WHERE p.user_id = :user_id AND t.status IN (:status_open, :status_secured) AND t.remaining_size > 0'
@@ -247,6 +307,24 @@ class PositionRepository
         $stmt->execute(['account_id' => $newAccountId, 'id' => $id]);
 
         return $this->findById($id);
+    }
+
+    /**
+     * Carries every position of the user over to an asset's new code.
+     *
+     * positions.symbol is a bare copy of symbols.code with no foreign key, so
+     * renaming the asset without this left the history pointing at a code
+     * nothing carried: risk no longer computable, statistics split in two for
+     * one market. Returns the number of rows updated.
+     */
+    public function renameSymbolCode(int $userId, string $oldCode, string $newCode): int
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE positions SET symbol = :new WHERE user_id = :user_id AND symbol = :old'
+        );
+        $stmt->execute(['new' => $newCode, 'user_id' => $userId, 'old' => $oldCode]);
+
+        return $stmt->rowCount();
     }
 
     /**

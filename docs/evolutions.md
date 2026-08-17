@@ -223,6 +223,29 @@ Les fallbacks `??` empêchent l'erreur fatale, mais si BingX utilise d'autres no
 
 ## UX / vocabulaire
 
+### Raison du refus d'un plan : localiser une phrase produite en anglais
+
+**Contexte** : `PlanEvaluator` ne renvoie pas une clé mais une **phrase anglaise**
+toute faite (`entry 25648 outside BUY zones (24000-24400)`, `Mon not a trading
+day`, `plan risk 5.300% (open 4.000% + signal 1.300%) exceeds plan max 5.000%`, et
+cinq autres). Elle est affichée telle quelle dans le badge d'un trade, son
+infobulle, l'alerte de saisie (doc 102) et le journal d'événements du webhook —
+c'est le texte le plus lu de la fonctionnalité. Le lot 5 (doc 103) a repris tout
+le reste du vocabulaire mais ne pouvait pas toucher celui-là.
+
+**À faire** : renvoyer une clé i18n + des paramètres au lieu d'une phrase, et
+trancher le sort des raisons **déjà écrites en base**
+(`positions.plan_adherence_reason`, `VARCHAR(255)`) : le verdict étant figé
+(doc 101), elles ne peuvent pas être régénérées. Deux options — les laisser telles
+quelles et n'appliquer le nouveau format qu'aux nouvelles, ou stocker désormais la
+clé et ses paramètres (JSON) en gardant un rendu de repli pour les anciennes.
+
+**Repéré le** : 2026-08-17 (pendant le lot 5 du chantier plans).
+**Priorité** : moyenne — pas bloquant, mais c'est la phrase que l'utilisateur lit
+au moment précis où il cherche à comprendre un refus.
+
+---
+
 ### Incohérence « symbole » vs « actif » dans grilles et modales
 
 **Contexte** : aujourd'hui les labels i18n parlent de `positions.symbol` / `trades.symbol` (« Symbole ») dans les grilles trades/positions, les en-têtes de colonnes, et les modales (TradeForm, CloseTradeDialog, etc.), alors que la valeur affichée est en fait le **code de l'actif** (NASDAQ, BTCUSD, EURUSD, …) — c'est-à-dire le ticker / le nom commun de l'instrument, pas un « symbole » au sens graphique.
@@ -1039,6 +1062,79 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 **Fichiers** : `frontend/src/locales/fr.json`, `frontend/src/locales/en.json`.
 
 **Repéré le** : 2026-08-10. **Priorité** : moyenne — visible seulement dans l'admin, mais c'est une clé brute affichée à l'écran.
+
+---
+
+## `positions.symbol` et `symbol_aliases.journal_symbol` recopient un code au lieu de référencer l'actif
+
+**Contexte** : le code d'un actif (`symbols.code`) est **recopié en chaîne**, sans clé étrangère, dans deux tables :
+
+| Où | Colonne | Écrit par |
+|---|---|---|
+| positions | `positions.symbol` | chaque trade / ordre |
+| alias broker | `symbol_aliases.journal_symbol` | import CSV |
+
+`symbol_account_settings` référence pourtant l'actif proprement par `symbol_id` + FK, et `trading_plans` le fait aussi depuis la réécriture de la migration 042 (docs/99).
+
+Le symptôme immédiat — renommer un actif depuis *Mes actifs* détachait l'historique en silence — **est corrigé** : `SymbolCodeRenamer` propage le nouveau code aux deux tables dans la transaction du renommage. Mais c'est un **emplâtre** : tant que le lien est une chaîne, tout nouveau chemin d'écriture devra penser à propager, et rien dans le schéma ne l'y oblige.
+
+Restent d'ailleurs deux trous que la propagation ne bouche pas :
+
+- **la suppression** : `softDelete` laisse les alias derrière lui (c'est pourquoi `SymbolResolver` doit se défendre contre un alias pointant vers un actif disparu) ;
+- **les écritures hors service** : la synchro broker et l'import écrivent `positions.symbol` directement.
+
+**À faire** : faire pointer les deux colonnes sur `symbols.id` avec une FK. Chantier réel : migration + backfill (les codes non rattachés à un actif doivent en créer un), et reprise de tout ce qui filtre ou groupe par `positions.symbol` — stats, filtres, synchro broker, import.
+
+**Fichiers** : `api/database/schema.sql`, `api/src/Repositories/PositionRepository.php`, `api/src/Repositories/SymbolAliasRepository.php`, `api/src/Repositories/StatsRepository.php`, `api/src/Services/Import/ImportService.php`, `api/src/Services/Broker/`.
+
+**Repéré le** : 2026-08-17. **Priorité** : moyenne — le symptôme est traité, la dette de modèle reste.
+
+---
+
+## Un actif ne porte qu'un seul symbole
+
+**Contexte** : deux tables cohabitent et il faut les distinguer.
+
+- **`symbols`** = les actifs de l'utilisateur. Une ligne = un actif, **un** symbole (`code`) et un nom. Créable à la main dans *Mes actifs*, ou à la volée depuis les sélecteurs (trade, ordre, position, et depuis le lot 1 le plan).
+- **`symbol_aliases`** = des symboles **supplémentaires**, ceux d'un broker, rattachés à un actif existant (`broker_symbol` + `broker_template` → `journal_symbol`). Aucune route, aucun contrôleur, aucun écran : seul `ImportService` en écrit, en devinant le mapping pendant un import CSV.
+
+En pratique ça ne bloque personne au quotidien : si les alertes envoient `GER40`, il suffit de saisir `GER40` comme symbole de l'actif. Le manque n'apparaît que si **le même actif est traité chez deux brokers qui le nomment différemment** : il faut alors créer deux actifs, saisir la valeur du point deux fois, et les statistiques se retrouvent coupées en deux pour un même marché.
+
+`SymbolResolver` (docs/99) sait déjà lire les alias — il ne les trouvera simplement que chez un utilisateur passé par un import.
+
+**À faire** : permettre de rattacher plusieurs symboles à un actif — une section « autres symboles » dans *Mes actifs*. Le repository a déjà `upsert`, `findAllByUserId` et `delete` ; il manque le service, le contrôleur, les routes et l'écran.
+
+**Fichiers** : `api/src/Repositories/SymbolAliasRepository.php`, `api/src/Services/SymbolService.php`, `frontend/src/views/SymbolsView.vue`.
+
+**Repéré le** : 2026-08-17. **Priorité** : basse — contournable en saisissant le bon symbole sur l'actif ; ne gêne que le multi-broker sur un même marché.
+
+---
+
+## Le symbole d'un trade n'est pas contrôlé contre les actifs de l'utilisateur
+
+**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). `positions.symbol` est une chaîne libre : `TradeService` et `OrderService` vérifient qu'elle est non vide et ≤ 50 caractères, rien de plus. L'interface ne laisse pas passer n'importe quoi (le champ *Instrument* est un sélecteur sur Mes actifs, avec un « + » pour en créer un), mais l'API accepte un symbole inconnu.
+
+Conséquence : une position dont le symbole n'existe pas dans Mes actifs a un risque **non chiffrable**, ce qui désactive silencieusement les plafonds de risque du plan auquel elle serait rattachée.
+
+Une remarque au passage sur la façon dont ce point a été trouvé : la doc 83 affirmait qu'un symbole « sans valeur du point configurée » désactivait le filtre de risque. C'était **faux** — `point_value` est `NOT NULL DEFAULT 1` et ne peut pas être ≤ 0 — et l'affirmation avait déjà été recopiée dans une infobulle utilisateur. Corrigé partout au lot 4.
+
+**À faire** : soit valider le symbole contre les actifs à la création d'un trade/ordre par l'API, soit créer l'actif à la volée comme le fait l'import.
+
+**Fichiers** : `api/src/Services/TradeService.php`, `api/src/Services/OrderService.php`.
+
+**Repéré le** : 2026-08-17. **Priorité** : basse — non atteignable depuis l'interface.
+
+---
+
+## `PlanEvaluator::evaluate()` est à sept paramètres
+
+**Contexte** : la signature a pris `$symbol` au lot 1 puis `$openRiskPercent` au lot 4 (docs/99, docs/100). Le second est passé **en dernier**, après `$now`, pour ne pas casser les appelants ni la trentaine d'appels de test — pratique, mais l'ordre ne raconte plus rien.
+
+**À faire** : au prochain filtre, passer un objet de signal (`PlanSignal`) plutôt qu'un huitième argument positionnel. Trois appelants (`TradeService`, `OrderService`, `TradingViewWebhookService`) et `PlanEvaluatorTest`.
+
+**Fichiers** : `api/src/Services/PlanEvaluator.php` et ses trois appelants.
+
+**Repéré le** : 2026-08-17. **Priorité** : basse — dette de forme, aucun effet produit.
 
 ---
 

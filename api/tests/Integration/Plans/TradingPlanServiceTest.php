@@ -4,9 +4,20 @@ namespace Tests\Integration\Plans;
 
 use App\Core\Database;
 use App\Enums\PlanStatus;
+use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountRepository;
+use App\Repositories\PositionRepository;
 use App\Repositories\RobotRepository;
+use App\Repositories\SymbolAccountSettingsRepository;
+use App\Repositories\SymbolAliasRepository;
+use App\Repositories\SymbolRepository;
 use App\Repositories\TradingPlanRepository;
+use App\Services\PlanAdherenceEvaluator;
+use App\Services\PlanEvaluator;
+use App\Services\PlanOpenRiskCalculator;
+use App\Services\SignalRiskCalculator;
+use App\Services\SymbolResolver;
 use App\Services\TradingPlanService;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -34,7 +45,28 @@ class TradingPlanServiceTest extends TestCase
 
         $this->repo = new TradingPlanRepository($this->pdo);
         $this->robotRepo = new RobotRepository($this->pdo);
-        $this->service = new TradingPlanService($this->repo);
+        $symbolRepo = new SymbolRepository($this->pdo);
+        // Same assembly as production, so the preview and the recorded verdict
+        // can never disagree (docs/102).
+        $resolver = new SymbolResolver($symbolRepo, new SymbolAliasRepository($this->pdo));
+        $accountRepo = new AccountRepository($this->pdo);
+        $riskCalculator = new SignalRiskCalculator(
+            $resolver,
+            new SymbolAccountSettingsRepository($this->pdo),
+            $accountRepo,
+        );
+        $this->service = new TradingPlanService(
+            $this->repo,
+            $symbolRepo,
+            new PlanAdherenceEvaluator(
+                $this->repo,
+                new PlanEvaluator(),
+                $riskCalculator,
+                new PlanOpenRiskCalculator(new PositionRepository($this->pdo), $riskCalculator),
+                $resolver,
+            ),
+            $accountRepo,
+        );
 
         $this->userId = $this->seedUser('plan-owner@test.com');
         $this->otherUserId = $this->seedUser('plan-intruder@test.com');
@@ -72,6 +104,61 @@ class TradingPlanServiceTest extends TestCase
         $this->assertCount(2, $plan['zones']);
         $this->assertCount(1, $plan['windows']);
         $this->assertSame('09:00:00', $plan['windows'][0]['start_time']);
+    }
+
+    // ── Instrument ciblé ──────────────────────────────────────────
+
+    public function testCreateStoresTheTargetedInstrument(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDAQ']));
+
+        $this->assertSame('NASDAQ', $plan['symbol']);
+    }
+
+    public function testAPlanWithoutAnInstrumentKeepsItNull(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData());
+
+        $this->assertNull($plan['symbol']);
+    }
+
+    /**
+     * A typo would otherwise reject every single signal, silently: the plan
+     * would target an instrument that never arrives.
+     */
+    public function testAnInstrumentTheUserDoesNotOwnIsRefused(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDQ']));
+    }
+
+    public function testAnotherUsersInstrumentIsRefused(): void
+    {
+        $this->seedSymbol($this->otherUserId, 'NASDAQ');
+
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDAQ']));
+    }
+
+    public function testTheInstrumentIsStoredInItsCanonicalForm(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['symbol' => ' nasdaq ']));
+
+        $this->assertSame('NASDAQ', $plan['symbol']);
+    }
+
+    public function testUpdateCanClearTheInstrument(): void
+    {
+        $this->seedSymbol($this->userId, 'NASDAQ');
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['symbol' => 'NASDAQ']));
+
+        $updated = $this->service->update($this->userId, (int) $plan['id'], $this->fullPlanData(['symbol' => null]));
+
+        $this->assertNull($updated['symbol']);
     }
 
     public function testCreateNormalizesZoneBounds(): void
@@ -171,6 +258,224 @@ class TradingPlanServiceTest extends TestCase
         ]));
     }
 
+    // ── Plafond de risque cumulé ──────────────────────────────────
+    // Le plafond par trade ne dit rien de l'exposition totale : vingt entrées à
+    // 1 % chacune respectent la règle et engagent 20 %.
+
+    public function testCumulativeRiskCapIsPersisted(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData([
+            'max_plan_risk_percent' => 5.0,
+        ]));
+        $this->assertSame(5.0, (float) $plan['max_plan_risk_percent']);
+    }
+
+    public function testCumulativeRiskCapIsOptional(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData());
+        $this->assertNull($plan['max_plan_risk_percent']);
+    }
+
+    public function testCumulativeRiskCapCanBeCleared(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['max_plan_risk_percent' => 5.0]));
+        $updated = $this->service->update($this->userId, (int) $plan['id'], $this->fullPlanData([
+            'max_plan_risk_percent' => null,
+        ]));
+        $this->assertNull($updated['max_plan_risk_percent']);
+    }
+
+    public function testANonPositiveCumulativeRiskCapIsRejected(): void
+    {
+        // Zero would refuse every signal without ever saying why on screen.
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['max_plan_risk_percent' => 0]));
+    }
+
+    /**
+     * Both caps live in a DECIMAL(6,3). Unbounded, a larger value passed
+     * validation and blew up on write — a 500 under the production sql_mode,
+     * where the user deserves a field message.
+     */
+    public function testARiskCapBeyondWhatTheColumnHoldsIsRejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['max_plan_risk_percent' => 1000]));
+    }
+
+    public function testAPerTradeRiskCapBeyondWhatTheColumnHoldsIsRejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['max_risk_percent' => 1000]));
+    }
+
+    // ── Simulation à la saisie (docs/102) ─────────────────────────
+    // Le verdict n'arrivait qu'après enregistrement, sous forme de badge : un
+    // constat, pas une alerte. Ici on le demande AVANT, et sans rien écrire.
+
+    public function testADraftInsideThePlanIsAnnouncedAsSuch(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $verdict = $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+            'opened_at' => '2026-07-20 10:00:00', // lundi, dans la fenêtre
+        ]);
+
+        $this->assertSame('IN_PLAN', $verdict['plan_adherence']);
+        $this->assertNull($verdict['plan_adherence_reason']);
+    }
+
+    public function testADraftOutsideThePlanComesBackWithItsReason(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $verdict = $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 30000,
+            'opened_at' => '2026-07-20 10:00:00',
+        ]);
+
+        $this->assertSame('OUT_OF_PLAN', $verdict['plan_adherence']);
+        $this->assertStringContainsString('24500-24550', (string) $verdict['plan_adherence_reason']);
+    }
+
+    public function testSimulatingWritesNothing(): void
+    {
+        // Read-only is the whole contract: the form calls this on every keystroke.
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+        $before = $this->pdo->query('SELECT COUNT(*) FROM positions')->fetchColumn();
+
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 30000,
+        ]);
+
+        $this->assertSame($before, $this->pdo->query('SELECT COUNT(*) FROM positions')->fetchColumn());
+    }
+
+    public function testAHalfFilledFormStillGetsAnAnswer(): void
+    {
+        // No size, no stop: the risk filters simply stay inactive, as everywhere
+        // else. Refusing to answer would leave the user with nothing.
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData([
+            'max_risk_percent' => 1.0,
+        ]))['id'];
+
+        $verdict = $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+            'opened_at' => '2026-07-20 10:00:00',
+        ]);
+
+        $this->assertSame('IN_PLAN', $verdict['plan_adherence']);
+    }
+
+    public function testSimulatingAnotherUsersPlanIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->evaluateDraft($this->otherUserId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ]);
+    }
+
+    public function testADraftWithoutADirectionIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $this->expectException(ValidationException::class);
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ]);
+    }
+
+    /**
+     * Simulating writes nothing, which is exactly why the account it names was
+     * never checked: everywhere else the account arrives with a trade being
+     * created, and TradeService::create refuses one that is not yours before
+     * anything reaches the evaluator. Here the caller hands over a bare id.
+     *
+     * Left open, the plan owner points the simulation at ANY account: the risk
+     * is priced against that account's capital, and the rejection reason spells
+     * the percentage out to three decimals ("risk 0.004% exceeds plan max
+     * 0.001%"). With size and stop under the caller's control, one request
+     * inverts to the other user's capital. Account ids are sequential.
+     */
+    public function testSimulatingAgainstAnotherUsersAccountIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData([
+            'max_risk_percent' => 0.001,
+        ]))['id'];
+
+        $this->expectException(ValidationException::class);
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->otherUserId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+            'size' => 1,
+            'sl_points' => 1,
+            'opened_at' => '2026-07-20 10:00:00',
+        ]);
+    }
+
+    /** An account that exists nowhere is refused the same way, and says no more. */
+    public function testSimulatingAgainstAnAccountThatDoesNotExistIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $this->expectException(ValidationException::class);
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => 999999999,
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ]);
+    }
+
+    /**
+     * The two refusals above must be told apart by nobody: "not yours" and
+     * "does not exist" carry the same key, or the endpoint becomes an oracle
+     * for which account ids are taken.
+     */
+    public function testAForeignAccountAndAMissingOneAreRefusedIdentically(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+        $draft = [
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ];
+
+        $keys = [];
+        foreach ([$this->seedAccount($this->otherUserId), 999999999] as $accountId) {
+            try {
+                $this->service->evaluateDraft($this->userId, $planId, $draft + ['account_id' => $accountId]);
+                $this->fail('Expected the draft to be refused');
+            } catch (ValidationException $e) {
+                $keys[] = $e->getMessageKey();
+            }
+        }
+
+        $this->assertSame($keys[0], $keys[1]);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function seedUser(string $email): int
@@ -189,10 +494,20 @@ class TradingPlanServiceTest extends TestCase
         return (int) $this->pdo->lastInsertId();
     }
 
+    private function seedSymbol(int $userId, string $code): int
+    {
+        $this->pdo->prepare(
+            "INSERT INTO symbols (user_id, code, name, type, point_value, currency)
+             VALUES (:u, :code, :code2, 'INDEX', 1, 'USD')"
+        )->execute(['u' => $userId, 'code' => $code, 'code2' => $code]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
     private function wipeTables(): void
     {
         $this->pdo->exec('SET FOREIGN_KEY_CHECKS=0');
         foreach ([
+            'symbols',
             'robot_plans',
             'trading_plan_zones',
             'trading_plan_windows',

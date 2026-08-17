@@ -22,28 +22,32 @@ Le plan **ne gate que les signaux d'ouverture (`OPEN`)** : il décide de PRENDRE
 
 À l'ouverture, l'alerte fournit aussi les niveaux SL/BE/TP : ils sont **posés avec l'ordre** mais **ne sont pas re-validés** par le plan (le plan décide de l'entrée, pas des objectifs). La seule exception est le **risque max par trade** (filtre optionnel ci-dessous).
 
-## Les 4 filtres (tous optionnels, combinés en ET dans un plan)
+## Les filtres (tous optionnels, combinés en ET dans un plan)
 
 Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** des filtres qu'il définit. Un plan sans aucun filtre accepte tout.
 
 | Filtre | Champ | Règle | Inactif si |
 |---|---|---|---|
+| **Actif** | `symbol_id` | L'actif du signal doit être celui que vise le plan | `NULL` (tous actifs) — **plus proposé à l'écran**, cf. [99](99-plan-instrument-cible.md) |
 | **Sens** | `allowed_direction` | Le sens du signal doit être celui autorisé | `NULL` (les deux sens) |
 | **Zones de prix** | `trading_plan_zones[]` | Pour le sens du signal : s'il existe ≥1 zone de ce sens, l'`entry_price` doit tomber dans au moins une | aucune zone pour ce sens |
 | **Fenêtres horaires** | `trading_plan_windows[]` | L'heure du signal (en TZ du plan) doit tomber dans ≥1 fenêtre | aucune fenêtre |
 | **Risque max/trade** | `max_risk_percent` | Le risque du signal (% du capital) ≤ plafond | `NULL`, ou risque non calculable |
+| **Risque max cumulé** | `max_plan_risk_percent` | Risque des positions encore exposées sous le plan sur ce compte + celui du signal ≤ plafond, cf. [100](100-plan-risque-cumule.md) | `NULL`, ou risque non calculable |
 
 ### Détails
 
 - **Zones multiples par sens.** Un plan peut lister N zones d'achat et M zones de vente (ex. DAX : achat `24500–24550` **et** `24000–24400`). Un signal `BUY` passe s'il tombe dans **au moins une** zone `BUY`. Bornes **inclusives**, ordre indifférent (`low`/`high` normalisés min/max). S'il n'y a **aucune** zone pour le sens du signal, il n'y a **pas** de contrainte de prix pour ce sens (le filtre sens, lui, reste indépendant).
 - **Fenêtres.** Une fenêtre = un masque de jours (`days_mask`, bit 0 = lundi … bit 6 = dimanche) + `start_time` / `end_time` (même jour, `start < end`). L'heure du signal est convertie dans la **`timezone` du plan** (IANA, ex. `Europe/Paris`) avant comparaison. Le chevauchement de minuit n'est pas géré en v1 (créer deux fenêtres).
-- **Risque max.** Risque monétaire du signal = `size × sl_points × valeur_du_point(symbole, compte)` ; pourcentage = `risque ÷ capital_courant_du_compte`. Comparé à `max_risk_percent`. **Si la valeur du point n'est pas configurée** pour le symbole (ou capital indisponible), le risque n'est pas calculable → le filtre est **ignoré** (pas de rejet), pour ne jamais bloquer un signal sur une incapacité technique. Le calcul vit dans le service webhook (qui a le compte + les réglages symbole) ; l'évaluateur reçoit un `riskPercent` déjà calculé.
+- **Risque max.** Risque monétaire du signal = `size × sl_points × valeur_du_point(symbole, compte)` ; pourcentage = `risque ÷ capital_courant_du_compte`. Comparé à `max_risk_percent`. Si le risque n'est pas calculable, le filtre est **ignoré** (pas de rejet), pour ne jamais bloquer un signal sur une incapacité technique. Le calcul vit dans le service webhook (qui a le compte + les réglages symbole) ; l'évaluateur reçoit un `riskPercent` déjà calculé.
+  > ⚠️ Cette ligne annonçait « si la valeur du point n'est pas configurée pour le symbole ». **C'est faux et ça l'a toujours été** : `symbols.point_value` et `symbol_account_settings.point_value` sont `NOT NULL DEFAULT 1.00000`, `SymbolService` refuse une valeur ≤ 0, et tout nouvel utilisateur reçoit six actifs déjà valorisés. Les vrais cas de non-calcul sont : **signal sans stop**, **compte cramé** (capital ≤ 0), ou symbole absent de Mes actifs (impossible depuis l'interface, qui n'offre qu'un sélecteur). Détail dans [100](100-plan-risque-cumule.md).
 
 ## Robot ↔ plans : many-to-many + OR
 
 - Un robot suit **0..N plans** via la table de liaison `robot_plans`.
 - **0 plan** ⇒ aucun filtre, le robot exécute tout signal reçu (comportement v1 des robots).
-- **≥1 plan** ⇒ un signal est **applicable s'il l'est pour au moins un** des plans (**OR**). Cas d'usage : un robot avec un plan « DAX » + un plan « Nasdaq », chaque signal matche son marché. Le rejet `OUT_OF_PLAN` n'intervient que si le signal échoue à **tous** les plans attachés.
+- **≥1 plan** ⇒ un signal est **applicable s'il l'est pour au moins un** des plans (**OR**). Cas d'usage : un robot avec un plan « DAX » + un plan « Nasdaq », chaque signal matche son marché — c'est le filtre **instrument** qui l'assure (cf. [99](99-plan-instrument-cible.md)). Le rejet `OUT_OF_PLAN` n'intervient que si le signal échoue à **tous** les plans attachés.
+  > ⚠️ Avant la migration 042 ce cas d'usage n'était **pas** réellement implémenté : aucune table ne nommait d'instrument, et un signal dont le prix tombait par hasard dans une zone d'un autre marché passait le filtre. Les plans créés avant restent à `symbol = NULL` (tous instruments) tant que l'utilisateur ne les précise pas.
 
 ## Adhérence sur ordre & trade manuels (le plan sans robot)
 
@@ -52,11 +56,14 @@ Le plan sert aussi **hors robot** : un **ordre** planifié ou un **trade** saisi
 **L'info vit sur l'ordre en premier.** Un ordre est une ligne `positions` (type `ORDER`) ; à l'exécution la position bascule `ORDER → TRADE` (même ligne). Comme `plan_id` + le verdict sont **sur `positions`**, un ordre qui porte le plan **transmet automatiquement** l'adhérence au trade à l'exécution — aucune propagation à coder. Le champ sur le trade reste utile pour une saisie directe (sans ordre préalable) ou une synchro broker.
 
 - **Champ** : `positions.plan_id` **optionnel** (FK `ON DELETE SET NULL` — on ne perd jamais l'historique si le plan disparaît). Sans plan rattaché, les trois colonnes restent `NULL`.
-- **Verdict figé à l'écriture** : à la création de l'ordre (ou du trade), on évalue via le **même `PlanEvaluator`** que les robots et on stocke `positions.plan_adherence` (`IN_PLAN` / `OUT_OF_PLAN`) + `plan_adherence_reason` (raison courte, ex. « entry 24610 outside BUY zones », pour le tooltip). Modifier le **plan** ensuite **ne re-qualifie pas** l'existant (snapshot). Éditer un **trade** le re-évalue ; l'**exécution** d'un ordre ne re-évalue pas — le trade hérite du verdict de l'ordre tel quel (la décision a été prise à la pose de l'ordre).
+- **Verdict figé à l'écriture** : à la création de l'ordre (ou du trade), on évalue via le **même `PlanEvaluator`** que les robots et on stocke `positions.plan_adherence` (`IN_PLAN` / `OUT_OF_PLAN`) + `plan_adherence_reason` (raison courte, ex. « entry 24610 outside BUY zones (24000-24400) », pour le tooltip). Modifier le **plan** ensuite **ne re-qualifie pas** l'existant, et **éditer le trade non plus** : seuls le rattachement d'un plan, le changement de plan et le détachement déplacent le verdict, plus l'action explicite `POST /trades/{id}/plan/reevaluate` (cf. [101](101-plan-verdict-fige.md)). L'**exécution** d'un ordre ne ré-évalue pas — le trade hérite du verdict de l'ordre tel quel (la décision a été prise à la pose de l'ordre).
+  > ⚠️ Cette ligne disait « Éditer un **trade** le re-évalue ». C'était vrai, et c'était le défaut : le verdict bougeait sur une édition du trade mais pas du plan, sans que rien ne le dise. Corrigé au lot 3.
 - **Temps d'évaluation des fenêtres** : pour un **ordre**, l'instant de pose (`now`) converti dans la TZ du plan ; pour un **trade** manuel, son `opened_at` interprété comme heure locale du plan.
 - **Sécurité** : `plan_id` doit être un plan **actif appartenant à l'utilisateur** (sinon `orders.error.invalid_plan` / `trades.error.invalid_plan`). Le verdict n'est jamais posé depuis le corps de la requête (pas de mass-assignment) — seul le service le calcule.
+- **Alerte à la saisie** : le formulaire interroge `POST /plans/{id}/evaluate` (lecture seule) pendant la frappe et affiche le verdict **avant** enregistrement, sous le sélecteur de plan — vert « rentre dans le plan », ambre « sort du plan » + raison. Jamais bloquant (cf. [102](102-plan-alerte-a-la-saisie.md)). L'assemblage est partagé par les trades, les ordres et cette simulation dans `PlanAdherenceEvaluator`.
 - **UI** : sélecteur de plan optionnel dans les formulaires **ordre et trade** (masqué si aucun plan / feature off), badge d'adhérence dans les listes ordres et trades (vert « Dans le plan » / ambre « Hors plan » + raison en tooltip), et filtre `Dans le plan / Hors plan / Sans plan`. Dans la liste des plans, les zones sont colorées par sens avec une flèche (↑ achat vert, ↓ vente rouge).
 - **Migration** : `034_trade_plan_adherence.sql` (additive, idempotente via `INFORMATION_SCHEMA`, compatible MariaDB local + MySQL prod). Enum `PlanAdherence`.
+- **Vocabulaire** : le verdict s'écrit de la même façon sur les trois écrans qui le montrent (badge trade, badge ordre, journal du webhook), et un test de parité des locales le vérifie — cf. [103](103-plan-vocabulaire.md). La **raison** du refus, elle, reste produite en anglais par `PlanEvaluator` : sa localisation est au backlog.
 
 ## Pipeline d'ingestion (où le plan s'insère)
 
@@ -77,7 +84,7 @@ Le rejet est tracé dans `tradingview_alert_events` (audit visible dans l'histor
 
 ## Modèle de données (migration 033)
 
-- **`trading_plans`** : `id, user_id, name, allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`.
+- **`trading_plans`** : `id, user_id, name, symbol_id INT UNSIGNED NULL (FK → symbols.id, ON DELETE RESTRICT), allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, max_plan_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`. La colonne `symbol_id` est ajoutée par la **migration 042** (cf. [99](99-plan-instrument-cible.md)), `max_plan_risk_percent` par la **migration 043** (cf. [100](100-plan-risque-cumule.md)). L'API expose `symbol` (le **code** de l'actif) via une jointure : il n'est jamais recopié sur le plan.
 - **`trading_plan_zones`** : `id, plan_id FK, direction ENUM('BUY','SELL'), low_price DECIMAL(15,5), high_price DECIMAL(15,5)`.
 - **`trading_plan_windows`** : `id, plan_id FK, days_mask SMALLINT UNSIGNED, start_time TIME, end_time TIME`.
 - **`robot_plans`** : `robot_id, plan_id, PK(robot_id, plan_id)`, FK cascade des deux côtés.
@@ -90,7 +97,8 @@ Zones et fenêtres sont **remplacées en bloc** à chaque update du plan (pas de
 - **Enums** : réutilisation de `Direction` (BUY/SELL) ; nouveau `PlanStatus` (ACTIVE/ARCHIVED) ; nouveau `WebhookRejectReason::OUT_OF_PLAN`.
 - **Flag** : le plan est un **cadre autonome**, pas un sous-module des robots — le robot en est *un* consommateur, le trade manuel en est un autre (voir « Adhérence sur trade manuel » plus bas). Il a donc son **propre flag `plans_enabled`** (indépendant de `robots_enabled`), OFF par défaut comme les robots pour un déploiement prod contrôlé. Routes `/plans` derrière `auth + subscription + plans_enabled` ; `/features` expose `plans` ; la nav affiche l'entrée Plans dès que `plans_enabled` est actif, même robots désactivés.
   > ⚠️ **Activation (ops)** — comme `robots_enabled` (cf. doc 70) : le flag se résout `BDD > env PLANS_ENABLED > false`. Pour activer, soit toggle en base (`platform_settings.plans_enabled`) via le BO admin, soit variable d'env `PLANS_ENABLED=true` sur Railway (test/prod). **En local** : le row `platform_settings` est **wipé par tout run complet de la suite backend** (comme la démo) → le re-poser après les tests (`INSERT … ON DUPLICATE KEY UPDATE setting_value='true'`), sinon le menu Plans disparaît. Vérifier via `curl http://2a.journal.local/api/features`.
-- **Sécurité** : toutes les requêtes en prepared statements ; ownership vérifié (`user_id`) sur chaque accès plan ; validation serveur systématique (sens, zones `low<high` & `>0`, fenêtres `start<end` & `days_mask≠0`, timezone IANA valide si fenêtres, `max_risk_percent>0`).
+- **Sécurité** : toutes les requêtes en prepared statements ; ownership vérifié (`user_id`) sur chaque accès plan ; validation serveur systématique (sens, zones `low<high` & `>0`, fenêtres `start<end` & `days_mask≠0`, timezone IANA valide si fenêtres, `max_risk_percent>0`). **Le `account_id` visé est vérifié lui aussi**, y compris sur la simulation qui n'écrit rien — le risque est chiffré contre le capital de ce compte et la raison de rejet en énonce le pourcentage, donc un identifiant non contrôlé se lit à l'envers (voir [doc 102 § Le compte visé](102-plan-alerte-a-la-saisie.md)).
+- **Saisie décimale** : les quatre `InputNumber` de l'éditeur (bornes de zone, deux plafonds de risque) bindent `:locale="numberLocale"` comme les 32 autres champs numériques de l'application. Sans ce binding PrimeVue prend le séparateur décimal du **navigateur** et non de la langue de l'app : un utilisateur en français sur un navigateur anglais ne peut pas saisir `0,5`. Un test structurel (`inputNumberLocale.spec.js`) balaie tous les `.vue` et refuse un `InputNumber` sans locale — le montage stubbe le composant et ne verrait jamais le défaut.
 
 ## Couverture des tests
 
@@ -102,3 +110,5 @@ _(complétée au fil de l'implémentation)_
 | `TradingPlanServiceTest` | integ | CRUD, validation, remplacement des enfants, archive interdite si utilisé |
 | `TradingViewWebhookFlowTest` (étendu) | integ | rejet sens, rejet zone, applicable OK, multi-plans OR, bypass CLOSE/MODIFY |
 | `plans-service.spec` / `planForm.spec` | front | service CRUD ; conversions formulaire ↔ API (days_mask, zones, fenêtres) |
+| `SignalRiskCalculatorTest` | unit | risque chiffré contre le capital ; compte d'autrui / inexistant / à capital nul non chiffrés ; réglages du compte non lus avant le contrôle |
+| `inputNumberLocale.spec` | front | tout `InputNumber` de l'app binde la locale de saisie décimale |
