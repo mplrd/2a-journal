@@ -13,8 +13,9 @@ import ToggleButton from 'primevue/togglebutton'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import FieldHelpIcon from '@/components/common/FieldHelpIcon.vue'
+import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import { plansService } from '@/services/plans'
-import { symbolsService } from '@/services/symbols'
+import { useSymbolsStore } from '@/stores/symbols'
 import { blankPlanForm, planToForm, formToPayload, isPlanFormValid } from '@/utils/planForm'
 import { formatZoneRange, formatWindowTime, daysMaskToLabel } from '@/utils/planDisplay'
 
@@ -24,12 +25,13 @@ const MAX_SUMMARY_CHIPS = 4
 const { t, locale } = useI18n()
 const toast = useToast()
 const confirm = useConfirm()
+const symbolsStore = useSymbolsStore()
 
 const plans = ref([])
 const loading = ref(false)
-const symbols = ref([])
 
 const showEditor = ref(false)
+const showSymbolForm = ref(false)
 const saving = ref(false)
 const form = ref(blankPlanForm())
 
@@ -47,11 +49,14 @@ const zoneDirectionOptions = computed(() => [
   { label: t('common.sell'), value: 'SELL' },
 ])
 
-// The instrument the plan targets. A zone is a pair of bare prices, so it only
-// means something once the instrument is named — hence no "every instrument"
-// entry: a plan that filters nothing by market is the hole this field closes.
-// Plans stored before it exist without one; editing such a plan asks for it.
-const symbolOptions = computed(() => symbols.value.map((s) => ({ label: s.code, value: s.code })))
+// The asset the plan targets. A zone is a pair of bare prices, so it only means
+// something once the asset is named — hence no "every asset" entry: a plan that
+// filters nothing by market is the hole this field closes. Plans stored before
+// it exist without one; editing such a plan asks for it.
+//
+// Same store, same option shape (label = name, value = code) as the trade and
+// order forms, so the picker reads identically wherever an asset is chosen.
+const symbolOptions = computed(() => symbolsStore.symbolOptions)
 
 const timezoneOptions = computed(() => {
   const set = new Set(BASE_TZ)
@@ -111,14 +116,28 @@ async function load() {
     loading.value = false
   }
 
-  // The assets only feed the instrument picker. Losing them must not cost the
-  // user their plan list, so this failure stays quiet — the editor then says it
-  // has no instrument to offer rather than showing an unexplained empty list.
+  // The assets only feed the asset picker. Losing them must not cost the user
+  // their plan list, so this failure stays quiet — the editor then says it has
+  // nothing to offer rather than showing an unexplained empty list, and the
+  // "+" button still lets one be created on the spot.
   try {
-    const symbolsResp = await symbolsService.list()
-    symbols.value = symbolsResp.data ?? []
+    await symbolsStore.fetchSymbols()
   } catch {
-    symbols.value = []
+    // handled in the store; the picker simply stays empty
+  }
+}
+
+// Create an asset without leaving the plan, exactly as the trade form does:
+// realising mid-plan that the asset is missing should not send the user to
+// another screen and lose what they were typing.
+async function handleSymbolCreate(data) {
+  try {
+    const created = await symbolsStore.createSymbol(data)
+    form.value.symbol = created.code
+    showSymbolForm.value = false
+    toast.add({ severity: 'success', summary: t('symbols.success.created'), life: 2500 })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
   }
 }
 
@@ -272,16 +291,26 @@ onMounted(load)
               {{ t('plan.field.symbol') }}
               <FieldHelpIcon :text="t('plan.symbol_hint')" testid="plan-symbol-help" />
             </label>
-            <Select
-              v-model="form.symbol"
-              :options="symbolOptions"
-              option-label="label"
-              option-value="value"
-              class="w-full"
-              :placeholder="t('plan.symbol_placeholder')"
-              :empty-message="t('plan.no_symbols')"
-              data-testid="plan-symbol-select"
-            />
+            <div class="flex gap-1">
+              <Select
+                v-model="form.symbol"
+                :options="symbolOptions"
+                option-label="label"
+                option-value="value"
+                class="w-full"
+                :placeholder="t('plan.symbol_placeholder')"
+                :empty-message="t('plan.no_symbols')"
+                data-testid="plan-symbol-select"
+              />
+              <Button
+                icon="pi pi-plus"
+                severity="secondary"
+                size="small"
+                v-tooltip.top="t('symbols.add_symbol')"
+                data-testid="plan-add-symbol"
+                @click="showSymbolForm = true"
+              />
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.direction') }}</label>
@@ -358,6 +387,12 @@ onMounted(load)
         <Button :label="t('common.cancel')" severity="secondary" @click="showEditor = false" />
         <Button :label="t('common.save')" :loading="saving" :disabled="!canSave" data-testid="plan-save" @click="save" />
       </template>
+
+      <SymbolForm
+        v-model:visible="showSymbolForm"
+        :loading="symbolsStore.loading"
+        @save="handleSymbolCreate"
+      />
     </Dialog>
   </div>
 </template>

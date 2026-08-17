@@ -1,6 +1,11 @@
-# 99 — L'instrument ciblé par un plan de trading
+# 99 — L'actif ciblé par un plan de trading
 
 > Lot 1 du chantier « plans ». Complète la doc [83 — Plans de trading](83-trading-plans.md).
+>
+> **Vocabulaire** : l'application dit **actif** partout — menu *Mes actifs*, champ
+> *Actif* sur un plan comme sur un trade. Le lot 1 avait introduit « Instrument »
+> et les formulaires de trade disaient encore « Symbole » : trois mots pour une
+> même chose, unifiés depuis. En base et dans le code, la colonne reste `symbol`.
 
 ## Le défaut
 
@@ -81,15 +86,18 @@ signal par ce même `findByUserAndCode()`.
 
 ## Ce que ça change à l'écran
 
-- **Éditeur de plan** : le nom occupe la première ligne, et l'*Instrument* ouvre
-  la seconde, juste avant le *Sens autorisé* — les deux contraintes qui cadrent
-  le plan avant qu'on parle de prix.
-- **Le sélecteur ne propose pas « tous les instruments »**, et l'enregistrement
-  est refusé tant qu'aucun n'est choisi. Un plan qui ne filtre aucun marché est
+- **Éditeur de plan** : le nom occupe la première ligne, et l'*Actif* ouvre la
+  seconde, juste avant le *Sens autorisé* — les deux contraintes qui cadrent le
+  plan avant qu'on parle de prix.
+- **Le sélecteur ne propose pas « tous les actifs »**, et l'enregistrement est
+  refusé tant qu'aucun n'est choisi. Un plan qui ne filtre aucun marché est
   précisément le trou que ce champ bouche ; le laisser proposer à l'écran
-  reviendrait à le présenter comme un choix légitime. Les actifs viennent de
-  *Mon compte › Mes actifs* ; s'il n'y en a aucun, la liste le dit et renvoie là-bas
-  plutôt que de s'afficher vide.
+  reviendrait à le présenter comme un choix légitime.
+- **Un bouton « + » crée un actif sans quitter le plan**, exactement comme sur le
+  formulaire de trade (même `SymbolForm`, même store). S'apercevoir au milieu
+  d'un plan que l'actif manque ne doit pas envoyer l'utilisateur sur un autre
+  écran en perdant ce qu'il était en train de saisir. Le nouvel actif est
+  sélectionné automatiquement.
 - **Les textes d'aide passent en infobulle** (`FieldHelpIcon`) à côté du libellé,
   pour l'instrument, les zones de prix et le risque max. Ils restaient auparavant
   affichés en permanence sous chaque champ : trois paragraphes de rappel à lire à

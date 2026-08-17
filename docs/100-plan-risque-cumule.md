@@ -140,8 +140,8 @@ Ce qui reste vraiment :
 - **Compte cramé** (`current_capital ≤ 0`). Un pourcentage d'un capital nul ne
   veut rien dire, et il n'y a plus d'enveloppe à faire respecter. Le plafond par
   trade est inerte pour la même raison — les deux tombent ensemble.
-- **Symbole absent de Mes actifs.** Non atteignable depuis l'application : le
-  champ *Instrument* d'un trade ou d'un ordre est un sélecteur sur les actifs de
+- **Actif absent de Mes actifs.** Non atteignable depuis l'application : le champ
+  *Actif* d'un trade, d'un ordre ou d'un plan est un sélecteur sur les actifs de
   l'utilisateur, avec un « + » pour en créer un à la volée. Il faut passer par
   l'API directement.
 

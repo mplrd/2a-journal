@@ -28,7 +28,7 @@ Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** 
 
 | Filtre | Champ | Règle | Inactif si |
 |---|---|---|---|
-| **Instrument** | `symbol` | Le symbole du signal doit être celui que vise le plan | `NULL` (tous instruments) — **plus proposé à l'écran**, cf. [99](99-plan-instrument-cible.md) |
+| **Actif** | `symbol` | L'actif du signal doit être celui que vise le plan | `NULL` (tous actifs) — **plus proposé à l'écran**, cf. [99](99-plan-instrument-cible.md) |
 | **Sens** | `allowed_direction` | Le sens du signal doit être celui autorisé | `NULL` (les deux sens) |
 | **Zones de prix** | `trading_plan_zones[]` | Pour le sens du signal : s'il existe ≥1 zone de ce sens, l'`entry_price` doit tomber dans au moins une | aucune zone pour ce sens |
 | **Fenêtres horaires** | `trading_plan_windows[]` | L'heure du signal (en TZ du plan) doit tomber dans ≥1 fenêtre | aucune fenêtre |
