@@ -227,6 +227,57 @@ class TradingPlanServiceTest extends TestCase
         ]));
     }
 
+    // ── Plafond de risque cumulé ──────────────────────────────────
+    // Le plafond par trade ne dit rien de l'exposition totale : vingt entrées à
+    // 1 % chacune respectent la règle et engagent 20 %.
+
+    public function testCumulativeRiskCapIsPersisted(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData([
+            'max_plan_risk_percent' => 5.0,
+        ]));
+        $this->assertSame(5.0, (float) $plan['max_plan_risk_percent']);
+    }
+
+    public function testCumulativeRiskCapIsOptional(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData());
+        $this->assertNull($plan['max_plan_risk_percent']);
+    }
+
+    public function testCumulativeRiskCapCanBeCleared(): void
+    {
+        $plan = $this->service->create($this->userId, $this->fullPlanData(['max_plan_risk_percent' => 5.0]));
+        $updated = $this->service->update($this->userId, (int) $plan['id'], $this->fullPlanData([
+            'max_plan_risk_percent' => null,
+        ]));
+        $this->assertNull($updated['max_plan_risk_percent']);
+    }
+
+    public function testANonPositiveCumulativeRiskCapIsRejected(): void
+    {
+        // Zero would refuse every signal without ever saying why on screen.
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['max_plan_risk_percent' => 0]));
+    }
+
+    /**
+     * Both caps live in a DECIMAL(6,3). Unbounded, a larger value passed
+     * validation and blew up on write — a 500 under the production sql_mode,
+     * where the user deserves a field message.
+     */
+    public function testARiskCapBeyondWhatTheColumnHoldsIsRejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['max_plan_risk_percent' => 1000]));
+    }
+
+    public function testAPerTradeRiskCapBeyondWhatTheColumnHoldsIsRejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, $this->fullPlanData(['max_risk_percent' => 1000]));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function seedUser(string $email): int

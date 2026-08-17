@@ -22,6 +22,8 @@ class TradingPlanService
     public const MAX_PER_USER = 50;
     private const MAX_ZONES = 50;
     private const MAX_WINDOWS = 50;
+    /** Ce que DECIMAL(6,3) peut stocker — les deux plafonds de risque. */
+    private const MAX_RISK_PERCENT = 999.999;
 
     public function __construct(
         private TradingPlanRepository $repo,
@@ -54,6 +56,7 @@ class TradingPlanService
             'allowed_direction' => $clean['allowed_direction'],
             'timezone' => $clean['timezone'],
             'max_risk_percent' => $clean['max_risk_percent'],
+            'max_plan_risk_percent' => $clean['max_plan_risk_percent'],
         ]);
         $planId = (int) $plan['id'];
 
@@ -74,6 +77,7 @@ class TradingPlanService
             'allowed_direction' => $clean['allowed_direction'],
             'timezone' => $clean['timezone'],
             'max_risk_percent' => $clean['max_risk_percent'],
+            'max_plan_risk_percent' => $clean['max_plan_risk_percent'],
         ]);
         $this->repo->replaceZones($planId, $clean['zones']);
         $this->repo->replaceWindows($planId, $clean['windows']);
@@ -94,7 +98,7 @@ class TradingPlanService
 
     // ── Validation / normalization ────────────────────────────────
 
-    /** @return array{name:string,symbol:?string,allowed_direction:?string,timezone:?string,max_risk_percent:?float,zones:array,windows:array} */
+    /** @return array{name:string,symbol:?string,allowed_direction:?string,timezone:?string,max_risk_percent:?float,max_plan_risk_percent:?float,zones:array,windows:array} */
     private function validate(int $userId, array $data): array
     {
         $name = trim((string) ($data['name'] ?? ''));
@@ -126,9 +130,20 @@ class TradingPlanService
             throw new ValidationException('plan.error.invalid_timezone', 'timezone');
         }
 
+        // Les deux plafonds tiennent dans un DECIMAL(6,3). Sans borne haute, une
+        // valeur au-delà passe la validation et casse à l'écriture : sous le
+        // sql_mode strict de la prod, c'est une 500 là où l'utilisateur mérite
+        // un message de champ.
         $maxRisk = $this->nullableFloat($data['max_risk_percent'] ?? null);
-        if ($maxRisk !== null && $maxRisk <= 0) {
+        if ($maxRisk !== null && ($maxRisk <= 0 || $maxRisk > self::MAX_RISK_PERCENT)) {
             throw new ValidationException('plan.error.invalid_risk', 'max_risk_percent');
+        }
+
+        // Plafond du risque cumulé des positions encore exposées sous ce plan.
+        // Zéro refuserait tout signal sans que rien à l'écran ne l'explique.
+        $maxPlanRisk = $this->nullableFloat($data['max_plan_risk_percent'] ?? null);
+        if ($maxPlanRisk !== null && ($maxPlanRisk <= 0 || $maxPlanRisk > self::MAX_RISK_PERCENT)) {
+            throw new ValidationException('plan.error.invalid_plan_risk', 'max_plan_risk_percent');
         }
 
         $zones = $this->validateZones($data['zones'] ?? []);
@@ -140,6 +155,7 @@ class TradingPlanService
             'allowed_direction' => $allowedDirection,
             'timezone' => $timezone,
             'max_risk_percent' => $maxRisk,
+            'max_plan_risk_percent' => $maxPlanRisk,
             'zones' => $zones,
             'windows' => $windows,
         ];

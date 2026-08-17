@@ -23,6 +23,7 @@ export function blankPlanForm() {
     allowed_direction: null,
     timezone: 'Europe/Paris',
     max_risk_percent: null,
+    max_plan_risk_percent: null,
     zones: [],
     windows: [],
   }
@@ -47,6 +48,8 @@ export function planToForm(plan) {
     allowed_direction: plan.allowed_direction ?? null,
     timezone: plan.timezone ?? 'Europe/Paris',
     max_risk_percent: plan.max_risk_percent != null ? Number(plan.max_risk_percent) : null,
+    // Cap on everything still exposed under the plan, not on one trade.
+    max_plan_risk_percent: plan.max_plan_risk_percent != null ? Number(plan.max_plan_risk_percent) : null,
     zones: (plan.zones ?? []).map((z) => ({
       direction: z.direction,
       low_price: Number(z.low_price),
@@ -67,6 +70,7 @@ export function formToPayload(f) {
     allowed_direction: f.allowed_direction,
     timezone: f.timezone,
     max_risk_percent: f.max_risk_percent,
+    max_plan_risk_percent: f.max_plan_risk_percent ?? null,
     zones: f.zones.map((z) => ({
       direction: z.direction,
       low_price: z.low_price,

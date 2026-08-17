@@ -1215,7 +1215,9 @@
     "add_zone": "Ajouter une zone",
     "add_window": "Ajouter une plage",
     "max_risk_placeholder": "ex. 1",
+    "max_plan_risk_placeholder": "ex. 5",
     "max_risk_hint": "Rejette le signal si son risque (taille × points SL × valeur du point ÷ capital) dépasse ce pourcentage. Ignoré si la valeur du point n'est pas configurée pour le symbole.",
+    "max_plan_risk_hint": "Plafonne le risque de TOUTES les positions encore exposées sous ce plan sur le compte visé, signal entrant compris. Respecter 1 % par trade vingt fois de suite engage quand même 20 % : c'est ce plafond-là qui l'empêche. Ignoré si le risque d'une seule position n'est pas calculable.",
     "field": {
       "name": "Nom",
       "symbol": "Instrument",
@@ -1224,6 +1226,7 @@
       "windows": "Plages horaires (sessions)",
       "timezone": "Fuseau horaire",
       "max_risk": "Risque max par trade",
+      "max_plan_risk": "Risque max cumulé",
       "filters": "Filtres",
       "usage": "Utilisation"
     },
@@ -1240,6 +1243,7 @@
       "zones": "{count} zone(s)",
       "windows": "{count} plage(s)",
       "risk": "≤ {pct} %",
+      "plan_risk": "cumul ≤ {pct} %",
       "none": "Aucun filtre"
     },
     "actions": {
@@ -1257,6 +1261,7 @@
       "invalid_symbol": "Cet instrument ne fait pas partie de vos actifs.",
       "invalid_timezone": "Fuseau horaire invalide.",
       "invalid_risk": "Le risque max doit être supérieur à 0.",
+      "invalid_plan_risk": "Le risque max cumulé doit être supérieur à 0.",
       "invalid_zone": "Zone invalide (sens et bornes > 0 requis).",
       "too_many_zones": "Trop de zones définies.",
       "invalid_window": "Plage horaire invalide.",

@@ -34,6 +34,7 @@ class OrderService
     private ?TradingPlanRepository $planRepo;
     private ?PlanEvaluator $planEvaluator;
     private ?SignalRiskCalculator $riskCalculator;
+    private ?PlanOpenRiskCalculator $openRiskCalculator;
 
     public function __construct(
         OrderRepository $orderRepo,
@@ -44,7 +45,8 @@ class OrderService
         ?SetupRepository $setupRepo = null,
         ?TradingPlanRepository $planRepo = null,
         ?PlanEvaluator $planEvaluator = null,
-        ?SignalRiskCalculator $riskCalculator = null
+        ?SignalRiskCalculator $riskCalculator = null,
+        ?PlanOpenRiskCalculator $openRiskCalculator = null
     ) {
         $this->orderRepo = $orderRepo;
         $this->positionRepo = $positionRepo;
@@ -55,6 +57,7 @@ class OrderService
         $this->planRepo = $planRepo;
         $this->planEvaluator = $planEvaluator;
         $this->riskCalculator = $riskCalculator;
+        $this->openRiskCalculator = $openRiskCalculator;
     }
 
     public function create(int $userId, array $data): array
@@ -377,13 +380,18 @@ class OrderService
 
         $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
 
+        // Only walk the plan's open positions when it actually caps their sum.
+        $openRiskPercent = ($plan['max_plan_risk_percent'] ?? null) !== null
+            ? $this->openRiskCalculator?->computePercent($userId, $accountId, $planId)
+            : null;
+
         try {
             $now = new DateTimeImmutable('now');
         } catch (Throwable) {
             $now = new DateTimeImmutable();
         }
 
-        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now);
+        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now, $openRiskPercent);
         return [
             'plan_id' => $planId,
             'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,

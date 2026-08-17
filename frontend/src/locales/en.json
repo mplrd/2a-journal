@@ -1215,7 +1215,9 @@
     "add_zone": "Add a zone",
     "add_window": "Add a window",
     "max_risk_placeholder": "e.g. 1",
+    "max_plan_risk_placeholder": "e.g. 5",
     "max_risk_hint": "Rejects the signal when its risk (size × SL points × point value ÷ capital) exceeds this percentage. Ignored when the symbol's point value isn't configured.",
+    "max_plan_risk_hint": "Caps the risk of EVERY position still exposed under this plan on the target account, incoming signal included. Respecting 1% per trade twenty times over still puts 20% at risk; this is the cap that stops it. Ignored when a single position's risk can't be computed.",
     "field": {
       "name": "Name",
       "symbol": "Instrument",
@@ -1224,6 +1226,7 @@
       "windows": "Time windows (sessions)",
       "timezone": "Timezone",
       "max_risk": "Max risk per trade",
+      "max_plan_risk": "Max cumulative risk",
       "filters": "Filters",
       "usage": "Usage"
     },
@@ -1240,6 +1243,7 @@
       "zones": "{count} zone(s)",
       "windows": "{count} window(s)",
       "risk": "≤ {pct}%",
+      "plan_risk": "total ≤ {pct}%",
       "none": "No filter"
     },
     "actions": {
@@ -1257,6 +1261,7 @@
       "invalid_symbol": "This instrument is not one of your assets.",
       "invalid_timezone": "Invalid timezone.",
       "invalid_risk": "Max risk must be greater than 0.",
+      "invalid_plan_risk": "Max cumulative risk must be greater than 0.",
       "invalid_zone": "Invalid zone (direction and bounds > 0 required).",
       "too_many_zones": "Too many zones defined.",
       "invalid_window": "Invalid time window.",

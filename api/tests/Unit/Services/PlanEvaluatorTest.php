@@ -270,6 +270,82 @@ class PlanEvaluatorTest extends TestCase
         $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ',1.0, null, $this->mondayTenUtc()));
     }
 
+    // ── Cumulative risk over the plan's open positions ────────────
+    // A 1% cap per trade says nothing about total exposure: twenty positions
+    // each within the cap put 20% at risk. max_plan_risk_percent caps the sum
+    // of what is still exposed under the plan, incoming signal included.
+
+    public function testWithoutACumulativeCapAnyOpenRiskIsApplicable(): void
+    {
+        $plan = $this->plan(['max_plan_risk_percent' => null]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 1.0, $this->mondayTenUtc(), 42.0));
+    }
+
+    public function testCumulativeRiskBelowTheCapIsApplicable(): void
+    {
+        $plan = $this->plan(['max_plan_risk_percent' => 5.0]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 1.0, $this->mondayTenUtc(), 3.0));
+    }
+
+    public function testCumulativeRiskExactlyAtTheCapIsApplicable(): void
+    {
+        // Same boundary rule as the per-trade cap: the limit is reachable.
+        $plan = $this->plan(['max_plan_risk_percent' => 5.0]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 1.0, $this->mondayTenUtc(), 4.0));
+    }
+
+    /** The case that motivates the filter: each trade is fine, the total is not. */
+    public function testASignalWithinThePerTradeCapIsRejectedOnTheCumulativeOne(): void
+    {
+        $plan = $this->plan(['max_risk_percent' => 1.0, 'max_plan_risk_percent' => 5.0]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 0.8, $this->mondayTenUtc(), 4.5);
+        $this->assertNotNull($reason);
+        $this->assertStringContainsString('5.300', $reason);   // 4.5 open + 0.8 signal
+        $this->assertStringContainsString('5.000', $reason);   // the cap
+    }
+
+    public function testTheCumulativeReasonNamesTheOpenPartAndTheSignalPart(): void
+    {
+        // A trader who reads "5.300% exceeds 5%" still cannot tell whether to
+        // close a position or shrink this one. Both halves are spelled out.
+        $plan = $this->plan(['max_plan_risk_percent' => 5.0]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 0.8, $this->mondayTenUtc(), 4.5);
+        $this->assertStringContainsString('4.500', $reason);
+        $this->assertStringContainsString('0.800', $reason);
+    }
+
+    public function testUncomputableOpenRiskSkipsTheCumulativeFilter(): void
+    {
+        // Total unknown ⇒ no verdict. Never block a signal on a technical gap,
+        // the rule already in force for the per-trade cap.
+        $plan = $this->plan(['max_plan_risk_percent' => 1.0]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 5.0, $this->mondayTenUtc(), null));
+    }
+
+    public function testUncomputableSignalRiskSkipsTheCumulativeFilter(): void
+    {
+        $plan = $this->plan(['max_plan_risk_percent' => 1.0]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, null, $this->mondayTenUtc(), 5.0));
+    }
+
+    public function testAnOmittedOpenRiskLeavesTheCumulativeFilterInactive(): void
+    {
+        // Callers that don't know the plan's exposure (nothing to sum yet) keep
+        // calling with six arguments and get the pre-existing behaviour.
+        $plan = $this->plan(['max_plan_risk_percent' => 1.0]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 5.0, $this->mondayTenUtc()));
+    }
+
+    public function testThePerTradeCapIsReportedBeforeTheCumulativeOne(): void
+    {
+        // Both breached: the per-trade cap is the one the trader can act on
+        // right now, by sizing this entry down.
+        $plan = $this->plan(['max_risk_percent' => 1.0, 'max_plan_risk_percent' => 5.0]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 3.0, $this->mondayTenUtc(), 4.5);
+        $this->assertStringContainsString('exceeds plan max', $reason);
+        $this->assertStringNotContainsString('open', $reason);
+    }
+
     // ── Combination (AND) ─────────────────────────────────────────
 
     public function testCombinedFiltersReturnFirstFailure(): void

@@ -18,8 +18,8 @@ class TradingPlanRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO trading_plans (user_id, name, symbol, allowed_direction, timezone, max_risk_percent)
-             VALUES (:user_id, :name, :symbol, :allowed_direction, :timezone, :max_risk_percent)"
+            "INSERT INTO trading_plans (user_id, name, symbol, allowed_direction, timezone, max_risk_percent, max_plan_risk_percent)
+             VALUES (:user_id, :name, :symbol, :allowed_direction, :timezone, :max_risk_percent, :max_plan_risk_percent)"
         );
         $stmt->execute([
             'user_id' => $data['user_id'],
@@ -28,6 +28,7 @@ class TradingPlanRepository
             'allowed_direction' => $data['allowed_direction'] ?? null,
             'timezone' => $data['timezone'] ?? null,
             'max_risk_percent' => $data['max_risk_percent'] ?? null,
+            'max_plan_risk_percent' => $data['max_plan_risk_percent'] ?? null,
         ]);
 
         return $this->findByIdAssembled((int) $this->pdo->lastInsertId());
@@ -80,7 +81,8 @@ class TradingPlanRepository
                  symbol = :symbol,
                  allowed_direction = :allowed_direction,
                  timezone = :timezone,
-                 max_risk_percent = :max_risk_percent
+                 max_risk_percent = :max_risk_percent,
+                 max_plan_risk_percent = :max_plan_risk_percent
              WHERE id = :id"
         );
         $stmt->execute([
@@ -90,6 +92,7 @@ class TradingPlanRepository
             'allowed_direction' => $data['allowed_direction'] ?? null,
             'timezone' => $data['timezone'] ?? null,
             'max_risk_percent' => $data['max_risk_percent'] ?? null,
+            'max_plan_risk_percent' => $data['max_plan_risk_percent'] ?? null,
         ]);
     }
 

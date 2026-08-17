@@ -87,6 +87,15 @@ function windowSummary(plan) {
   const allDays = t('plan.window.all_days')
   return (plan.windows ?? []).map((w) => `${daysMaskToLabel(w.days_mask, dayLabels.value, allDays)} ${formatWindowTime(w)}`.trim())
 }
+// "No filter" only holds when none of them is set — the list grew past what an
+// inline condition could carry without one of them being forgotten.
+function hasFilter(plan) {
+  return Boolean(plan.symbol)
+    || Boolean(plan.zones?.length)
+    || Boolean(plan.windows?.length)
+    || plan.max_risk_percent != null
+    || plan.max_plan_risk_percent != null
+}
 function capped(list) {
   return { shown: list.slice(0, MAX_SUMMARY_CHIPS), extra: Math.max(0, list.length - MAX_SUMMARY_CHIPS) }
 }
@@ -224,7 +233,13 @@ onMounted(load)
               <Tag v-if="capped(windowSummary(data)).extra" :value="t('plan.summary.more', { count: capped(windowSummary(data)).extra })" severity="secondary" />
             </div>
             <Tag v-if="data.max_risk_percent != null" :value="t('plan.tag.risk', { pct: Number(data.max_risk_percent) })" severity="warn" />
-            <span v-if="!data.zones?.length && !data.windows?.length && data.max_risk_percent == null" class="text-xs text-gray-400">{{ t('plan.tag.none') }}</span>
+            <Tag
+              v-if="data.max_plan_risk_percent != null"
+              :value="t('plan.tag.plan_risk', { pct: Number(data.max_plan_risk_percent) })"
+              severity="warn"
+              data-testid="plan-plan-risk-tag"
+            />
+            <span v-if="!hasFilter(data)" class="text-xs text-gray-400">{{ t('plan.tag.none') }}</span>
           </div>
         </template>
       </Column>
@@ -320,13 +335,22 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- Max risk -->
-        <div class="md:w-64">
-          <label class="flex items-center gap-1 text-sm font-medium mb-1">
-            {{ t('plan.field.max_risk') }}
-            <FieldHelpIcon :text="t('plan.max_risk_hint')" testid="plan-risk-help" />
-          </label>
-          <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
+        <!-- Max risk: per signal, then over everything the plan still carries -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="flex items-center gap-1 text-sm font-medium mb-1">
+              {{ t('plan.field.max_risk') }}
+              <FieldHelpIcon :text="t('plan.max_risk_hint')" testid="plan-risk-help" />
+            </label>
+            <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
+          </div>
+          <div>
+            <label class="flex items-center gap-1 text-sm font-medium mb-1">
+              {{ t('plan.field.max_plan_risk') }}
+              <FieldHelpIcon :text="t('plan.max_plan_risk_hint')" testid="plan-plan-risk-help" />
+            </label>
+            <InputNumber v-model="form.max_plan_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_plan_risk_placeholder')" data-testid="plan-plan-risk-input" />
+          </div>
         </div>
       </div>
 

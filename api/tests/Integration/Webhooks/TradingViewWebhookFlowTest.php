@@ -30,6 +30,7 @@ use App\Services\Broker\BrokerCredentialStore;
 use App\Services\Broker\CredentialEncryptionService;
 use App\Services\OrderService;
 use App\Services\PlanEvaluator;
+use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
 use App\Services\TradingPlanService;
 use App\Services\TradingViewWebhookService;
@@ -113,6 +114,7 @@ class TradingViewWebhookFlowTest extends TestCase
             $planRepo,
             new PlanEvaluator(),
             $riskCalculator,
+            new PlanOpenRiskCalculator($positionRepo, $riskCalculator),
         );
 
         $this->userId = $this->seedUser();
@@ -532,7 +534,137 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertStringContainsString('risk', (string) end($events)['error_message']);
     }
 
+    // ── Plafond de risque cumulé ──────────────────────────────────
+    // Chaque signal respecte le plafond par trade et le total explose quand
+    // même : c'est ce qu'un robot construit en quelques minutes.
+
+    public function testASignalAloneNeverTripsTheCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        // Signal = 1 × 50 × 10 = 500 → 5% of the 10000 capital. Nothing else open.
+        $this->attachPlans($robotId, [$this->createPlan(['max_plan_risk_percent' => 8.0])]);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testAnOpenPositionUnderThePlanPushesTheSignalOverTheCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        // 5% already exposed + 5% incoming = 10% > 8%, while each entry on its
+        // own sits well inside anything a per-trade cap would allow.
+        $this->seedOpenTradeUnderPlan($planId, 1.0, 50.0);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('open', (string) end($events)['error_message']);
+        // The seeded exposure is a position, not an order: nothing was placed.
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+    }
+
+    public function testAPendingOrderUnderThePlanCountsTowardsTheCumulativeCap(): void
+    {
+        // The robot path creates PENDING orders first. Counting live trades only
+        // would let a whole burst of signals through — each seeing no exposure
+        // yet — and start counting once they fill, too late to refuse any.
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedPendingOrderUnderPlan($planId, 1.0, 50.0);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+    }
+
+    public function testAPositionOnAnotherAccountDoesNotCountTowardsTheCumulativeCap(): void
+    {
+        // A percentage only means something against one account's capital, so
+        // exposure taken elsewhere says nothing about this account's.
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedOpenTradeUnderPlan($planId, 1.0, 50.0, $this->seedAccount($this->userId));
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    public function testACumulativeCapBelowTheTotalStillAcceptsWhenTheCapIsHighEnough(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 12.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedOpenTradeUnderPlan($planId, 1.0, 50.0);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
+
+    /** An open trade carrying the plan, i.e. risk already on the table. */
+    private function seedOpenTradeUnderPlan(int $planId, float $size, float $slPoints, ?int $accountId = null): void
+    {
+        $positionId = $this->seedPositionUnderPlan($planId, $size, $slPoints, $accountId);
+        $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status)
+             VALUES (:pid, NOW(), :size, 'OPEN')"
+        )->execute(['pid' => $positionId, 'size' => $size]);
+    }
+
+    private function seedPendingOrderUnderPlan(int $planId, float $size, float $slPoints): void
+    {
+        $positionId = $this->seedPositionUnderPlan($planId, $size, $slPoints);
+        $this->pdo->prepare("INSERT INTO orders (position_id, status) VALUES (:pid, 'PENDING')")
+            ->execute(['pid' => $positionId]);
+    }
+
+    private function seedPositionUnderPlan(int $planId, float $size, float $slPoints, ?int $accountId = null): int
+    {
+        $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, sl_points, position_type, plan_id)
+             VALUES (:u, :a, 'BUY', 'EURUSD', 1.1000, :size, :sl, 'TRADE', :plan)"
+        )->execute([
+            'u' => $this->userId,
+            'a' => $accountId ?? $this->accountId,
+            'size' => $size,
+            'sl' => $slPoints,
+            'plan' => $planId,
+        ]);
+        return (int) $this->pdo->lastInsertId();
+    }
 
     private function createPlan(array $data): int
     {

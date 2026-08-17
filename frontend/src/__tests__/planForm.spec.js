@@ -97,4 +97,25 @@ describe('planForm conversions', () => {
   it('isPlanFormValid rejects a blank form', () => {
     expect(isPlanFormValid(blankPlanForm())).toBe(false)
   })
+
+  // The cumulative cap: what the plan may carry in total, not per trade.
+  it('planToForm coerces the cumulative risk cap to a number', () => {
+    const form = planToForm({ id: 1, name: 'DAX', max_plan_risk_percent: '5.000' })
+    expect(form.max_plan_risk_percent).toBe(5)
+  })
+
+  it('planToForm leaves the cumulative cap null when the plan sets none', () => {
+    expect(planToForm({ id: 1, name: 'DAX' }).max_plan_risk_percent).toBeNull()
+  })
+
+  it('formToPayload sends the cumulative cap back, cleared included', () => {
+    const base = {
+      id: null, name: 'DAX', symbol: 'DAX', allowed_direction: null,
+      timezone: 'UTC', max_risk_percent: 1, zones: [], windows: [],
+    }
+    expect(formToPayload({ ...base, max_plan_risk_percent: 5 }).max_plan_risk_percent).toBe(5)
+    // An emptied InputNumber hands back undefined; the API needs an explicit
+    // null to clear the column rather than a missing key.
+    expect(formToPayload({ ...base, max_plan_risk_percent: undefined }).max_plan_risk_percent).toBeNull()
+  })
 })

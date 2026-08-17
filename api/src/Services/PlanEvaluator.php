@@ -23,13 +23,20 @@ use DateTimeZone;
  *     'symbol'            => 'NASDAQ'|null,   null = every instrument
  *     'allowed_direction' => 'BUY'|'SELL'|null,
  *     'timezone'          => 'Europe/Paris'|null,
- *     'max_risk_percent'  => float|string|null,
+ *     'max_risk_percent'      => float|string|null,   per signal
+ *     'max_plan_risk_percent' => float|string|null,   cumulative, this signal included
  *     'zones'   => [['direction'=>'BUY','low_price'=>..,'high_price'=>..], ...],
  *     'windows' => [['days_mask'=>int,'start_time'=>'HH:MM:SS','end_time'=>'HH:MM:SS'], ...],
  *   ]
  */
 class PlanEvaluator
 {
+    /**
+     * $openRiskPercent is the risk already exposed under this plan on the target
+     * account. It trails $now rather than sitting next to $riskPercent so the
+     * callers that have nothing to sum — and the many tests written before the
+     * cumulative cap existed — keep their six-argument call unchanged.
+     */
     public function evaluate(
         array $plan,
         string $direction,
@@ -37,12 +44,14 @@ class PlanEvaluator
         float $entryPrice,
         ?float $riskPercent,
         DateTimeImmutable $now,
+        ?float $openRiskPercent = null,
     ): ?string {
         return $this->checkSymbol($plan, $symbol)
             ?? $this->checkDirection($plan, $direction)
             ?? $this->checkZones($plan, $direction, $entryPrice)
             ?? $this->checkWindows($plan, $now)
-            ?? $this->checkRisk($plan, $riskPercent);
+            ?? $this->checkRisk($plan, $riskPercent)
+            ?? $this->checkCumulativeRisk($plan, $riskPercent, $openRiskPercent);
     }
 
     /**
@@ -159,6 +168,41 @@ class PlanEvaluator
             return sprintf('risk %.3f%% exceeds plan max %.3f%%', $riskPercent, (float) $max);
         }
         return null;
+    }
+
+    /**
+     * If the plan caps the risk it accepts to carry as a whole, reject when the
+     * signal would push the total past it.
+     *
+     * Checked LAST, and after the per-trade cap: when both are breached, the
+     * per-trade one is what the trader can act on immediately by sizing this
+     * entry down, so it is the reason worth returning.
+     *
+     * Either half missing (point value not configured, capital unknown, one open
+     * position whose risk can't be computed) leaves the total unknown, and an
+     * unknown total is not a breach — same rule as the per-trade cap: never
+     * block a signal on a technical gap.
+     */
+    private function checkCumulativeRisk(array $plan, ?float $riskPercent, ?float $openRiskPercent): ?string
+    {
+        $max = $plan['max_plan_risk_percent'] ?? null;
+        if ($max === null || $riskPercent === null || $openRiskPercent === null) {
+            return null;
+        }
+
+        $total = $openRiskPercent + $riskPercent;
+        if ($total <= (float) $max) {
+            return null;
+        }
+        // Both halves are named: "5.300% exceeds 5%" alone would not tell the
+        // trader whether to close a position or shrink this one.
+        return sprintf(
+            'plan risk %.3f%% (open %.3f%% + signal %.3f%%) exceeds plan max %.3f%%',
+            $total,
+            $openRiskPercent,
+            $riskPercent,
+            (float) $max,
+        );
     }
 
     private function timeToSeconds(string $time): int

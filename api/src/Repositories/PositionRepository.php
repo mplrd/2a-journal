@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\OrderStatus;
 use App\Enums\TradeStatus;
 use PDO;
 
@@ -201,6 +202,55 @@ class PositionRepository
             $result[$row['external_id']] = $row;
         }
         return $result;
+    }
+
+    /**
+     * Positions still exposed under a plan on one account, for the cumulative
+     * risk cap (docs/83-trading-plans.md).
+     *
+     * "Still exposed" covers a pending order as much as a live trade. Counting
+     * only trades would leave the filter blind on the path it exists for: a
+     * robot's signals become PENDING orders first, so a burst of them would all
+     * pass — each one sees no exposure yet — and only start counting once they
+     * fill, too late to refuse any of them. A cancelled or expired order drops
+     * out on its own, its status no longer being PENDING.
+     *
+     * Size is the one taken at entry: a partial exit or a stop moved to
+     * breakeven does not shrink it here. That over-counts, which for a
+     * safeguard is the right way for the error to fall — it refuses rather
+     * than lets through.
+     *
+     * @return array<int,array{id:int,symbol:string,size:string,sl_points:?string}>
+     */
+    public function findStillExposedByPlanAndAccount(
+        int $planId,
+        int $accountId,
+        ?int $excludePositionId = null,
+    ): array {
+        $params = [
+            'plan_id' => $planId,
+            'account_id' => $accountId,
+            'pending' => OrderStatus::PENDING->value,
+            'open' => TradeStatus::OPEN->value,
+            'secured' => TradeStatus::SECURED->value,
+        ];
+        $exclude = '';
+        if ($excludePositionId !== null) {
+            $exclude = ' AND p.id <> :exclude_id';
+            $params['exclude_id'] = $excludePositionId;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT p.id, p.symbol, p.size, p.sl_points
+             FROM positions p
+             LEFT JOIN orders o ON o.position_id = p.id
+             LEFT JOIN trades t ON t.position_id = p.id
+             WHERE p.plan_id = :plan_id
+               AND p.account_id = :account_id' . $exclude . '
+               AND (o.status = :pending OR t.status IN (:open, :secured))'
+        );
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
     public function findAggregatedByUserId(int $userId, array $filters = []): array

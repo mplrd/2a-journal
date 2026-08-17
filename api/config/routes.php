@@ -103,6 +103,7 @@ use App\Services\NoteService;
 use App\Services\NoteCategoryService;
 use App\Services\SymbolService;
 use App\Services\PlanEvaluator;
+use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
 use App\Services\TradeService;
 use App\Services\TradingPlanService;
@@ -346,10 +347,11 @@ $router->get('/positions/{id}/share/text-plain', [$positionController, 'shareTex
 $planRepo = new TradingPlanRepository($pdo);
 $planEvaluator = new PlanEvaluator();
 $signalRiskCalculator = new SignalRiskCalculator($symbolRepo, $symbolSettingsRepo, $accountRepo);
+$planOpenRiskCalculator = new PlanOpenRiskCalculator($positionRepo, $signalRiskCalculator);
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planRepo, $planEvaluator, $signalRiskCalculator);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -360,8 +362,8 @@ $router->post('/orders/{id}/cancel', [$orderController, 'cancel'], [$authMiddlew
 $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddleware, $requireSubscription]);
 
 // ── Trades ─────────────────────────────────────────────────────
-// Plan deps ($planRepo / $planEvaluator / $signalRiskCalculator) defined above.
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planRepo, $planEvaluator, $signalRiskCalculator);
+// Plan deps ($planRepo / the two evaluators / the two risk calculators) above.
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -493,7 +495,7 @@ $plansFeatureFlag = new FeatureFlagMiddleware(
 $tvWebhookRepo = new TradingViewWebhookRepository($pdo);
 $tvEventRepo = new TradingViewAlertEventRepository($pdo);
 $robotRepo = new RobotRepository($pdo);
-// $planRepo / $planEvaluator / $signalRiskCalculator defined in the Trades block above.
+// Plan deps defined in the Trades block above.
 $tvWebhookService = new TradingViewWebhookService(
     $tvWebhookRepo,
     $robotRepo,
@@ -510,6 +512,7 @@ $tvWebhookService = new TradingViewWebhookService(
     $planRepo,
     $planEvaluator,
     $signalRiskCalculator,
+    $planOpenRiskCalculator,
 );
 $tvWebhookController = new TradingViewWebhookController($tvWebhookService);
 $robotService = new RobotService(

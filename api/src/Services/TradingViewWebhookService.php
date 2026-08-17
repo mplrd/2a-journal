@@ -44,6 +44,7 @@ class TradingViewWebhookService
         private TradingPlanRepository $planRepo,
         private PlanEvaluator $planEvaluator,
         private SignalRiskCalculator $riskCalculator,
+        private PlanOpenRiskCalculator $openRiskCalculator,
     ) {}
 
     /**
@@ -310,7 +311,15 @@ class TradingViewWebhookService
 
         $firstReason = null;
         foreach ($plans as $plan) {
-            $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now);
+            // Per plan, and only when it caps its cumulative risk: the sum is
+            // over the positions carrying THIS plan on this account, so it
+            // cannot be hoisted out of the loop, and walking the positions of
+            // every plan that doesn't use the cap would be paid for nothing.
+            $openRiskPercent = ($plan['max_plan_risk_percent'] ?? null) !== null
+                ? $this->openRiskCalculator->computePercent($userId, $accountId, (int) $plan['id'])
+                : null;
+
+            $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now, $openRiskPercent);
             if ($reason === null) {
                 return null; // applicable to this plan → accept (OR across plans)
             }

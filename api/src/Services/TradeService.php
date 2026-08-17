@@ -40,6 +40,7 @@ class TradeService
     private ?TradingPlanRepository $planRepo;
     private ?PlanEvaluator $planEvaluator;
     private ?SignalRiskCalculator $riskCalculator;
+    private ?PlanOpenRiskCalculator $openRiskCalculator;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -53,7 +54,8 @@ class TradeService
         ?PDO $pdo = null,
         ?TradingPlanRepository $planRepo = null,
         ?PlanEvaluator $planEvaluator = null,
-        ?SignalRiskCalculator $riskCalculator = null
+        ?SignalRiskCalculator $riskCalculator = null,
+        ?PlanOpenRiskCalculator $openRiskCalculator = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -67,6 +69,7 @@ class TradeService
         $this->planRepo = $planRepo;
         $this->planEvaluator = $planEvaluator;
         $this->riskCalculator = $riskCalculator;
+        $this->openRiskCalculator = $openRiskCalculator;
     }
 
     public function create(int $userId, array $data): array
@@ -625,7 +628,8 @@ class TradeService
                 $entryPrice,
                 isset($data['size']) ? (float) $data['size'] : (float) $trade['size'],
                 isset($data['sl_points']) ? (float) $data['sl_points'] : (float) $trade['sl_points'],
-                (string) ($data['opened_at'] ?? $trade['opened_at'])
+                (string) ($data['opened_at'] ?? $trade['opened_at']),
+                (int) $trade['position_id']
             );
             $positionUpdates['plan_id'] = $adherence['plan_id'];
             $positionUpdates['plan_adherence'] = $adherence['plan_adherence'];
@@ -697,7 +701,8 @@ class TradeService
         float $entryPrice,
         float $size,
         float $slPoints,
-        string $openedAt
+        string $openedAt,
+        ?int $excludePositionId = null
     ): array {
         if ($planId === null) {
             return ['plan_id' => null, 'plan_adherence' => null, 'plan_adherence_reason' => null];
@@ -716,6 +721,13 @@ class TradeService
 
         $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
 
+        // Only walk the plan's open positions when it actually caps their sum.
+        // Editing an open trade excludes itself: it is already part of the
+        // exposure, and its risk is about to be counted again as the signal's.
+        $openRiskPercent = ($plan['max_plan_risk_percent'] ?? null) !== null
+            ? $this->openRiskCalculator?->computePercent($userId, $accountId, $planId, $excludePositionId)
+            : null;
+
         $tz = $plan['timezone'] ?? null;
         try {
             $now = new DateTimeImmutable($openedAt, $tz !== null ? new DateTimeZone($tz) : null);
@@ -723,7 +735,7 @@ class TradeService
             $now = new DateTimeImmutable('now');
         }
 
-        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now);
+        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now, $openRiskPercent);
         return [
             'plan_id' => $planId,
             'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,
