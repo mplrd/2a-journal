@@ -80,11 +80,16 @@ describe('plan vocabulary', () => {
     expect(EN['plan.field.windows']).not.toMatch(/session/i)
   })
 
-  it('points to where the point value is set', () => {
+  it('names the account when it states a point value', () => {
+    // A plan has no account, but the caps resolve through point_value(asset,
+    // account) — a sentence that omits the account states something false.
     for (const locale of [FR, EN]) {
-      expect(locale['plan.point_value_note']).toBeTruthy()
-      expect(locale['plan.point_value_link']).toBeTruthy()
+      expect(locale['plan.point_value_uniform']).toContain('{asset}')
+      expect(locale['plan.point_value_varies']).toContain('{list}')
+      expect(locale['plan.point_value_entry']).toContain('{account}')
     }
+    expect(FR['plan.point_value_uniform']).toMatch(/comptes/i)
+    expect(EN['plan.point_value_uniform']).toMatch(/account/i)
   })
 
   it('distinguishes the two risk tags without their tooltips', () => {

@@ -1,5 +1,43 @@
 import { describe, it, expect } from 'vitest'
-import { maskToDays, daysToMask, planToForm, formToPayload, blankPlanForm, isPlanFormValid } from '@/utils/planForm'
+import { maskToDays, daysToMask, planToForm, formToPayload, blankPlanForm, isPlanFormValid, pointValueSummary } from '@/utils/planForm'
+
+/**
+ * A plan targets an asset but carries no account, while the risk caps resolve
+ * through point_value(asset, account) — so "1 %" can mean two different amounts
+ * on two accounts. The editor states that instead of hiding it (docs/103).
+ */
+describe('pointValueSummary', () => {
+  const dax = { id: 3, code: 'DAX', point_value: 25 }
+  const accounts = [{ id: 1, name: 'Demo FTMO' }, { id: 2, name: 'Live IB' }]
+  const noOverride = () => null
+
+  it('says nothing without an asset or without an account', () => {
+    expect(pointValueSummary(null, accounts, noOverride)).toBeNull()
+    expect(pointValueSummary(dax, [], noOverride)).toBeNull()
+  })
+
+  it('collapses to one figure when every account resolves the same', () => {
+    const summary = pointValueSummary(dax, accounts, noOverride)
+    expect(summary).toEqual({ uniform: true, value: 25, entries: expect.any(Array) })
+  })
+
+  it('falls back to the asset default only where no override exists', () => {
+    // The per-account setting wins (SignalRiskCalculator), the asset value fills in.
+    const override = (symbolId, accountId) => (accountId === 2 ? 1 : null)
+    const summary = pointValueSummary(dax, accounts, override)
+    expect(summary.uniform).toBe(false)
+    expect(summary.entries).toEqual([
+      { accountId: 1, accountName: 'Demo FTMO', value: 25 },
+      { accountId: 2, accountName: 'Live IB', value: 1 },
+    ])
+  })
+
+  it('treats a symbol without a stored default as 1, never as unknown', () => {
+    // Both columns are NOT NULL DEFAULT 1; a missing figure is 1, not a hole.
+    const summary = pointValueSummary({ id: 9, code: 'NEW' }, [accounts[0]], noOverride)
+    expect(summary).toMatchObject({ uniform: true, value: 1 })
+  })
+})
 
 describe('planForm conversions', () => {
   it('maskToDays / daysToMask round-trip on Mon–Fri (0b0011111 = 31)', () => {

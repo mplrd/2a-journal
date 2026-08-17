@@ -1230,8 +1230,9 @@
     "max_risk_placeholder": "ex. 1",
     "max_plan_risk_placeholder": "ex. 5",
     "max_risk_hint": "Rejette le signal si son risque (taille × points SL × valeur du point ÷ capital) dépasse ce pourcentage. Ignoré si le signal n'a pas de stop.",
-    "point_value_note": "La valeur du point vaut 1 tant que vous ne l'avez pas réglée, actif par actif.",
-    "point_value_link": "Régler la valeur du point",
+    "point_value_uniform": "Valeur du point du {asset} : {value} sur tous vos comptes.",
+    "point_value_varies": "Valeur du point du {asset} : {list} — un même plafond n'engage donc pas le même montant selon le compte.",
+    "point_value_entry": "{value} ({account})",
     "max_plan_risk_hint": "Plafonne le risque de TOUTES les positions encore à risque sous ce plan sur le compte visé, signal entrant compris. Respecter 1 % par trade vingt fois de suite engage quand même 20 % : c'est ce plafond-là qui l'empêche. Un stop remonté à BE ne compte plus, un allègement ne compte que pour ce qu'il reste. Une position sans stop fait refuser le signal : son risque n'a pas de borne.",
     "field": {
       "name": "Nom",

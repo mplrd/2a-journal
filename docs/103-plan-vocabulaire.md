@@ -56,17 +56,43 @@ devenu « **Plages de validité du plan** », avec une nouvelle aide
 marché. »*
 
 **La valeur du point** — l'infobulle du risque nommait « Mon compte › Mes actifs »
-en **texte mort**. La provenance sort de l'infobulle et devient une ligne visible
-sous les deux champs de risque, suivie d'un lien réel vers l'onglet.
+en **texte mort**. Voir plus bas : la réponse n'est pas un lien.
 
-> Le lien ne pouvait pas vivre dans l'infobulle : `FieldHelpIcon` est un
-> `v-tooltip` PrimeVue survolé, qui se referme dès qu'on déplace la souris vers
-> son contenu.
+## La valeur du point : ce que le plafond veut dire
 
-Il ouvre un **nouvel onglet** (`target="_blank"`). L'éditeur de plan est une
-modale qui tient un brouillon non enregistré : naviguer dans le même onglet
-l'aurait jeté sans prévenir, et le moment où on suit ce lien est justement celui
-où le plan est à moitié rempli.
+Un plafond de risque est un **pourcentage du capital**. Ce qui le convertit en
+argent, c'est `point_value(actif, compte)` : le réglage du compte quand il
+existe, la valeur de l'actif sinon (`SignalRiskCalculator.php`). Or **un plan n'a
+pas de compte** — il vise un actif, le compte arrive avec le signal.
+
+Conséquence : le même « 1 % » peut représenter deux montants différents sur deux
+comptes. Rien à l'écran ne le disait.
+
+Deux tentatives ont été écartées avant d'y arriver :
+
+| Tentative | Pourquoi non |
+|---|---|
+| Une phrase « la valeur du point se règle actif par actif » | **Fausse** : elle escamote le compte, qui est précisément la dimension qui rend le chiffre ambigu. |
+| Un lien vers *Mon compte › Mes actifs* | L'éditeur est une modale qui tient un brouillon non enregistré ; le lien devait s'ouvrir dans un nouvel onglet pour ne pas le jeter. Un contournement d'un défaut d'écran, pas une décision. |
+
+Ce qui est livré : une ligne **en lecture seule** sous les deux champs de risque,
+dès qu'un actif est choisi.
+
+- valeurs identiques partout → *« Valeur du point du DAX 40 : 25 sur tous vos comptes. »*
+- valeurs différentes → *« Valeur du point du DAX 40 : 25 (Demo FTMO) · 1 (Live IB)
+  — un même plafond n'engage donc pas le même montant selon le compte. »*
+
+**Aucune édition ici.** Le plan n'ayant pas de compte, il n'y a pas *une* cellule
+à modifier : il y en aurait autant que de comptes, et l'éditeur de plan
+deviendrait un second éditeur d'actifs à tenir d'accord avec le premier. L'édition
+reste dans la matrice de *Mes actifs*.
+
+La logique vit dans `pointValueSummary()` (`utils/planForm.js`), pure et testée :
+repli sur la valeur de l'actif là où aucun réglage de compte n'existe, effondrement
+sur un seul chiffre quand tous les comptes s'accordent, et **1 plutôt qu'« inconnu »**
+quand rien n'est stocké — les deux colonnes sont `NOT NULL DEFAULT 1`. La ligne
+disparaît sans bruit s'il n'y a pas encore de compte, et le chargement des données
+ne peut pas faire échouer l'écran.
 
 ## Deux étiquettes qui se ressemblaient trop
 
@@ -95,8 +121,9 @@ n'était qu'une étape manuelle de la skill `/check-i18n` :
   premier, sur « Hors du plan ») ;
 - l'introduction et la confirmation d'archivage ne présentent plus les plans
   comme une affaire de robots ;
-- la règle des bornes, l'objet des plages et le renvoi vers la valeur du point
-  existent dans les deux langues ;
+- la règle des bornes et l'objet des plages existent dans les deux langues ;
+- **toute phrase qui énonce une valeur du point nomme le compte** — c'est le test
+  qui empêche de réécrire « actif par actif » ;
 - les deux étiquettes de risque restent distinguables sans leur infobulle.
 
 Une détection des clés **orphelines** a été écartée : sur 1 225 clés elle en
@@ -107,9 +134,11 @@ garde-fou.
 
 ## Bilan
 
-13 clés retouchées, 4 créées (`plan.zone_bounds_hint`, `plan.windows_hint`,
-`plan.point_value_note`, `plan.point_value_link`), dans `fr.json` et `en.json`.
-Aucun changement de logique métier.
+13 clés retouchées, 5 créées (`plan.zone_bounds_hint`, `plan.windows_hint`,
+`plan.point_value_uniform`, `plan.point_value_varies`, `plan.point_value_entry`),
+dans `fr.json` et `en.json`. Une fonction pure ajoutée (`pointValueSummary`).
+Aucun changement de logique métier : rien de ce lot n'entre dans une décision
+d'acceptation ou de refus.
 
 ## Ce que ce lot ne couvre pas
 

@@ -39,6 +39,36 @@ export function isPlanFormValid(f) {
   return (f.name ?? '').trim().length > 0 && !!f.symbol
 }
 
+/**
+ * What the plan's risk caps actually resolve to, account by account.
+ *
+ * A cap is a percentage of capital, and the money behind it comes from
+ * point_value(asset, account): the per-account setting when there is one, the
+ * asset's own value otherwise (SignalRiskCalculator). But a plan targets an
+ * asset and carries NO account — the account arrives with the signal. So one
+ * "1 %" can stand for two different amounts on two accounts, and nothing on the
+ * screen said so.
+ *
+ * Collapsed to a single figure when every account agrees, which is the usual
+ * case; only a real divergence is worth naming account by account.
+ *
+ * `resolveOverride(symbolId, accountId)` returns the per-account value or null.
+ * A missing figure is 1, never "unknown": both columns are NOT NULL DEFAULT 1.
+ */
+export function pointValueSummary(symbol, accounts, resolveOverride) {
+  if (!symbol || !(accounts ?? []).length) return null
+
+  const fallback = Number(symbol.point_value ?? 1) || 1
+  const entries = accounts.map((account) => ({
+    accountId: account.id,
+    accountName: account.name,
+    value: Number(resolveOverride(symbol.id, account.id) ?? fallback),
+  }))
+
+  const distinct = new Set(entries.map((e) => e.value))
+  return { uniform: distinct.size === 1, value: entries[0].value, entries }
+}
+
 export function planToForm(plan) {
   return {
     id: plan.id,

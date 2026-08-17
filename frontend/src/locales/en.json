@@ -1230,8 +1230,9 @@
     "max_risk_placeholder": "e.g. 1",
     "max_plan_risk_placeholder": "e.g. 5",
     "max_risk_hint": "Rejects the signal when its risk (size × SL points × point value ÷ capital) exceeds this percentage. Ignored when the signal has no stop.",
-    "point_value_note": "The point value stays 1 until you set it, asset by asset.",
-    "point_value_link": "Set the point value",
+    "point_value_uniform": "Point value for {asset}: {value} on every account.",
+    "point_value_varies": "Point value for {asset}: {list} — the same cap therefore commits a different amount depending on the account.",
+    "point_value_entry": "{value} ({account})",
     "max_plan_risk_hint": "Caps the risk of EVERY position still at risk under this plan on the target account, incoming signal included. Respecting 1% per trade twenty times over still puts 20% at risk; this is the cap that stops it. A stop moved to breakeven no longer counts, and a trimmed position only counts for what is left. A position with no stop turns the signal away: its risk has no bound.",
     "field": {
       "name": "Name",

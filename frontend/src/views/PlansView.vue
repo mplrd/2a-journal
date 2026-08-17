@@ -16,16 +16,22 @@ import FieldHelpIcon from '@/components/common/FieldHelpIcon.vue'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
 import { plansService } from '@/services/plans'
 import { useSymbolsStore } from '@/stores/symbols'
-import { blankPlanForm, planToForm, formToPayload, isPlanFormValid } from '@/utils/planForm'
+import { useAccountsStore } from '@/stores/accounts'
+import { useSymbolAccountSettingsStore } from '@/stores/symbolAccountSettings'
+import { blankPlanForm, planToForm, formToPayload, isPlanFormValid, pointValueSummary } from '@/utils/planForm'
 import { formatZoneRange, formatWindowTime, daysMaskToLabel } from '@/utils/planDisplay'
+import { useNumberLocale } from '@/composables/useNumberLocale'
 
 // Cap chips per group so a plan with many zones/windows can't blow up a row.
 const MAX_SUMMARY_CHIPS = 4
 
 const { t, locale } = useI18n()
+const { numberLocale } = useNumberLocale()
 const toast = useToast()
 const confirm = useConfirm()
 const symbolsStore = useSymbolsStore()
+const accountsStore = useAccountsStore()
+const settingsStore = useSymbolAccountSettingsStore()
 
 const plans = ref([])
 const loading = ref(false)
@@ -109,6 +115,37 @@ function capped(list) {
 // help bubble rather than a second icon beside the first.
 const zonesHelp = computed(() => `${t('plan.zones_hint')} ${t('plan.zone_bounds_hint')}`)
 
+// The form holds the asset CODE (that is what the API takes); the point value
+// hangs off the row.
+const selectedSymbol = computed(
+  () => (symbolsStore.symbols ?? []).find((s) => s.code === form.value.symbol) ?? null,
+)
+
+// Read-only, and deliberately so: the plan has no account, so there is no one
+// cell to edit here. What it can do is say what its caps resolve to.
+const pointValues = computed(() => pointValueSummary(
+  selectedSymbol.value,
+  accountsStore.accounts ?? [],
+  settingsStore.getPointValue,
+))
+
+function formatPointValue(value) {
+  return Number(value).toLocaleString(numberLocale.value, { maximumFractionDigits: 5 })
+}
+
+const pointValueLine = computed(() => {
+  const summary = pointValues.value
+  if (!summary) return null
+  const asset = selectedSymbol.value.name || selectedSymbol.value.code
+  if (summary.uniform) {
+    return t('plan.point_value_uniform', { asset, value: formatPointValue(summary.value) })
+  }
+  const list = summary.entries
+    .map((e) => t('plan.point_value_entry', { value: formatPointValue(e.value), account: e.accountName }))
+    .join(' · ')
+  return t('plan.point_value_varies', { asset, list })
+})
+
 async function load() {
   loading.value = true
   try {
@@ -128,6 +165,17 @@ async function load() {
     await symbolsStore.fetchSymbols()
   } catch {
     // handled in the store; the picker simply stays empty
+  }
+
+  // Same rule for what the risk caps resolve to: informative, never load-bearing.
+  // Missing either one just hides the line.
+  try {
+    await Promise.all([
+      accountsStore.accounts?.length ? Promise.resolve() : accountsStore.fetchAccounts(),
+      settingsStore.fetchMatrix(),
+    ])
+  } catch {
+    // the point-value line simply stays hidden
   }
 }
 
@@ -389,19 +437,12 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- Both caps are read in percent of capital, which the point value
-             converts to. Naming where it is set only helps if you can go there —
-             in a new tab, because this editor is a dialog holding an unsaved
-             draft that navigating away would drop without warning. -->
-        <p class="text-xs text-gray-400">
-          {{ t('plan.point_value_note') }}
-          <RouterLink
-            :to="{ name: 'account', query: { tab: 'assets' } }"
-            target="_blank"
-            rel="noopener"
-            class="text-brand-green-700 dark:text-brand-green-400 hover:underline"
-            data-testid="plan-point-value-link"
-          >{{ t('plan.point_value_link') }}</RouterLink>
+        <!-- Both caps are a percentage of capital, converted to money by
+             point_value(asset, account) — and this plan has no account. Showing
+             what it resolves to per account is the only honest thing this
+             screen can say about it; editing belongs to My assets. -->
+        <p v-if="pointValueLine" class="text-xs text-gray-400" data-testid="plan-point-value-line">
+          {{ pointValueLine }}
         </p>
       </div>
 
