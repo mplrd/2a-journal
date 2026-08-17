@@ -316,10 +316,33 @@ class PlanEvaluatorTest extends TestCase
 
     public function testUncomputableOpenRiskSkipsTheCumulativeFilter(): void
     {
-        // Total unknown ⇒ no verdict. Never block a signal on a technical gap,
-        // the rule already in force for the per-trade cap.
+        // Total unmeasurable ⇒ no verdict. Never block a signal on a technical
+        // gap, the rule already in force for the per-trade cap.
         $plan = $this->plan(['max_plan_risk_percent' => 1.0]);
         $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 5.0, $this->mondayTenUtc(), null));
+    }
+
+    /**
+     * Unmeasurable and unbounded are not the same answer. A position with no
+     * stop can lose without limit: adding to it cannot be waved through, and
+     * silently switching the cap off would leave the user believing an envelope
+     * that no longer holds.
+     */
+    public function testUnboundedOpenRiskIsRejectedAndSaysWhy(): void
+    {
+        $plan = $this->plan(['max_plan_risk_percent' => 5.0]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 0.1, $this->mondayTenUtc(), INF);
+        $this->assertNotNull($reason);
+        $this->assertStringContainsString('has no stop', $reason);
+        $this->assertStringNotContainsString('INF', $reason);
+    }
+
+    public function testUnboundedOpenRiskIsIgnoredWhenThePlanSetsNoCumulativeCap(): void
+    {
+        // No envelope declared, nothing to blow through. A stopless position is
+        // a problem, but not this filter's problem to raise.
+        $plan = $this->plan(['max_plan_risk_percent' => null]);
+        $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, 0.1, $this->mondayTenUtc(), INF));
     }
 
     public function testUncomputableSignalRiskSkipsTheCumulativeFilter(): void

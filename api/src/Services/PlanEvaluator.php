@@ -178,16 +178,23 @@ class PlanEvaluator
      * per-trade one is what the trader can act on immediately by sizing this
      * entry down, so it is the reason worth returning.
      *
-     * Either half missing (point value not configured, capital unknown, one open
-     * position whose risk can't be computed) leaves the total unknown, and an
-     * unknown total is not a breach — same rule as the per-trade cap: never
-     * block a signal on a technical gap.
+     * Either half missing (point value not configured, capital unknown) leaves
+     * the total UNMEASURABLE, and an unmeasurable total is not a breach — same
+     * rule as the per-trade cap: never block a signal on a technical gap.
+     *
+     * INF is the other answer, and not the same one: a position under the plan
+     * carries no stop, so its loss — and the total — has no bound. Waving that
+     * through would let the user keep believing an envelope that no longer
+     * holds, which is worse than refusing.
      */
     private function checkCumulativeRisk(array $plan, ?float $riskPercent, ?float $openRiskPercent): ?string
     {
         $max = $plan['max_plan_risk_percent'] ?? null;
         if ($max === null || $riskPercent === null || $openRiskPercent === null) {
             return null;
+        }
+        if (is_infinite($openRiskPercent)) {
+            return 'an open position under the plan has no stop: plan risk unbounded';
         }
 
         $total = $openRiskPercent + $riskPercent;

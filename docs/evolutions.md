@@ -1042,13 +1042,15 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
-## Un filtre de plan ignoré en silence ne se voit nulle part
+## Un plafond de risque inactif faute de valeur du point ne se voit nulle part
 
-**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). Les deux plafonds de risque d'un plan sont **ignorés** quand le risque n'est pas calculable — valeur du point non configurée pour le symbole, capital du compte inconnu, ou position sans SL. C'est la bonne règle (on ne bloque jamais un signal sur une lacune technique), mais elle est **muette**.
+**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). Les deux plafonds de risque d'un plan sont **ignorés** quand le risque n'est pas chiffrable — valeur du point non configurée pour le symbole, ou capital du compte inconnu. C'est la bonne règle (on ne bloque jamais un signal sur une lacune technique) mais elle est **muette** : l'utilisateur croit son plafond actif, il ne l'est pas.
 
-Le cas le plus piégeux est le cumul : **une seule position sans SL sous le plan désactive le plafond cumulé** tant qu'elle est ouverte. L'utilisateur croit son enveloppe tenue, elle ne l'est pas, et rien à l'écran ne le lui dit.
+Le cas voisin — une position **sans stop** sous le plan — a été traité dans le lot 4 : il fait désormais refuser le signal avec une raison explicite, au lieu de désactiver le plafond en silence. Reste ici la seule lacune de configuration.
 
-**À faire** : signaler un filtre inactif faute de données — pastille « plafond inactif » sur le plan, ou mention dans l'événement d'audit du webhook quand un filtre configuré n'a pas pu s'appliquer.
+Portée réduite en pratique : depuis le lot 1 un plan vise un instrument, et le compte est le même pour toutes ses positions. Si la valeur du point manque, le plafond **par trade** est inerte lui aussi — les deux tombent ensemble, ce qui est au moins cohérent.
+
+**À faire** : signaler un plafond inactif faute de données — pastille sur le plan, ou mention dans l'événement d'audit du webhook quand un filtre configuré n'a pas pu s'appliquer.
 
 **Fichiers** : `api/src/Services/PlanEvaluator.php`, `api/src/Services/PlanOpenRiskCalculator.php`, `frontend/src/views/PlansView.vue`.
 

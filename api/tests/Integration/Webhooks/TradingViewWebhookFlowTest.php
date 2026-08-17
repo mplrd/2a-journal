@@ -632,16 +632,115 @@ class TradingViewWebhookFlowTest extends TestCase
         $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
     }
 
+    /**
+     * A secured trade has its stop at breakeven — it can no longer lose, so it
+     * must stop weighing on the envelope. Charging it anyway would hold a robot
+     * back exactly when it protected early and the market proved it right.
+     */
+    public function testASecuredTradeNoLongerWeighsOnTheCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        // Same 5% position as the rejection case, but secured.
+        $this->seedTradeUnderPlan($planId, 1.0, 50.0, status: 'SECURED', beReached: 1);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /** Trimming a position halves what it can lose — and what it takes. */
+    public function testATrimmedTradeOnlyWeighsItsRemainingSize(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        // Entered at 1 lot (5%), half taken off: 2.5% left. 2.5 + 5 = 7.5 ≤ 8.
+        // On entry size it would read 10% and be refused.
+        $this->seedTradeUnderPlan($planId, 1.0, 50.0, remainingSize: 0.5);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
+    /**
+     * A position with no stop can lose without limit. Counting it as zero would
+     * under-count; switching the cap off would leave the user believing an
+     * envelope that no longer holds. It is refused, and the reason says why.
+     */
+    public function testAStoplessPositionUnderThePlanRefusesTheSignalOutLoud(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan(['max_plan_risk_percent' => 8.0]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedTradeUnderPlan($planId, 1.0, null);
+
+        $payload = $this->validPayload($secret);
+        $payload['sl_points'] = 50.0;
+        $this->service->process($token, $payload);
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookRejectReason::OUT_OF_PLAN->value, end($events)['reject_reason']);
+        $this->assertStringContainsString('no stop', (string) end($events)['error_message']);
+        $this->assertSame(0, (int) $this->pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn());
+    }
+
+    public function testAStoplessPositionIsHarmlessWhenThePlanSetsNoCumulativeCap(): void
+    {
+        ['token' => $token, 'secret' => $secret, 'robot_id' => $robotId] = $this->seedWebhook();
+        $this->seedBrokerConnection();
+        $this->seedSymbol('EURUSD', 10.0);
+        $planId = $this->createPlan([]);
+        $this->attachPlans($robotId, [$planId]);
+        $this->seedTradeUnderPlan($planId, 1.0, null);
+
+        $this->service->process($token, $this->validPayload($secret));
+
+        $events = $this->fetchAllEvents();
+        $this->assertSame(WebhookEventStatus::PROCESSED->value, end($events)['status']);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
-    /** An open trade carrying the plan, i.e. risk already on the table. */
-    private function seedOpenTradeUnderPlan(int $planId, float $size, float $slPoints, ?int $accountId = null): void
-    {
+    /** A trade carrying the plan, i.e. risk already on the table. */
+    private function seedTradeUnderPlan(
+        int $planId,
+        float $size,
+        ?float $slPoints,
+        ?int $accountId = null,
+        ?float $remainingSize = null,
+        string $status = 'OPEN',
+        int $beReached = 0,
+    ): void {
         $positionId = $this->seedPositionUnderPlan($planId, $size, $slPoints, $accountId);
         $this->pdo->prepare(
-            "INSERT INTO trades (position_id, opened_at, remaining_size, status)
-             VALUES (:pid, NOW(), :size, 'OPEN')"
-        )->execute(['pid' => $positionId, 'size' => $size]);
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status, be_reached)
+             VALUES (:pid, NOW(), :size, :status, :be)"
+        )->execute([
+            'pid' => $positionId,
+            'size' => $remainingSize ?? $size,
+            'status' => $status,
+            'be' => $beReached,
+        ]);
+    }
+
+    private function seedOpenTradeUnderPlan(int $planId, float $size, float $slPoints, ?int $accountId = null): void
+    {
+        $this->seedTradeUnderPlan($planId, $size, $slPoints, $accountId);
     }
 
     private function seedPendingOrderUnderPlan(int $planId, float $size, float $slPoints): void
@@ -651,7 +750,7 @@ class TradingViewWebhookFlowTest extends TestCase
             ->execute(['pid' => $positionId]);
     }
 
-    private function seedPositionUnderPlan(int $planId, float $size, float $slPoints, ?int $accountId = null): int
+    private function seedPositionUnderPlan(int $planId, float $size, ?float $slPoints, ?int $accountId = null): int
     {
         $this->pdo->prepare(
             "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, sl_points, position_type, plan_id)

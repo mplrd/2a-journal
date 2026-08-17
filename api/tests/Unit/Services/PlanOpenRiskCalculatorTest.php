@@ -52,14 +52,41 @@ class PlanOpenRiskCalculatorTest extends TestCase
         $this->assertSame(2.0, $this->calculator->computePercent(1, 100, 7));
     }
 
-    public function testOnePositionWhoseRiskIsNotComputableMakesTheWholeTotalUnknown(): void
+    /**
+     * A position carrying no stop cannot lose a bounded amount. Counting it as
+     * zero would under-count, and turning the whole filter off would disable
+     * the cap without a word — the user believes the envelope is held while it
+     * is not. Neither is acceptable, so it is reported for what it is.
+     */
+    public function testAPositionWithoutAStopMakesTheOpenRiskUnbounded(): void
     {
-        // Skipping it would silently under-count, and under-counting a safeguard
-        // lets signals through — the wrong way round. Unknown is the honest
-        // answer, and the evaluator turns the filter off rather than blocking.
         $this->positionRepo->method('findStillExposedByPlanAndAccount')->willReturn([
             $this->position(1, 'NASDAQ', 2.0, 50.0),
-            $this->position(2, 'EXOTIC', 1.0, null),
+            $this->position(2, 'NASDAQ', 1.0, null),
+        ]);
+        $this->riskCalculator->method('computePercent')->willReturn(1.25);
+
+        $this->assertSame(INF, $this->calculator->computePercent(1, 100, 7));
+    }
+
+    public function testAZeroStopDistanceIsAlsoUnbounded(): void
+    {
+        $this->positionRepo->method('findStillExposedByPlanAndAccount')
+            ->willReturn([$this->position(1, 'NASDAQ', 2.0, 0.0)]);
+
+        $this->assertSame(INF, $this->calculator->computePercent(1, 100, 7));
+    }
+
+    /**
+     * A missing point value or an unknown capital is a different animal: the
+     * risk is not unbounded, it is unmeasurable — and the incoming signal's own
+     * risk hits the very same wall, so the cap is already inert.
+     */
+    public function testAnUnmeasurablePositionMakesTheTotalUnknownNotUnbounded(): void
+    {
+        $this->positionRepo->method('findStillExposedByPlanAndAccount')->willReturn([
+            $this->position(1, 'NASDAQ', 2.0, 50.0),
+            $this->position(2, 'NASDAQ', 1.0, 30.0),
         ]);
         $this->riskCalculator->method('computePercent')->willReturnOnConsecutiveCalls(1.25, null);
 

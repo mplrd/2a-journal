@@ -205,20 +205,27 @@ class PositionRepository
     }
 
     /**
-     * Positions still exposed under a plan on one account, for the cumulative
-     * risk cap (docs/83-trading-plans.md).
+     * Positions still AT RISK under a plan on one account, for the cumulative
+     * risk cap (docs/83-trading-plans.md). "Still at risk" is narrower than
+     * "still open", and the difference is the whole point:
      *
-     * "Still exposed" covers a pending order as much as a live trade. Counting
-     * only trades would leave the filter blind on the path it exists for: a
-     * robot's signals become PENDING orders first, so a burst of them would all
-     * pass — each one sees no exposure yet — and only start counting once they
-     * fill, too late to refuse any of them. A cancelled or expired order drops
-     * out on its own, its status no longer being PENDING.
+     * - a PENDING order counts, at full size. Counting live trades only would
+     *   leave the filter blind on the path it exists for: a robot's signals
+     *   become orders first, so a burst of them would all pass — each seeing no
+     *   exposure yet — and only start counting once they filled, too late to
+     *   refuse any. A cancelled or expired order drops out on its own.
+     * - an OPEN trade counts at its REMAINING size. Trimming a position halves
+     *   what it can still lose, so it must halve what it takes from the
+     *   envelope.
+     * - a SECURED trade counts for NOTHING and is not returned at all. SECURED
+     *   means the stop was moved to breakeven, and TradeService says it in as
+     *   many words: "the remainder is risk-free". Charging it to the envelope
+     *   would hold a robot back precisely when it has protected early and the
+     *   market is proving it right.
      *
-     * Size is the one taken at entry: a partial exit or a stop moved to
-     * breakeven does not shrink it here. That over-counts, which for a
-     * safeguard is the right way for the error to fall — it refuses rather
-     * than lets through.
+     * be_reached is checked alongside the status: the two move together today
+     * (markBeReached promotes OPEN to SECURED), and a broker sync setting one
+     * without the other must not resurrect a risk that no longer exists.
      *
      * @return array<int,array{id:int,symbol:string,size:string,sl_points:?string}>
      */
@@ -232,7 +239,6 @@ class PositionRepository
             'account_id' => $accountId,
             'pending' => OrderStatus::PENDING->value,
             'open' => TradeStatus::OPEN->value,
-            'secured' => TradeStatus::SECURED->value,
         ];
         $exclude = '';
         if ($excludePositionId !== null) {
@@ -241,13 +247,17 @@ class PositionRepository
         }
 
         $stmt = $this->pdo->prepare(
-            'SELECT p.id, p.symbol, p.size, p.sl_points
+            'SELECT p.id, p.symbol, p.sl_points,
+                    COALESCE(t.remaining_size, p.size) AS size
              FROM positions p
              LEFT JOIN orders o ON o.position_id = p.id
              LEFT JOIN trades t ON t.position_id = p.id
              WHERE p.plan_id = :plan_id
                AND p.account_id = :account_id' . $exclude . '
-               AND (o.status = :pending OR t.status IN (:open, :secured))'
+               AND (
+                     o.status = :pending
+                     OR (t.status = :open AND t.be_reached = 0 AND t.remaining_size > 0)
+                   )'
         );
         $stmt->execute($params);
         return $stmt->fetchAll();

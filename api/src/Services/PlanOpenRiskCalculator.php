@@ -14,11 +14,20 @@ use App\Repositories\PositionRepository;
  * already on the table. PlanEvaluator stays pure and only compares numbers;
  * this is where the I/O lives.
  *
- * Returns null as soon as ONE position's risk cannot be computed. Dropping it
- * from the sum would under-count, and an under-counted safeguard lets signals
- * through — the wrong way for the error to fall. Unknown is the honest answer,
- * and the evaluator then skips the filter rather than blocking a signal on a
- * technical gap (the rule already in force for the per-trade cap).
+ * Three possible answers, and they are deliberately distinct:
+ *
+ *   float  the exposure, in percent of the account capital.
+ *   INF    at least one position carries NO STOP. Its loss is not bounded, so
+ *          neither is the total. Counting it as zero would under-count, and an
+ *          under-counted safeguard lets signals through; turning the cap off
+ *          would leave the user believing an envelope that no longer holds.
+ *          The evaluator refuses and says so.
+ *   null   the exposure is UNMEASURABLE — point value not configured, capital
+ *          unknown. A different animal from unbounded: nothing says the risk is
+ *          large, we simply cannot price it. The evaluator then skips the
+ *          filter rather than block on a technical gap, which is also the rule
+ *          already in force for the per-trade cap — and the incoming signal's
+ *          own risk hits the very same wall, so that cap is inert too.
  */
 class PlanOpenRiskCalculator
 {
@@ -46,12 +55,20 @@ class PlanOpenRiskCalculator
 
         $total = 0.0;
         foreach ($positions as $position) {
+            // Checked before pricing it: SignalRiskCalculator answers null both
+            // for "no stop" and for "no point value", and those two must not
+            // end up telling the caller the same thing.
+            $slPoints = (float) ($position['sl_points'] ?? 0);
+            if ($slPoints <= 0) {
+                return INF;
+            }
+
             $risk = $this->riskCalculator->computePercent(
                 $userId,
                 $accountId,
                 (string) $position['symbol'],
                 (float) $position['size'],
-                (float) ($position['sl_points'] ?? 0),
+                $slPoints,
             );
             if ($risk === null) {
                 return null;

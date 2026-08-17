@@ -34,30 +34,41 @@ Un pourcentage n'a de sens que rapporté à un capital. Le cumul est donc calcul
 qu'on est en train d'engager. Deux comptes suivant le même plan ont chacun leur
 enveloppe de 5 %, pas 2,5 % chacun.
 
-### Ce qui compte comme « encore exposé »
+### Ce qui compte comme « encore à risque »
 
-`PositionRepository::findStillExposedByPlanAndAccount()` retient :
+« Encore à risque » est plus étroit que « encore ouvert », et toute la valeur du
+filtre tient dans cet écart. `PositionRepository::findStillExposedByPlanAndAccount()`
+retient :
 
-- les **trades** `OPEN` et `SECURED` ;
-- les **ordres en attente** (`PENDING`).
+| Position | Compte pour |
+|---|---|
+| Ordre `PENDING` | sa taille pleine |
+| Trade `OPEN` | sa **taille restante** (`remaining_size`) |
+| Trade `SECURED` (ou `be_reached`) | **rien** — il n'est plus retourné du tout |
 
-Les ordres comptent, et c'est délibéré. Le chemin robot crée d'abord un ordre :
-ne compter que les trades vivants rendrait le filtre aveugle **sur le chemin pour
-lequel il existe**. Une rafale de signaux passerait en entier — chacun ne voyant
-aucune exposition — et le compteur ne démarrerait qu'une fois les ordres exécutés,
-trop tard pour en refuser un seul. Un ordre annulé ou expiré sort de lui-même du
-calcul, son statut n'étant plus `PENDING`.
+**Les ordres en attente comptent**, et c'est délibéré. Le chemin robot crée
+d'abord un ordre : ne compter que les trades vivants rendrait le filtre aveugle
+**sur le chemin pour lequel il existe**. Une rafale de signaux passerait en
+entier — chacun ne voyant aucune exposition — et le compteur ne démarrerait
+qu'une fois les ordres exécutés, trop tard pour en refuser un seul. Un ordre
+annulé ou expiré sort de lui-même du calcul.
 
-### Deux simplifications assumées
+**Un allègement libère de l'enveloppe.** Sortir la moitié d'une position divise
+par deux ce qu'elle peut encore perdre ; elle ne doit donc plus peser que pour
+la moitié. C'est `remaining_size`, pas la taille d'entrée.
 
-La taille retenue est **celle prise à l'entrée** :
+**Un trade sécurisé ne pèse plus rien.** `SECURED` veut dire que le stop a été
+remonté à l'entrée, et `TradeService` l'écrit noir sur blanc : *« the remainder
+is risk-free »*. Le facturer à l'enveloppe reviendrait à **freiner un robot
+précisément quand il a protégé tôt et que le marché lui donne raison** — soit
+l'inverse du comportement à encourager. Un partiel en TP, lui, ne sécurise rien
+(le stop reste à son niveau d'origine sur le reliquat) : le trade reste `OPEN` et
+continue de compter, pour sa taille restante.
 
-- une **sortie partielle** ne réduit pas le risque compté ;
-- un **stop remonté à BE** non plus (un trade `SECURED` compte à plein).
-
-Les deux **sur-comptent**. Pour un garde-fou, c'est le bon sens de l'erreur : il
-refuse au lieu de laisser passer. C'est l'inverse du défaut corrigé au [lot 1](99-plan-instrument-cible.md),
-où l'absence d'instrument laissait passer.
+`be_reached` est vérifié en plus du statut. Les deux avancent ensemble
+aujourd'hui (`markBeReached` promeut `OPEN` en `SECURED`), mais une synchro
+broker qui poserait l'un sans l'autre ne doit pas ressusciter un risque qui
+n'existe plus.
 
 ### Le calcul
 
@@ -86,21 +97,36 @@ Le cumul est vérifié **en dernier**, après le plafond par trade. Quand les de
 sont dépassés, c'est le plafond par trade qu'on renvoie : c'est celui sur lequel
 le trader peut agir tout de suite, en réduisant cette entrée-là.
 
-### Quand le total n'est pas calculable
+### Non mesurable ≠ sans borne
 
-Si **une seule** position du plan a un risque non calculable (valeur du point non
-configurée, capital inconnu, pas de SL), le total renvoyé est `null` et **le
-filtre est ignoré**.
+`PlanOpenRiskCalculator` a **trois** réponses possibles, et les confondre serait
+le vrai piège :
 
-Écarter la position fautive de la somme aurait sous-compté, et un garde-fou qui
-sous-compte laisse passer. « Je ne sais pas » est la réponse honnête, et la règle
-déjà en vigueur pour le plafond par trade s'applique : on ne bloque jamais un
-signal sur une lacune technique.
+| Réponse | Cas | Effet |
+|---|---|---|
+| un nombre | tout est mesurable | comparé au plafond |
+| `INF` | une position **sans stop** | signal **refusé**, raison explicite |
+| `null` | valeur du point non configurée, capital inconnu | filtre **ignoré** |
 
-> ⚠️ Conséquence à connaître : **une position sans SL sous le plan désactive le
-> plafond cumulé** tant qu'elle est ouverte, sans rien afficher. C'est la même
-> limite que le plafond par trade, et elle mériterait un signalement à l'écran
-> (versé à `docs/evolutions.md`).
+**Une position sans stop ne perd pas « une quantité inconnue », elle perd sans
+borne.** La compter pour zéro sous-compterait ; désactiver le plafond en silence
+laisserait l'utilisateur croire à une enveloppe qui ne tient plus. Les deux
+reviennent à cacher le problème. On refuse donc, et la raison le dit :
+
+> `an open position under the plan has no stop: plan risk unbounded`
+
+C'est actionnable : poser un stop sur cette position, ou la fermer. Et ça ne
+concerne que les plans qui ont **déclaré** une enveloppe : sans
+`max_plan_risk_percent`, une position sans stop reste un problème, mais pas celui
+de ce filtre.
+
+Le cas `null` est d'une autre nature : rien ne dit que le risque est grand, on ne
+sait simplement pas le **chiffrer**. La règle déjà en vigueur pour le plafond par
+trade s'applique — on ne bloque jamais sur une lacune technique — et elle est ici
+cohérente : le risque du signal entrant butera sur exactement le même mur
+(même compte, donc même capital ; et depuis le [lot 1](99-plan-instrument-cible.md)
+un plan vise un instrument, donc la même valeur du point), donc les deux
+plafonds sont inertes ensemble, pas l'un sans l'autre.
 
 ### La raison renvoyée
 
@@ -125,6 +151,15 @@ Réévaluer un trade déjà ouvert le ferait compter **deux fois** : une fois da
 cumul des positions ouvertes, une fois comme signal entrant. `TradeService` passe
 donc sa propre `position_id` en exclusion.
 
+### Ce que ça change pour un robot qui protège tôt
+
+C'est le point qui a fait revoir la première version de ce lot. Un robot qui
+remonte son stop à BE dès qu'il est en profit **libère son enveloppe** et peut
+reprendre position. Un robot qui allège de moitié en libère la moitié. Compter la
+taille d'entrée jusqu'à la clôture aurait puni la gestion de risque la plus
+saine — celle qu'on veut voir — et bloqué le robot au moment exact où le marché
+lui donnait raison.
+
 ## À l'écran
 
 - **Éditeur de plan** : *Risque max par trade* et *Risque max cumulé* côte à côte,
@@ -142,15 +177,18 @@ plafond par trade refusé par le cumul ; les deux moitiés nommées dans la rais
 cumul ou signal non calculable ⇒ filtre ignoré ; appel à six arguments inchangé ;
 plafond par trade prioritaire quand les deux sautent.
 
-**Unitaires** — `PlanOpenRiskCalculatorTest` : rien d'ouvert ⇒ `0.0` et non
-`null` (deux réponses différentes) ; somme ; une position non calculable rend le
-total inconnu ; la position exclue ne compte pas ; chaque position est valorisée
-sur son compte.
+**Unitaires** — `PlanOpenRiskCalculatorTest` : rien à risque ⇒ `0.0` et non
+`null` (deux réponses différentes) ; somme ; position sans stop ⇒ `INF` ; stop à
+zéro ⇒ `INF` ; position non chiffrable ⇒ `null` ; la position exclue ne compte
+pas ; chaque position est valorisée sur son compte.
 
 **Intégration** — `TradingViewWebhookFlowTest` : un signal seul ne déclenche
 jamais le cumul ; une position ouverte sous le plan le fait dépasser et aucun
-ordre n'est créé ; **un ordre en attente compte aussi** ; une position sur un
-autre compte ne compte pas ; un plafond assez haut laisse passer.
+ordre n'est créé ; **un ordre en attente compte aussi** ; **un trade sécurisé ne
+compte plus** ; **un trade allégé ne compte que pour son reliquat** ; une
+position sans stop fait refuser le signal en le disant ; la même position est
+sans effet si le plan n'a pas déclaré d'enveloppe ; une position sur un autre
+compte ne compte pas ; un plafond assez haut laisse passer.
 
 `TradingPlanServiceTest` : persistance, champ optionnel, remise à vide, refus
 d'une valeur nulle ou négative.
