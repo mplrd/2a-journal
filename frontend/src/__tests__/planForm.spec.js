@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { maskToDays, daysToMask, planToForm, formToPayload, blankPlanForm } from '@/utils/planForm'
+import { maskToDays, daysToMask, planToForm, formToPayload, blankPlanForm, isPlanFormValid } from '@/utils/planForm'
 
 describe('planForm conversions', () => {
   it('maskToDays / daysToMask round-trip on Mon–Fri (0b0011111 = 31)', () => {
@@ -82,5 +82,19 @@ describe('planForm conversions', () => {
       windows: [],
     })
     expect(payload.symbol).toBe('NASDAQ')
+  })
+
+  // The editor refuses to save a plan that names no instrument: its price zones
+  // would then be held against signals from any market, which is the very thing
+  // the field exists to prevent. Plans stored before it stay valid in database —
+  // reopening one asks for its instrument.
+  it('isPlanFormValid requires both a name and an instrument', () => {
+    expect(isPlanFormValid({ name: 'Nasdaq', symbol: 'NASDAQ' })).toBe(true)
+    expect(isPlanFormValid({ name: 'Nasdaq', symbol: null })).toBe(false)
+    expect(isPlanFormValid({ name: '   ', symbol: 'NASDAQ' })).toBe(false)
+  })
+
+  it('isPlanFormValid rejects a blank form', () => {
+    expect(isPlanFormValid(blankPlanForm())).toBe(false)
   })
 })

@@ -28,6 +28,16 @@ export function blankPlanForm() {
   }
 }
 
+/**
+ * Whether the editor may save. The instrument is required alongside the name:
+ * a plan without one holds its price zones against every market, which is the
+ * defect the field closes (docs/99). The API still accepts a null symbol, so
+ * plans stored before the field keep working — reopening one asks for it.
+ */
+export function isPlanFormValid(f) {
+  return (f.name ?? '').trim().length > 0 && !!f.symbol
+}
+
 export function planToForm(plan) {
   return {
     id: plan.id,

@@ -81,10 +81,28 @@ signal par ce même `findByUserAndCode()`.
 
 ## Ce que ça change à l'écran
 
-- **Éditeur de plan** : un sélecteur *Instrument* à côté du nom, alimenté par les
-  actifs de l'utilisateur, avec « Tous les instruments » en tête de liste.
+- **Éditeur de plan** : le nom occupe la première ligne, et l'*Instrument* ouvre
+  la seconde, juste avant le *Sens autorisé* — les deux contraintes qui cadrent
+  le plan avant qu'on parle de prix.
+- **Le sélecteur ne propose pas « tous les instruments »**, et l'enregistrement
+  est refusé tant qu'aucun n'est choisi. Un plan qui ne filtre aucun marché est
+  précisément le trou que ce champ bouche ; le laisser proposer à l'écran
+  reviendrait à le présenter comme un choix légitime. Les actifs viennent de
+  *Mon compte › Mes actifs* ; s'il n'y en a aucun, la liste le dit et renvoie là-bas
+  plutôt que de s'afficher vide.
+- **Les textes d'aide passent en infobulle** (`FieldHelpIcon`) à côté du libellé,
+  pour l'instrument, les zones de prix et le risque max. Ils restaient auparavant
+  affichés en permanence sous chaque champ : trois paragraphes de rappel à lire à
+  chaque ouverture, alors qu'on ne les consulte qu'une fois. L'infobulle porte
+  aussi un `aria-label`, sinon l'aide disparaîtrait pour un lecteur d'écran et au
+  doigt sur mobile.
 - **Liste des plans** : l'instrument s'affiche en **premier** dans la colonne des
   filtres, avant les zones — c'est lui qui leur donne leur sens.
+
+> L'API, elle, accepte toujours `symbol` à `NULL` : c'est ce qui laisse vivre les
+> plans créés avant ce champ (voir *Points d'attention*). C'est l'éditeur qui
+> refuse d'en fabriquer de nouveaux. Ouvrir un ancien plan demande donc de choisir
+> son instrument avant de pouvoir le réenregistrer.
 
 ## Tests
 

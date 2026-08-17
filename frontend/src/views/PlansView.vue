@@ -12,9 +12,10 @@ import Select from 'primevue/select'
 import ToggleButton from 'primevue/togglebutton'
 import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
+import FieldHelpIcon from '@/components/common/FieldHelpIcon.vue'
 import { plansService } from '@/services/plans'
 import { symbolsService } from '@/services/symbols'
-import { blankPlanForm, planToForm, formToPayload } from '@/utils/planForm'
+import { blankPlanForm, planToForm, formToPayload, isPlanFormValid } from '@/utils/planForm'
 import { formatZoneRange, formatWindowTime, daysMaskToLabel } from '@/utils/planDisplay'
 
 // Cap chips per group so a plan with many zones/windows can't blow up a row.
@@ -47,12 +48,10 @@ const zoneDirectionOptions = computed(() => [
 ])
 
 // The instrument the plan targets. A zone is a pair of bare prices, so it only
-// means something once the instrument is named. "Every instrument" stays
-// available: that is what plans created before this field did.
-const symbolOptions = computed(() => [
-  { label: t('plan.any_symbol'), value: null },
-  ...symbols.value.map((s) => ({ label: s.code, value: s.code })),
-])
+// means something once the instrument is named — hence no "every instrument"
+// entry: a plan that filters nothing by market is the hole this field closes.
+// Plans stored before it exist without one; editing such a plan asks for it.
+const symbolOptions = computed(() => symbols.value.map((s) => ({ label: s.code, value: s.code })))
 
 const timezoneOptions = computed(() => {
   const set = new Set(BASE_TZ)
@@ -66,7 +65,7 @@ const dayLabels = computed(() => {
   return [0, 1, 2, 3, 4, 5, 6].map((i) => fmt.format(new Date(Date.UTC(2024, 0, 1 + i))))
 })
 
-const canSave = computed(() => form.value.name.trim().length > 0)
+const canSave = computed(() => isPlanFormValid(form.value))
 
 function directionLabel(value) {
   if (!value) return t('plan.direction.both')
@@ -104,8 +103,8 @@ async function load() {
   }
 
   // The assets only feed the instrument picker. Losing them must not cost the
-  // user their plan list, so this failure stays quiet — the editor then offers
-  // "every instrument" alone, which is what a plan without one already means.
+  // user their plan list, so this failure stays quiet — the editor then says it
+  // has no instrument to offer rather than showing an unexplained empty list.
   try {
     const symbolsResp = await symbolsService.list()
     symbols.value = symbolsResp.data ?? []
@@ -249,21 +248,25 @@ onMounted(load)
       <div class="flex flex-col gap-5">
         <!-- Basics -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div class="md:col-span-2">
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.name') }}</label>
             <InputText v-model="form.name" class="w-full" maxlength="120" :placeholder="t('plan.name_placeholder')" data-testid="plan-name-input" />
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">{{ t('plan.field.symbol') }}</label>
+            <label class="flex items-center gap-1 text-sm font-medium mb-1">
+              {{ t('plan.field.symbol') }}
+              <FieldHelpIcon :text="t('plan.symbol_hint')" testid="plan-symbol-help" />
+            </label>
             <Select
               v-model="form.symbol"
               :options="symbolOptions"
               option-label="label"
               option-value="value"
               class="w-full"
+              :placeholder="t('plan.symbol_placeholder')"
+              :empty-message="t('plan.no_symbols')"
               data-testid="plan-symbol-select"
             />
-            <p class="text-xs text-gray-400 mt-1">{{ t('plan.symbol_hint') }}</p>
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">{{ t('plan.field.direction') }}</label>
@@ -274,10 +277,12 @@ onMounted(load)
         <!-- Price zones -->
         <div>
           <div class="flex items-center justify-between mb-2">
-            <label class="text-sm font-medium">{{ t('plan.field.zones') }}</label>
+            <label class="flex items-center gap-1 text-sm font-medium">
+              {{ t('plan.field.zones') }}
+              <FieldHelpIcon :text="t('plan.zones_hint')" testid="plan-zones-help" />
+            </label>
             <Button icon="pi pi-plus" :label="t('plan.add_zone')" size="small" text data-testid="plan-add-zone" @click="addZone" />
           </div>
-          <p class="text-xs text-gray-400 mb-2">{{ t('plan.zones_hint') }}</p>
           <div v-for="(zone, i) in form.zones" :key="i" class="flex items-center gap-2 mb-2" data-testid="plan-zone-row">
             <Select v-model="zone.direction" :options="zoneDirectionOptions" option-label="label" option-value="value" class="w-28" />
             <InputNumber v-model="zone.low_price" :min="0" :maxFractionDigits="5" class="flex-1" :placeholder="t('plan.zone_low')" />
@@ -317,9 +322,11 @@ onMounted(load)
 
         <!-- Max risk -->
         <div class="md:w-64">
-          <label class="block text-sm font-medium mb-1">{{ t('plan.field.max_risk') }}</label>
+          <label class="flex items-center gap-1 text-sm font-medium mb-1">
+            {{ t('plan.field.max_risk') }}
+            <FieldHelpIcon :text="t('plan.max_risk_hint')" testid="plan-risk-help" />
+          </label>
           <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
-          <p class="text-xs text-gray-400 mt-1">{{ t('plan.max_risk_hint') }}</p>
         </div>
       </div>
 
