@@ -103,6 +103,7 @@ use App\Services\NoteService;
 use App\Services\NoteCategoryService;
 use App\Services\SymbolService;
 use App\Services\PlanEvaluator;
+use App\Services\PlanAdherenceEvaluator;
 use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
 use App\Services\SymbolCodeRenamer;
@@ -361,10 +362,20 @@ $planEvaluator = new PlanEvaluator();
 $symbolResolver = new SymbolResolver($symbolRepo, new SymbolAliasRepository($pdo));
 $signalRiskCalculator = new SignalRiskCalculator($symbolResolver, $symbolSettingsRepo, $accountRepo);
 $planOpenRiskCalculator = new PlanOpenRiskCalculator($positionRepo, $signalRiskCalculator);
+// L'assemblage autour de l'évaluateur pur, partagé par les trades, les ordres et
+// la simulation à la saisie : trois copies d'un garde-fou, ce sont trois endroits
+// où oublier un filtre (docs/102).
+$planAdherenceEvaluator = new PlanAdherenceEvaluator(
+    $planRepo,
+    $planEvaluator,
+    $signalRiskCalculator,
+    $planOpenRiskCalculator,
+    $symbolResolver,
+);
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator, $symbolResolver);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planAdherenceEvaluator);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -376,7 +387,7 @@ $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddl
 
 // ── Trades ─────────────────────────────────────────────────────
 // Plan deps ($planRepo / the two evaluators / the two risk calculators) above.
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planRepo, $planEvaluator, $signalRiskCalculator, $planOpenRiskCalculator, $symbolResolver);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planAdherenceEvaluator);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -539,7 +550,7 @@ $robotService = new RobotService(
     $webhooksConfig['tradingview_base_url'],
 );
 $robotController = new RobotController($robotService);
-$planService = new TradingPlanService($planRepo, $symbolRepo);
+$planService = new TradingPlanService($planRepo, $symbolRepo, $planAdherenceEvaluator);
 $planController = new TradingPlanController($planService);
 $tvWebhookIngestRateLimit = new RateLimitMiddleware(
     $rateLimitRepo,
@@ -567,6 +578,8 @@ $router->post('/plans', [$planController, 'store'], [$authMiddleware, $requireSu
 $router->get('/plans/{id}', [$planController, 'show'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
 $router->put('/plans/{id}', [$planController, 'update'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
 $router->delete('/plans/{id}', [$planController, 'destroy'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
+// Lecture seule : confronte une saisie en cours au plan, sans rien écrire (docs/102).
+$router->post('/plans/{id}/evaluate', [$planController, 'evaluate'], [$authMiddleware, $requireSubscription, $plansFeatureFlag]);
 
 // ── Stats ─────────────────────────────────────────────────────
 $statsRepo = new StatsRepository($pdo);

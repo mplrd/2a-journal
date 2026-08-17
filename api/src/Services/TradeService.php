@@ -18,9 +18,6 @@ use App\Repositories\PositionRepository;
 use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
-use App\Repositories\TradingPlanRepository;
-use DateTimeImmutable;
-use DateTimeZone;
 use PDO;
 use Throwable;
 
@@ -37,11 +34,7 @@ class TradeService
     private ?CustomFieldService $customFieldService;
     private ?DrawdownService $drawdownService;
     private ?PDO $pdo;
-    private ?TradingPlanRepository $planRepo;
-    private ?PlanEvaluator $planEvaluator;
-    private ?SignalRiskCalculator $riskCalculator;
-    private ?PlanOpenRiskCalculator $openRiskCalculator;
-    private ?SymbolResolver $symbolResolver;
+    private ?PlanAdherenceEvaluator $adherenceEvaluator;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -53,11 +46,7 @@ class TradeService
         ?CustomFieldService $customFieldService = null,
         ?DrawdownService $drawdownService = null,
         ?PDO $pdo = null,
-        ?TradingPlanRepository $planRepo = null,
-        ?PlanEvaluator $planEvaluator = null,
-        ?SignalRiskCalculator $riskCalculator = null,
-        ?PlanOpenRiskCalculator $openRiskCalculator = null,
-        ?SymbolResolver $symbolResolver = null
+        ?PlanAdherenceEvaluator $adherenceEvaluator = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -68,11 +57,7 @@ class TradeService
         $this->customFieldService = $customFieldService;
         $this->drawdownService = $drawdownService;
         $this->pdo = $pdo;
-        $this->planRepo = $planRepo;
-        $this->planEvaluator = $planEvaluator;
-        $this->riskCalculator = $riskCalculator;
-        $this->openRiskCalculator = $openRiskCalculator;
-        $this->symbolResolver = $symbolResolver;
+        $this->adherenceEvaluator = $adherenceEvaluator;
     }
 
     public function create(int $userId, array $data): array
@@ -763,48 +748,27 @@ class TradeService
         string $openedAt,
         ?int $excludePositionId = null
     ): array {
-        if ($planId === null) {
-            return ['plan_id' => null, 'plan_adherence' => null, 'plan_adherence_reason' => null];
-        }
         // Plan feature not wired in this context: keep the link, no verdict.
-        if ($this->planRepo === null || $this->planEvaluator === null) {
+        if ($this->adherenceEvaluator === null) {
             return ['plan_id' => $planId, 'plan_adherence' => null, 'plan_adherence_reason' => null];
         }
-        if (!$this->planRepo->isOwnedAndActive($userId, $planId)) {
-            throw new ValidationException('trades.error.invalid_plan', 'plan_id');
-        }
-        $plan = $this->planRepo->findByIdAssembled($planId);
-        if ($plan === null) {
-            throw new ValidationException('trades.error.invalid_plan', 'plan_id');
-        }
 
-        // Same normalisation as the robot path: what is stored may be the
-        // broker's symbol for the asset the plan targets (docs/99).
-        $asset = $this->symbolResolver?->resolve($userId, $symbol);
-        $symbol = $asset !== null ? (string) $asset['code'] : $symbol;
-
-        $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
-
-        // Only walk the plan's open positions when it actually caps their sum.
-        // Editing an open trade excludes itself: it is already part of the
-        // exposure, and its risk is about to be counted again as the signal's.
-        $openRiskPercent = ($plan['max_plan_risk_percent'] ?? null) !== null
-            ? $this->openRiskCalculator?->computePercent($userId, $accountId, $planId, $excludePositionId)
-            : null;
-
-        $tz = $plan['timezone'] ?? null;
-        try {
-            $now = new DateTimeImmutable($openedAt, $tz !== null ? new DateTimeZone($tz) : null);
-        } catch (Throwable) {
-            $now = new DateTimeImmutable('now');
-        }
-
-        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now, $openRiskPercent);
-        return [
-            'plan_id' => $planId,
-            'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,
-            'plan_adherence_reason' => $reason,
-        ];
+        // A trade is judged at its opening, read as plan-local wall clock; an
+        // open trade excludes itself from the plan's cumulative risk, being
+        // already part of it.
+        return $this->adherenceEvaluator->evaluate(
+            $userId,
+            $accountId,
+            $planId,
+            $direction,
+            $symbol,
+            $entryPrice,
+            $size,
+            $slPoints,
+            $openedAt,
+            $excludePositionId,
+            'trades.error.invalid_plan',
+        );
     }
 
     private function validatePartialPositionFields(array $data): void

@@ -19,9 +19,6 @@ use App\Repositories\SetupRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 use App\Services\Broker\BrokerTargetBuilder;
-use App\Repositories\TradingPlanRepository;
-use DateTimeImmutable;
-use Throwable;
 
 class OrderService
 {
@@ -31,11 +28,7 @@ class OrderService
     private StatusHistoryRepository $historyRepo;
     private TradeRepository $tradeRepo;
     private ?SetupRepository $setupRepo;
-    private ?TradingPlanRepository $planRepo;
-    private ?PlanEvaluator $planEvaluator;
-    private ?SignalRiskCalculator $riskCalculator;
-    private ?PlanOpenRiskCalculator $openRiskCalculator;
-    private ?SymbolResolver $symbolResolver;
+    private ?PlanAdherenceEvaluator $adherenceEvaluator;
 
     public function __construct(
         OrderRepository $orderRepo,
@@ -44,11 +37,7 @@ class OrderService
         StatusHistoryRepository $historyRepo,
         TradeRepository $tradeRepo,
         ?SetupRepository $setupRepo = null,
-        ?TradingPlanRepository $planRepo = null,
-        ?PlanEvaluator $planEvaluator = null,
-        ?SignalRiskCalculator $riskCalculator = null,
-        ?PlanOpenRiskCalculator $openRiskCalculator = null,
-        ?SymbolResolver $symbolResolver = null
+        ?PlanAdherenceEvaluator $adherenceEvaluator = null
     ) {
         $this->orderRepo = $orderRepo;
         $this->positionRepo = $positionRepo;
@@ -56,11 +45,7 @@ class OrderService
         $this->historyRepo = $historyRepo;
         $this->tradeRepo = $tradeRepo;
         $this->setupRepo = $setupRepo;
-        $this->planRepo = $planRepo;
-        $this->planEvaluator = $planEvaluator;
-        $this->riskCalculator = $riskCalculator;
-        $this->openRiskCalculator = $openRiskCalculator;
-        $this->symbolResolver = $symbolResolver;
+        $this->adherenceEvaluator = $adherenceEvaluator;
     }
 
     public function create(int $userId, array $data): array
@@ -367,44 +352,25 @@ class OrderService
         float $size,
         float $slPoints
     ): array {
-        if ($planId === null) {
-            return ['plan_id' => null, 'plan_adherence' => null, 'plan_adherence_reason' => null];
-        }
-        if ($this->planRepo === null || $this->planEvaluator === null) {
+        // Plan feature not wired in this context: keep the link, no verdict.
+        if ($this->adherenceEvaluator === null) {
             return ['plan_id' => $planId, 'plan_adherence' => null, 'plan_adherence_reason' => null];
         }
-        if (!$this->planRepo->isOwnedAndActive($userId, $planId)) {
-            throw new ValidationException('orders.error.invalid_plan', 'plan_id');
-        }
-        $plan = $this->planRepo->findByIdAssembled($planId);
-        if ($plan === null) {
-            throw new ValidationException('orders.error.invalid_plan', 'plan_id');
-        }
 
-        // Same normalisation as the robot path: what is stored may be the
-        // broker's symbol for the asset the plan targets (docs/99).
-        $asset = $this->symbolResolver?->resolve($userId, $symbol);
-        $symbol = $asset !== null ? (string) $asset['code'] : $symbol;
-
-        $riskPercent = $this->riskCalculator?->computePercent($userId, $accountId, $symbol, $size, $slPoints);
-
-        // Only walk the plan's open positions when it actually caps their sum.
-        $openRiskPercent = ($plan['max_plan_risk_percent'] ?? null) !== null
-            ? $this->openRiskCalculator?->computePercent($userId, $accountId, $planId)
-            : null;
-
-        try {
-            $now = new DateTimeImmutable('now');
-        } catch (Throwable) {
-            $now = new DateTimeImmutable();
-        }
-
-        $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now, $openRiskPercent);
-        return [
-            'plan_id' => $planId,
-            'plan_adherence' => $reason === null ? PlanAdherence::IN_PLAN->value : PlanAdherence::OUT_OF_PLAN->value,
-            'plan_adherence_reason' => $reason,
-        ];
+        // No $at: an order is judged at the instant it is placed.
+        return $this->adherenceEvaluator->evaluate(
+            $userId,
+            $accountId,
+            $planId,
+            $direction,
+            $symbol,
+            $entryPrice,
+            $size,
+            $slPoints,
+            null,
+            null,
+            'orders.error.invalid_plan',
+        );
     }
 
     private function validatePositionFields(array $data): void

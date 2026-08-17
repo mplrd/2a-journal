@@ -11,6 +11,7 @@ use App\Repositories\PositionRepository;
 use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\TradingPlanRepository;
+use App\Services\PlanAdherenceEvaluator;
 use App\Services\PlanEvaluator;
 use App\Services\SignalRiskCalculator;
 use App\Services\TradeService;
@@ -133,9 +134,7 @@ class TradeServiceTest extends TestCase
             null,
             null,
             null,
-            $planRepo,
-            new PlanEvaluator(),
-            $riskCalc,
+            new PlanAdherenceEvaluator($planRepo, new PlanEvaluator(), $riskCalc),
         );
     }
 

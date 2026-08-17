@@ -4,10 +4,20 @@ namespace Tests\Integration\Plans;
 
 use App\Core\Database;
 use App\Enums\PlanStatus;
+use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
+use App\Repositories\AccountRepository;
+use App\Repositories\PositionRepository;
 use App\Repositories\RobotRepository;
+use App\Repositories\SymbolAccountSettingsRepository;
+use App\Repositories\SymbolAliasRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\TradingPlanRepository;
+use App\Services\PlanAdherenceEvaluator;
+use App\Services\PlanEvaluator;
+use App\Services\PlanOpenRiskCalculator;
+use App\Services\SignalRiskCalculator;
+use App\Services\SymbolResolver;
 use App\Services\TradingPlanService;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -35,7 +45,26 @@ class TradingPlanServiceTest extends TestCase
 
         $this->repo = new TradingPlanRepository($this->pdo);
         $this->robotRepo = new RobotRepository($this->pdo);
-        $this->service = new TradingPlanService($this->repo, new SymbolRepository($this->pdo));
+        $symbolRepo = new SymbolRepository($this->pdo);
+        // Same assembly as production, so the preview and the recorded verdict
+        // can never disagree (docs/102).
+        $resolver = new SymbolResolver($symbolRepo, new SymbolAliasRepository($this->pdo));
+        $riskCalculator = new SignalRiskCalculator(
+            $resolver,
+            new SymbolAccountSettingsRepository($this->pdo),
+            new AccountRepository($this->pdo),
+        );
+        $this->service = new TradingPlanService(
+            $this->repo,
+            $symbolRepo,
+            new PlanAdherenceEvaluator(
+                $this->repo,
+                new PlanEvaluator(),
+                $riskCalculator,
+                new PlanOpenRiskCalculator(new PositionRepository($this->pdo), $riskCalculator),
+                $resolver,
+            ),
+        );
 
         $this->userId = $this->seedUser('plan-owner@test.com');
         $this->otherUserId = $this->seedUser('plan-intruder@test.com');
@@ -276,6 +305,102 @@ class TradingPlanServiceTest extends TestCase
     {
         $this->expectException(ValidationException::class);
         $this->service->create($this->userId, $this->fullPlanData(['max_risk_percent' => 1000]));
+    }
+
+    // ── Simulation à la saisie (docs/102) ─────────────────────────
+    // Le verdict n'arrivait qu'après enregistrement, sous forme de badge : un
+    // constat, pas une alerte. Ici on le demande AVANT, et sans rien écrire.
+
+    public function testADraftInsideThePlanIsAnnouncedAsSuch(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $verdict = $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+            'opened_at' => '2026-07-20 10:00:00', // lundi, dans la fenêtre
+        ]);
+
+        $this->assertSame('IN_PLAN', $verdict['plan_adherence']);
+        $this->assertNull($verdict['plan_adherence_reason']);
+    }
+
+    public function testADraftOutsideThePlanComesBackWithItsReason(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $verdict = $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 30000,
+            'opened_at' => '2026-07-20 10:00:00',
+        ]);
+
+        $this->assertSame('OUT_OF_PLAN', $verdict['plan_adherence']);
+        $this->assertStringContainsString('24500-24550', (string) $verdict['plan_adherence_reason']);
+    }
+
+    public function testSimulatingWritesNothing(): void
+    {
+        // Read-only is the whole contract: the form calls this on every keystroke.
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+        $before = $this->pdo->query('SELECT COUNT(*) FROM positions')->fetchColumn();
+
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 30000,
+        ]);
+
+        $this->assertSame($before, $this->pdo->query('SELECT COUNT(*) FROM positions')->fetchColumn());
+    }
+
+    public function testAHalfFilledFormStillGetsAnAnswer(): void
+    {
+        // No size, no stop: the risk filters simply stay inactive, as everywhere
+        // else. Refusing to answer would leave the user with nothing.
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData([
+            'max_risk_percent' => 1.0,
+        ]))['id'];
+
+        $verdict = $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+            'opened_at' => '2026-07-20 10:00:00',
+        ]);
+
+        $this->assertSame('IN_PLAN', $verdict['plan_adherence']);
+    }
+
+    public function testSimulatingAnotherUsersPlanIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $this->expectException(ForbiddenException::class);
+        $this->service->evaluateDraft($this->otherUserId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'direction' => 'BUY',
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ]);
+    }
+
+    public function testADraftWithoutADirectionIsRefused(): void
+    {
+        $planId = (int) $this->service->create($this->userId, $this->fullPlanData())['id'];
+
+        $this->expectException(ValidationException::class);
+        $this->service->evaluateDraft($this->userId, $planId, [
+            'account_id' => $this->seedAccount($this->userId),
+            'symbol' => 'DAX',
+            'entry_price' => 24200,
+        ]);
     }
 
     // ── Helpers ───────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import { Direction } from '@/constants/enums'
 import { useSymbolsStore } from '@/stores/symbols'
 import { useToast } from 'primevue/usetoast'
 import SymbolForm from '@/components/symbol/SymbolForm.vue'
+import { usePlanPreview } from '@/composables/usePlanPreview'
 import { useSharePreview } from '@/composables/useSharePreview'
 import { useNumberLocale } from '@/composables/useNumberLocale'
 
@@ -58,6 +59,23 @@ const planOptions = computed(() => [
   { label: t('orders.no_plan'), value: null },
   ...props.plans.map((p) => ({ label: p.name, value: p.id })),
 ])
+
+// Say it BEFORE saving, not after (docs/102). No opened_at: an order is judged
+// at the instant it is placed, which is what the server assumes when it is
+// absent. Purely informative — the save never waits on it.
+const { planVerdict, planChecking, schedulePlanCheck } = usePlanPreview()
+watch(
+  () => [form.value.plan_id, form.value.account_id, form.value.direction, form.value.symbol,
+         form.value.entry_price, form.value.size, form.value.sl_points],
+  () => schedulePlanCheck(form.value.plan_id, {
+    account_id: form.value.account_id,
+    direction: form.value.direction,
+    symbol: form.value.symbol,
+    entry_price: form.value.entry_price,
+    size: form.value.size,
+    sl_points: form.value.sl_points,
+  }),
+)
 
 function getDefaultForm() {
   return {
@@ -250,7 +268,21 @@ async function handleSymbolCreate(data) {
           class="w-full"
           data-testid="order-plan-select"
         />
-        <p class="text-xs text-gray-400 mt-1">{{ t('orders.plan_hint') }}</p>
+        <!-- Verdict before saving, never blocking (docs/102). -->
+        <p
+          v-if="planVerdict"
+          class="text-xs mt-1 flex items-start gap-1"
+          :class="planVerdict.plan_adherence === 'IN_PLAN' ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'"
+          data-testid="order-plan-verdict"
+        >
+          <i :class="planVerdict.plan_adherence === 'IN_PLAN' ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle'" class="mt-0.5" />
+          <span>
+            {{ planVerdict.plan_adherence === 'IN_PLAN' ? t('orders.adherence.preview_in') : t('orders.adherence.preview_out') }}
+            <template v-if="planVerdict.plan_adherence_reason"> — {{ planVerdict.plan_adherence_reason }}</template>
+          </span>
+        </p>
+        <p v-else-if="planChecking" class="text-xs text-gray-400 mt-1">{{ t('orders.adherence.preview_checking') }}</p>
+        <p v-else class="text-xs text-gray-400 mt-1">{{ t('orders.plan_hint') }}</p>
       </div>
 
       <div class="grid grid-cols-2 gap-4">

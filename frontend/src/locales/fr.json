@@ -414,7 +414,10 @@
     "adherence": {
       "in_plan": "Dans le plan",
       "out_of_plan": "Hors plan",
-      "none": "Sans plan"
+      "none": "Sans plan",
+      "preview_in": "Cet ordre rentre dans le plan.",
+      "preview_out": "Cet ordre sort du plan",
+      "preview_checking": "Vérification du plan…"
     },
     "expires_at": "Expiration",
     "execute": "Exécuter",
@@ -476,6 +479,9 @@
       "in_plan": "Dans le plan",
       "out_of_plan": "Hors plan",
       "none": "Sans plan",
+      "preview_in": "Ce trade rentre dans le plan.",
+      "preview_out": "Ce trade sort du plan",
+      "preview_checking": "Vérification du plan…",
       "frozen_hint": "Verdict figé au moment où le plan a été rattaché. Modifier le plan ou le trade ne le change pas : utilisez le bouton de réévaluation.",
       "reevaluate": "Réévaluer contre le plan actuel",
       "reevaluated": "Verdict réévalué"
@@ -1266,6 +1272,8 @@
       "invalid_symbol": "Actif inconnu. Choisissez-en un dans la liste.",
       "invalid_timezone": "Fuseau horaire invalide.",
       "invalid_risk": "Le risque max doit être supérieur à 0.",
+      "invalid_price": "Prix d'entrée invalide.",
+      "invalid_account": "Compte invalide.",
       "invalid_plan_risk": "Le risque max cumulé doit être supérieur à 0.",
       "invalid_zone": "Zone invalide (sens et bornes > 0 requis).",
       "too_many_zones": "Trop de zones définies.",

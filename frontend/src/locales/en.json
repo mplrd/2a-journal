@@ -414,7 +414,10 @@
     "adherence": {
       "in_plan": "In plan",
       "out_of_plan": "Out of plan",
-      "none": "No plan"
+      "none": "No plan",
+      "preview_in": "This order fits the plan.",
+      "preview_out": "This order steps outside the plan",
+      "preview_checking": "Checking the plan…"
     },
     "expires_at": "Expires at",
     "execute": "Execute",
@@ -476,6 +479,9 @@
       "in_plan": "In plan",
       "out_of_plan": "Out of plan",
       "none": "No plan",
+      "preview_in": "This trade fits the plan.",
+      "preview_out": "This trade steps outside the plan",
+      "preview_checking": "Checking the plan…",
       "frozen_hint": "Verdict frozen when the plan was attached. Editing the plan or the trade does not change it — use the re-evaluate button.",
       "reevaluate": "Re-evaluate against the current plan",
       "reevaluated": "Verdict re-evaluated"
@@ -1266,6 +1272,8 @@
       "invalid_symbol": "Unknown asset. Pick one from the list.",
       "invalid_timezone": "Invalid timezone.",
       "invalid_risk": "Max risk must be greater than 0.",
+      "invalid_price": "Invalid entry price.",
+      "invalid_account": "Invalid account.",
       "invalid_plan_risk": "Max cumulative risk must be greater than 0.",
       "invalid_zone": "Invalid zone (direction and bounds > 0 required).",
       "too_many_zones": "Too many zones defined.",

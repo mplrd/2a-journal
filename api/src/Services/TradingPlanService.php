@@ -28,6 +28,7 @@ class TradingPlanService
     public function __construct(
         private TradingPlanRepository $repo,
         private SymbolRepository $symbolRepo,
+        private ?PlanAdherenceEvaluator $adherenceEvaluator = null,
     ) {}
 
     /** @return array<int,array> assembled active plans of the user */
@@ -83,6 +84,67 @@ class TradingPlanService
         $this->repo->replaceWindows($planId, $clean['windows']);
 
         return $this->repo->findByIdAssembled($planId);
+    }
+
+    /**
+     * Confront a contemplated entry with a plan, WITHOUT writing anything
+     * (docs/102). Feeds the inline warning under the plan selector, so the user
+     * sees they are stepping outside their frame while there is still time to
+     * change their mind — the badge only ever told them afterwards.
+     *
+     * Same evaluator as the real thing, deliberately: a preview that disagreed
+     * with the verdict recorded a second later would be worse than no preview.
+     *
+     * @return array{plan_adherence:string, plan_adherence_reason:?string}
+     */
+    public function evaluateDraft(int $userId, int $planId, array $data): array
+    {
+        if ($this->adherenceEvaluator === null) {
+            throw new ValidationException('plan.error.feature_disabled', 'plan_id');
+        }
+        $this->findOwnedPlan($userId, $planId);
+
+        $direction = $this->nullableString($data['direction'] ?? null);
+        if ($direction === null || Direction::tryFrom($direction) === null) {
+            throw new ValidationException('plan.error.invalid_direction', 'direction');
+        }
+
+        $symbol = $this->nullableString($data['symbol'] ?? null);
+        if ($symbol === null || mb_strlen($symbol) > 50) {
+            throw new ValidationException('plan.error.invalid_symbol', 'symbol');
+        }
+
+        $entryPrice = $this->nullableFloat($data['entry_price'] ?? null);
+        if ($entryPrice === null || $entryPrice <= 0) {
+            throw new ValidationException('plan.error.invalid_price', 'entry_price');
+        }
+
+        $accountId = (int) ($data['account_id'] ?? 0);
+        if ($accountId <= 0) {
+            throw new ValidationException('plan.error.invalid_account', 'account_id');
+        }
+
+        // Size, stop and time are optional: a half-filled form must still say
+        // what it can. Missing ones simply leave the risk filters inactive,
+        // which is the rule everywhere else too.
+        $verdict = $this->adherenceEvaluator->evaluate(
+            $userId,
+            $accountId,
+            $planId,
+            $direction,
+            $symbol,
+            $entryPrice,
+            (float) ($this->nullableFloat($data['size'] ?? null) ?? 0),
+            (float) ($this->nullableFloat($data['sl_points'] ?? null) ?? 0),
+            $this->nullableString($data['opened_at'] ?? null),
+            null,
+            'plan.error.not_found',
+        );
+
+        return [
+            'plan_adherence' => $verdict['plan_adherence'],
+            'plan_adherence_reason' => $verdict['plan_adherence_reason'],
+        ];
     }
 
     /** Soft-delete. Refused while an active robot still references the plan. */
