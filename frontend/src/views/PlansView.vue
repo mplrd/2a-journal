@@ -104,6 +104,10 @@ function hasFilter(plan) {
 function capped(list) {
   return { shown: list.slice(0, MAX_SUMMARY_CHIPS), extra: Math.max(0, list.length - MAX_SUMMARY_CHIPS) }
 }
+// What a zone is for, then the bound rule — the surprise ("I typed 24400 then
+// 24000 and it flipped") lands on the same field, so it belongs in the same
+// help bubble rather than a second icon beside the first.
+const zonesHelp = computed(() => `${t('plan.zones_hint')} ${t('plan.zone_bounds_hint')}`)
 
 async function load() {
   loading.value = true
@@ -323,7 +327,7 @@ onMounted(load)
           <div class="flex items-center justify-between mb-2">
             <label class="flex items-center gap-1 text-sm font-medium">
               {{ t('plan.field.zones') }}
-              <FieldHelpIcon :text="t('plan.zones_hint')" testid="plan-zones-help" />
+              <FieldHelpIcon :text="zonesHelp" testid="plan-zones-help" />
             </label>
             <Button icon="pi pi-plus" :label="t('plan.add_zone')" size="small" text data-testid="plan-add-zone" @click="addZone" />
           </div>
@@ -339,7 +343,10 @@ onMounted(load)
         <!-- Time windows -->
         <div>
           <div class="flex items-center justify-between mb-2">
-            <label class="text-sm font-medium">{{ t('plan.field.windows') }}</label>
+            <label class="flex items-center gap-1 text-sm font-medium">
+              {{ t('plan.field.windows') }}
+              <FieldHelpIcon :text="t('plan.windows_hint')" testid="plan-windows-help" />
+            </label>
             <Button icon="pi pi-plus" :label="t('plan.add_window')" size="small" text data-testid="plan-add-window" @click="addWindow" />
           </div>
           <div v-if="form.windows.length" class="mb-3">
@@ -381,6 +388,21 @@ onMounted(load)
             <InputNumber v-model="form.max_plan_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_plan_risk_placeholder')" data-testid="plan-plan-risk-input" />
           </div>
         </div>
+
+        <!-- Both caps are read in percent of capital, which the point value
+             converts to. Naming where it is set only helps if you can go there —
+             in a new tab, because this editor is a dialog holding an unsaved
+             draft that navigating away would drop without warning. -->
+        <p class="text-xs text-gray-400">
+          {{ t('plan.point_value_note') }}
+          <RouterLink
+            :to="{ name: 'account', query: { tab: 'assets' } }"
+            target="_blank"
+            rel="noopener"
+            class="text-brand-green-700 dark:text-brand-green-400 hover:underline"
+            data-testid="plan-point-value-link"
+          >{{ t('plan.point_value_link') }}</RouterLink>
+        </p>
       </div>
 
       <template #footer>

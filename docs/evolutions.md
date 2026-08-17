@@ -223,6 +223,29 @@ Les fallbacks `??` empêchent l'erreur fatale, mais si BingX utilise d'autres no
 
 ## UX / vocabulaire
 
+### Raison du refus d'un plan : localiser une phrase produite en anglais
+
+**Contexte** : `PlanEvaluator` ne renvoie pas une clé mais une **phrase anglaise**
+toute faite (`entry 25648 outside BUY zones (24000-24400)`, `Mon not a trading
+day`, `plan risk 5.300% (open 4.000% + signal 1.300%) exceeds plan max 5.000%`, et
+cinq autres). Elle est affichée telle quelle dans le badge d'un trade, son
+infobulle, l'alerte de saisie (doc 102) et le journal d'événements du webhook —
+c'est le texte le plus lu de la fonctionnalité. Le lot 5 (doc 103) a repris tout
+le reste du vocabulaire mais ne pouvait pas toucher celui-là.
+
+**À faire** : renvoyer une clé i18n + des paramètres au lieu d'une phrase, et
+trancher le sort des raisons **déjà écrites en base**
+(`positions.plan_adherence_reason`, `VARCHAR(255)`) : le verdict étant figé
+(doc 101), elles ne peuvent pas être régénérées. Deux options — les laisser telles
+quelles et n'appliquer le nouveau format qu'aux nouvelles, ou stocker désormais la
+clé et ses paramètres (JSON) en gardant un rendu de repli pour les anciennes.
+
+**Repéré le** : 2026-08-17 (pendant le lot 5 du chantier plans).
+**Priorité** : moyenne — pas bloquant, mais c'est la phrase que l'utilisateur lit
+au moment précis où il cherche à comprendre un refus.
+
+---
+
 ### Incohérence « symbole » vs « actif » dans grilles et modales
 
 **Contexte** : aujourd'hui les labels i18n parlent de `positions.symbol` / `trades.symbol` (« Symbole ») dans les grilles trades/positions, les en-têtes de colonnes, et les modales (TradeForm, CloseTradeDialog, etc.), alors que la valeur affichée est en fait le **code de l'actif** (NASDAQ, BTCUSD, EURUSD, …) — c'est-à-dire le ticker / le nom commun de l'instrument, pas un « symbole » au sens graphique.

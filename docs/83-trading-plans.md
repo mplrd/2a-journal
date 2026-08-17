@@ -63,6 +63,7 @@ Le plan sert aussi **hors robot** : un **ordre** planifié ou un **trade** saisi
 - **Alerte à la saisie** : le formulaire interroge `POST /plans/{id}/evaluate` (lecture seule) pendant la frappe et affiche le verdict **avant** enregistrement, sous le sélecteur de plan — vert « rentre dans le plan », ambre « sort du plan » + raison. Jamais bloquant (cf. [102](102-plan-alerte-a-la-saisie.md)). L'assemblage est partagé par les trades, les ordres et cette simulation dans `PlanAdherenceEvaluator`.
 - **UI** : sélecteur de plan optionnel dans les formulaires **ordre et trade** (masqué si aucun plan / feature off), badge d'adhérence dans les listes ordres et trades (vert « Dans le plan » / ambre « Hors plan » + raison en tooltip), et filtre `Dans le plan / Hors plan / Sans plan`. Dans la liste des plans, les zones sont colorées par sens avec une flèche (↑ achat vert, ↓ vente rouge).
 - **Migration** : `034_trade_plan_adherence.sql` (additive, idempotente via `INFORMATION_SCHEMA`, compatible MariaDB local + MySQL prod). Enum `PlanAdherence`.
+- **Vocabulaire** : le verdict s'écrit de la même façon sur les trois écrans qui le montrent (badge trade, badge ordre, journal du webhook), et un test de parité des locales le vérifie — cf. [103](103-plan-vocabulaire.md). La **raison** du refus, elle, reste produite en anglais par `PlanEvaluator` : sa localisation est au backlog.
 
 ## Pipeline d'ingestion (où le plan s'insère)
 
