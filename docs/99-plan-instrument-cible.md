@@ -50,16 +50,38 @@ héritent — c'est le modèle mental « mon plan Nasdaq ». Un robot qui suit
 plusieurs marchés attache plusieurs plans, ce qui est exactement le cas d'usage
 que la doc 83 décrivait déjà.
 
-### Migration 042 — additive et réversible de fait
+### Migration 042 — une clé étrangère, pas une recopie
 
-`trading_plans.symbol VARCHAR(50) NULL` (même type que `positions.symbol`),
-gardée par `INFORMATION_SCHEMA` pour rester idempotente sur MariaDB comme sur
-MySQL.
+`trading_plans.symbol_id INT UNSIGNED NULL` + `FOREIGN KEY (symbol_id)
+REFERENCES symbols(id) ON DELETE RESTRICT`, gardée par `INFORMATION_SCHEMA` pour
+rester idempotente sur MariaDB comme sur MySQL.
 
-**`NULL` = tous les instruments**, ce qui est le comportement d'avant. Les plans
-déjà en base ne changent donc pas de sens : personne ne voit son robot se mettre
-à refuser des signaux du jour au lendemain. L'utilisateur resserre son plan quand
-il le décide.
+> ⚠️ **La première version de cette migration posait `symbol VARCHAR(50)`**, en
+> copiant le motif de `positions.symbol` et `symbol_aliases.journal_symbol`.
+> C'était une faute : `symbols.code` est modifiable depuis *Mes actifs*, et rien
+> ne propageait le changement — renommer `DE40.CASH` en `GER40` laissait le plan
+> viser un code que plus rien ne portait, donc **ne matcher aucun signal, en
+> silence**. `symbol_account_settings`, juste à côté, référençait pourtant déjà
+> l'actif par `symbol_id` avec une FK. La migration a été réécrite avant tout
+> merge : elle n'a jamais tourné ailleurs qu'en local.
+
+`ON DELETE RESTRICT`, et pas `SET NULL` : `NULL` veut dire « tous les actifs »,
+donc une suppression **élargirait** le filtre au lieu de le supprimer. Un
+garde-fou ne doit jamais s'ouvrir tout seul. Les actifs étant supprimés en
+douceur (`deleted_at`), la contrainte ne se déclenche qu'en suppression
+définitive.
+
+**`NULL` = tous les actifs**, ce qui est le comportement d'avant. Les plans déjà
+en base ne changent donc pas de sens : personne ne voit son robot se mettre à
+refuser des signaux du jour au lendemain.
+
+### Le code de l'actif n'est jamais stocké sur le plan
+
+`TradingPlanRepository` lit le plan avec une jointure sur `symbols` et expose
+`symbol` = le code **courant** de l'actif. L'API continue donc d'accepter et de
+renvoyer un code, le front n'a pas bougé, et les deux côtés de la comparaison de
+`PlanEvaluator` viennent désormais de la **même ligne `symbols`** : ils ne
+peuvent plus diverger.
 
 ### Le filtre
 

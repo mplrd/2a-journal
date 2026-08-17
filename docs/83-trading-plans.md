@@ -28,7 +28,7 @@ Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** 
 
 | Filtre | Champ | Règle | Inactif si |
 |---|---|---|---|
-| **Actif** | `symbol` | L'actif du signal doit être celui que vise le plan | `NULL` (tous actifs) — **plus proposé à l'écran**, cf. [99](99-plan-instrument-cible.md) |
+| **Actif** | `symbol_id` | L'actif du signal doit être celui que vise le plan | `NULL` (tous actifs) — **plus proposé à l'écran**, cf. [99](99-plan-instrument-cible.md) |
 | **Sens** | `allowed_direction` | Le sens du signal doit être celui autorisé | `NULL` (les deux sens) |
 | **Zones de prix** | `trading_plan_zones[]` | Pour le sens du signal : s'il existe ≥1 zone de ce sens, l'`entry_price` doit tomber dans au moins une | aucune zone pour ce sens |
 | **Fenêtres horaires** | `trading_plan_windows[]` | L'heure du signal (en TZ du plan) doit tomber dans ≥1 fenêtre | aucune fenêtre |
@@ -81,7 +81,7 @@ Le rejet est tracé dans `tradingview_alert_events` (audit visible dans l'histor
 
 ## Modèle de données (migration 033)
 
-- **`trading_plans`** : `id, user_id, name, symbol VARCHAR(50) NULL, allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, max_plan_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`. La colonne `symbol` est ajoutée par la **migration 042** (cf. [99](99-plan-instrument-cible.md)), `max_plan_risk_percent` par la **migration 043** (cf. [100](100-plan-risque-cumule.md)).
+- **`trading_plans`** : `id, user_id, name, symbol_id INT UNSIGNED NULL (FK → symbols.id, ON DELETE RESTRICT), allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, max_plan_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`. La colonne `symbol_id` est ajoutée par la **migration 042** (cf. [99](99-plan-instrument-cible.md)), `max_plan_risk_percent` par la **migration 043** (cf. [100](100-plan-risque-cumule.md)). L'API expose `symbol` (le **code** de l'actif) via une jointure : il n'est jamais recopié sur le plan.
 - **`trading_plan_zones`** : `id, plan_id FK, direction ENUM('BUY','SELL'), low_price DECIMAL(15,5), high_price DECIMAL(15,5)`.
 - **`trading_plan_windows`** : `id, plan_id FK, days_mask SMALLINT UNSIGNED, start_time TIME, end_time TIME`.
 - **`robot_plans`** : `robot_id, plan_id, PK(robot_id, plan_id)`, FK cascade des deux côtés.

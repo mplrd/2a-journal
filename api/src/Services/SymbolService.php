@@ -15,15 +15,18 @@ class SymbolService
     private SymbolRepository $repo;
     private ?SymbolAccountSettingsRepository $settingsRepo;
     private ?AccountRepository $accountRepo;
+    private ?SymbolCodeRenamer $renamer;
 
     public function __construct(
         SymbolRepository $repo,
         ?SymbolAccountSettingsRepository $settingsRepo = null,
-        ?AccountRepository $accountRepo = null
+        ?AccountRepository $accountRepo = null,
+        ?SymbolCodeRenamer $renamer = null
     ) {
         $this->repo = $repo;
         $this->settingsRepo = $settingsRepo;
         $this->accountRepo = $accountRepo;
+        $this->renamer = $renamer;
     }
 
     public function list(int $userId, array $params = []): array
@@ -102,6 +105,14 @@ class SymbolService
             if ($softDeleted) {
                 $this->repo->hardDelete((int)$softDeleted['id']);
             }
+        }
+
+        // Le code d'un actif est recopié dans positions.symbol et
+        // symbol_aliases.journal_symbol, sans clé étrangère. Le changer sans
+        // propager détachait l'historique en silence (docs/evolutions.md).
+        $codeChanged = isset($data['code']) && $data['code'] !== $symbol['code'];
+        if ($codeChanged && $this->renamer !== null) {
+            return $this->renamer->rename((int) $symbol['id'], $userId, (string) $symbol['code'], $data);
         }
 
         return $this->repo->update((int)$symbol['id'], $data);

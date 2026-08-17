@@ -310,6 +310,24 @@ class PositionRepository
     }
 
     /**
+     * Carries every position of the user over to an asset's new code.
+     *
+     * positions.symbol is a bare copy of symbols.code with no foreign key, so
+     * renaming the asset without this left the history pointing at a code
+     * nothing carried: risk no longer computable, statistics split in two for
+     * one market. Returns the number of rows updated.
+     */
+    public function renameSymbolCode(int $userId, string $oldCode, string $newCode): int
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE positions SET symbol = :new WHERE user_id = :user_id AND symbol = :old'
+        );
+        $stmt->execute(['new' => $newCode, 'user_id' => $userId, 'old' => $oldCode]);
+
+        return $stmt->rowCount();
+    }
+
+    /**
      * Replaces a setup label inside the positions.setup JSON array for every
      * position of the given user that contains the old label. Each position
      * carries at most one occurrence of a given setup (UI-enforced), so a

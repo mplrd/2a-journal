@@ -105,6 +105,7 @@ use App\Services\SymbolService;
 use App\Services\PlanEvaluator;
 use App\Services\PlanOpenRiskCalculator;
 use App\Services\SignalRiskCalculator;
+use App\Services\SymbolCodeRenamer;
 use App\Services\SymbolResolver;
 use App\Services\TradeService;
 use App\Services\TradingPlanService;
@@ -239,7 +240,15 @@ $router->post('/billing/webhook', [$billingController, 'webhook']);
 // AccountRepository is reused by the Accounts section below; instantiate once here.
 $accountRepo = new AccountRepository($pdo);
 $symbolSettingsRepo = new SymbolAccountSettingsRepository($pdo);
-$symbolService = new SymbolService($symbolRepo, $symbolSettingsRepo, $accountRepo);
+// Renommer le code d'un actif entraîne ce qui l'a recopié : positions.symbol et
+// symbol_aliases.journal_symbol. Les plans, eux, référencent symbol_id par FK et
+// suivent tout seuls (docs/evolutions.md).
+$symbolService = new SymbolService(
+    $symbolRepo,
+    $symbolSettingsRepo,
+    $accountRepo,
+    new SymbolCodeRenamer($symbolRepo, new PositionRepository($pdo), new SymbolAliasRepository($pdo), $pdo),
+);
 $symbolController = new SymbolController($symbolService);
 
 $router->get('/symbols', [$symbolController, 'index'], [$authMiddleware, $requireSubscription]);

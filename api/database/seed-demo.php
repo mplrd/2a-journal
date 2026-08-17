@@ -146,10 +146,15 @@ echo "Created " . count($setups) . " setups\n";
 // both directions). Some seeded DAX orders/trades fall inside it, some outside,
 // so the adherence badge + filter have realistic data to show right away.
 // Le plan vise explicitement le DAX (migration 042, docs/99) : c'est ce que
-// $planAdherenceFor codait déjà en dur juste en dessous.
-$pdo->prepare("INSERT INTO trading_plans (user_id, name, symbol, timezone, status)
-    VALUES (:uid, 'DAX intraday', 'DAX', 'Europe/Paris', 'ACTIVE')")
-    ->execute(['uid' => $userId]);
+// $planAdherenceFor codait déjà en dur juste en dessous. Le plan référence
+// l'actif par son id, pas par une recopie de son code.
+$daxStmt = $pdo->prepare("SELECT id FROM symbols WHERE user_id = :uid AND code = 'DAX'");
+$daxStmt->execute(['uid' => $userId]);
+$daxId = (int) $daxStmt->fetchColumn();
+
+$pdo->prepare("INSERT INTO trading_plans (user_id, name, symbol_id, timezone, status)
+    VALUES (:uid, 'DAX intraday', :sid, 'Europe/Paris', 'ACTIVE')")
+    ->execute(['uid' => $userId, 'sid' => $daxId]);
 $planId = (int) $pdo->lastInsertId();
 
 $planZones = [

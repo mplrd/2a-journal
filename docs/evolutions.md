@@ -1042,6 +1042,32 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
+## `positions.symbol` et `symbol_aliases.journal_symbol` recopient un code au lieu de référencer l'actif
+
+**Contexte** : le code d'un actif (`symbols.code`) est **recopié en chaîne**, sans clé étrangère, dans deux tables :
+
+| Où | Colonne | Écrit par |
+|---|---|---|
+| positions | `positions.symbol` | chaque trade / ordre |
+| alias broker | `symbol_aliases.journal_symbol` | import CSV |
+
+`symbol_account_settings` référence pourtant l'actif proprement par `symbol_id` + FK, et `trading_plans` le fait aussi depuis la réécriture de la migration 042 (docs/99).
+
+Le symptôme immédiat — renommer un actif depuis *Mes actifs* détachait l'historique en silence — **est corrigé** : `SymbolCodeRenamer` propage le nouveau code aux deux tables dans la transaction du renommage. Mais c'est un **emplâtre** : tant que le lien est une chaîne, tout nouveau chemin d'écriture devra penser à propager, et rien dans le schéma ne l'y oblige.
+
+Restent d'ailleurs deux trous que la propagation ne bouche pas :
+
+- **la suppression** : `softDelete` laisse les alias derrière lui (c'est pourquoi `SymbolResolver` doit se défendre contre un alias pointant vers un actif disparu) ;
+- **les écritures hors service** : la synchro broker et l'import écrivent `positions.symbol` directement.
+
+**À faire** : faire pointer les deux colonnes sur `symbols.id` avec une FK. Chantier réel : migration + backfill (les codes non rattachés à un actif doivent en créer un), et reprise de tout ce qui filtre ou groupe par `positions.symbol` — stats, filtres, synchro broker, import.
+
+**Fichiers** : `api/database/schema.sql`, `api/src/Repositories/PositionRepository.php`, `api/src/Repositories/SymbolAliasRepository.php`, `api/src/Repositories/StatsRepository.php`, `api/src/Services/Import/ImportService.php`, `api/src/Services/Broker/`.
+
+**Repéré le** : 2026-08-17. **Priorité** : moyenne — le symptôme est traité, la dette de modèle reste.
+
+---
+
 ## Un actif ne porte qu'un seul symbole
 
 **Contexte** : deux tables cohabitent et il faut les distinguer.

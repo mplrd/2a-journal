@@ -52,7 +52,7 @@ class TradingPlanService
         $plan = $this->repo->create([
             'user_id' => $userId,
             'name' => $clean['name'],
-            'symbol' => $clean['symbol'],
+            'symbol_id' => $clean['symbol_id'],
             'allowed_direction' => $clean['allowed_direction'],
             'timezone' => $clean['timezone'],
             'max_risk_percent' => $clean['max_risk_percent'],
@@ -73,7 +73,7 @@ class TradingPlanService
 
         $this->repo->update($planId, [
             'name' => $clean['name'],
-            'symbol' => $clean['symbol'],
+            'symbol_id' => $clean['symbol_id'],
             'allowed_direction' => $clean['allowed_direction'],
             'timezone' => $clean['timezone'],
             'max_risk_percent' => $clean['max_risk_percent'],
@@ -98,7 +98,7 @@ class TradingPlanService
 
     // ── Validation / normalization ────────────────────────────────
 
-    /** @return array{name:string,symbol:?string,allowed_direction:?string,timezone:?string,max_risk_percent:?float,max_plan_risk_percent:?float,zones:array,windows:array} */
+    /** @return array{name:string,symbol_id:?int,allowed_direction:?string,timezone:?string,max_risk_percent:?float,max_plan_risk_percent:?float,zones:array,windows:array} */
     private function validate(int $userId, array $data): array
     {
         $name = trim((string) ($data['name'] ?? ''));
@@ -106,18 +106,19 @@ class TradingPlanService
             throw new ValidationException('plan.error.invalid_name', 'name');
         }
 
-        // Instrument ciblé, optionnel (NULL = tous). Il doit faire partie des
-        // actifs de l'utilisateur : une faute de frappe ferait autrement rejeter
-        // la totalité des signaux, sans que rien ne le signale. On stocke la
-        // forme canonique de l'actif pour que la comparaison au signal soit
-        // toujours faite sur la même écriture.
+        // Actif ciblé, optionnel (NULL = tous). L'API reçoit le CODE de l'actif,
+        // mais on stocke son ID. Le code est modifiable depuis « Mes actifs », et
+        // le recopier laisserait le plan viser un code que plus rien ne porte —
+        // donc ne matcher aucun signal, en silence. C'est le modèle de
+        // symbol_account_settings, qui pointe déjà symbol_id avec une FK.
+        $symbolId = null;
         $symbol = $this->nullableString($data['symbol'] ?? null);
         if ($symbol !== null) {
             $asset = $this->symbolRepo->findByUserAndCode($userId, $symbol);
             if ($asset === null) {
                 throw new ValidationException('plan.error.invalid_symbol', 'symbol');
             }
-            $symbol = (string) $asset['code'];
+            $symbolId = (int) $asset['id'];
         }
 
         $allowedDirection = $this->nullableString($data['allowed_direction'] ?? null);
@@ -151,7 +152,7 @@ class TradingPlanService
 
         return [
             'name' => $name,
-            'symbol' => $symbol,
+            'symbol_id' => $symbolId,
             'allowed_direction' => $allowedDirection,
             'timezone' => $timezone,
             'max_risk_percent' => $maxRisk,

@@ -70,6 +70,23 @@ class SymbolAliasRepository
         return count($rows) === 1 ? $rows[0] : null;
     }
 
+    /**
+     * Repoints the user's aliases at an asset's new code. journal_symbol copies
+     * symbols.code as a string rather than referencing symbols.id, so without
+     * this a rename orphaned every mapping — which is also why SymbolResolver
+     * has to guard against an alias pointing at an asset that no longer exists.
+     */
+    public function renameJournalSymbol(int $userId, string $oldCode, string $newCode): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE symbol_aliases SET journal_symbol = :new
+             WHERE user_id = :user_id AND journal_symbol = :old"
+        );
+        $stmt->execute(['new' => $newCode, 'user_id' => $userId, 'old' => $oldCode]);
+
+        return $stmt->rowCount();
+    }
+
     public function findAllByUserId(int $userId): array
     {
         $stmt = $this->pdo->prepare("SELECT * FROM symbol_aliases WHERE user_id = :user_id ORDER BY broker_symbol");
