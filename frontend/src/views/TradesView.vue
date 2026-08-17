@@ -104,13 +104,35 @@ function adherenceBadge(trade) {
   const inPlan = trade.plan_adherence === 'IN_PLAN'
   const status = inPlan ? t('trades.adherence.in_plan') : t('trades.adherence.out_of_plan')
   const planName = plans.value.find((p) => p.id === trade.plan_id)?.name
+  // The verdict is a snapshot of the plan as it stood when it was attached, and
+  // nothing on screen said so — the reporter of the ticket edited his plan,
+  // saw no change, and had no way to guess why (docs/101). The tooltip says it,
+  // and carries the reason the backend gave for a refusal.
+  const parts = [status, t('trades.adherence.frozen_hint')]
+  if (!inPlan && trade.plan_adherence_reason) parts.splice(1, 0, trade.plan_adherence_reason)
   return {
     // Show the plan name directly; colour + icon convey in/out. Tooltip stays
     // localized (the backend reason is English — full localization is backlogged).
     label: planName || status,
     severity: inPlan ? 'success' : 'warn',
     icon: inPlan ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle',
-    tooltip: status,
+    tooltip: parts.join(' — '),
+  }
+}
+
+// Recompute the verdict against the plan as it stands now. Deliberate on
+// purpose: a verdict that moved on its own would not be a snapshot any more.
+const reevaluating = ref(null)
+async function reevaluatePlan(trade) {
+  reevaluating.value = trade.id
+  try {
+    await tradesService.reevaluatePlan(trade.id)
+    toast.add({ severity: 'success', summary: t('trades.adherence.reevaluated'), life: 2500 })
+    await store.fetchTrades()
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err?.messageKey ?? 'error.internal'), life: 4000 })
+  } finally {
+    reevaluating.value = null
   }
 }
 
@@ -702,13 +724,24 @@ function openActionMenu(event, trade) {
       </Column>
       <Column v-if="!isCompact && plans.length" :header="t('trades.plan')">
         <template #body="{ data }">
-          <Tag
-            v-if="adherenceBadge(data)"
-            :value="adherenceBadge(data).label"
-            :severity="adherenceBadge(data).severity"
-            :icon="adherenceBadge(data).icon"
-            v-tooltip.top="adherenceBadge(data).tooltip"
-          />
+          <div v-if="adherenceBadge(data)" class="flex items-center gap-1">
+            <Tag
+              :value="adherenceBadge(data).label"
+              :severity="adherenceBadge(data).severity"
+              :icon="adherenceBadge(data).icon"
+              v-tooltip.top="adherenceBadge(data).tooltip"
+            />
+            <Button
+              icon="pi pi-refresh"
+              size="small"
+              text
+              rounded
+              :loading="reevaluating === data.id"
+              v-tooltip.top="t('trades.adherence.reevaluate')"
+              data-testid="trade-reevaluate-plan"
+              @click="reevaluatePlan(data)"
+            />
+          </div>
         </template>
       </Column>
       <Column field="pnl" :header="t('trades.pnl')">

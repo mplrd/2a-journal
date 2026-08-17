@@ -221,7 +221,9 @@ class PlanEvaluatorTest extends TestCase
         ]);
         $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ',1.0, null, $this->mondayTenUtc());
         $this->assertNotNull($reason);
-        $this->assertStringContainsStringIgnoringCase('window', $reason);
+        // A day the plan never covers reads differently from a time between two
+        // of its sessions — see testADayWithNoWindowAtAllSaysSo.
+        $this->assertStringContainsStringIgnoringCase('not a trading day', $reason);
     }
 
     public function testWrongTimeIsRejected(): void
@@ -268,6 +270,62 @@ class PlanEvaluatorTest extends TestCase
         // riskPercent null (no stop on the signal, blown account) must NOT reject.
         $plan = $this->plan(['max_risk_percent' => 1.0]);
         $this->assertNull($this->evaluator->evaluate($plan, 'BUY', 'NASDAQ',1.0, null, $this->mondayTenUtc()));
+    }
+
+    // ── Reasons that name the bounds they used (docs/101) ─────────
+    // "entry 25648 outside BUY zones" left the user to open the plan to find
+    // out by how much they missed, and against which zone.
+
+    public function testAZoneRejectionNamesTheBoundsItUsed(): void
+    {
+        $plan = $this->plan(['zones' => [['direction' => 'BUY', 'low_price' => 24000.0, 'high_price' => 24400.0]]]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 25648.0, null, $this->mondayTenUtc());
+        $this->assertSame('entry 25648 outside BUY zones (24000-24400)', $reason);
+    }
+
+    public function testOnlyTheZonesOfTheSignalsDirectionAreQuoted(): void
+    {
+        $plan = $this->plan(['zones' => [
+            ['direction' => 'BUY', 'low_price' => 24000.0, 'high_price' => 24400.0],
+            ['direction' => 'SELL', 'low_price' => 30000.0, 'high_price' => 31000.0],
+        ]]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 25648.0, null, $this->mondayTenUtc());
+        $this->assertStringContainsString('24000-24400', $reason);
+        $this->assertStringNotContainsString('30000', $reason);
+    }
+
+    public function testALongZoneListCollapsesToACount(): void
+    {
+        // The reason lands in a VARCHAR(255) and a plan may hold fifty zones.
+        $zones = [];
+        foreach (range(1, 10) as $i) {
+            $zones[] = ['direction' => 'BUY', 'low_price' => $i * 100.0, 'high_price' => $i * 100.0 + 10.0];
+        }
+        $reason = $this->evaluator->evaluate($this->plan(['zones' => $zones]), 'BUY', 'NASDAQ', 99999.0, null, $this->mondayTenUtc());
+        $this->assertStringContainsString('+7', $reason);
+        $this->assertLessThanOrEqual(255, strlen($reason));
+    }
+
+    public function testAWindowRejectionNamesTheTimeAndTheWindows(): void
+    {
+        $plan = $this->plan([
+            'timezone' => 'UTC',
+            'windows' => [['days_mask' => 0b1111111, 'start_time' => '14:00:00', 'end_time' => '17:30:00']],
+        ]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, null, $this->mondayTenUtc());
+        $this->assertSame('outside trading windows (10:00, 14:00-17:30)', $reason);
+    }
+
+    public function testADayWithNoWindowAtAllSaysSo(): void
+    {
+        // Arriving between two sessions and trading on a day the plan never
+        // covers are two different mistakes to make.
+        $plan = $this->plan([
+            'timezone' => 'UTC',
+            'windows' => [['days_mask' => 0b0100000, 'start_time' => '09:00:00', 'end_time' => '17:30:00']], // Saturday
+        ]);
+        $reason = $this->evaluator->evaluate($plan, 'BUY', 'NASDAQ', 1.0, null, $this->mondayTenUtc());
+        $this->assertStringContainsString('not a trading day', $reason);
     }
 
     // ── Cumulative risk over the plan's open positions ────────────

@@ -31,6 +31,9 @@ use DateTimeZone;
  */
 class PlanEvaluator
 {
+    /** Bounds spelled out in a rejection reason before it collapses to a count. */
+    private const MAX_BOUNDS_IN_REASON = 3;
+
     /**
      * $openRiskPercent is the risk already exposed under this plan on the target
      * account. It trails $now rather than sitting next to $riskPercent so the
@@ -109,15 +112,25 @@ class PlanEvaluator
             return null;
         }
 
+        $bounds = [];
         foreach ($zones as $zone) {
             $low = min((float) $zone['low_price'], (float) $zone['high_price']);
             $high = max((float) $zone['low_price'], (float) $zone['high_price']);
             if ($entryPrice >= $low && $entryPrice <= $high) {
                 return null;
             }
+            $bounds[] = $this->trimNumber($low) . '-' . $this->trimNumber($high);
         }
 
-        return sprintf('entry %s outside %s zones', $this->trimNumber($entryPrice), $direction);
+        // Name the bounds that were used. "entry 25648 outside BUY zones" left
+        // the user to go and open the plan to find out by how much they missed,
+        // and against which zone.
+        return sprintf(
+            'entry %s outside %s zones (%s)',
+            $this->trimNumber($entryPrice),
+            $direction,
+            $this->summarize($bounds),
+        );
     }
 
     /**
@@ -139,6 +152,7 @@ class PlanEvaluator
             + (int) $local->format('i') * 60
             + (int) $local->format('s');
 
+        $today = [];
         foreach ($windows as $window) {
             if (((int) $window['days_mask'] & $dayBit) === 0) {
                 continue;
@@ -148,9 +162,20 @@ class PlanEvaluator
             if ($seconds >= $start && $seconds < $end) {
                 return null;
             }
+            $today[] = substr((string) $window['start_time'], 0, 5) . '-' . substr((string) $window['end_time'], 0, 5);
         }
 
-        return 'outside trading windows';
+        // No window at all on this weekday is a different problem from arriving
+        // between two of them, and the user cannot tell which from "outside
+        // trading windows" alone.
+        if ($today === []) {
+            return sprintf('%s not a trading day', $local->format('D'));
+        }
+        return sprintf(
+            'outside trading windows (%s, %s)',
+            $local->format('H:i'),
+            $this->summarize($today),
+        );
     }
 
     /**
@@ -211,6 +236,21 @@ class PlanEvaluator
             $riskPercent,
             (float) $max,
         );
+    }
+
+    /**
+     * A few bounds, then a count. The reason is stored in a VARCHAR(255)
+     * (positions.plan_adherence_reason) and a plan may hold fifty zones, so
+     * listing them all would truncate the useful half of the sentence.
+     *
+     * @param array<int,string> $parts
+     */
+    private function summarize(array $parts): string
+    {
+        $shown = array_slice($parts, 0, self::MAX_BOUNDS_IN_REASON);
+        $extra = count($parts) - count($shown);
+
+        return implode(', ', $shown) . ($extra > 0 ? sprintf(' +%d', $extra) : '');
     }
 
     private function timeToSeconds(string $time): int

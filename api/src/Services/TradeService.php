@@ -436,6 +436,53 @@ class TradeService
         return $updated;
     }
 
+    /**
+     * Recompute the plan verdict against the plan AS IT STANDS NOW (docs/101).
+     *
+     * The verdict is frozen the rest of the time, on purpose: a snapshot of the
+     * frame the position was taken under. But a frozen verdict with no way to
+     * refresh it is a dead end — the user edits their plan, expects the badge to
+     * follow, and nothing happens without a word. This is that word: an explicit
+     * gesture, whose result the user asked for and can therefore trust.
+     */
+    public function reevaluatePlanAdherence(int $userId, int $tradeId): array
+    {
+        $this->validateId($tradeId);
+
+        $trade = $this->tradeRepo->findById($tradeId);
+        if (!$trade) {
+            throw new NotFoundException('trades.error.not_found');
+        }
+        if ((int) $trade['user_id'] !== $userId) {
+            throw new ForbiddenException('trades.error.forbidden');
+        }
+
+        $planId = $this->normalizePlanId($trade['plan_id'] ?? null);
+        if ($planId === null) {
+            throw new ValidationException('trades.error.no_plan', 'plan_id');
+        }
+
+        $adherence = $this->evaluatePlanAdherence(
+            $userId,
+            (int) $trade['account_id'],
+            $planId,
+            (string) $trade['direction'],
+            (string) $trade['symbol'],
+            (float) $trade['entry_price'],
+            (float) $trade['size'],
+            (float) $trade['sl_points'],
+            (string) $trade['opened_at'],
+            (int) $trade['position_id']
+        );
+
+        $this->positionRepo->update((int) $trade['position_id'], [
+            'plan_adherence' => $adherence['plan_adherence'],
+            'plan_adherence_reason' => $adherence['plan_adherence_reason'],
+        ]);
+
+        return $this->tradeRepo->findById($tradeId);
+    }
+
     public function markBeReached(int $userId, int $tradeId): array
     {
         $this->validateId($tradeId);
@@ -612,31 +659,40 @@ class TradeService
             $positionUpdates['setup'] = json_encode($positionUpdates['setup']);
         }
 
-        // Plan adherence — re-snapshot when the plan link OR any evaluation input
-        // changes (docs/83). Editing the plan itself never re-labels an existing
-        // trade; editing the trade does. Setting plan_id to null clears the verdict.
-        $planTouched = array_key_exists('plan_id', $data);
-        $evalTouched = (bool) array_intersect(['direction', 'entry_price', 'size', 'sl_points', 'symbol', 'opened_at'], array_keys($data));
-        $effectivePlanId = $planTouched
-            ? $this->normalizePlanId($data['plan_id'])
-            : $this->normalizePlanId($trade['plan_id'] ?? null);
+        // Plan adherence — the verdict is a SNAPSHOT, taken when the plan is
+        // attached and not moved afterwards (docs/101).
+        //
+        // It used to move by halves: editing the plan re-labelled nothing, but
+        // editing the trade re-computed silently. Neither frozen nor live, and
+        // no way for the user to guess which. Now only three things move it:
+        // attaching a plan, switching to another one, detaching. Everything
+        // else — including a corrected entry price — leaves it as it stood, and
+        // reevaluatePlanAdherence() is the deliberate gesture that refreshes it.
+        if (array_key_exists('plan_id', $data)) {
+            $currentPlanId = $this->normalizePlanId($trade['plan_id'] ?? null);
+            $newPlanId = $this->normalizePlanId($data['plan_id']);
 
-        if ($planTouched || ($evalTouched && $effectivePlanId !== null)) {
-            $adherence = $this->evaluatePlanAdherence(
-                $userId,
-                (int) $trade['account_id'],
-                $effectivePlanId,
-                $direction,
-                (string) ($data['symbol'] ?? $trade['symbol']),
-                $entryPrice,
-                isset($data['size']) ? (float) $data['size'] : (float) $trade['size'],
-                isset($data['sl_points']) ? (float) $data['sl_points'] : (float) $trade['sl_points'],
-                (string) ($data['opened_at'] ?? $trade['opened_at']),
-                (int) $trade['position_id']
-            );
-            $positionUpdates['plan_id'] = $adherence['plan_id'];
-            $positionUpdates['plan_adherence'] = $adherence['plan_adherence'];
-            $positionUpdates['plan_adherence_reason'] = $adherence['plan_adherence_reason'];
+            if ($newPlanId === null) {
+                $positionUpdates['plan_id'] = null;
+                $positionUpdates['plan_adherence'] = null;
+                $positionUpdates['plan_adherence_reason'] = null;
+            } elseif ($newPlanId !== $currentPlanId) {
+                $adherence = $this->evaluatePlanAdherence(
+                    $userId,
+                    (int) $trade['account_id'],
+                    $newPlanId,
+                    $direction,
+                    (string) ($data['symbol'] ?? $trade['symbol']),
+                    $entryPrice,
+                    isset($data['size']) ? (float) $data['size'] : (float) $trade['size'],
+                    isset($data['sl_points']) ? (float) $data['sl_points'] : (float) $trade['sl_points'],
+                    (string) ($data['opened_at'] ?? $trade['opened_at']),
+                    (int) $trade['position_id']
+                );
+                $positionUpdates['plan_id'] = $adherence['plan_id'];
+                $positionUpdates['plan_adherence'] = $adherence['plan_adherence'];
+                $positionUpdates['plan_adherence_reason'] = $adherence['plan_adherence_reason'];
+            }
         }
 
         if (!empty($positionUpdates)) {

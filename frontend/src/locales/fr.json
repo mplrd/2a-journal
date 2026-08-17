@@ -475,7 +475,10 @@
     "adherence": {
       "in_plan": "Dans le plan",
       "out_of_plan": "Hors plan",
-      "none": "Sans plan"
+      "none": "Sans plan",
+      "frozen_hint": "Verdict figé au moment où le plan a été rattaché. Modifier le plan ou le trade ne le change pas : utilisez le bouton de réévaluation.",
+      "reevaluate": "Réévaluer contre le plan actuel",
+      "reevaluated": "Verdict réévalué"
     },
     "opened_at": "Ouvert le",
     "closed_at": "Fermé le",
@@ -559,7 +562,8 @@
       "closed_at_not_closed": "La date de clôture ne peut être modifiée que sur un trade clôturé",
       "bulk_delete_empty": "Aucun trade sélectionné pour la suppression en lot",
       "bulk_delete_too_many": "Trop de trades sélectionnés (500 max par opération)",
-      "invalid_plan": "Plan invalide ou indisponible."
+      "invalid_plan": "Plan invalide ou indisponible.",
+      "no_plan": "Ce trade n'est rattaché à aucun plan : il n'y a rien à réévaluer."
     },
     "success": {
       "created": "Trade créé avec succès",

@@ -475,7 +475,10 @@
     "adherence": {
       "in_plan": "In plan",
       "out_of_plan": "Out of plan",
-      "none": "No plan"
+      "none": "No plan",
+      "frozen_hint": "Verdict frozen when the plan was attached. Editing the plan or the trade does not change it — use the re-evaluate button.",
+      "reevaluate": "Re-evaluate against the current plan",
+      "reevaluated": "Verdict re-evaluated"
     },
     "opened_at": "Opened at",
     "closed_at": "Closed at",
@@ -559,7 +562,8 @@
       "closed_at_not_closed": "Closed-at can only be edited on a closed trade",
       "bulk_delete_empty": "No trades selected for bulk deletion",
       "bulk_delete_too_many": "Too many trades selected (500 max per operation)",
-      "invalid_plan": "Invalid or unavailable plan."
+      "invalid_plan": "Invalid or unavailable plan.",
+      "no_plan": "This trade has no plan attached — there is nothing to re-evaluate."
     },
     "success": {
       "created": "Trade created successfully",

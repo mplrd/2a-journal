@@ -385,6 +385,7 @@ $router->get('/trades/{id}', [$tradeController, 'show'], [$authMiddleware, $requ
 $router->put('/trades/{id}', [$tradeController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/{id}/close', [$tradeController, 'close'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/{id}/be-hit', [$tradeController, 'beHit'], [$authMiddleware, $requireSubscription]);
+$router->post('/trades/{id}/plan/reevaluate', [$tradeController, 'reevaluatePlan'], [$authMiddleware, $requireSubscription]);
 $router->post('/trades/bulk-delete', [$tradeController, 'bulkDestroy'], [$authMiddleware, $requireSubscription]);
 $router->delete('/trades/{id}', [$tradeController, 'destroy'], [$authMiddleware, $requireSubscription]);
 
