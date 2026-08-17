@@ -381,9 +381,9 @@ onMounted(load)
           </div>
           <div v-for="(zone, i) in form.zones" :key="i" class="flex items-center gap-2 mb-2" data-testid="plan-zone-row">
             <Select v-model="zone.direction" :options="zoneDirectionOptions" option-label="label" option-value="value" class="w-28" />
-            <InputNumber v-model="zone.low_price" :min="0" :maxFractionDigits="5" class="flex-1" :placeholder="t('plan.zone_low')" />
+            <InputNumber v-model="zone.low_price" :min="0" :maxFractionDigits="5" :locale="numberLocale" class="flex-1" :placeholder="t('plan.zone_low')" />
             <span class="text-gray-400">–</span>
-            <InputNumber v-model="zone.high_price" :min="0" :maxFractionDigits="5" class="flex-1" :placeholder="t('plan.zone_high')" />
+            <InputNumber v-model="zone.high_price" :min="0" :maxFractionDigits="5" :locale="numberLocale" class="flex-1" :placeholder="t('plan.zone_high')" />
             <Button icon="pi pi-times" size="small" text severity="danger" @click="removeZone(i)" />
           </div>
         </div>
@@ -426,14 +426,14 @@ onMounted(load)
               {{ t('plan.field.max_risk') }}
               <FieldHelpIcon :text="t('plan.max_risk_hint')" testid="plan-risk-help" />
             </label>
-            <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
+            <InputNumber v-model="form.max_risk_percent" :min="0" :maxFractionDigits="3" :locale="numberLocale" suffix=" %" class="w-full" :placeholder="t('plan.max_risk_placeholder')" data-testid="plan-risk-input" />
           </div>
           <div>
             <label class="flex items-center gap-1 text-sm font-medium mb-1">
               {{ t('plan.field.max_plan_risk') }}
               <FieldHelpIcon :text="t('plan.max_plan_risk_hint')" testid="plan-plan-risk-help" />
             </label>
-            <InputNumber v-model="form.max_plan_risk_percent" :min="0" :maxFractionDigits="3" suffix=" %" class="w-full" :placeholder="t('plan.max_plan_risk_placeholder')" data-testid="plan-plan-risk-input" />
+            <InputNumber v-model="form.max_plan_risk_percent" :min="0" :maxFractionDigits="3" :locale="numberLocale" suffix=" %" class="w-full" :placeholder="t('plan.max_plan_risk_placeholder')" data-testid="plan-plan-risk-input" />
           </div>
         </div>
 
