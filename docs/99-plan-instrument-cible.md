@@ -2,10 +2,21 @@
 
 > Lot 1 du chantier « plans ». Complète la doc [83 — Plans de trading](83-trading-plans.md).
 >
-> **Vocabulaire** : l'application dit **actif** partout — menu *Mes actifs*, champ
-> *Actif* sur un plan comme sur un trade. Le lot 1 avait introduit « Instrument »
-> et les formulaires de trade disaient encore « Symbole » : trois mots pour une
-> même chose, unifiés depuis. En base et dans le code, la colonne reste `symbol`.
+> **Vocabulaire** — trois niveaux distincts, à ne pas confondre :
+>
+> | Mot | Exemple | Où il vit |
+> |---|---|---|
+> | **Actif** | le DAX | une ligne de `symbols` (menu *Mes actifs*) |
+> | **Symbole** | `GER40`, `DE40.CASH` | `symbols.code`, `positions.symbol` |
+> | **Ticker** | `EIGHTCAP:GER40` | broker + symbole ; c'est ce que `symbol_aliases` reconstitue avec `broker_template` + `broker_symbol` |
+>
+> Un actif est **désigné** par un symbole, qui varie d'un broker à l'autre — d'où
+> la table d'alias. À l'écran : on **choisit un actif** (champ *Actif*, sélecteur
+> sur *Mes actifs*), et les colonnes qui affichent `positions.symbol` s'appellent
+> *Symbole*. Le lot 1 avait introduit « Instrument », et une première passe de ce
+> chantier avait tout renommé « Actif », y compris les colonnes — deux erreurs,
+> corrigées. L'écran *Mes actifs* intitulait sa colonne de code « Ticker » alors
+> qu'elle contient un symbole : corrigé aussi.
 
 ## Le défaut
 
@@ -93,6 +104,15 @@ signal par ce même `findByUserAndCode()`.
   refusé tant qu'aucun n'est choisi. Un plan qui ne filtre aucun marché est
   précisément le trou que ce champ bouche ; le laisser proposer à l'écran
   reviendrait à le présenter comme un choix légitime.
+
+> ⚠️ **Ce que le filtre compare est un symbole, pas un actif.** On choisit un
+> actif à l'écran, mais ce qui est stocké est son `code` et la comparaison est
+> une égalité de chaînes avec le symbole du signal. Les alias
+> (`symbol_aliases`) ne sont branchés **que sur l'import CSV** :
+> `TradingViewWebhookService` ne les consulte pas. Une alerte qui envoie le
+> symbole de son broker plutôt que celui saisi dans *Mes actifs* est donc
+> **rejetée**. Question ouverte, voir [100](100-plan-risque-cumule.md) et
+> `docs/evolutions.md`.
 - **Un bouton « + » crée un actif sans quitter le plan**, exactement comme sur le
   formulaire de trade (même `SymbolForm`, même store). S'apercevoir au milieu
   d'un plan que l'actif manque ne doit pas envoyer l'utilisateur sur un autre

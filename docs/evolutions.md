@@ -1042,6 +1042,23 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
+## Le filtre d'actif d'un plan compare des symboles bruts, sans passer par les alias
+
+**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/99, docs/100). Un actif (le DAX) est désigné par un **symbole** qui change d'un broker à l'autre (`GER40`, `DE40.CASH`), et le ticker complet est `broker:symbole` (`EIGHTCAP:GER40`). La table `symbol_aliases` existe exactement pour ça — `broker_template` + `broker_symbol` → `journal_symbol` — mais elle n'est branchée **que sur l'import CSV** (`ImportService`).
+
+Conséquences sur le chemin robot :
+
+- `PlanEvaluator::checkSymbol()` compare le symbole du signal au `code` stocké dans le plan, en égalité de chaînes. Une alerte TradingView qui envoie le symbole de son broker plutôt que celui saisi dans *Mes actifs* est **rejetée** — un faux refus qui n'existait pas avant le lot 1, puisqu'il n'y avait aucun filtre d'actif.
+- `SignalRiskCalculator::computePercent()` résout déjà le symbole par `findByUserAndCode()` : le même écart rend le risque non chiffrable et **désactive silencieusement les deux plafonds**. Celui-là est préexistant, et il invalide l'affirmation « cas non atteignable » de la première version de la doc 100.
+
+**À faire** : trancher si un plan vise un **actif** (et alors résoudre le symbole du signal via les actifs + alias avant comparaison, y compris pour le calcul du risque) ou un **symbole** littéral. Si actif : les alias sont aujourd'hui écrits avec un `broker_template`, une résolution webhook devra décider quoi en faire.
+
+**Fichiers** : `api/src/Services/PlanEvaluator.php`, `api/src/Services/SignalRiskCalculator.php`, `api/src/Services/TradingViewWebhookService.php`, `api/src/Repositories/SymbolAliasRepository.php`.
+
+**Repéré le** : 2026-08-17. **Priorité** : haute — c'est le chemin principal de la fonctionnalité, et le faux refus est une régression du lot 1.
+
+---
+
 ## Le symbole d'un trade n'est pas contrôlé contre les actifs de l'utilisateur
 
 **Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). `positions.symbol` est une chaîne libre : `TradeService` et `OrderService` vérifient qu'elle est non vide et ≤ 50 caractères, rien de plus. L'interface ne laisse pas passer n'importe quoi (le champ *Instrument* est un sélecteur sur Mes actifs, avec un « + » pour en créer un), mais l'API accepte un symbole inconnu.
