@@ -1042,4 +1042,30 @@ Préexistant, sans rapport avec les identifiants brokers — pas corrigé sur la
 
 ---
 
+## Un filtre de plan ignoré en silence ne se voit nulle part
+
+**Contexte** : repéré pendant le lot 4 du chantier « plans » (docs/100). Les deux plafonds de risque d'un plan sont **ignorés** quand le risque n'est pas calculable — valeur du point non configurée pour le symbole, capital du compte inconnu, ou position sans SL. C'est la bonne règle (on ne bloque jamais un signal sur une lacune technique), mais elle est **muette**.
+
+Le cas le plus piégeux est le cumul : **une seule position sans SL sous le plan désactive le plafond cumulé** tant qu'elle est ouverte. L'utilisateur croit son enveloppe tenue, elle ne l'est pas, et rien à l'écran ne le lui dit.
+
+**À faire** : signaler un filtre inactif faute de données — pastille « plafond inactif » sur le plan, ou mention dans l'événement d'audit du webhook quand un filtre configuré n'a pas pu s'appliquer.
+
+**Fichiers** : `api/src/Services/PlanEvaluator.php`, `api/src/Services/PlanOpenRiskCalculator.php`, `frontend/src/views/PlansView.vue`.
+
+**Repéré le** : 2026-08-17. **Priorité** : moyenne — un garde-fou qu'on croit actif et qui ne l'est pas vaut moins que pas de garde-fou du tout.
+
+---
+
+## `PlanEvaluator::evaluate()` est à sept paramètres
+
+**Contexte** : la signature a pris `$symbol` au lot 1 puis `$openRiskPercent` au lot 4 (docs/99, docs/100). Le second est passé **en dernier**, après `$now`, pour ne pas casser les appelants ni la trentaine d'appels de test — pratique, mais l'ordre ne raconte plus rien.
+
+**À faire** : au prochain filtre, passer un objet de signal (`PlanSignal`) plutôt qu'un huitième argument positionnel. Trois appelants (`TradeService`, `OrderService`, `TradingViewWebhookService`) et `PlanEvaluatorTest`.
+
+**Fichiers** : `api/src/Services/PlanEvaluator.php` et ses trois appelants.
+
+**Repéré le** : 2026-08-17. **Priorité** : basse — dette de forme, aucun effet produit.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

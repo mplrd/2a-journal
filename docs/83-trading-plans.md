@@ -22,7 +22,7 @@ Le plan **ne gate que les signaux d'ouverture (`OPEN`)** : il décide de PRENDRE
 
 À l'ouverture, l'alerte fournit aussi les niveaux SL/BE/TP : ils sont **posés avec l'ordre** mais **ne sont pas re-validés** par le plan (le plan décide de l'entrée, pas des objectifs). La seule exception est le **risque max par trade** (filtre optionnel ci-dessous).
 
-## Les 4 filtres (tous optionnels, combinés en ET dans un plan)
+## Les filtres (tous optionnels, combinés en ET dans un plan)
 
 Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** des filtres qu'il définit. Un plan sans aucun filtre accepte tout.
 
@@ -33,6 +33,7 @@ Chaque filtre est **inactif par défaut** ; un plan applique l'**intersection** 
 | **Zones de prix** | `trading_plan_zones[]` | Pour le sens du signal : s'il existe ≥1 zone de ce sens, l'`entry_price` doit tomber dans au moins une | aucune zone pour ce sens |
 | **Fenêtres horaires** | `trading_plan_windows[]` | L'heure du signal (en TZ du plan) doit tomber dans ≥1 fenêtre | aucune fenêtre |
 | **Risque max/trade** | `max_risk_percent` | Le risque du signal (% du capital) ≤ plafond | `NULL`, ou risque non calculable |
+| **Risque max cumulé** | `max_plan_risk_percent` | Risque des positions encore exposées sous le plan sur ce compte + celui du signal ≤ plafond, cf. [100](100-plan-risque-cumule.md) | `NULL`, ou risque non calculable |
 
 ### Détails
 
@@ -79,7 +80,7 @@ Le rejet est tracé dans `tradingview_alert_events` (audit visible dans l'histor
 
 ## Modèle de données (migration 033)
 
-- **`trading_plans`** : `id, user_id, name, symbol VARCHAR(50) NULL, allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`. La colonne `symbol` est ajoutée par la **migration 042** (cf. [99](99-plan-instrument-cible.md)).
+- **`trading_plans`** : `id, user_id, name, symbol VARCHAR(50) NULL, allowed_direction ENUM('BUY','SELL') NULL, timezone VARCHAR(64) NULL, max_risk_percent DECIMAL(6,3) NULL, max_plan_risk_percent DECIMAL(6,3) NULL, status ENUM('ACTIVE','ARCHIVED'), timestamps`. La colonne `symbol` est ajoutée par la **migration 042** (cf. [99](99-plan-instrument-cible.md)), `max_plan_risk_percent` par la **migration 043** (cf. [100](100-plan-risque-cumule.md)).
 - **`trading_plan_zones`** : `id, plan_id FK, direction ENUM('BUY','SELL'), low_price DECIMAL(15,5), high_price DECIMAL(15,5)`.
 - **`trading_plan_windows`** : `id, plan_id FK, days_mask SMALLINT UNSIGNED, start_time TIME, end_time TIME`.
 - **`robot_plans`** : `robot_id, plan_id, PK(robot_id, plan_id)`, FK cascade des deux côtés.
