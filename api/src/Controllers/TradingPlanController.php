@@ -39,6 +39,18 @@ class TradingPlanController extends Controller
         return $this->jsonSuccess($plan);
     }
 
+    /**
+     * Read-only: confront a contemplated entry with this plan and hand back the
+     * verdict. Writes nothing (docs/102).
+     */
+    public function evaluate(Request $request): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $planId = (int) $request->getRouteParam('id');
+
+        return $this->jsonSuccess($this->service->evaluateDraft($userId, $planId, $request->getBody()));
+    }
+
     public function destroy(Request $request): Response
     {
         $userId = (int) $request->getAttribute('user_id');

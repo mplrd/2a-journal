@@ -174,14 +174,14 @@ async function handleSymbolCreate(data) {
     <div class="flex flex-col gap-4">
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.symbol') }} *</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{{ t('positions.asset') }} *</label>
           <div class="flex gap-1">
             <Select
               v-model="form.symbol"
               :options="symbols"
               optionLabel="label"
               optionValue="value"
-              :placeholder="t('positions.symbol')"
+              :placeholder="t('positions.asset')"
               :emptyMessage="t('common.no_options')"
               class="w-full"
             />

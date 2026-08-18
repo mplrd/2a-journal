@@ -41,6 +41,12 @@ export const tradesService = {
     return api.post(`/trades/${id}/be-hit`)
   },
 
+  // Recompute the plan verdict against the plan as it stands now. Frozen the
+  // rest of the time, so this is the only thing that moves it (docs/101).
+  async reevaluatePlan(id) {
+    return api.post(`/trades/${id}/plan/reevaluate`)
+  },
+
   async remove(id) {
     return api.delete(`/trades/${id}`)
   },

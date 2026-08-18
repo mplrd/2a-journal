@@ -19,21 +19,67 @@ export function blankPlanForm() {
   return {
     id: null,
     name: '',
+    symbol: null,
     allowed_direction: null,
     timezone: 'Europe/Paris',
     max_risk_percent: null,
+    max_plan_risk_percent: null,
     zones: [],
     windows: [],
   }
+}
+
+/**
+ * Whether the editor may save. The instrument is required alongside the name:
+ * a plan without one holds its price zones against every market, which is the
+ * defect the field closes (docs/99). The API still accepts a null symbol, so
+ * plans stored before the field keep working — reopening one asks for it.
+ */
+export function isPlanFormValid(f) {
+  return (f.name ?? '').trim().length > 0 && !!f.symbol
+}
+
+/**
+ * What the plan's risk caps actually resolve to, account by account.
+ *
+ * A cap is a percentage of capital, and the money behind it comes from
+ * point_value(asset, account): the per-account setting when there is one, the
+ * asset's own value otherwise (SignalRiskCalculator). But a plan targets an
+ * asset and carries NO account — the account arrives with the signal. So one
+ * "1 %" can stand for two different amounts on two accounts, and nothing on the
+ * screen said so.
+ *
+ * Collapsed to a single figure when every account agrees, which is the usual
+ * case; only a real divergence is worth naming account by account.
+ *
+ * `resolveOverride(symbolId, accountId)` returns the per-account value or null.
+ * A missing figure is 1, never "unknown": both columns are NOT NULL DEFAULT 1.
+ */
+export function pointValueSummary(symbol, accounts, resolveOverride) {
+  if (!symbol || !(accounts ?? []).length) return null
+
+  const fallback = Number(symbol.point_value ?? 1) || 1
+  const entries = accounts.map((account) => ({
+    accountId: account.id,
+    accountName: account.name,
+    value: Number(resolveOverride(symbol.id, account.id) ?? fallback),
+  }))
+
+  const distinct = new Set(entries.map((e) => e.value))
+  return { uniform: distinct.size === 1, value: entries[0].value, entries }
 }
 
 export function planToForm(plan) {
   return {
     id: plan.id,
     name: plan.name,
+    // The instrument the plan targets; null = every instrument.
+    symbol: plan.symbol ?? null,
     allowed_direction: plan.allowed_direction ?? null,
     timezone: plan.timezone ?? 'Europe/Paris',
     max_risk_percent: plan.max_risk_percent != null ? Number(plan.max_risk_percent) : null,
+    // Cap on everything still exposed under the plan, not on one trade.
+    max_plan_risk_percent: plan.max_plan_risk_percent != null ? Number(plan.max_plan_risk_percent) : null,
     zones: (plan.zones ?? []).map((z) => ({
       direction: z.direction,
       low_price: Number(z.low_price),
@@ -50,9 +96,11 @@ export function planToForm(plan) {
 export function formToPayload(f) {
   return {
     name: f.name.trim(),
+    symbol: f.symbol,
     allowed_direction: f.allowed_direction,
     timezone: f.timezone,
     max_risk_percent: f.max_risk_percent,
+    max_plan_risk_percent: f.max_plan_risk_percent ?? null,
     zones: f.zones.map((z) => ({
       direction: z.direction,
       low_price: z.low_price,

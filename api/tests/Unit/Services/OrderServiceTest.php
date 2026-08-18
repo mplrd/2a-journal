@@ -12,6 +12,7 @@ use App\Repositories\StatusHistoryRepository;
 use App\Repositories\TradeRepository;
 use App\Repositories\TradingPlanRepository;
 use App\Services\OrderService;
+use App\Services\PlanAdherenceEvaluator;
 use App\Services\PlanEvaluator;
 use App\Services\SignalRiskCalculator;
 use PHPUnit\Framework\TestCase;
@@ -121,9 +122,7 @@ class OrderServiceTest extends TestCase
             $this->historyRepo,
             $this->tradeRepo,
             null,
-            $planRepo,
-            new PlanEvaluator(),
-            $riskCalc,
+            new PlanAdherenceEvaluator($planRepo, new PlanEvaluator(), $riskCalc),
         );
     }
 

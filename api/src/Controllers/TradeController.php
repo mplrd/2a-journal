@@ -91,6 +91,20 @@ class TradeController extends Controller
         return $this->jsonSuccess($trade);
     }
 
+    /**
+     * Recompute the plan verdict against the plan AS IT STANDS NOW. The verdict
+     * is otherwise a snapshot taken when the plan was attached (docs/101); this
+     * is the deliberate gesture that refreshes it.
+     */
+    public function reevaluatePlan(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $tradeId = (int) $request->getRouteParam('id');
+        $trade = $this->tradeService->reevaluatePlanAdherence($userId, $tradeId);
+
+        return $this->jsonSuccess($trade);
+    }
+
     public function destroy(Request $request): Response
     {
         $userId = $request->getAttribute('user_id');

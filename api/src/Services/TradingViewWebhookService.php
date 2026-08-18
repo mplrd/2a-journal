@@ -44,6 +44,8 @@ class TradingViewWebhookService
         private TradingPlanRepository $planRepo,
         private PlanEvaluator $planEvaluator,
         private SignalRiskCalculator $riskCalculator,
+        private PlanOpenRiskCalculator $openRiskCalculator,
+        private SymbolResolver $symbolResolver,
     ) {}
 
     /**
@@ -298,10 +300,23 @@ class TradingViewWebhookService
 
         $direction = (string) $payload['direction'];
         $entryPrice = (float) $payload['entry_price'];
+
+        // The alert names the instrument the way its broker does — GER40 where
+        // the user's asset is DE40.CASH, or the full EIGHTCAP:GER40 ticker. The
+        // plan stores the user's own code, so compare on that. Both sides then
+        // speak the user's vocabulary, which is also what makes the rejection
+        // reason readable when it does not match.
+        //
+        // When nothing resolves, the raw symbol goes through: "not covered" is
+        // the right verdict, and showing exactly what arrived is the actionable
+        // half of it.
+        $rawSymbol = (string) $payload['symbol'];
+        $asset = $this->symbolResolver->resolve($userId, $rawSymbol);
+        $symbol = $asset !== null ? (string) $asset['code'] : $rawSymbol;
         $riskPercent = $this->riskCalculator->computePercent(
             $userId,
             $accountId,
-            (string) $payload['symbol'],
+            $symbol,
             (float) $payload['size'],
             (float) $payload['sl_points'],
         );
@@ -309,7 +324,15 @@ class TradingViewWebhookService
 
         $firstReason = null;
         foreach ($plans as $plan) {
-            $reason = $this->planEvaluator->evaluate($plan, $direction, $entryPrice, $riskPercent, $now);
+            // Per plan, and only when it caps its cumulative risk: the sum is
+            // over the positions carrying THIS plan on this account, so it
+            // cannot be hoisted out of the loop, and walking the positions of
+            // every plan that doesn't use the cap would be paid for nothing.
+            $openRiskPercent = ($plan['max_plan_risk_percent'] ?? null) !== null
+                ? $this->openRiskCalculator->computePercent($userId, $accountId, (int) $plan['id'])
+                : null;
+
+            $reason = $this->planEvaluator->evaluate($plan, $direction, $symbol, $entryPrice, $riskPercent, $now, $openRiskPercent);
             if ($reason === null) {
                 return null; // applicable to this plan → accept (OR across plans)
             }

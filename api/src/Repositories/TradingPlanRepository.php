@@ -18,23 +18,36 @@ class TradingPlanRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO trading_plans (user_id, name, allowed_direction, timezone, max_risk_percent)
-             VALUES (:user_id, :name, :allowed_direction, :timezone, :max_risk_percent)"
+            "INSERT INTO trading_plans (user_id, name, symbol_id, allowed_direction, timezone, max_risk_percent, max_plan_risk_percent)
+             VALUES (:user_id, :name, :symbol_id, :allowed_direction, :timezone, :max_risk_percent, :max_plan_risk_percent)"
         );
         $stmt->execute([
             'user_id' => $data['user_id'],
             'name' => $data['name'],
+            'symbol_id' => $data['symbol_id'] ?? null,
             'allowed_direction' => $data['allowed_direction'] ?? null,
             'timezone' => $data['timezone'] ?? null,
             'max_risk_percent' => $data['max_risk_percent'] ?? null,
+            'max_plan_risk_percent' => $data['max_plan_risk_percent'] ?? null,
         ]);
 
         return $this->findByIdAssembled((int) $this->pdo->lastInsertId());
     }
 
+    /**
+     * The plan carries `symbol_id`; the asset's CODE is read back through the
+     * join, never stored. That is what makes renaming an asset from "My assets"
+     * harmless: the plan follows the row, so both sides of the evaluator's
+     * comparison come from the same `symbols` record and cannot drift apart.
+     */
+    private const SELECT_WITH_SYMBOL =
+        "SELECT p.*, s.code AS symbol
+         FROM trading_plans p
+         LEFT JOIN symbols s ON s.id = p.symbol_id";
+
     public function findById(int $id): ?array
     {
-        $stmt = $this->pdo->prepare("SELECT * FROM trading_plans WHERE id = :id");
+        $stmt = $this->pdo->prepare(self::SELECT_WITH_SYMBOL . " WHERE p.id = :id");
         $stmt->execute(['id' => $id]);
         return $stmt->fetch() ?: null;
     }
@@ -55,9 +68,9 @@ class TradingPlanRepository
     public function findAllByUserId(int $userId): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT * FROM trading_plans
-             WHERE user_id = :user_id AND status <> :archived
-             ORDER BY created_at DESC"
+            self::SELECT_WITH_SYMBOL
+            . " WHERE p.user_id = :user_id AND p.status <> :archived
+                ORDER BY p.created_at DESC"
         );
         $stmt->execute(['user_id' => $userId, 'archived' => PlanStatus::ARCHIVED->value]);
         $plans = $stmt->fetchAll();
@@ -76,17 +89,21 @@ class TradingPlanRepository
         $stmt = $this->pdo->prepare(
             "UPDATE trading_plans
              SET name = :name,
+                 symbol_id = :symbol_id,
                  allowed_direction = :allowed_direction,
                  timezone = :timezone,
-                 max_risk_percent = :max_risk_percent
+                 max_risk_percent = :max_risk_percent,
+                 max_plan_risk_percent = :max_plan_risk_percent
              WHERE id = :id"
         );
         $stmt->execute([
             'id' => $id,
             'name' => $data['name'],
+            'symbol_id' => $data['symbol_id'] ?? null,
             'allowed_direction' => $data['allowed_direction'] ?? null,
             'timezone' => $data['timezone'] ?? null,
             'max_risk_percent' => $data['max_risk_percent'] ?? null,
+            'max_plan_risk_percent' => $data['max_plan_risk_percent'] ?? null,
         ]);
     }
 

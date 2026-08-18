@@ -121,6 +121,126 @@ class TradeFlowTest extends TestCase
         return $response->getBody()['data'];
     }
 
+    // ── Verdict figé et réévaluation explicite (docs/101) ─────────
+    // Le verdict est une PHOTO prise à l'attachement du plan. Il ne bougeait
+    // pourtant qu'à moitié : éditer le plan ne requalifiait rien, éditer le
+    // trade recalculait en douce. Ni figé ni vivant, donc indevinable.
+
+    private function seedPlan(array $zones = [['BUY', 18000, 18100]]): int
+    {
+        $this->pdo->prepare("INSERT INTO trading_plans (user_id, name, status) VALUES (:uid, 'Test plan', 'ACTIVE')")
+            ->execute(['uid' => $this->userId]);
+        $planId = (int) $this->pdo->lastInsertId();
+        foreach ($zones as [$dir, $low, $high]) {
+            $this->pdo->prepare(
+                "INSERT INTO trading_plan_zones (plan_id, direction, low_price, high_price) VALUES (:p, :d, :l, :h)"
+            )->execute(['p' => $planId, 'd' => $dir, 'l' => $low, 'h' => $high]);
+        }
+        return $planId;
+    }
+
+    private function adherenceOf(int $tradeId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT p.plan_id, p.plan_adherence, p.plan_adherence_reason
+             FROM trades t INNER JOIN positions p ON p.id = t.position_id
+             WHERE t.id = :id'
+        );
+        $stmt->execute(['id' => $tradeId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function testEditingATradeNoLongerMovesItsVerdict(): void
+    {
+        $planId = $this->seedPlan();
+        $trade = $this->createTrade(['plan_id' => $planId, 'entry_price' => 18050]); // in zone
+        $this->assertSame('IN_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+
+        // Moving the entry far outside the zone used to silently re-label it.
+        $this->router->dispatch($this->authRequest('PUT', "/trades/{$trade['id']}", ['entry_price' => 25000]));
+
+        $this->assertSame('IN_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+    }
+
+    public function testAttachingAPlanForTheFirstTimeTakesTheSnapshot(): void
+    {
+        $planId = $this->seedPlan();
+        $trade = $this->createTrade(['entry_price' => 25000]); // no plan yet
+        $this->assertNull($this->adherenceOf((int) $trade['id'])['plan_adherence']);
+
+        $this->router->dispatch($this->authRequest('PUT', "/trades/{$trade['id']}", ['plan_id' => $planId]));
+
+        $this->assertSame('OUT_OF_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+    }
+
+    public function testSwitchingToAnotherPlanTakesANewSnapshot(): void
+    {
+        $tight = $this->seedPlan([['BUY', 18000, 18100]]);
+        $wide = $this->seedPlan([['BUY', 10000, 30000]]);
+        $trade = $this->createTrade(['plan_id' => $tight, 'entry_price' => 25000]);
+        $this->assertSame('OUT_OF_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+
+        $this->router->dispatch($this->authRequest('PUT', "/trades/{$trade['id']}", ['plan_id' => $wide]));
+
+        $this->assertSame('IN_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+    }
+
+    public function testDetachingThePlanClearsTheVerdict(): void
+    {
+        $planId = $this->seedPlan();
+        $trade = $this->createTrade(['plan_id' => $planId, 'entry_price' => 18050]);
+
+        $this->router->dispatch($this->authRequest('PUT', "/trades/{$trade['id']}", ['plan_id' => null]));
+
+        $row = $this->adherenceOf((int) $trade['id']);
+        $this->assertNull($row['plan_id']);
+        $this->assertNull($row['plan_adherence']);
+        $this->assertNull($row['plan_adherence_reason']);
+    }
+
+    public function testReevaluatingIsTheDeliberateGestureThatMovesTheVerdict(): void
+    {
+        $planId = $this->seedPlan();
+        $trade = $this->createTrade(['plan_id' => $planId, 'entry_price' => 18050]);
+        $this->router->dispatch($this->authRequest('PUT', "/trades/{$trade['id']}", ['entry_price' => 25000]));
+        $this->assertSame('IN_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+
+        $response = $this->router->dispatch(
+            $this->authRequest('POST', "/trades/{$trade['id']}/plan/reevaluate")
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('OUT_OF_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+        $this->assertSame('OUT_OF_PLAN', $response->getBody()['data']['plan_adherence']);
+    }
+
+    public function testReevaluatingPicksUpAnEditOfThePlanItself(): void
+    {
+        // The reporter's case: he changed his plan and nothing moved. Now it
+        // does — but only because he asked, and he can see that he asked.
+        $planId = $this->seedPlan();
+        $trade = $this->createTrade(['plan_id' => $planId, 'entry_price' => 18050]);
+
+        $this->pdo->prepare('UPDATE trading_plan_zones SET low_price = 19000, high_price = 19500 WHERE plan_id = :p')
+            ->execute(['p' => $planId]);
+        $this->router->dispatch($this->authRequest('POST', "/trades/{$trade['id']}/plan/reevaluate"));
+
+        $this->assertSame('OUT_OF_PLAN', $this->adherenceOf((int) $trade['id'])['plan_adherence']);
+    }
+
+    public function testReevaluatingATradeWithoutAPlanIsRefused(): void
+    {
+        $trade = $this->createTrade();
+
+        try {
+            $this->router->dispatch($this->authRequest('POST', "/trades/{$trade['id']}/plan/reevaluate"));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame('trades.error.no_plan', $e->getMessageKey());
+        }
+    }
+
     // ── Create ──────────────────────────────────────────────────
 
     public function testCreateTradeSuccess(): void
