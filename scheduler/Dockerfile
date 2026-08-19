@@ -18,7 +18,10 @@ FROM composer:2 AS composer-build
 WORKDIR /build
 
 COPY api/composer.json api/composer.lock* ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
+# Same rate-limit guard as api/Dockerfile — see the comment there.
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs \
+ || (sleep 10 && composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs) \
+ || (sleep 30 && composer install --no-dev --no-scripts --no-autoloader --ignore-platform-reqs)
 
 COPY api/ .
 RUN composer dump-autoload --optimize --classmap-authoritative
