@@ -8,7 +8,12 @@ FROM composer:2 AS composer-build
 WORKDIR /build
 
 COPY composer.json composer.lock* ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
+# codeload.github.com rate-limits (HTTP 429) the builder's shared IP often enough
+# to kill a build on a single package. Retry, then drop --prefer-dist so composer
+# is allowed to fall back to git clone for whatever the zip endpoint refused.
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs \
+ || (sleep 10 && composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs) \
+ || (sleep 30 && composer install --no-dev --no-scripts --no-autoloader --ignore-platform-reqs)
 
 COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative
