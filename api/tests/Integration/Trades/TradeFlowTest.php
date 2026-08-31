@@ -577,6 +577,89 @@ class TradeFlowTest extends TestCase
         $this->assertEquals(2.0, (float) $body['risk_reward']);
     }
 
+    // ── Jambes appartenant au broker (docs/105) ────────────────────
+    // Sur un trade synchronisé, le broker fournit les chiffres et RIEN d'autre :
+    // setup, notes, champs perso et risque ne peuvent être saisis que côté
+    // journal. Éditer un tel trade est donc le geste normal, pas l'exception.
+
+    /**
+     * Ce qu'une synchro laisse derrière elle : la position porte un external_id
+     * broker, et sa jambe porte le P&L **en devise** annoncé par le broker,
+     * commissions comprises — pas un écart de prix multiplié par une taille.
+     */
+    private function seedSyncedTrade(float $tradePnl, float $legPnl): array
+    {
+        $trade = $this->createTrade([
+            'symbol' => 'BTCUSDT', 'entry_price' => 60000, 'size' => 0.2, 'sl_points' => 500,
+        ]);
+        $tradeId = (int) $trade['id'];
+
+        $this->pdo->prepare(
+            "UPDATE positions p INNER JOIN trades t ON t.position_id = p.id
+             SET p.external_id = 'bingx_77' WHERE t.id = :id"
+        )->execute(['id' => $tradeId]);
+
+        $this->pdo->prepare(
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl, external_id)
+             VALUES (:t, '2026-08-21 10:00:00', 60500.00000, 0.20000, 'TP', :pnl, 'bingx_deal_1')"
+        )->execute(['t' => $tradeId, 'pnl' => $legPnl]);
+
+        $this->pdo->prepare(
+            "UPDATE trades SET status = 'CLOSED', closed_at = '2026-08-21 10:00:00',
+                    remaining_size = 0, avg_exit_price = 60500.00000, pnl = :pnl
+             WHERE id = :id"
+        )->execute(['id' => $tradeId, 'pnl' => $tradePnl]);
+
+        return $trade;
+    }
+
+    private function legOf(int $tradeId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT pnl, external_id FROM partial_exits WHERE trade_id = :id ORDER BY id LIMIT 1'
+        );
+        $stmt->execute(['id' => $tradeId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function testAddingANoteToASyncedTradeLeavesItsBrokerLegAlone(): void
+    {
+        // Le recalc défensif rejouait la formule de la saisie manuelle sur
+        // TOUTES les jambes : (60500 - 60000) × 0.2 = 100 écrasait les 406,13 €
+        // du broker, en base et sans trace. Une note suffisait à déclencher ça.
+        $trade = $this->seedSyncedTrade(tradePnl: 406.13, legPnl: 406.13);
+
+        $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", ['notes' => 'contexte du trade'])
+        );
+
+        $this->assertEquals(406.13, (float) $this->legOf((int) $trade['id'])['pnl']);
+
+        $body = $this->router->dispatch(
+            $this->authRequest('GET', "/trades/{$trade['id']}")
+        )->getBody()['data'];
+        $this->assertEquals(406.13, (float) $body['pnl']);
+        $this->assertSame('contexte du trade', $body['notes']);
+    }
+
+    public function testEditingASyncedTradeKeepsWhatTheBrokerCountedAtPositionLevel(): void
+    {
+        // Le broker annonce parfois un total inférieur à la somme de ses jambes :
+        // la différence, c'est le swap et les commissions portés au niveau
+        // position. Re-sommer les jambes seules effacerait cet écart.
+        $trade = $this->seedSyncedTrade(tradePnl: 404.13, legPnl: 406.13);
+
+        $this->router->dispatch(
+            $this->authRequest('PUT', "/trades/{$trade['id']}", ['setup' => ['Breakout']])
+        );
+
+        $body = $this->router->dispatch(
+            $this->authRequest('GET', "/trades/{$trade['id']}")
+        )->getBody()['data'];
+        $this->assertEquals(404.13, (float) $body['pnl'], "les 2,00 de frais restent portés");
+        $this->assertEquals(406.13, (float) $this->legOf((int) $trade['id'])['pnl']);
+    }
+
     public function testCloseTradeCalculatesPnlSell(): void
     {
         $trade = $this->createTrade(['direction' => 'SELL', 'size' => 1]);

@@ -993,9 +993,32 @@ class TradeService
         $direction = $trade['direction'];
         $directionMultiplier = $direction === Direction::BUY->value ? 1 : -1;
 
+        // A leg carrying an external_id was written by the broker sync, and its
+        // P&L is the broker's own figure — in currency, commissions included,
+        // not an entry-to-exit distance times a size. Re-deriving it here
+        // replaced it with raw points and destroyed the only copy: the position
+        // is closed, no later sync ever brings it back.
+        //
+        // It fired on ANY edit, this recalc being deliberately unconditional. On
+        // a synced trade that is every edit there is: the broker supplies the
+        // figures and nothing else, so setup, notes, custom fields and the risk
+        // itself can only be typed here. Adding a note to a BingX trade turned a
+        // 406.13 take profit into 100.
+        //
+        // Same ownership rule as objectives (BrokerTargetBuilder::isBrokerOwned):
+        // what the broker wrote belongs to the broker. Legs typed by hand keep
+        // following the entry price exactly as before.
+        $brokerLegs = 0;
+
         // 1. Recompute each partial's pnl using the current entry_price + direction.
         $totalPnl = 0;
         foreach ($partials as $partial) {
+            if (($partial['external_id'] ?? null) !== null) {
+                $brokerLegs++;
+                $totalPnl += (float) $partial['pnl'];
+                continue;
+            }
+
             $newPnl = ((float) $partial['exit_price'] - $entryPrice)
                 * (float) $partial['size']
                 * $directionMultiplier;
@@ -1004,6 +1027,19 @@ class TradeService
                 $this->partialExitRepo->updatePnl((int) $partial['id'], $newPnl);
             }
             $totalPnl += $newPnl;
+        }
+
+        // What a broker counts at position level beyond its own legs — swap and
+        // commission — is on the trade and on none of them. Re-summing the legs
+        // alone would drop it. Measured against the legs as they stood, and only
+        // for a trade the sync actually touched, so a hand-typed trade keeps
+        // being re-derived from scratch.
+        if ($brokerLegs > 0 && $trade['pnl'] !== null) {
+            $storedLegs = 0.0;
+            foreach ($partials as $partial) {
+                $storedLegs += (float) $partial['pnl'];
+            }
+            $totalPnl += round((float) $trade['pnl'] - $storedLegs, 2);
         }
 
         // 2. Aggregate at the trade level.
