@@ -1155,15 +1155,16 @@ statistiques et la même case de calendrier. Le risque, lui, est toujours en dev
 (`SignalRiskCalculator` : `size × sl_points × point_value`), donc un plan compare
 un plafond en euros à un P&L qui peut être en points.
 
-**Danger associé** : `TradeService::recalcRealizedMetrics()` tourne à chaque
-édition d'un trade (`update`, `markBeReached`) et **recalcule chaque jambe** avec
-la formule en points bruts. Éditer un trade synchronisé écrase donc les P&L en
-devise venus du broker, sans retour possible. C'est le piège à connaître avant de
-« corriger à la main » un trade issu d'une synchro.
+**Danger associé, corrigé depuis** (voir [105](105-jambes-broker-non-recalculees.md)) :
+`TradeService::recalcRealizedMetrics()` recalculait chaque jambe avec la formule
+en points bruts à chaque édition d'un trade, y compris l'ajout d'une simple note,
+et écrasait donc les P&L en devise venus du broker. Les jambes portant un
+`external_id` sont désormais laissées intactes. Les trades déjà écrasés avant ce
+correctif ne sont pas récupérables : la valeur broker n'existe plus qu'en base
+côté plateforme.
 
-**À faire** : trancher l'unité de `trades.pnl` (devise partout, le plus probable),
-appliquer `point_value` sur le chemin manuel, et faire que `recalcRealizedMetrics`
-ne touche pas aux jambes portant un `external_id` broker.
+**À faire** : trancher l'unité de `trades.pnl` (devise partout, le plus probable)
+et appliquer `point_value` sur le chemin manuel.
 
 **Fichiers** : `api/src/Services/TradeService.php` (l.348, l.999),
 `api/src/Services/SignalRiskCalculator.php`, `api/src/Repositories/StatsRepository.php`.
