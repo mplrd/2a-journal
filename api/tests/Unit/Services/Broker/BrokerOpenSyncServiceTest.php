@@ -1125,6 +1125,122 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->assertEquals(40.0, $inserted[0]['pnl']);
     }
 
+    // ── TRANSITION: a close spread over several sync windows ───────
+
+    /**
+     * The legs on file, as they stand once the closing ones are inserted: two
+     * take profits banked by earlier syncs, then the remainder stopped out.
+     */
+    private function legsOfAPositionClosedOverSeveralWindows(): array
+    {
+        return [
+            ['pnl' => '400.00', 'exit_price' => '24450.00000', 'size' => '1.00000'],
+            ['pnl' => '270.00', 'exit_price' => '24590.00000', 'size' => '0.50000'],
+            ['pnl' => '-32.00', 'exit_price' => '23984.00000', 'size' => '0.50000'],
+        ];
+    }
+
+    /** The position those legs belong to: 2 lots opened at 24050, 66 points of risk. */
+    private function positionClosedOverSeveralWindows(): array
+    {
+        return [
+            'ctrader_902' => [
+                'position_id' => 1001, 'external_id' => 'ctrader_902',
+                'entry_price' => '24050.00', 'size' => '2.00000', 'sl_points' => '66.00',
+                'direction' => 'BUY', 'symbol' => 'GER40', 'targets' => null,
+                'trade_id' => 5001, 'trade_status' => TradeStatus::OPEN->value,
+            ],
+        ];
+    }
+
+    /** The closing window: the stop alone, everything else is already banked. */
+    private function closingWindowOfTheRemainder(): array
+    {
+        return [$this->makeClosedSnapshot([
+            'external_id' => 'ctrader_902', 'symbol' => 'GER40',
+            'entry_price' => 24050.0, 'exit_price' => 23984.0, 'size' => 0.5,
+            'pnl' => -32.0, 'closed_at' => '2026-08-28 15:42:00',
+            'exits' => [[
+                'exit_price' => 23984.0, 'size' => 0.5, 'pnl' => -32.0,
+                'closed_at' => '2026-08-28 15:42:00', 'external_id' => 'ctrader_deal_77',
+            ]],
+        ])];
+    }
+
+    public function testAClosingWindowDoesNotEraseWhatEarlierWindowsBanked(): void
+    {
+        $this->useServiceWithPartialExits();
+        // Deals are fetched from the sync cursor, so a position closed in
+        // several goes over several days has its take profits in ONE window and
+        // its final stop in another. The closing window states a total for the
+        // legs it carries — here the stop alone. Taking that for the position's
+        // total erased every take profit already banked.
+        //
+        // Production, 2026-08-28: 670 banked over two take profits, the
+        // remainder stopped out at -32, and the trade left showing -32.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn($this->positionClosedOverSeveralWindows());
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')
+            ->willReturn($this->legsOfAPositionClosedOverSeveralWindows());
+
+        $written = null;
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$written) {
+                $written = $data;
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::CTRADER,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [],
+            closedSnapshot: $this->closingWindowOfTheRemainder(),
+        );
+
+        // 400 + 270 taken earlier, minus the 32 of the stop.
+        $this->assertSame(638.0, (float) $written['pnl']);
+    }
+
+    public function testTheClosingRefreshesEveryFigureItLeavesBehind(): void
+    {
+        $this->useServiceWithPartialExits();
+        // pnl_percent and risk_reward were simply not part of the closing
+        // update, so they kept whatever the running rollup had computed before
+        // the close. A trade could show a loss and count as a win: win, loss
+        // and breakeven are classified on pnl_percent alone (StatsRepository).
+        // Same for avg_exit_price, which held the price of the closing leg and
+        // ignored the legs taken earlier.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn($this->positionClosedOverSeveralWindows());
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')
+            ->willReturn($this->legsOfAPositionClosedOverSeveralWindows());
+
+        $written = null;
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$written) {
+                $written = $data;
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::CTRADER,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [],
+            closedSnapshot: $this->closingWindowOfTheRemainder(),
+        );
+
+        // 638 / (24050 × 2) × 100
+        $this->assertSame(1.3264, (float) $written['pnl_percent']);
+        // 638 / (2 × 66)
+        $this->assertSame(4.8333, (float) $written['risk_reward']);
+        // (1×24450 + 0.5×24590 + 0.5×23984) / 2
+        $this->assertSame(24368.5, (float) $written['avg_exit_price']);
+    }
+
     // ── DEFENSIVE: orphan in DB, not in any snapshot ───────────────
 
     public function testLeavesOrphanOpenAloneWhenNotInAnySnapshot(): void

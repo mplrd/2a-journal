@@ -392,16 +392,108 @@ class BrokerOpenSyncService
      */
     private function transitionToClosed(array $existing, array $closed): void
     {
-        $this->tradeRepo->update((int) $existing['trade_id'], [
+        $tradeId = (int) $existing['trade_id'];
+
+        // Legs first: what the trade realized is read back off them just below,
+        // and the closing ones have to be on file by then.
+        $this->insertPartialExits($tradeId, $closed['exits'] ?? []);
+
+        $this->tradeRepo->update($tradeId, array_merge([
             'status' => TradeStatus::CLOSED->value,
             'closed_at' => $closed['closed_at'],
-            'avg_exit_price' => $closed['exit_price'] ?? $closed['avg_exit_price'] ?? null,
-            'pnl' => $closed['pnl'] ?? null,
             'remaining_size' => 0.0,
             'exit_type' => ExitType::MANUAL->value,
-        ]);
+        ], $this->realizedOnClose($tradeId, $existing, $closed)));
+    }
 
-        $this->insertPartialExits((int) $existing['trade_id'], $closed['exits'] ?? []);
+    /**
+     * What the trade realized over its whole life, as of its close.
+     *
+     * Deals are fetched from the sync cursor, so a closing snapshot only ever
+     * describes the legs that came off inside THAT window. A position closed in
+     * several goes over several windows has its earlier legs on file already —
+     * written to partial_exits and summed into the trade by the running rollup
+     * (see bankRealizedFromExits) — and absent from the figure the window
+     * states. Taking that figure for the position's total therefore erased
+     * every take profit banked before it.
+     *
+     * Production, 2026-08-28: two take profits worth 670, the remainder stopped
+     * out at -32, and the trade left showing -32. The P&L calendar made it
+     * worse: it charges `pnl - SUM(legs)` to the close date to catch what a
+     * broker states at position level beyond its own legs, so the erased 670
+     * came back as a negative on the day of the stop — a day that had realized
+     * -33 was shown at -703.
+     *
+     * So the legs on file are the base, and the broker keeps the last word on
+     * what it actually describes: whatever its total states BEYOND its own legs
+     * is swap and commission carried at position level, and that delta is added
+     * on top. A position closed inside a single window is untouched by this —
+     * its legs ARE the closing legs, so the delta is the fee and nothing else.
+     *
+     * The three realized figures move together because the statistics read them
+     * apart: win, loss and breakeven are classified on `pnl_percent` alone
+     * (StatsRepository::isWin), so a close that rewrote `pnl` and left
+     * `pnl_percent` behind could show a loss and count as a win.
+     *
+     * @return array{pnl: float|null, pnl_percent?: float, risk_reward?: float|null, avg_exit_price: float|null}
+     */
+    private function realizedOnClose(int $tradeId, array $existing, array $closed): array
+    {
+        $brokerTotal = isset($closed['pnl']) ? (float) $closed['pnl'] : null;
+
+        // Legacy connectors emit no legs at all: the closing snapshot is the
+        // only thing that ever described this trade, and it stays authoritative.
+        $legs = $this->partialExitRepo?->findByTradeId($tradeId) ?? [];
+        if ($legs === []) {
+            return [
+                'pnl' => $brokerTotal,
+                'avg_exit_price' => $closed['exit_price'] ?? $closed['avg_exit_price'] ?? null,
+            ];
+        }
+
+        $realized = 0.0;
+        foreach ($legs as $leg) {
+            $realized += (float) ($leg['pnl'] ?? 0);
+        }
+
+        $closingLegs = 0.0;
+        foreach ($closed['exits'] ?? [] as $exit) {
+            $closingLegs += (float) ($exit['pnl'] ?? 0);
+        }
+
+        if ($brokerTotal !== null) {
+            $realized += $brokerTotal - $closingLegs;
+        }
+
+        $entrySize = (float) ($existing['size'] ?? 0);
+        $entryValue = (float) ($existing['entry_price'] ?? 0) * $entrySize;
+        $riskAmount = $entrySize * (float) ($existing['sl_points'] ?? 0);
+
+        return [
+            'pnl' => round($realized, 2),
+            'pnl_percent' => $entryValue > 0 ? round($realized / $entryValue * 100, 4) : 0.0,
+            'risk_reward' => $riskAmount > 0 ? round($realized / $riskAmount, 4) : null,
+            'avg_exit_price' => $this->avgExitPriceOfLegs($legs)
+                ?? $closed['exit_price'] ?? $closed['avg_exit_price'] ?? null,
+        ];
+    }
+
+    /**
+     * Size-weighted exit price across every leg on file. NULL when the legs
+     * carry no size — a connector that reports P&L without one — in which case
+     * the caller falls back to the price the closing snapshot states.
+     */
+    private function avgExitPriceOfLegs(array $legs): ?float
+    {
+        $weighted = 0.0;
+        $totalSize = 0.0;
+        foreach ($legs as $leg) {
+            $size = (float) ($leg['size'] ?? 0);
+            $weighted += (float) ($leg['exit_price'] ?? 0) * $size;
+            $totalSize += $size;
+        }
+
+        return $totalSize > 0 ? round($weighted / $totalSize, 5) : null;
     }
 
     /**

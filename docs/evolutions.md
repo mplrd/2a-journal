@@ -1138,4 +1138,39 @@ Une remarque au passage sur la façon dont ce point a été trouvé : la doc 83 
 
 ---
 
+## `trades.pnl` mélange deux unités selon l'origine du trade
+
+**Contexte** : repéré en creusant le P&L faux d'une clôture broker (docs/104). Deux
+sources écrivent la même colonne dans deux unités différentes :
+
+- saisie manuelle → `(exit_price − entry_price) × size`, soit des **points bruts ×
+  lots**. `point_value` n'intervient pas, c'est assumé et documenté
+  (`docs/09-trades.md:72`) ;
+- synchro broker → le P&L **en devise** annoncé par le broker, commissions
+  comprises.
+
+Un DAX de 0,5 lot stoppé à 66 points vaut donc 33 s'il est saisi à la main, et le
+montant réel en euros s'il est synchronisé. Les deux se cumulent dans les mêmes
+statistiques et la même case de calendrier. Le risque, lui, est toujours en devise
+(`SignalRiskCalculator` : `size × sl_points × point_value`), donc un plan compare
+un plafond en euros à un P&L qui peut être en points.
+
+**Danger associé** : `TradeService::recalcRealizedMetrics()` tourne à chaque
+édition d'un trade (`update`, `markBeReached`) et **recalcule chaque jambe** avec
+la formule en points bruts. Éditer un trade synchronisé écrase donc les P&L en
+devise venus du broker, sans retour possible. C'est le piège à connaître avant de
+« corriger à la main » un trade issu d'une synchro.
+
+**À faire** : trancher l'unité de `trades.pnl` (devise partout, le plus probable),
+appliquer `point_value` sur le chemin manuel, et faire que `recalcRealizedMetrics`
+ne touche pas aux jambes portant un `external_id` broker.
+
+**Fichiers** : `api/src/Services/TradeService.php` (l.348, l.999),
+`api/src/Services/SignalRiskCalculator.php`, `api/src/Repositories/StatsRepository.php`.
+
+**Repéré le** : 2026-08-31. **Priorité** : haute dès que les connecteurs broker
+sont ouverts aux utilisateurs — deux unités dans une même statistique.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

@@ -79,5 +79,5 @@ journal/
 - Available: /tdd-feature, /new-endpoint, /new-component, /run-tests, /doc-feature, /check-quality, /audit-security, /audit-privacy
 
 ## Apache Config
-- VHost: 2a.journal.local -> E:/2A-tools/journal
+- VHost: 2a.journal.local -> E:/2A-trading-tools/journal
 - Alias /api -> api/public/ (PHP router strips /api prefix from REQUEST_URI)
