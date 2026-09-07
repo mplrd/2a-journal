@@ -144,9 +144,7 @@ class BrokerOpenSyncServiceTest extends TestCase
                 // Whitelist: only broker-driven fields. Setup/notes MUST be absent.
                 // `targets` is on the list because a broker take profit fills
                 // it — but only while empty, which the dedicated tests cover.
-                // `sl_points` likewise: derived from the broker's stop, but
-                // only onto a row that carries none, never over one.
-                $allowed = ['entry_price', 'size', 'sl_price', 'sl_points', 'tp_price', 'direction', 'symbol', 'targets'];
+                $allowed = ['entry_price', 'size', 'sl_price', 'tp_price', 'direction', 'symbol', 'targets'];
                 foreach (array_keys($data) as $key) {
                     if (!in_array($key, $allowed, true)) {
                         return false;
@@ -733,11 +731,8 @@ class BrokerOpenSyncServiceTest extends TestCase
                 'ouinex_mp-1' => [
                     'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
                     'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
-                    // A risk already on file, and the three figures that follow
-                    // from it: 406.13 / (0.5 * 1000) = 0.8123R. The row is
-                    // fully settled, so this pass has nothing to write.
-                    'targets' => null, 'trade_id' => 5001, 'sl_points' => '1000.00',
-                    'pnl' => '406.13', 'pnl_percent' => '1.3538', 'risk_reward' => '0.8123',
+                    'targets' => null, 'trade_id' => 5001, 'sl_points' => null,
+                    'pnl' => '406.13', 'pnl_percent' => '1.3538', 'risk_reward' => null,
                     'trade_status' => TradeStatus::OPEN->value,
                 ],
             ]);
@@ -1442,26 +1437,30 @@ class BrokerOpenSyncServiceTest extends TestCase
         );
     }
 
-    // ── The risk in points, derived from the broker's own stop ────
+    // ── No risk is invented from the broker's current stop ────────
 
-    public function testInsertDerivesTheRiskInPointsFromTheBrokersStop(): void
+    public function testNeverDerivesARiskFromTheBrokersCurrentStop(): void
     {
-        // Every risk/reward in the journal divides by `size * sl_points *
-        // point_value`, and nothing on the sync path ever wrote sl_points: it
-        // stayed NULL, the divisor came out 0, and risk_reward was written
-        // NULL on every synced trade there has ever been. Observed in
-        // production on 2026-09-07: 234 cTrader positions, 234 NULLs, so the
-        // R:R average and the R distribution simply had nothing to show.
+        // The snapshot's sl_price is the CURRENT stop, and a trader moves it.
+        // Its distance to the entry is the risk that was taken only if it has
+        // not moved since the position opened, and a sync pass cannot know
+        // whether it has.
         //
-        // The broker states the stop as a PRICE. The distance to the entry is
-        // the risk the trader took, and it is the one figure the platform
-        // hands us for free.
+        // Deriving it anyway shipped on 2026-09-07 and was withdrawn the same
+        // day: the conspicuous cases were guarded (stop on the entry, stop past
+        // it) but the common one — a stop PARTIALLY pulled up, still risky,
+        // just less so — was recorded as-is, understating the risk and
+        // inflating the R by however far the stop had travelled. Prop firms
+        // watch for hyperactive API access, so the sync interval is long by
+        // design, which makes that the majority case rather than the edge.
         $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
         $this->positionRepo->expects($this->once())
             ->method('create')
             ->willReturnCallback(function ($data) {
-                // 60000 entry, stop at 59000.
-                $this->assertSame(1000.0, $data['sl_points']);
+                // The snapshot carries a stop 1000 points below the entry.
+                // It is stored as a PRICE and nothing more.
+                $this->assertSame(59000.0, $data['sl_price']);
+                $this->assertNull($data['sl_points'] ?? null);
                 return ['id' => 1001];
             });
         $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
@@ -1474,82 +1473,11 @@ class BrokerOpenSyncServiceTest extends TestCase
         );
     }
 
-    public function testInsertDerivesTheRiskOfAShortFromItsStopAbove(): void
+    public function testNeverFillsTheRiskOfARowThatCarriesNone(): void
     {
-        // A short's stop sits ABOVE its entry, so the distance is the same
-        // absolute value read the other way round. Signing it would make the
-        // divisor negative and invert every short's R.
-        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
-        $this->positionRepo->expects($this->once())
-            ->method('create')
-            ->willReturnCallback(function ($data) {
-                $this->assertSame(500.0, $data['sl_points']);
-                return ['id' => 1001];
-            });
-        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
-
-        $this->service->apply(
-            provider: \App\Enums\BrokerProvider::OUINEX,
-            userId: 10, accountId: 5, batchId: 99,
-            openSnapshot: [$this->makeOpenSnapshot([
-                'direction' => 'SELL', 'entry_price' => 60000.0, 'sl_price' => 60500.0,
-            ])],
-            closedSnapshot: [],
-        );
-    }
-
-    public function testInsertRecordsNoRiskWhenTheBrokerReportsNoStop(): void
-    {
-        // Trading without a hard stop is a legitimate choice, and inventing a
-        // risk for it would be worse than admitting we don't know: a made-up
-        // divisor produces a made-up R that nothing downstream can tell from a
-        // real one. NULL is what says "unknown", and the ratios stay unwritten.
-        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
-        $this->positionRepo->expects($this->once())
-            ->method('create')
-            ->willReturnCallback(function ($data) {
-                $this->assertNull($data['sl_points'] ?? null);
-                return ['id' => 1001];
-            });
-        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
-
-        $this->service->apply(
-            provider: \App\Enums\BrokerProvider::OUINEX,
-            userId: 10, accountId: 5, batchId: 99,
-            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => null])],
-            closedSnapshot: [],
-        );
-    }
-
-    public function testInsertRecordsNoRiskWhenTheStopIsAlreadyAtTheEntry(): void
-    {
-        // A position first seen already protected — its stop moved to
-        // break-even before the sync ever saw it — carries a distance of zero.
-        // That is not a risk of zero, it is a risk we missed, and writing 0
-        // would leave the divisor at 0 anyway while claiming to know something.
-        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
-        $this->positionRepo->expects($this->once())
-            ->method('create')
-            ->willReturnCallback(function ($data) {
-                $this->assertNull($data['sl_points'] ?? null);
-                return ['id' => 1001];
-            });
-        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
-
-        $this->service->apply(
-            provider: \App\Enums\BrokerProvider::OUINEX,
-            userId: 10, accountId: 5, batchId: 99,
-            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60000.0])],
-            closedSnapshot: [],
-        );
-    }
-
-    public function testUpdateFillsTheRiskWhenTheRowStillHasNone(): void
-    {
-        // A position the journal already holds without a risk: discovered
-        // before it had a stop, or created by the closed-deal import, which
-        // writes sl_points => null by construction. The first pass that sees a
-        // stop is the one chance to record it.
+        // Same rule on the update path: a position already on file without a
+        // risk keeps none. Only the user, or the opening order once that route
+        // lands, may state one.
         $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
             ->willReturn([
                 'ouinex_mp-1' => [
@@ -1577,111 +1505,8 @@ class BrokerOpenSyncServiceTest extends TestCase
             closedSnapshot: [],
         );
 
-        $this->assertSame(600.0, $written['sl_points']);
-    }
-
-    public function testUpdateNeverOverwritesARiskAlreadyOnFile(): void
-    {
-        // THE point of the whole thing. `sl_price` is the CURRENT stop and the
-        // broker moves it — to break-even, then trailing. Re-deriving on every
-        // pass would shrink the divisor as the trade goes well, and blow the R
-        // up at the exact moment the stop reaches the entry.
-        //
-        // Same contract as point_value: resolved once, frozen, never read back
-        // from the broker afterwards. It also protects a risk the user typed by
-        // hand, which on a synced trade is the only figure that is theirs.
-        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
-            ->willReturn([
-                'ouinex_mp-1' => [
-                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
-                    'entry_price' => '60000.00', 'size' => '0.50000', 'direction' => 'BUY',
-                    'point_value' => '1.00000', 'sl_points' => '1000.00',
-                    'targets' => null, 'trade_id' => 5001,
-                    'pnl' => null, 'pnl_percent' => null, 'risk_reward' => null,
-                    'trade_status' => TradeStatus::OPEN->value,
-                ],
-            ]);
-
-        $written = null;
-        $this->positionRepo->method('update')->willReturnCallback(
-            function ($id, $data) use (&$written) {
-                $written = $data;
-                return null;
-            },
-        );
-
-        // The stop has since been pulled up to the entry.
-        $this->service->apply(
-            provider: \App\Enums\BrokerProvider::OUINEX,
-            userId: 10, accountId: 5, batchId: 99,
-            openSnapshot: [$this->makeOpenSnapshot(['sl_price' => 60000.0])],
-            closedSnapshot: [],
-        );
-
         $this->assertArrayNotHasKey('sl_points', $written);
-    }
-
-    public function testTheDerivedRiskIsWhatFinallyGivesASyncedTradeAnR(): void
-    {
-        // End to end, and the reason any of this matters: a position discovered
-        // with a stop and taken out at that stop comes out at exactly -1R,
-        // instead of the NULL every synced trade has carried until now.
-        $this->useServiceWithPartialExits();
-        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
-        $this->positionRepo->method('create')->willReturn(['id' => 1001]);
-        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
-        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
-        $this->partialExitRepo->method('findByTradeId')->willReturn([['pnl' => '-500.00']]);
-
-        $written = null;
-        $this->tradeRepo->method('update')->willReturnCallback(
-            function ($id, $data) use (&$written) {
-                if (array_key_exists('risk_reward', $data)) {
-                    $written = $data;
-                }
-                return null;
-            },
-        );
-
-        $this->service->apply(
-            provider: \App\Enums\BrokerProvider::OUINEX,
-            userId: 10, accountId: 5, batchId: 99,
-            // 60000 entry, stop 59000, half a lot at 1 a point: 500 at risk.
-            openSnapshot: [$this->makeOpenSnapshot([
-                'exits' => [[
-                    'exit_price' => 59000.0, 'size' => 0.5, 'pnl' => -500.0,
-                    'closed_at' => '2026-09-07 11:00:00', 'external_id' => 'ctrader_deal_1',
-                ]],
-            ])],
-            closedSnapshot: [],
-        );
-
-        $this->assertSame(-1.0, (float) $written['risk_reward']);
-    }
-
-    public function testInsertRecordsNoRiskWhenTheStopHasAlreadyLockedInProfit(): void
-    {
-        // A short whose stop sits BELOW its entry has been moved past
-        // break-even. The distance is non-zero — 200 points here — but it is
-        // the distance the trader walked away with, not the one they risked.
-        // Recording it would understate the risk by however well the trade
-        // went, and hand out a flattering R for free.
-        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
-        $this->positionRepo->expects($this->once())
-            ->method('create')
-            ->willReturnCallback(function ($data) {
-                $this->assertNull($data['sl_points'] ?? null);
-                return ['id' => 1001];
-            });
-        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
-
-        $this->service->apply(
-            provider: \App\Enums\BrokerProvider::OUINEX,
-            userId: 10, accountId: 5, batchId: 99,
-            openSnapshot: [$this->makeOpenSnapshot([
-                'direction' => 'SELL', 'entry_price' => 60000.0, 'sl_price' => 59800.0,
-            ])],
-            closedSnapshot: [],
-        );
+        // The stop itself is still the broker's to report.
+        $this->assertSame(59400.0, $written['sl_price']);
     }
 }
