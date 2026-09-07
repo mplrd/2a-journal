@@ -50,6 +50,136 @@ Retours et améliorations à intégrer après l'implémentation initiale.
 - ~~Endpoint GET /symbols (public ou auth) à créer pour alimenter le frontend~~
 - **Résolu** : table `symbols` convertie en per-user ("Mes actifs") avec CRUD complet, seeding à l'inscription (6 symboles par défaut), page dédiée SymbolsView, bouton '+' inline dans OrderForm/TradeForm/PositionForm. Voir `docs/09-symbols-user.md`
 
+### 24. `trades.pnl` : une seule unité, la devise du compte
+
+> **Livré le 2026-09-01** — voir [106](../106-pnl-en-devise-du-compte.md).
+> Livré pour les trades **à venir** : l'historique reste dans son unité d'origine,
+> la reprise ayant été abandonnée (voir « Reprise des données » plus bas — elle
+> aurait consommé 150 % du drawdown d'un compte à l'essai à blanc).
+> Restent au backlog d'exécution (`docs/evolutions.md`) : le repricing assisté de
+> l'historique, et l'affichage des points en second rang sur le trade.
+
+**Constat.** Deux sources écrivent la même colonne dans deux unités. La saisie
+manuelle stocke `(exit_price - entry_price) × size`, un écart de prix brut. La
+synchro broker stocke le P&L **en devise**, commissions comprises. `point_value`
+n'intervient nulle part dans le P&L, alors qu'il est au cœur du calcul de risque
+(`SignalRiskCalculator` : `size × sl_points × point_value`).
+
+Sur le forex la formule manuelle ne produit même pas des points : 40 pips gagnés
+sur 2 lots de GBPUSD sont stockés `0,01`.
+
+**L'app attend déjà de l'argent**, partout où ce chiffre sert à autre chose qu'à
+être affiché :
+
+- `AccountRepository:64` — `current_capital = initial_capital + SUM(trades.pnl) + ajustements` ;
+- `DrawdownService::computeForAccount()` — compare `SUM(trades.pnl)` à
+  `max_drawdown`, un montant. Un P&L en points sous-évalue le drawdown consommé
+  d'un facteur `point_value` : six stops DAX à 25 €/pt affichent 3,96 % de DD
+  consommé au lieu de 99 %, et **l'alerte ne part jamais** ;
+- `SignalRiskCalculator` — `risk_% = risk_money / current_capital`, donc un
+  risque en devise divisé par un capital pollué.
+
+**Décision (2026-09-01, avec l'utilisateur)** : `pnl = nb de points × taille ×
+point_value`, dans la devise du compte. La matrice `symbol_account_settings`
+porte déjà `point_value` par (actif, compte), donc le même DAX à 1 €/pt sur une
+prop firm et à 25 €/pt ailleurs est déjà représentable — rien à créer.
+
+Le produit est commutatif : 25 lots à 1 €/pt et 1 lot à 25 €/pt donnent le même
+montant, aucun cas particulier à coder pour les prop firms.
+
+**La taille en question est celle de la jambe, pas celle de la position.** Un
+trade se solde en plusieurs sorties — chaque TP partiel, le BE, le SL final — et
+`partial_exits` porte une ligne par sortie, avec sa propre `size` et son propre
+`pnl`. `trades.pnl` n'est que leur somme (`TradeService:1069`).
+`trades.remaining_size` est ce qui reste ouvert : il ne pèse rien tant qu'il
+n'est pas sorti, il deviendra une jambe de plus. La formule s'écrit donc :
+
+```
+partial_exits.pnl = (exit_price − entry_price) × sens × partial_exits.size × point_value
+trades.pnl        = Σ partial_exits.pnl
+```
+
+`positions.size` — la taille d'entrée, celle que la synchro réécrit depuis le
+snapshot (`BrokerOpenSyncService::updateBrokerFields`) — n'entre jamais dans le
+P&L. Elle sert ailleurs, et c'est là que se joue le vrai risque du chantier.
+
+**`point_value` est figée à la prise du trade** (décidé le 2026-09-01) : une
+colonne `positions.point_value`, résolue une seule fois à la création (et par la
+synchro), relue ensuite par tous les recalculs — jamais le réglage courant.
+Modifier la valeur du point d'un actif n'affecte donc que les trades suivants :
+le capital, le drawdown et le P&L passés ne se déplacent jamais dans le dos du
+trader. Corriger d'anciens trades reste possible, mais par un geste explicite.
+
+**Ce qui doit bouger dans le même commit.** Deux colonnes divisent par
+`positions.size`, et sont aujourd'hui homogènes au P&L parce que les deux côtés
+sont en « points × lots » :
+
+- `risk_reward = pnl / (size × sl_points)` — `TradeService:1049`, `1076`,
+  `BrokerOpenSyncService:470` ;
+- `pnl_percent = pnl / (entry_price × size) × 100` — `TradeService:1053`,
+  `1082`, `BrokerOpenSyncService:355`. Ce n'est pas un chiffre décoratif :
+  il classe win / loss / breakeven dans `StatsRepository:146-157`.
+
+Multiplier le seul numérateur par `point_value` multiplierait tous les R par
+autant — un 2R sur un DAX à 25 €/pt s'afficherait 50R. En mettant `point_value`
+**aux deux dénominateurs aussi**, il se simplifie et les deux chiffres sortent
+identiques à aujourd'hui, au centime près :
+
+```
+R = (pts × size × pv) / (size × sl_pts × pv) = pts / sl_pts   inchangé
+% = (pts × size × pv) / (prix × size × pv)   = pts / prix     inchangé
+```
+
+Le changement reste donc confiné à `pnl` : aucune reprise de données sur ces
+deux colonnes, et le dénominateur du risque devient celui que
+`SignalRiskCalculator:89` utilise déjà — une formule de risque au lieu de deux.
+
+**Corollaire, un bug déjà présent.** Sur un trade synchronisé, `pnl` est déjà en
+devise pendant que le dénominateur du R reste en points. Dès que
+`point_value ≠ 1`, le R et le `pnl_percent` de ces trades sont donc faux
+aujourd'hui, d'un facteur `point_value` — invisible à 1 €/pt, le cas courant en
+prop firm. Le correctif ci-dessus le règle au passage.
+
+**Ce que ça change à l'écran** : rien pour un actif à 1 €/pt (le cas courant en
+prop firm), tout pour le forex et les indices à 10/20/25/50. Les points restent
+la langue du trader : affichage secondaire **sur le trade**, jamais dans la
+colonne qu'on agrège.
+
+**Reprise des données — abandonnée à la livraison, et c'est le point dur.** Les
+jambes saisies à la main sont arithmétiquement recalculables (prix, tailles et
+`point_value` sont en base). Le problème n'est pas le calcul, c'est la valeur du
+point : `symbols.point_value` n'a jamais servi qu'au risque, ces valeurs ne sont
+pas curées, et `autoMaterializeForUser()` recopie le défaut dans les réglages par
+compte — un réglage « explicite » est indiscernable d'un défaut hérité.
+
+Essai à blanc sur un jeu réaliste : un compte prop firm passait de +1 030 à
++15 660 (objectif de gain franchi), un autre de −330 à −7 500, soit **150 % du
+drawdown max consommé**. Le DAX à 25 €/pt par défaut alors qu'il vaut 1 sur le
+compte prop firm est le cas courant, pas l'exception.
+
+Les positions existantes restent donc à 1, P&L rigoureusement inchangé. Le
+repricing de l'historique reste à faire, mais il exige des valeurs validées par
+l'utilisateur et un aperçu de ce que ça déplace — un geste dans l'interface, pas
+une migration silencieuse.
+
+**Multi-devise** : pas de conversion FX. La devise vient du compte
+(`accounts.currency`), et les visuels en argent héritent leur portée du filtre
+compte. Le R (`risk_reward`) et le taux de réussite restent les unités
+transverses, sans conversion. Les visuels concernés, s'il faut un jour gérer une
+sélection multi-devises : equity/cumulé (une série par devise), calendrier,
+P&L par symbole, cartes KPI (`total_pnl`, `best`/`worst`, **et `profit_factor`**,
+qui est un ratio de deux sommes et ne survit donc pas au mélange), heatmap en
+P&L, et le `total_pnl` des agrégats par dimension. `WinLossChart`, la
+distribution de R et les stats par session ne bougent pas.
+
+**Fichiers** : `api/src/Services/TradeService.php` (`close`,
+`recalcRealizedMetrics`, `calculateRealizedMetrics`),
+`api/src/Services/Broker/BrokerOpenSyncService.php` (les mêmes dénominateurs),
+`api/src/Services/SymbolResolver.php` + `SymbolAccountSettingsRepository` pour
+résoudre `point_value` par (actif, compte), une migration de reprise des jambes
+manuelles, `frontend/src/components/dashboard/`,
+`frontend/src/components/performance/`.
+
 ## Bugs / Fixes
 
 ### ~~8. Synchroniser la locale avec le profil utilisateur en BDD~~ ✅

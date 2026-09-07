@@ -1163,14 +1163,93 @@ et écrasait donc les P&L en devise venus du broker. Les jambes portant un
 correctif ne sont pas récupérables : la valeur broker n'existe plus qu'en base
 côté plateforme.
 
-**À faire** : trancher l'unité de `trades.pnl` (devise partout, le plus probable)
-et appliquer `point_value` sur le chemin manuel.
+**Résolu le 2026-09-01** — voir [106](106-pnl-en-devise-du-compte.md). `pnl` est
+un montant dans la devise du compte : `points × taille de la jambe × point_value`,
+la valeur du point étant figée sur `positions.point_value` à la prise du trade.
+Les dénominateurs de `risk_reward` et `pnl_percent` la reçoivent aussi, où elle
+s'annule — les deux ratios sortent identiques.
 
-**Fichiers** : `api/src/Services/TradeService.php` (l.348, l.999),
-`api/src/Services/SignalRiskCalculator.php`, `api/src/Repositories/StatsRepository.php`.
+**Résolu pour les trades à venir seulement** : la migration 045 n'ajoute que la
+colonne, l'historique reste dans son unité d'origine. La reprise est un chantier
+à part entière, voir « Repricer l'historique dans la devise du compte » ci-dessous.
 
 **Repéré le** : 2026-08-31. **Priorité** : haute dès que les connecteurs broker
 sont ouverts aux utilisateurs — deux unités dans une même statistique.
+
+---
+
+## Repricer l'historique dans la devise du compte
+
+[106](106-pnl-en-devise-du-compte.md) met le P&L en devise pour les trades **à
+venir**. L'historique garde son unité d'origine : la migration 045 laisse toutes
+les positions existantes à `point_value = 1`.
+
+La reprise automatique a été écrite puis **retirée** après essai à blanc, qui
+donnait sur un jeu réaliste : un compte prop firm de +1 030 à +15 660 (objectif de
+gain franchi d'un coup), un autre de −330 à −7 500, soit **150 % du drawdown max
+consommé**. La cause n'est pas le calcul mais la valeur du point :
+`symbols.point_value` n'a jamais servi qu'au risque, ces valeurs ne sont pas
+curées, et `autoMaterializeForUser()` recopie le défaut de l'actif dans les
+réglages par compte — un réglage validé par l'utilisateur est indiscernable d'un
+défaut hérité. Un DAX à 25 €/pt sur un compte où il vaut 1 est le cas courant.
+
+**À faire** : un écran de repricing, actif par actif et compte par compte, qui
+(1) demande à l'utilisateur de confirmer la valeur du point, (2) affiche un aperçu
+de ce que ça déplace — P&L cumulé, capital, drawdown consommé, avant/après —,
+(3) n'applique qu'après confirmation, et (4) journalise l'avant pour être
+réversible. Tant qu'il n'existe pas, deux unités cohabitent dans les statistiques
+des utilisateurs qui ont de l'historique.
+
+**Fichiers** : nouvelle migration, `api/src/Services/SymbolService.php`,
+`frontend/src/views/SymbolsView.vue`.
+
+**Repéré le** : 2026-09-01. **Priorité** : haute — c'est la moitié manquante de
+l'évolution #24, et elle est bloquante pour tout utilisateur ayant de l'historique.
+
+---
+
+## Les points en second rang sur le trade
+
+Le P&L est désormais un montant ([106](106-pnl-en-devise-du-compte.md)), mais les
+points restent la langue du trader : « j'ai pris 66 points » se dit avant « j'ai
+perdu 825 € ». La distance en points est déjà déductible de `entry_price`,
+`avg_exit_price` et du sens, elle n'a pas besoin d'être stockée.
+
+**À faire** : afficher la distance en points en second rang **sur le trade**
+(détail, ligne de liste), jamais dans une colonne qu'on agrège. Décider au passage
+si le montant doit porter le symbole de la devise du compte — aujourd'hui aucun
+écran n'affiche de devise, ce qui était cohérent tant que le chiffre n'était pas
+de l'argent.
+
+**Fichiers** : `frontend/src/components/trades/`, `frontend/src/views/`.
+
+**Repéré le** : 2026-09-01. **Priorité** : moyenne — rien n'est faux sans, c'est du
+confort de lecture.
+
+---
+
+## Le seeder de démo écrit encore des P&L en points
+
+`database/seed-demo.php` insère ses positions sans `point_value` (donc 1 par
+défaut) et calcule ses P&L en `(prix de sortie − entrée) × taille`, alors que ses
+actifs valent 20 €/pt (NASDAQ), 25 (DAX) et 10 (forex). Le jeu de démo reste
+cohérent avec lui-même — ratios compris — mais il n'exerce pas la nouvelle
+formule, et ses trades EURUSD affichent toujours `0,01`, exactement le symptôme
+que [106](106-pnl-en-devise-du-compte.md) corrige.
+
+Multiplier bêtement les P&L par la valeur du point ne suffit pas : sur un compte
+FTMO de 100 000 € avec 10 000 € de drawdown max, un P&L ×20 ferait sauter les
+seuils et le jeu de démo paraîtrait cassé. Il faut redimensionner les tailles (ou
+les capitaux) en même temps.
+
+**À faire** : rejouer le jeu de démo avec des tailles réalistes (0,05 lot sur un
+NASDAQ à 20 $/pt plutôt qu'1 lot), écrire `point_value` sur les positions, et
+vérifier que drawdown et objectif de gain restent plausibles.
+
+**Fichiers** : `api/database/seed-demo.php`.
+
+**Repéré le** : 2026-09-01. **Priorité** : moyenne — outil de dev, aucun impact
+utilisateur.
 
 ---
 

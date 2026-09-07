@@ -10,7 +10,7 @@ class PositionRepository
 {
     private PDO $pdo;
 
-    private const COLUMNS = 'id, user_id, account_id, direction, symbol, entry_price, size, setup,
+    private const COLUMNS = 'id, user_id, account_id, direction, symbol, entry_price, size, point_value, setup,
                     plan_id, plan_adherence, plan_adherence_reason,
                     sl_points, sl_price, be_points, be_price, be_size, targets, notes,
                     import_batch_id, external_id, position_type, created_at, updated_at';
@@ -23,11 +23,11 @@ class PositionRepository
     public function create(array $data): array
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup,
+            'INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, point_value, setup,
                     plan_id, plan_adherence, plan_adherence_reason,
                     sl_points, sl_price, be_points, be_price, be_size, targets, notes,
                     import_batch_id, external_id, position_type)
-             VALUES (:user_id, :account_id, :direction, :symbol, :entry_price, :size, :setup,
+             VALUES (:user_id, :account_id, :direction, :symbol, :entry_price, :size, :point_value, :setup,
                     :plan_id, :plan_adherence, :plan_adherence_reason,
                     :sl_points, :sl_price, :be_points, :be_price, :be_size, :targets, :notes,
                     :import_batch_id, :external_id, :position_type)'
@@ -39,6 +39,10 @@ class PositionRepository
             'symbol' => $data['symbol'],
             'entry_price' => $data['entry_price'],
             'size' => $data['size'],
+            // Frozen at creation (évolution #24): what one point is worth in
+            // the account's currency. NOT NULL, so an unstated one means 1 —
+            // the arithmetic the journal did before point values entered it.
+            'point_value' => $data['point_value'] ?? 1.0,
             'setup' => $data['setup'] ?? null,
             'plan_id' => $data['plan_id'] ?? null,
             'plan_adherence' => $data['plan_adherence'] ?? null,
@@ -118,7 +122,7 @@ class PositionRepository
         $params = ['id' => $id];
 
         $allowedFields = [
-            'direction', 'symbol', 'entry_price', 'size', 'setup',
+            'direction', 'symbol', 'entry_price', 'size', 'point_value', 'setup',
             'plan_id', 'plan_adherence', 'plan_adherence_reason',
             'sl_points', 'sl_price', 'be_points', 'be_price', 'be_size',
             'targets', 'notes', 'position_type',
@@ -181,7 +185,7 @@ class PositionRepository
         // tick is knowing what is already on file.
         $stmt = $this->pdo->prepare(
             'SELECT p.id AS position_id, p.external_id, p.entry_price, p.size,
-                    p.sl_price, p.sl_points, p.direction, p.symbol, p.targets,
+                    p.point_value, p.sl_price, p.sl_points, p.direction, p.symbol, p.targets,
                     t.id AS trade_id, t.status AS trade_status,
                     t.pnl, t.pnl_percent, t.risk_reward
              FROM positions p
