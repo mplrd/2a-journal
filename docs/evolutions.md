@@ -1251,6 +1251,118 @@ vérifier que drawdown et objectif de gain restent plausibles.
 **Repéré le** : 2026-09-01. **Priorité** : moyenne — outil de dev, aucun impact
 utilisateur.
 
+## Reprendre le risque des trades synchronisés déjà en base
+
+[107](107-risque-des-trades-synchronises.md) dérive `sl_points` du stop annoncé
+par le broker, mais seulement pour les positions vues **ouvertes** et dont le stop
+porte encore du risque. Les trades clos restent à NULL — 234 positions cTrader au
+2026-09-07 — donc sans R:R, exclus de la moyenne et de la distribution des R.
+
+La source du stop **d'origine** est identifiée, et elle est déjà dans nos mains :
+
+```
+ProtoOAOrder.stopLoss = 15         // Absolute stopLoss price
+ProtoOAOrder.positionId = 19       // ID of the position linked to the order
+ProtoOADeal.orderId = 2            // Source order of the deal
+```
+
+`CtraderConnector::fetchClosedOrders()` appelle déjà `ProtoOAOrderListReq` sur la
+même fenêtre que les deals, et `normalizeCtraderClosedOrder()` (`DealNormalizer:346`)
+ne garde que `external_id` et `final_status` — `stopLoss` part à la poubelle à
+chaque synchro. Pour les trades à venir, le récupérer ne coûte **aucune requête
+supplémentaire**, donc rien à négocier avec le budget cTrader.
+
+**À constater avant de bâtir dessus** — deux hypothèses lues dans le `.proto` et
+jamais vérifiées sur une vraie réponse cTrader :
+
+1. que l'ordre d'ouverture porte bien `positionId` ;
+2. que son `stopLoss` reste celui de la **prise de position** quand le trader
+   déplace son stop ensuite. Si cTrader amende cet ordre au lieu de créer un
+   ordre de protection distinct (`STOP_LOSS_TAKE_PROFIT`, type 4), on retombe sur
+   le problème du BE et la route ne vaut rien.
+
+Il n'existe aucun outil d'inspection d'une réponse broker dans le repo, et un seul
+utilisateur a une synchro cTrader vivante : il faut soit un CLI de diagnostic en
+lecture seule, soit une trace ponctuelle via `BrokerLogger`.
+
+**À faire** : (1) constater les deux points ci-dessus sur une vraie réponse ;
+(2) si c'est bon, garder `stopLoss`/`relativeStopLoss` dans le normalizer et lier
+deal → ordre d'ouverture → position ; (3) rejouer la fenêtre d'ordres en arrière
+pour remplir `sl_points` là où il est NULL, dans la limite de la profondeur
+d'historique que cTrader conserve.
+
+**Fichiers** : `api/src/Services/Broker/DealNormalizer.php`,
+`api/src/Services/Broker/CtraderConnector.php`,
+`api/src/Services/Broker/BrokerOpenSyncService.php`, un CLI de reprise.
+
+**Repéré le** : 2026-09-07. **Priorité** : haute — c'est la moitié manquante de
+[107](107-risque-des-trades-synchronises.md), et sans elle l'utilisateur qui a de
+l'historique synchronisé n'a toujours pas de R:R sur l'essentiel de ses trades.
+
+---
+
+## Mesurer la valeur du point plutôt que la déduire des réglages
+
+Découvert en instruisant [107](107-risque-des-trades-synchronises.md). Sur un
+trade synchronisé, la valeur du point est **calculable** sans rien supposer : le
+montant encaissé vient du broker, la taille et les deux prix sont en base, et
+`montant = points × taille × valeur du point` n'a qu'une inconnue.
+
+```sql
+SELECT p.symbol,
+       AVG(pe.pnl / NULLIF((pe.exit_price - p.entry_price)
+           * (CASE WHEN p.direction='BUY' THEN 1 ELSE -1 END) * pe.size, 0))
+FROM partial_exits pe
+JOIN trades t ON t.id = pe.trade_id
+JOIN positions p ON p.id = t.position_id
+WHERE p.external_id LIKE 'ctrader_%' AND pe.exit_price <> p.entry_price
+GROUP BY p.symbol;
+```
+
+Ça a démenti une hypothèse coûteuse : on croyait `point_value = 1` hérité par
+défaut sur les positions cTrader, avec 20 et 25 comme vraies valeurs. La mesure
+donne 0,98 et 1,15 — l'utilisateur trade bien à 1 du point, et une « correction »
+aurait faussé tous ses R d'un facteur 20 à 25.
+
+**À faire** : le repricing assisté de l'historique (évolution ci-dessus, issue de
+[106](106-pnl-en-devise-du-compte.md)) doit **proposer la valeur mesurée** actif
+par actif et compte par compte, à côté de la valeur déclarée, et signaler les
+écarts. Une valeur déclarée qui contredit la mesure est le signal qu'il ne faut
+surtout pas reprendre en silence.
+
+**Fichiers** : l'écran de repricing à venir, `api/src/Services/SymbolService.php`.
+
+**Repéré le** : 2026-09-07. **Priorité** : haute — c'est ce qui rend le repricing
+de l'historique sûr au lieu de spéculatif.
+
+---
+
+## `ensureSymbolExists` crée les actifs inconnus à 1 sans le dire
+
+Un symbole que le broker envoie et que le journal ne connaît pas est auto-créé par
+`ImportService::ensureSymbolExists()` avec `type = OTHER` et
+`'point_value' => 1.0`. Constaté sur `GER40.cash` (id 255, `name` = `code`), alors
+que le même utilisateur a un `DE40.CASH` réglé à 25 : cTrader envoie `GER40.cash`,
+les deux ne se rencontrent jamais.
+
+Un alias ne rattrape rien : `SymbolResolver::resolve()` cherche le code propre de
+l'utilisateur **avant** les alias (`:40`), donc tant que `GER40.cash` existe comme
+actif, un alias `GER40.cash → DE40.CASH` ne se déclenche jamais.
+
+Sans conséquence dans le cas constaté — la valeur mesurée est bien 1 — mais le
+silence est le problème : un actif auto-créé est indiscernable d'un actif réglé,
+et depuis [106](106-pnl-en-devise-du-compte.md) cette valeur est figée sur chaque
+position à sa création.
+
+**À faire** : signaler à l'utilisateur les actifs auto-créés en attente de réglage
+(badge sur « Mes actifs », ou liste au retour de synchro), et proposer la valeur
+mesurée quand il y a assez de trades pour la calculer.
+
+**Fichiers** : `api/src/Services/Import/ImportService.php`,
+`frontend/src/views/SymbolsView.vue`.
+
+**Repéré le** : 2026-09-07. **Priorité** : moyenne.
+
 ---
 
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
