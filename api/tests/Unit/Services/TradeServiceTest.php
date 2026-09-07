@@ -13,6 +13,7 @@ use App\Repositories\TradeRepository;
 use App\Repositories\TradingPlanRepository;
 use App\Services\PlanAdherenceEvaluator;
 use App\Services\PlanEvaluator;
+use App\Services\PointValueResolver;
 use App\Services\SignalRiskCalculator;
 use App\Services\TradeService;
 use PHPUnit\Framework\TestCase;
@@ -65,6 +66,7 @@ class TradeServiceTest extends TestCase
             'symbol' => 'NASDAQ',
             'entry_price' => '18500.00000',
             'size' => '1.0000',
+            'point_value' => '1.00000',
             'setup' => ['Breakout'],
             'sl_points' => '50.00',
             'sl_price' => '18450.00000',
@@ -1222,5 +1224,163 @@ class TradeServiceTest extends TestCase
         $this->expectException(\RuntimeException::class);
 
         $service->deleteBulk(1, [101, 102]);
+    }
+
+    // ── P&L in the account's currency (évolution #24) ────────────
+    // `pnl` used to hold a raw price distance times a size, which is neither
+    // points nor money. It now holds money, and the point value is frozen on
+    // the position at creation so no later settings change moves history.
+
+    public function testCreateFreezesTheResolvedPointValueOnThePosition(): void
+    {
+        $resolver = $this->createMock(PointValueResolver::class);
+        $resolver->expects($this->once())
+            ->method('resolve')
+            ->with(1, 'GER40', 100)
+            ->willReturn(25.0);
+
+        $service = new TradeService(
+            $this->tradeRepo,
+            $this->partialExitRepo,
+            $this->positionRepo,
+            $this->accountRepo,
+            $this->historyRepo,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $resolver
+        );
+
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->tradeRepo->method('create')->willReturn($this->fakeTrade());
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->willReturnCallback(function ($data) {
+                $this->assertSame(25.0, $data['point_value']);
+                return ['id' => 10, 'user_id' => 1, 'symbol' => 'GER40'];
+            });
+
+        $service->create(1, $this->validCreateData(['symbol' => 'GER40']));
+    }
+
+    public function testCreateFreezesOneWhenNoResolverIsWired(): void
+    {
+        // The resolver is optional the way every other collaborator here is.
+        // Without it the position stores 1, which is exactly the arithmetic the
+        // journal did before this change.
+        $this->accountRepo->method('findById')->willReturn($this->fakeAccount());
+        $this->tradeRepo->method('create')->willReturn($this->fakeTrade());
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->willReturnCallback(function ($data) {
+                $this->assertSame(1.0, $data['point_value']);
+                return ['id' => 10, 'user_id' => 1, 'symbol' => 'NASDAQ'];
+            });
+
+        $this->service->create(1, $this->validCreateData());
+    }
+
+    public function testClosePnlIsMultipliedByThePointValue(): void
+    {
+        // The stop that started all this: 66 points against, half a lot, on a
+        // DAX worth 25 EUR the point. The column used to hold -33 — neither
+        // points (-66) nor money (-825) — while the capital, the drawdown and
+        // the plans' risk all read it as money.
+        $trade = $this->fakeTrade([
+            'remaining_size' => '0.5000',
+            'size' => '0.5000',
+            'direction' => 'BUY',
+            'entry_price' => '18500.00000',
+            'sl_points' => '66.00',
+            'point_value' => '25.00000',
+        ]);
+        $this->tradeRepo->method('findById')->willReturn($trade);
+        $this->partialExitRepo->method('create')->willReturnCallback(function ($data) {
+            $this->assertEquals(-825.0, $data['pnl']);
+            return ['id' => 1, 'trade_id' => 1, 'exit_price' => '18434.00000', 'size' => '0.5000', 'pnl' => '-825.00'];
+        });
+        $this->partialExitRepo->method('findByTradeId')->willReturn([
+            ['exit_price' => '18434.00000', 'size' => '0.5000', 'pnl' => '-825.00'],
+        ]);
+        $this->tradeRepo->method('update')->willReturn($this->fakeTrade(['status' => 'CLOSED']));
+
+        $this->service->close(1, 1, [
+            'exit_price' => 18434,
+            'exit_size' => 0.5,
+            'exit_type' => 'SL',
+        ]);
+    }
+
+    public function testCloseRiskRewardIsUnchangedByThePointValue(): void
+    {
+        // Why the point value goes on BOTH sides of the ratio: it cancels. A
+        // stop taken in full is -1R whether the point is worth 1 EUR or 25.
+        // Multiplying only the numerator would have shown -25R on the DAX.
+        $atOne = $this->closeFullStopAtPointValue(1.0);
+        $atTwentyFive = $this->closeFullStopAtPointValue(25.0);
+
+        $this->assertEquals(-1.0, $atOne['risk_reward']);
+        $this->assertEquals($atOne['risk_reward'], $atTwentyFive['risk_reward']);
+    }
+
+    public function testClosePnlPercentIsUnchangedByThePointValue(): void
+    {
+        // Same cancellation, and it matters beyond display: StatsRepository
+        // classifies win / loss / breakeven on pnl_percent alone, so scaling it
+        // would reclassify every breakeven trade.
+        $atOne = $this->closeFullStopAtPointValue(1.0);
+        $atTwentyFive = $this->closeFullStopAtPointValue(25.0);
+
+        $this->assertEquals($atOne['pnl_percent'], $atTwentyFive['pnl_percent']);
+    }
+
+    /**
+     * The same full stop — 66 points against on half a lot — closed on a symbol
+     * worth `$pointValue` the point. Returns what was written on the trade row.
+     *
+     * Builds its own mocks: the two point values have to be compared inside a
+     * single test, and the shared ones are wired once per test in setUp().
+     */
+    private function closeFullStopAtPointValue(float $pointValue): array
+    {
+        $tradeRepo = $this->createMock(TradeRepository::class);
+        $partialExitRepo = $this->createMock(PartialExitRepository::class);
+        $service = new TradeService(
+            $tradeRepo,
+            $partialExitRepo,
+            $this->createMock(PositionRepository::class),
+            $this->createMock(AccountRepository::class),
+            $this->createMock(StatusHistoryRepository::class)
+        );
+
+        $tradeRepo->method('findById')->willReturn($this->fakeTrade([
+            'remaining_size' => '0.5000',
+            'size' => '0.5000',
+            'direction' => 'BUY',
+            'entry_price' => '18500.00000',
+            'sl_points' => '66.00',
+            'point_value' => number_format($pointValue, 5, '.', ''),
+        ]));
+
+        $legPnl = (string) round(-66 * 0.5 * $pointValue, 2);
+        $leg = ['exit_price' => '18434.00000', 'size' => '0.5000', 'pnl' => $legPnl];
+        $partialExitRepo->method('create')->willReturn(['id' => 1, 'trade_id' => 1] + $leg);
+        $partialExitRepo->method('findByTradeId')->willReturn([$leg]);
+
+        $captured = [];
+        $tradeRepo->method('update')->willReturnCallback(function ($id, $data) use (&$captured) {
+            $captured = $data;
+            return $this->fakeTrade(['status' => 'CLOSED']);
+        });
+
+        $service->close(1, 1, [
+            'exit_price' => 18434,
+            'exit_size' => 0.5,
+            'exit_type' => 'SL',
+        ]);
+
+        return $captured;
     }
 }

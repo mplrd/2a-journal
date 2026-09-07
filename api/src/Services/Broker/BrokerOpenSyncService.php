@@ -10,6 +10,7 @@ use App\Enums\TradeStatus;
 use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\TradeRepository;
+use App\Services\PointValueResolver;
 
 /**
  * Reconciles the live OPEN snapshot returned by a broker connector against
@@ -41,7 +42,28 @@ class BrokerOpenSyncService
         private PositionRepository $positionRepo,
         private TradeRepository $tradeRepo,
         private ?PartialExitRepository $partialExitRepo = null,
+        private ?PointValueResolver $pointValueResolver = null,
     ) {}
+
+    /**
+     * What a point of this instrument is worth on this account, in its
+     * currency (évolution #24). The broker states money and knows nothing of
+     * this: it is resolved once, when the position is first seen, and frozen
+     * on the row. Without a resolver wired it is 1 — the arithmetic that came
+     * before, so a connector left unwired degrades rather than breaks.
+     */
+    private function pointValueFor(int $userId, string $symbol, int $accountId): float
+    {
+        return $this->pointValueResolver?->resolve($userId, $symbol, $accountId) ?? 1.0;
+    }
+
+    /** The frozen point value of a row already on file, guarding older rows. */
+    private function pointValueOnFile(array $row): float
+    {
+        $pointValue = (float) ($row['point_value'] ?? 1);
+
+        return $pointValue > 0 ? $pointValue : 1.0;
+    }
 
     /**
      * @param BrokerProvider $provider Provider whose external_id prefix scopes the diff.
@@ -108,6 +130,8 @@ class BrokerOpenSyncService
 
     private function insertNewOpen(int $userId, int $accountId, int $batchId, array $row): void
     {
+        $pointValue = $this->pointValueFor($userId, (string) ($row['symbol'] ?? ''), $accountId);
+
         $position = $this->positionRepo->create([
             'user_id' => $userId,
             'account_id' => $accountId,
@@ -115,6 +139,7 @@ class BrokerOpenSyncService
             'symbol' => $row['symbol'],
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
+            'point_value' => $pointValue,
             'sl_price' => $row['sl_price'] ?? null,
             'targets' => BrokerTargetBuilder::fromSnapshot($row),
             'external_id' => $row['external_id'],
@@ -157,7 +182,7 @@ class BrokerOpenSyncService
         // A position discovered here carries no sl_points: nobody has typed a
         // risk on it yet, so its risk/reward stays unknown until they do.
         $this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []);
-        $this->bankRealizedFromExits((int) $trade['id'], $row, null, []);
+        $this->bankRealizedFromExits((int) $trade['id'], $row, null, [], $pointValue);
     }
 
     /**
@@ -231,6 +256,7 @@ class BrokerOpenSyncService
             $snapshot,
             isset($existing['sl_points']) ? (float) $existing['sl_points'] : null,
             $existing,
+            $this->pointValueOnFile($existing),
         );
     }
 
@@ -324,6 +350,7 @@ class BrokerOpenSyncService
         array $context,
         ?float $slPoints,
         array $onFile,
+        float $pointValue = 1.0,
     ): void {
         if ($this->partialExitRepo === null) {
             return;
@@ -342,9 +369,15 @@ class BrokerOpenSyncService
             $realized += (float) ($exit['pnl'] ?? 0);
         }
 
+        // The realized total is the broker's own figure, in the account's
+        // currency. The risk and the notional it is divided by are distances
+        // in points, so they only become comparable once multiplied by the
+        // point value too (évolution #24). Left out, every synced R and
+        // percentage on an instrument worth more than 1 a point came out
+        // multiplied by exactly that factor.
         $entrySize = (float) ($context['size'] ?? 0);
-        $entryValue = (float) ($context['entry_price'] ?? 0) * $entrySize;
-        $riskAmount = $entrySize * (float) ($slPoints ?? 0);
+        $entryValue = (float) ($context['entry_price'] ?? 0) * $entrySize * $pointValue;
+        $riskAmount = $entrySize * (float) ($slPoints ?? 0) * $pointValue;
 
         // Rounded to the precision of their columns — DECIMAL(15,2) and two
         // DECIMAL(8,4) — so a value read back compares equal to the one that
@@ -465,9 +498,12 @@ class BrokerOpenSyncService
             $realized += $brokerTotal - $closingLegs;
         }
 
+        // Same unit reconciliation as bankRealizedFromExits: money on top, the
+        // point value carried on both denominators so they are money too.
+        $pointValue = $this->pointValueOnFile($existing);
         $entrySize = (float) ($existing['size'] ?? 0);
-        $entryValue = (float) ($existing['entry_price'] ?? 0) * $entrySize;
-        $riskAmount = $entrySize * (float) ($existing['sl_points'] ?? 0);
+        $entryValue = (float) ($existing['entry_price'] ?? 0) * $entrySize * $pointValue;
+        $riskAmount = $entrySize * (float) ($existing['sl_points'] ?? 0) * $pointValue;
 
         return [
             'pnl' => round($realized, 2),

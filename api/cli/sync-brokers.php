@@ -177,6 +177,13 @@ try {
 
     // Services
     $customFieldService = new CustomFieldService($customFieldRepo, $customFieldValueRepo);
+    // The scheduler freezes point values exactly like the HTTP path does —
+    // otherwise every position discovered by the cron would land at 1 and its
+    // R would be off by the point value (évolution #24).
+    $pointValueResolver = new \App\Services\PointValueResolver(
+        new \App\Services\SymbolResolver($symbolRepo, $symbolAliasRepo),
+        new \App\Repositories\SymbolAccountSettingsRepository($pdo),
+    );
     $importService = new ImportService(
         new FileParserService(),
         new ColumnMapperService(),
@@ -189,6 +196,7 @@ try {
         $accountRepo,
         $pdo,
         $customFieldService,
+        $pointValueResolver,
     );
 
     $crypto = new CredentialEncryptionService($brokerConfig['encryption_key']);
@@ -215,9 +223,9 @@ try {
         $brokerConfig['bingx']['base_url']
     );
     $partialExitRepo = new \App\Repositories\PartialExitRepository($pdo);
-    $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo, $partialExitRepo);
+    $brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo, $partialExitRepo, $pointValueResolver);
     $orderRepo = new \App\Repositories\OrderRepository($pdo);
-    $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
+    $brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo, $pointValueResolver);
 
     $syncService = new BrokerSyncService(
         $brokerConnectionRepo,

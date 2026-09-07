@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS positions (
     symbol VARCHAR(50) NOT NULL,
     entry_price DECIMAL(15,5) NOT NULL,
     size DECIMAL(10,5) NOT NULL,
+    point_value DECIMAL(10,5) NOT NULL DEFAULT 1,
     setup TEXT NULL DEFAULT NULL,
     sl_points DECIMAL(10,2) NULL DEFAULT NULL,
     sl_price DECIMAL(15,5) NULL DEFAULT NULL,

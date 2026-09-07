@@ -105,6 +105,7 @@ use App\Services\SymbolService;
 use App\Services\PlanEvaluator;
 use App\Services\PlanAdherenceEvaluator;
 use App\Services\PlanOpenRiskCalculator;
+use App\Services\PointValueResolver;
 use App\Services\SignalRiskCalculator;
 use App\Services\SymbolCodeRenamer;
 use App\Services\SymbolResolver;
@@ -362,6 +363,9 @@ $planEvaluator = new PlanEvaluator();
 $symbolResolver = new SymbolResolver($symbolRepo, new SymbolAliasRepository($pdo));
 $signalRiskCalculator = new SignalRiskCalculator($symbolResolver, $symbolSettingsRepo, $accountRepo);
 $planOpenRiskCalculator = new PlanOpenRiskCalculator($positionRepo, $signalRiskCalculator);
+// What a point is worth on this account, frozen onto every position the moment
+// it is created — the P&L is money from there on (évolution #24).
+$pointValueResolver = new PointValueResolver($symbolResolver, $symbolSettingsRepo);
 // L'assemblage autour de l'évaluateur pur, partagé par les trades, les ordres et
 // la simulation à la saisie : trois copies d'un garde-fou, ce sont trois endroits
 // où oublier un filtre (docs/102).
@@ -375,7 +379,7 @@ $planAdherenceEvaluator = new PlanAdherenceEvaluator(
 
 // ── Orders ────────────────────────────────────────────────────
 $orderRepo = new OrderRepository($pdo);
-$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planAdherenceEvaluator);
+$orderService = new OrderService($orderRepo, $positionRepo, $accountRepo, $historyRepo, $tradeRepo, $setupRepo, $planAdherenceEvaluator, $pointValueResolver);
 $orderController = new OrderController($orderService);
 
 $router->get('/orders', [$orderController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -387,7 +391,7 @@ $router->post('/orders/{id}/execute', [$orderController, 'execute'], [$authMiddl
 
 // ── Trades ─────────────────────────────────────────────────────
 // Plan deps ($planRepo / the two evaluators / the two risk calculators) above.
-$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planAdherenceEvaluator);
+$tradeService = new TradeService($tradeRepo, $partialExitRepo, $positionRepo, $accountRepo, $historyRepo, $setupRepo, $customFieldService, $drawdownService, $pdo, $planAdherenceEvaluator, $pointValueResolver);
 $tradeController = new TradeController($tradeService);
 
 $router->get('/trades', [$tradeController, 'index'], [$authMiddleware, $requireSubscription]);
@@ -414,7 +418,8 @@ $importService = new ImportService(
     $tradeRepo,
     $accountRepo,
     $pdo,
-    $customFieldService
+    $customFieldService,
+    $pointValueResolver
 );
 $importController = new ImportController($importService);
 
@@ -457,8 +462,8 @@ $bingxConnector = new BingxConnector(
     new \GuzzleHttp\Client(),
     $brokerConfig['bingx']['base_url']
 );
-$brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo, $partialExitRepo);
-$brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo);
+$brokerOpenSyncService = new BrokerOpenSyncService($positionRepo, $tradeRepo, $partialExitRepo, $pointValueResolver);
+$brokerOrderSyncService = new BrokerOrderSyncService($orderRepo, $positionRepo, $pointValueResolver);
 $brokerSyncService = new BrokerSyncService(
     $brokerConnectionRepo,
     $syncLogRepo,

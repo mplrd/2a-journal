@@ -16,6 +16,7 @@ use App\Repositories\SymbolAliasRepository;
 use App\Repositories\SymbolRepository;
 use App\Repositories\TradeRepository;
 use App\Services\CustomFieldService;
+use App\Services\PointValueResolver;
 use PDO;
 
 class ImportService
@@ -31,6 +32,7 @@ class ImportService
     private AccountRepository $accountRepo;
     private PDO $pdo;
     private ?CustomFieldService $customFieldService;
+    private ?PointValueResolver $pointValueResolver;
 
     public function __construct(
         FileParserService $parser,
@@ -43,7 +45,8 @@ class ImportService
         TradeRepository $tradeRepo,
         AccountRepository $accountRepo,
         PDO $pdo,
-        ?CustomFieldService $customFieldService = null
+        ?CustomFieldService $customFieldService = null,
+        ?PointValueResolver $pointValueResolver = null
     ) {
         $this->parser = $parser;
         $this->mapper = $mapper;
@@ -56,6 +59,7 @@ class ImportService
         $this->accountRepo = $accountRepo;
         $this->pdo = $pdo;
         $this->customFieldService = $customFieldService;
+        $this->pointValueResolver = $pointValueResolver;
     }
 
     /**
@@ -196,6 +200,12 @@ class ImportService
                         'symbol' => $symbol,
                         'entry_price' => $posData['entry_price'],
                         'size' => $posData['total_size'],
+                        // The file already states its P&L in the broker's
+                        // currency, so this never re-prices an imported trade
+                        // — it makes its R and its percentage divide by money
+                        // instead of by points (évolution #24). resolveSymbol
+                        // has just materialised the asset, so it resolves.
+                        'point_value' => $this->pointValueResolver?->resolve($userId, $symbol, $accountId) ?? 1.0,
                         'setup' => null,
                         'sl_points' => null,
                         'sl_price' => null,
@@ -209,7 +219,11 @@ class ImportService
                     $isOpen = $this->isOpenPosition($posData);
                     $tradeId = $isOpen
                         ? $this->createOpenImportedTrade($position['id'], $posData)
-                        : $this->createImportedTrade($position['id'], $posData);
+                        : $this->createImportedTrade(
+                            $position['id'],
+                            $posData,
+                            (float) $position['point_value']
+                        );
 
                     // Create partial exits only for closed trades
                     if (!$isOpen) {
@@ -470,9 +484,14 @@ class ImportService
         ]);
     }
 
-    private function createImportedTrade(int $positionId, array $posData): int
+    private function createImportedTrade(int $positionId, array $posData, float $pointValue = 1.0): int
     {
-        $entryValue = (float) ($posData['entry_price'] ?? 0) * (float) ($posData['total_size'] ?? 0);
+        // total_pnl comes from the file in the broker's currency, so the value
+        // it is divided by has to be money too — the point value on the
+        // notional, exactly as everywhere else (évolution #24).
+        $entryValue = (float) ($posData['entry_price'] ?? 0)
+            * (float) ($posData['total_size'] ?? 0)
+            * ($pointValue > 0 ? $pointValue : 1.0);
         $pnlPercent = $entryValue > 0
             ? round((float) $posData['total_pnl'] / $entryValue * 100, 4)
             : null;

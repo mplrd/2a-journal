@@ -8,6 +8,7 @@ use App\Repositories\PartialExitRepository;
 use App\Repositories\PositionRepository;
 use App\Repositories\TradeRepository;
 use App\Services\Broker\BrokerOpenSyncService;
+use App\Services\PointValueResolver;
 use PHPUnit\Framework\TestCase;
 
 class BrokerOpenSyncServiceTest extends TestCase
@@ -631,6 +632,91 @@ class BrokerOpenSyncServiceTest extends TestCase
         $this->assertSame(1.0, (float) $written['pnl_percent']);
         // 300 / (0.5 * 1000)
         $this->assertSame(0.6, (float) $written['risk_reward']);
+    }
+
+    // ── The point value on a synced trade (évolution #24) ──────────
+
+    public function testInsertFreezesThePointValueOnTheNewPosition(): void
+    {
+        // The broker states money; it knows nothing of what a point is worth
+        // on this account. The journal resolves that once, here, and freezes
+        // it — the ratios below are computed against it on every later pass.
+        $resolver = $this->createMock(PointValueResolver::class);
+        $resolver->method('resolve')->with(10, 'GER40', 5)->willReturn(25.0);
+        $service = new BrokerOpenSyncService(
+            $this->positionRepo,
+            $this->tradeRepo,
+            $this->partialExitRepo,
+            $resolver,
+        );
+
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')->willReturn([]);
+        $this->positionRepo->expects($this->once())
+            ->method('create')
+            ->willReturnCallback(function ($data) {
+                $this->assertSame(25.0, $data['point_value']);
+                return ['id' => 1001];
+            });
+        $this->tradeRepo->method('create')->willReturn(['id' => 5001]);
+
+        $service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot(['symbol' => 'GER40'])],
+            closedSnapshot: [],
+        );
+    }
+
+    public function testTheRiskRewardOfASyncedTradeAccountsForThePointValue(): void
+    {
+        $this->useServiceWithPartialExits();
+        // The broker's P&L is already money. The risk it gets measured against
+        // is a distance in points, and only becomes money once multiplied by
+        // the point value too. Without that, every synced R on an instrument
+        // worth more than 1 a point was off by exactly that factor: a stop
+        // taken in full — a clean -1R — read -25R on a DAX at 25 EUR a point.
+        $this->positionRepo->method('findOpenByExternalIdPrefixInAccount')
+            ->willReturn([
+                'ouinex_mp-1' => [
+                    'position_id' => 1001, 'external_id' => 'ouinex_mp-1',
+                    'entry_price' => '18500.00', 'size' => '0.50000', 'direction' => 'BUY',
+                    'point_value' => '25.00000',
+                    'targets' => null, 'trade_id' => 5001, 'sl_points' => '66.00',
+                    'pnl' => null, 'pnl_percent' => null, 'risk_reward' => null,
+                    'trade_status' => TradeStatus::OPEN->value,
+                ],
+            ]);
+
+        $this->partialExitRepo->method('existingExternalIdsForTrade')->willReturn([]);
+        $this->partialExitRepo->method('findByTradeId')->willReturn([['pnl' => '-825.00']]);
+
+        $written = null;
+        $this->tradeRepo->method('update')->willReturnCallback(
+            function ($id, $data) use (&$written) {
+                if (array_key_exists('pnl', $data)) {
+                    $written = $data;
+                }
+                return null;
+            },
+        );
+
+        $this->service->apply(
+            provider: \App\Enums\BrokerProvider::OUINEX,
+            userId: 10, accountId: 5, batchId: 99,
+            openSnapshot: [$this->makeOpenSnapshot([
+                'symbol' => 'GER40', 'entry_price' => 18500.0, 'size' => 0.5,
+                'exits' => [[
+                    'exit_price' => 18434.0, 'size' => 0.5, 'pnl' => -825.0,
+                    'closed_at' => '2026-08-31 20:29:51', 'external_id' => 'ctrader_deal_1',
+                ]],
+            ])],
+            closedSnapshot: [],
+        );
+
+        // -825 / (0.5 * 66 * 25) — the stop taken in full, so exactly -1R.
+        $this->assertSame(-1.0, (float) $written['risk_reward']);
+        // -825 / (18500 * 0.5 * 25) * 100
+        $this->assertSame(-0.3568, (float) $written['pnl_percent']);
     }
 
     public function testDoesNotRewriteTheTradeWhenTheRealizedTotalHasNotMoved(): void
