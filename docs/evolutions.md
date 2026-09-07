@@ -1418,16 +1418,39 @@ depuis 108, mais l'utilisateur doit encore penser à regarder.
 
 ---
 
-## Le risque des trades synchronisés se prend trop tard
+## Le risque des trades synchronises se prend trop tard — correctif retire
 
-[107](107-risque-des-trades-synchronises.md) dérive `sl_points` du stop annoncé
-par le broker, à la première passe qui voit la position ouverte avec un stop
-portant encore du risque. Vérifié en production le 2026-09-07 sur une vraie
-synchro : **zéro ligne écrite**, et chaque cas était exclu par une condition
-délibérée.
+[107](107-risque-des-trades-synchronises.md) derivait `sl_points` du stop annonce
+par le broker. **Livre puis retire le 2026-09-07**, parce qu'il pouvait ecrire un
+risque faux.
 
-| Position | État | Raison |
-|---|---|---|
+Deux cas voyants etaient proteges (stop sur l'entree, stop au-dela : NULL). Le cas
+courant — stop **partiellement remonte**, encore risque mais moins qu'a l'entree —
+etait enregistre tel quel : risque sous-estime, **R surevalue**, en silence.
+
+Et ce cas est majoritaire, pas marginal : **les prop firms surveillent l'acces API
+hyperactif, donc l'intervalle de synchro est long a dessein**. Une synchro lente
+attrape par construction des positions dont le stop a deja bouge. Constate en
+production : les deux seules positions ayant recu un risque avaient ete attrapees
+2 et 13 minutes apres leur ouverture — par chance, pas par conception.
+
+**La seule source saine est l'ordre d'ouverture** : `ProtoOAOrder.stopLoss` porte
+le stop tel qu'il etait a la prise de position, ne depend ni du moment ni de la
+frequence des synchros, et couvre aussi les trades deja clos. C'est l'evolution
+« Reprendre le risque des trades synchronises deja en base » ci-dessus, qui
+devient le chemin **principal** et non plus le rattrapage de l'historique.
+
+**Reste a trancher avant de coder** : les deux hypotheses sur `ProtoOAOrder`
+(porte-t-il `positionId` ? son `stopLoss` survit-il a un deplacement du stop ?),
+via un diagnostic en lecture seule sur une vraie reponse cTrader.
+
+**A nettoyer** : deux positions portent un `sl_points` derive avant le retrait
+(4916 et 5151 en production). Probablement justes, mais invérifiables.
+
+**Repere le** : 2026-09-07. **Priorite** : haute — c'est le sujet R:R tout entier.
+
+---
+---|---|
 | 5038 | close à 07:44 | a vécu entièrement entre deux synchros — la reprise n'a vu qu'une clôture |
 | 4805 | SECURED | stop passé sous l'entrée d'un SELL : profit verrouillé → NULL par conception |
 | 4916 | OPEN, éligible | connexion du compte en panne de jeton |

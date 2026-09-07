@@ -1,5 +1,38 @@
 # 107 — Le R:R d'un trade synchronisé
 
+> ## ⚠️ RETIRÉ LE 2026-09-07, LE JOUR MÊME DE SA LIVRAISON
+>
+> Le correctif décrit ci-dessous dérive `sl_points` du stop annoncé par le
+> broker. **Il a été retiré parce qu'il pouvait écrire un risque faux**, et un R
+> faux est pire que pas de R — c'est le principe que ce document énonce lui-même
+> plus bas, et que son implémentation ne respectait qu'à moitié.
+>
+> **Ce qui a été manqué.** Deux cas voyants étaient protégés : stop **sur**
+> l'entrée, stop **au-delà**. Tous deux répondent NULL. Mais le cas courant est
+> le stop **partiellement remonté** — encore du risque, moins qu'à l'entrée —
+> et celui-là était enregistré tel quel. Résultat : risque sous-estimé, **R
+> surévalué**, silencieusement.
+>
+> **Ce qui en fait le cas majoritaire.** Les prop firms surveillent l'accès API
+> hyperactif, donc l'intervalle de synchro est long **à dessein**. Une synchro
+> lente attrape les positions dont le stop a déjà bougé. La condition que le
+> correctif supposait rare est en réalité la norme.
+>
+> **Ce qui reste vrai** : le diagnostic du problème (§ « Le problème »), la
+> mesure de la valeur du point (§ « Sur la valeur du point »), et le fait que
+> `sl_points` n'a jamais été écrit par la synchro. Seule la **solution** est
+> caduque.
+>
+> **La suite** : le risque à l'entrée est porté par l'ordre qui a **ouvert** la
+> position (`ProtoOAOrder.stopLoss`), que le connecteur récupère déjà et jette.
+> Cette source ne dépend pas du moment où la synchro passe, donc la contrainte
+> de fréquence cesse d'être un problème. Voir `docs/evolutions.md`.
+>
+> **Constaté en production** avant retrait : deux positions ont reçu un risque
+> (4916 → 165,04 pts ; 5151 → 6,42 pts), toutes deux attrapées par chance dans
+> les minutes suivant leur ouverture. C'est cette chance, et non la conception,
+> qui les rendait justes.
+
 > Fait suite à [106](106-pnl-en-devise-du-compte.md), qui a mis le P&L en devise.
 > Le numérateur du R était bon depuis ce matin ; il lui manquait un dénominateur.
 
