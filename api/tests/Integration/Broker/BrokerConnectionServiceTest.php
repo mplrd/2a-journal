@@ -159,14 +159,46 @@ class BrokerConnectionServiceTest extends TestCase
         $this->service->updateCredentials(999999, $this->userId, ['client_secret' => 'new']);
     }
 
-    public function testUpdateRejectsBlankSubmission(): void
+    public function testUpdateRejectsBlankSubmissionOnAHealthyConnection(): void
     {
         // Submitting the dialog without touching anything must not be a silent
-        // no-op that resets the status — it is a user error.
+        // no-op that resets the status - it is a user error. On a connection
+        // that WORKS: see the test below for the case that matters.
         $id = $this->seedConnection('CTRADER', $this->ctraderCredentials());
 
         $this->expectException(ValidationException::class);
         $this->service->updateCredentials($id, $this->userId, []);
+    }
+
+    public function testUpdateRevalidatesABrokenConnectionWithoutAnyChange(): void
+    {
+        // The way out of the circuit breaker. Once three failures trip it the
+        // connection is ERROR, and findDueForAutoSync() only ever picks ACTIVE
+        // rows - so nothing retries it, ever, even after the broker-side cause
+        // is gone. Re-submitting the dialog unchanged is exactly the gesture
+        // that says "try again", and it was refused on both sides: canSubmit
+        // needed a changed field, and this method needed a non-empty body.
+        //
+        // Production, 2026-09-07: two cTrader connections stuck ERROR for two
+        // days. Re-typing the secrets to satisfy the form is precisely what
+        // must NOT be required - re-issuing them invalidates the account id
+        // held on the OpenAPI side.
+        $id = $this->seedConnection('CTRADER', $this->ctraderCredentials());
+        $before = $this->decryptStored($id);
+        $this->repo->markError($id, 'cTrader API error: CH_ACCESS_TOKEN_INVALID - Invalid access token');
+        $this->repo->incrementFailures($id);
+        $this->repo->incrementFailures($id);
+        $this->repo->incrementFailures($id);
+
+        $this->service->updateCredentials($id, $this->userId, []);
+
+        $row = $this->repo->findById($id);
+        $this->assertSame(ConnectionStatus::ACTIVE->value, $row['status']);
+        $this->assertNull($row['last_sync_error']);
+        $this->assertSame(0, (int) $row['consecutive_failures']);
+        // Nothing was retyped, so nothing may have moved. Compared by content,
+        // not by key order: merge() rebuilds the array in its own SPEC order.
+        $this->assertEquals($before, $this->decryptStored($id));
     }
 
     // ── Connection test at save (non-blocking) ──────────────────────

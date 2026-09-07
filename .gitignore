@@ -7,6 +7,9 @@
 # Environment
 .env
 .env.local
+# Toute variante (.env.test, .env.prod, .env.<n_importe_quoi>) : jamais commitee.
+.env.*
+!.env.example
 
 # IDE
 .idea/

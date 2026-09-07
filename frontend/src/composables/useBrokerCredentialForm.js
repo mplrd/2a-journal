@@ -134,9 +134,24 @@ export function useBrokerCredentialForm({
     return payload
   })
 
+  /**
+   * A connection the broker has rejected. Its status is the circuit breaker's:
+   * three failures trip it, and the scheduler only ever picks ACTIVE rows, so
+   * nothing retries it again on its own.
+   */
+  const isBroken = computed(
+    () => Boolean(connection.value?.status) && connection.value.status !== 'ACTIVE',
+  )
+
   const canSubmit = computed(() => {
     if (isEditing.value) {
-      return Object.keys(changed.value).length > 0
+      // Re-submitting a broken connection unchanged IS the action: it re-stores
+      // the credentials, clears the error and puts the row back in the
+      // scheduler's reach. Demanding a changed field left one way out — retype
+      // the secrets — which on cTrader re-issues the token and invalidates the
+      // account id we hold. The only cure available broke something else.
+      // On a healthy connection an untouched submit stays a user error.
+      return isBroken.value || Object.keys(changed.value).length > 0
     }
     return requiredFields.every(
       (field) => (values.value[field] ?? '').toString().trim() !== '' || isStored(field),
