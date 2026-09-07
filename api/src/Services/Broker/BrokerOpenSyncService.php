@@ -65,63 +65,34 @@ class BrokerOpenSyncService
         return $pointValue > 0 ? $pointValue : 1.0;
     }
 
-    /**
-     * The risk the trader took, in points, read off the stop the broker
-     * reports as a PRICE.
+    /*
+     * NO RISK IS DERIVED FROM THE BROKER'S STOP, AND THAT IS DELIBERATE.
      *
-     * Every risk/reward in the journal divides by `size * sl_points *
-     * point_value`, and nothing on this path ever wrote sl_points: it stayed
-     * NULL, the divisor came out 0, and `risk_reward` was written NULL on
-     * every synced trade there has ever been — 234 cTrader positions in
-     * production on 2026-09-07, 234 NULLs, an R:R average and an R
-     * distribution with nothing to show.
+     * `sl_price` in a snapshot is the CURRENT stop, and a trader moves it: to
+     * break-even, then trailing. Its distance to the entry is only the risk
+     * that was taken if the stop has not moved since the position opened, and
+     * a sync pass cannot know whether it has.
      *
-     * NULL rather than zero on every dead end. No stop at all is a legitimate
-     * way to trade, and a stop that no longer carries risk is a risk we
-     * missed rather than a risk of zero — inventing a divisor for either would
-     * produce an R that nothing downstream could tell from a real one.
+     * Deriving it anyway was shipped on 2026-09-07 (docs/107) and withdrawn the
+     * same day. The two conspicuous cases were guarded — a stop ON the entry, a
+     * stop PAST it, both answering NULL — but the common one is the stop
+     * PARTIALLY pulled up: still carrying risk, just less than at entry. That
+     * one was recorded as-is, which understates the risk and inflates the R by
+     * however far the stop had already travelled. Silently, and with nothing
+     * downstream able to tell such an R from a real one.
+     *
+     * Sync frequency makes it worse rather than better: prop firms watch for
+     * hyperactive API access, so the interval is deliberately long, and a slow
+     * sync catches positions whose stop has ALREADY moved. The common case is
+     * the wrong one.
+     *
+     * The risk at entry is carried by the order that OPENED the position —
+     * ProtoOAOrder.stopLoss, which the connector already fetches and discards
+     * (see docs/evolutions.md). That source does not depend on when a sync
+     * passes, so it is the one that will fill sl_points. Until it lands,
+     * sl_points stays NULL on the sync path and risk_reward stays unknown:
+     * no R is better than a flattering one.
      */
-    private function riskInPointsFrom(array $snapshot, float $entryPrice): ?float
-    {
-        $stop = $snapshot['sl_price'] ?? null;
-        if ($stop === null || $entryPrice <= 0) {
-            return null;
-        }
-
-        // A stop that already protects the entry has BEEN MOVED — to
-        // break-even, or past it into profit. Its distance is therefore the
-        // distance the trader walked away from, not the one they risked, and
-        // recording it would understate the risk by however well the trade
-        // went. The same test drives the promotion to SECURED just below, and
-        // it is the honest answer here: we saw this position too late.
-        if ($this->stopProtectsEntry($snapshot, $entryPrice)) {
-            return null;
-        }
-
-        // Absolute: a short is protected ABOVE its entry, and a signed
-        // distance would make the divisor negative and invert its R.
-        $risk = abs($entryPrice - (float) $stop);
-
-        return $risk > 0 ? $risk : null;
-    }
-
-    /**
-     * The risk already recorded on a position, or NULL when it carries none.
-     *
-     * This is what makes the derivation a one-shot. `sl_price` is the CURRENT
-     * stop and the broker moves it — to break-even, then trailing — so
-     * re-deriving on every pass would shrink the divisor as the trade goes
-     * well and blow the R up at the exact moment the stop reaches the entry.
-     * Same contract as point_value: written once, never read back from the
-     * broker afterwards. It also protects a risk the user typed by hand, which
-     * on a synced trade is the only figure that is theirs.
-     */
-    private function riskOnFile(array $row): ?float
-    {
-        $risk = $row['sl_points'] ?? null;
-
-        return $risk !== null && (float) $risk > 0 ? (float) $risk : null;
-    }
 
     /**
      * @param BrokerProvider $provider Provider whose external_id prefix scopes the diff.
@@ -189,7 +160,6 @@ class BrokerOpenSyncService
     private function insertNewOpen(int $userId, int $accountId, int $batchId, array $row): void
     {
         $pointValue = $this->pointValueFor($userId, (string) ($row['symbol'] ?? ''), $accountId);
-        $slPoints = $this->riskInPointsFrom($row, (float) ($row['entry_price'] ?? 0));
 
         $position = $this->positionRepo->create([
             'user_id' => $userId,
@@ -200,7 +170,6 @@ class BrokerOpenSyncService
             'size' => $row['size'],
             'point_value' => $pointValue,
             'sl_price' => $row['sl_price'] ?? null,
-            'sl_points' => $slPoints,
             'targets' => BrokerTargetBuilder::fromSnapshot($row),
             'external_id' => $row['external_id'],
             'import_batch_id' => $batchId,
@@ -239,11 +208,11 @@ class BrokerOpenSyncService
         // an exits[] array on still-open positions — partial closes that
         // happened before the position fully closes. Persist them as
         // partial_exits rows so the journal reflects the real activity.
-        // The risk comes from the stop the broker reports, frozen just above,
-        // so a position discovered with partial exits already banked gets its
-        // R here rather than waiting for someone to type one.
+        // A position discovered here carries no sl_points: the risk it was
+        // taken with is not in the snapshot (see the note above), so its
+        // risk/reward stays unknown.
         $this->insertPartialExits((int) $trade['id'], $row['exits'] ?? []);
-        $this->bankRealizedFromExits((int) $trade['id'], $row, $slPoints, [], $pointValue);
+        $this->bankRealizedFromExits((int) $trade['id'], $row, null, [], $pointValue);
     }
 
     /**
@@ -264,21 +233,6 @@ class BrokerOpenSyncService
             'direction' => $snapshot['direction'],
             'symbol' => $snapshot['symbol'],
         ];
-
-        // Fill the risk once, never overwrite it. A position can reach the
-        // journal without one — discovered before it had a stop, or created by
-        // the closed-deal import, which writes sl_points => null by
-        // construction — and the first pass that sees a stop is the one chance
-        // to record it. Measured against the snapshot's entry price, which is
-        // the one being written on this very pass.
-        $riskOnFile = $this->riskOnFile($existing);
-        $slPoints = $riskOnFile ?? $this->riskInPointsFrom(
-            $snapshot,
-            (float) ($snapshot['entry_price'] ?? $existing['entry_price'] ?? 0),
-        );
-        if ($riskOnFile === null && $slPoints !== null) {
-            $positionFields['sl_points'] = $slPoints;
-        }
 
         // Objectives are the user's the moment they type one, same contract as
         // setup and notes — but an objective the SYNC wrote belongs to the
@@ -324,13 +278,13 @@ class BrokerOpenSyncService
 
         // Reconciled on every pass, not only on the one that inserts a leg —
         // see bankRealizedFromExits for why that gate had to go. The snapshot
-        // is authoritative for entry price and size; sl_points is whatever the
-        // row already held, or what this pass has just derived for it.
+        // is authoritative for entry price and size; sl_points is the user's
+        // and only the row holds it.
         $this->insertPartialExits((int) $existing['trade_id'], $snapshot['exits'] ?? []);
         $this->bankRealizedFromExits(
             (int) $existing['trade_id'],
             $snapshot,
-            $slPoints,
+            isset($existing['sl_points']) ? (float) $existing['sl_points'] : null,
             $existing,
             $this->pointValueOnFile($existing),
         );
