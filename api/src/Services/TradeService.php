@@ -35,6 +35,7 @@ class TradeService
     private ?DrawdownService $drawdownService;
     private ?PDO $pdo;
     private ?PlanAdherenceEvaluator $adherenceEvaluator;
+    private ?PointValueResolver $pointValueResolver;
 
     public function __construct(
         TradeRepository $tradeRepo,
@@ -46,7 +47,8 @@ class TradeService
         ?CustomFieldService $customFieldService = null,
         ?DrawdownService $drawdownService = null,
         ?PDO $pdo = null,
-        ?PlanAdherenceEvaluator $adherenceEvaluator = null
+        ?PlanAdherenceEvaluator $adherenceEvaluator = null,
+        ?PointValueResolver $pointValueResolver = null
     ) {
         $this->tradeRepo = $tradeRepo;
         $this->partialExitRepo = $partialExitRepo;
@@ -58,6 +60,30 @@ class TradeService
         $this->drawdownService = $drawdownService;
         $this->pdo = $pdo;
         $this->adherenceEvaluator = $adherenceEvaluator;
+        $this->pointValueResolver = $pointValueResolver;
+    }
+
+    /**
+     * What one point of this instrument is worth on this account, frozen onto
+     * the position at creation (évolution #24). Without a resolver wired it is
+     * 1, which is the arithmetic the journal did before P&L became money.
+     */
+    private function resolvePointValue(int $userId, string $symbol, int $accountId): float
+    {
+        return $this->pointValueResolver?->resolve($userId, $symbol, $accountId) ?? 1.0;
+    }
+
+    /**
+     * The point value carried by a trade row, guarding rows written before the
+     * column existed. It multiplies the P&L AND both of the ratios that divide
+     * it — risk_reward and pnl_percent — where it cancels out, so R and the
+     * percentage read exactly as they always have.
+     */
+    private function pointValueOf(array $trade): float
+    {
+        $pointValue = (float) ($trade['point_value'] ?? 1);
+
+        return $pointValue > 0 ? $pointValue : 1.0;
     }
 
     public function create(int $userId, array $data): array
@@ -122,6 +148,7 @@ class TradeService
             'symbol' => $data['symbol'],
             'entry_price' => $entryPrice,
             'size' => $size,
+            'point_value' => $this->resolvePointValue($userId, (string) $data['symbol'], $accountId),
             'setup' => json_encode($data['setup']),
             'plan_id' => $adherence['plan_id'],
             'plan_adherence' => $adherence['plan_adherence'],
@@ -341,11 +368,15 @@ class TradeService
             throw new ValidationException('trades.error.invalid_exit_type', 'exit_type');
         }
 
-        // Calculate partial PnL
+        // Calculate partial PnL, in the account's currency (évolution #24):
+        // the distance in points, times the size of THIS leg, times what a
+        // point is worth. The point value was frozen on the position when the
+        // trade was created, so a later settings change cannot move it.
         $entryPrice = (float) $trade['entry_price'];
         $direction = $trade['direction'];
         $directionMultiplier = $direction === Direction::BUY->value ? 1 : -1;
-        $partialPnl = ($exitPrice - $entryPrice) * $exitSize * $directionMultiplier;
+        $pointValue = $this->pointValueOf($trade);
+        $partialPnl = ($exitPrice - $entryPrice) * $exitSize * $directionMultiplier * $pointValue;
 
         // Create partial exit
         $exitedAt = $data['exited_at'] ?? date('Y-m-d H:i:s');
@@ -609,6 +640,18 @@ class TradeService
             if (array_key_exists($field, $data)) {
                 $positionUpdates[$field] = $data[$field];
             }
+        }
+
+        // The point value is frozen per ASSET, so correcting the symbol has to
+        // re-resolve it — the trade is on a different instrument now, and on a
+        // different contract size with it. Every other edit leaves the frozen
+        // value exactly where it was.
+        if (array_key_exists('symbol', $data) && (string) $data['symbol'] !== (string) $trade['symbol']) {
+            $positionUpdates['point_value'] = $this->resolvePointValue(
+                $userId,
+                (string) $data['symbol'],
+                (int) $trade['account_id']
+            );
         }
 
         // sl_price always tracks (entry_price, sl_points, direction); recompute
@@ -992,6 +1035,14 @@ class TradeService
         $entryPrice = (float) $trade['entry_price'];
         $direction = $trade['direction'];
         $directionMultiplier = $direction === Direction::BUY->value ? 1 : -1;
+        $pointValue = $this->pointValueOf($trade);
+
+        // A CSV import states the broker's own P&L per leg, in currency, exactly
+        // as the sync does — but it writes no external_id, so the ownership test
+        // below cannot recognise it. The import batch on the position is what
+        // says so, and without this the same edit that used to flatten a synced
+        // trade would flatten an imported one instead.
+        $imported = ($trade['import_batch_id'] ?? null) !== null;
 
         // A leg carrying an external_id was written by the broker sync, and its
         // P&L is the broker's own figure — in currency, commissions included,
@@ -1013,7 +1064,7 @@ class TradeService
         // 1. Recompute each partial's pnl using the current entry_price + direction.
         $totalPnl = 0;
         foreach ($partials as $partial) {
-            if (($partial['external_id'] ?? null) !== null) {
+            if ($imported || ($partial['external_id'] ?? null) !== null) {
                 $brokerLegs++;
                 $totalPnl += (float) $partial['pnl'];
                 continue;
@@ -1021,7 +1072,8 @@ class TradeService
 
             $newPnl = ((float) $partial['exit_price'] - $entryPrice)
                 * (float) $partial['size']
-                * $directionMultiplier;
+                * $directionMultiplier
+                * $pointValue;
             $newPnl = round($newPnl, 2);
             if (abs($newPnl - (float) $partial['pnl']) > 0.001) {
                 $this->partialExitRepo->updatePnl((int) $partial['id'], $newPnl);
@@ -1042,11 +1094,13 @@ class TradeService
             $totalPnl += round((float) $trade['pnl'] - $storedLegs, 2);
         }
 
-        // 2. Aggregate at the trade level.
+        // 2. Aggregate at the trade level. Both denominators carry the point
+        //    value, where it cancels against the numerator — see
+        //    calculateRealizedMetrics.
         $entrySize = (float) $trade['size'];
         $slPoints = (float) $trade['sl_points'];
-        $entryValue = $entryPrice * $entrySize;
-        $riskAmount = $entrySize * $slPoints;
+        $entryValue = $entryPrice * $entrySize * $pointValue;
+        $riskAmount = $entrySize * $slPoints * $pointValue;
 
         $this->tradeRepo->update($tradeId, [
             'pnl' => round($totalPnl, 2),
@@ -1071,14 +1125,20 @@ class TradeService
             $totalPnl += (float) $exit['pnl'];
         }
 
+        // Both denominators carry the point value too, because the numerator
+        // now does (évolution #24). It cancels: a stop taken in full is -1R
+        // whether the point is worth 1 or 25, and the percentage is unchanged
+        // to the cent — which matters beyond display, StatsRepository sorting
+        // win / loss / breakeven on pnl_percent alone.
         $entrySize = (float) $trade['size'];
         $slPoints = (float) $trade['sl_points'];
-        $riskAmount = $entrySize * $slPoints;
+        $pointValue = $this->pointValueOf($trade);
+        $riskAmount = $entrySize * $slPoints * $pointValue;
         $riskReward = $riskAmount > 0 ? round($totalPnl / $riskAmount, 4) : null;
 
         // PnL percent based on entry value
         $entryPrice = (float) $trade['entry_price'];
-        $entryValue = $entryPrice * $entrySize;
+        $entryValue = $entryPrice * $entrySize * $pointValue;
         $pnlPercent = $entryValue > 0 ? round(($totalPnl / $entryValue) * 100, 4) : 0;
 
         // Duration in minutes

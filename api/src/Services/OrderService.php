@@ -29,6 +29,7 @@ class OrderService
     private TradeRepository $tradeRepo;
     private ?SetupRepository $setupRepo;
     private ?PlanAdherenceEvaluator $adherenceEvaluator;
+    private ?PointValueResolver $pointValueResolver;
 
     public function __construct(
         OrderRepository $orderRepo,
@@ -37,7 +38,8 @@ class OrderService
         StatusHistoryRepository $historyRepo,
         TradeRepository $tradeRepo,
         ?SetupRepository $setupRepo = null,
-        ?PlanAdherenceEvaluator $adherenceEvaluator = null
+        ?PlanAdherenceEvaluator $adherenceEvaluator = null,
+        ?PointValueResolver $pointValueResolver = null
     ) {
         $this->orderRepo = $orderRepo;
         $this->positionRepo = $positionRepo;
@@ -46,6 +48,7 @@ class OrderService
         $this->tradeRepo = $tradeRepo;
         $this->setupRepo = $setupRepo;
         $this->adherenceEvaluator = $adherenceEvaluator;
+        $this->pointValueResolver = $pointValueResolver;
     }
 
     public function create(int $userId, array $data): array
@@ -132,6 +135,14 @@ class OrderService
             'symbol' => $data['symbol'],
             'entry_price' => $entryPrice,
             'size' => (float) $data['size'],
+            // Frozen here rather than when the order fills: the point value is
+            // part of the contract the user is placing, and the position this
+            // creates is the very row the trade will inherit (évolution #24).
+            'point_value' => $this->pointValueResolver?->resolve(
+                $userId,
+                (string) $data['symbol'],
+                $accountId
+            ) ?? 1.0,
             'setup' => json_encode($data['setup']),
             'plan_id' => $adherence['plan_id'],
             'plan_adherence' => $adherence['plan_adherence'],

@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PositionType;
 use App\Repositories\OrderRepository;
 use App\Repositories\PositionRepository;
+use App\Services\PointValueResolver;
 
 /**
  * Reconciles the broker's pending-orders snapshot against the journal's
@@ -45,6 +46,7 @@ class BrokerOrderSyncService
     public function __construct(
         private OrderRepository $orderRepo,
         private PositionRepository $positionRepo,
+        private ?PointValueResolver $pointValueResolver = null,
     ) {}
 
     /**
@@ -147,6 +149,13 @@ class BrokerOrderSyncService
             'symbol' => $row['symbol'],
             'entry_price' => $row['entry_price'],
             'size' => $row['size'],
+            // Frozen the moment the order enters the journal, so the trade it
+            // becomes is priced on the same contract (évolution #24).
+            'point_value' => $this->pointValueResolver?->resolve(
+                $userId,
+                (string) ($row['symbol'] ?? ''),
+                $accountId
+            ) ?? 1.0,
             'sl_price' => $row['sl_price'] ?? null,
             // The connectors normalize a pending order's take profit and
             // nothing consumed it: only the open-position path knew how to

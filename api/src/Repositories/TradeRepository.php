@@ -43,10 +43,10 @@ class TradeRepository
             'SELECT t.id, t.position_id, t.source_order_id, t.opened_at, t.closed_at,
                     t.remaining_size, t.be_reached, t.avg_exit_price, t.pnl, t.pnl_percent,
                     t.risk_reward, t.duration_minutes, t.status, t.exit_type,
-                    p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                    p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.point_value, p.setup,
                     p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                     p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
-                    p.position_type, p.created_at, p.updated_at
+                    p.position_type, p.import_batch_id, p.external_id, p.created_at, p.updated_at
              FROM trades t
              INNER JOIN positions p ON p.id = t.position_id
              WHERE t.id = :id'
@@ -161,10 +161,10 @@ class TradeRepository
         $sql = "SELECT t.id, t.position_id, t.source_order_id, t.opened_at, t.closed_at,
                        t.remaining_size, t.be_reached, t.avg_exit_price, t.pnl, t.pnl_percent,
                        t.risk_reward, t.duration_minutes, t.status, t.exit_type,
-                       p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.setup,
+                       p.user_id, p.account_id, p.direction, p.symbol, p.entry_price, p.size, p.point_value, p.setup,
                        p.plan_id, p.plan_adherence, p.plan_adherence_reason,
                        p.sl_points, p.sl_price, p.be_points, p.be_price, p.be_size, p.targets, p.notes,
-                       p.position_type, p.created_at, p.updated_at
+                       p.position_type, p.import_batch_id, p.external_id, p.created_at, p.updated_at
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 $joins
