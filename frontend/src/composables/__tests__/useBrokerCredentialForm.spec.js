@@ -177,4 +177,47 @@ describe('useBrokerCredentialForm', () => {
     expect(form.sharing.value).toBeNull()
     expect(form.isStored('api_secret')).toBe(false)
   })
+
+  // ── Reconfigure a BROKEN connection ─────────────────────────────
+
+  it('lets a broken connection be re-submitted without changing anything', () => {
+    // The way out of the circuit breaker. Three failures trip it, the row goes
+    // ERROR, and the scheduler only ever picks ACTIVE rows — so nothing retries
+    // it again, ever, even once the broker-side cause is gone. Re-submitting
+    // the dialog unchanged is the gesture that means "try again".
+    //
+    // Demanding a changed field here left exactly one way out: retype the
+    // secrets. On cTrader that re-issues the token and invalidates the account
+    // id we hold, so the only available cure broke something else.
+    const form = build({
+      connection: {
+        id: 42,
+        status: 'ERROR',
+        credentials_public: { client_id: '30528', account_id_ctrader: '12345678' },
+        credentials_set: { client_secret: true },
+      },
+    })
+
+    expect(form.changed.value).toEqual({})
+    expect(form.canSubmit.value).toBe(true)
+  })
+
+  it('still demands a change on a connection that works', () => {
+    // The mirror: on a healthy connection an untouched submit is a user error,
+    // not a silent status reset. The backend enforces the same split.
+    const form = build({
+      connection: {
+        id: 42,
+        status: 'ACTIVE',
+        credentials_public: { client_id: '30528', account_id_ctrader: '12345678' },
+        credentials_set: { client_secret: true },
+      },
+    })
+
+    expect(form.canSubmit.value).toBe(false)
+
+    form.values.value.client_secret = 'rotated'
+
+    expect(form.canSubmit.value).toBe(true)
+  })
 })

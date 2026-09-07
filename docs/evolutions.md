@@ -1363,6 +1363,88 @@ mesurée quand il y a assez de trades pour la calculer.
 
 **Repéré le** : 2026-09-07. **Priorité** : moyenne.
 
+## Rien n'alerte quand une connexion broker tombe
+
+Constaté en production le 2026-09-07 : les deux connexions cTrader d'un
+utilisateur étaient en `ERROR` depuis le 5 septembre, et il ne l'a su qu'en
+demandant pourquoi ses données ne bougeaient plus. Deux jours de trading non
+synchronisés.
+
+Le panneau broker affiche un badge rouge et le dernier message d'erreur
+(`BrokerConnectionPanel.vue:312`), mais il faut aller sur la page. Aucun mail,
+aucune notification, rien sur le tableau de bord.
+
+Le disjoncteur (`BrokerSyncSchedulerService`, trois échecs → `markError()`) est
+le moment exact où un utilisateur cesse silencieusement d'être synchronisé —
+c'est déjà ce que dit le commentaire du code — mais il ne débouche sur aucun
+signal côté utilisateur.
+
+**À faire** : notifier au déclenchement du disjoncteur. A minima un mail, et un
+bandeau persistant tant qu'une connexion est en `ERROR`. Voir
+[108](108-revalider-une-connexion-cassee.md) pour la réparation, désormais
+possible en un clic.
+
+**Fichiers** : `api/src/Services/Broker/BrokerSyncSchedulerService.php`,
+`api/src/Services/EmailService.php`, `frontend/src/views/DashboardView.vue`.
+
+**Repéré le** : 2026-09-07. **Priorité** : haute — une synchro morte et
+silencieuse fait perdre des données de trading sans que personne ne le voie.
+
+---
+
+## Le disjoncteur broker ne se réarme jamais tout seul
+
+`findDueForAutoSync()` ne sélectionne que les connexions `ACTIVE`
+(`BrokerConnectionRepository:112`), donc une connexion passée en `ERROR` n'est
+plus jamais retentée — même quand la cause était passagère (broker en
+maintenance, incident réseau, jeton expiré depuis renouvelé).
+
+[108](108-revalider-une-connexion-cassee.md) rend la relance manuelle possible,
+mais elle reste manuelle.
+
+**À faire** : une reprise espacée — retenter une connexion en `ERROR` toutes les
+N heures, avec un intervalle qui double à chaque échec et un plafond. Le
+garde-fou à respecter : ne pas brûler le budget de requêtes du broker sur des
+identifiants durablement mauvais, ce qui sur une prop firm est un risque réel
+(voir `95-budget-quotidien-de-requetes-broker.md`). Distinguer une erreur
+transitoire d'une erreur d'authentification permettrait de ne réarmer que la
+première.
+
+**Fichiers** : `api/src/Repositories/BrokerConnectionRepository.php`,
+`api/src/Services/Broker/BrokerSyncSchedulerService.php`.
+
+**Repéré le** : 2026-09-07. **Priorité** : moyenne — contournable à la main
+depuis 108, mais l'utilisateur doit encore penser à regarder.
+
+---
+
+## Le risque des trades synchronisés se prend trop tard
+
+[107](107-risque-des-trades-synchronises.md) dérive `sl_points` du stop annoncé
+par le broker, à la première passe qui voit la position ouverte avec un stop
+portant encore du risque. Vérifié en production le 2026-09-07 sur une vraie
+synchro : **zéro ligne écrite**, et chaque cas était exclu par une condition
+délibérée.
+
+| Position | État | Raison |
+|---|---|---|
+| 5038 | close à 07:44 | a vécu entièrement entre deux synchros — la reprise n'a vu qu'une clôture |
+| 4805 | SECURED | stop passé sous l'entrée d'un SELL : profit verrouillé → NULL par conception |
+| 4916 | OPEN, éligible | connexion du compte en panne de jeton |
+
+La fenêtre utile — entre la prise de position et le passage au BE — est plus
+courte que l'intervalle de synchro pour qui scalpe. L'approche est juste mais
+son rendement est proche de zéro.
+
+**À faire** : prendre le risque sur l'**ordre d'ouverture** plutôt que sur le
+snapshot, ce qui le rend indépendant du moment où la synchro passe et couvre
+aussi les trades déjà clos. C'est l'évolution « Reprendre le risque des trades
+synchronisés déjà en base » ci-dessus, qui devient le chemin principal et non
+plus le rattrapage.
+
+**Repéré le** : 2026-09-07. **Priorité** : haute — sans elle, [107](107-risque-des-trades-synchronises.md)
+ne produit rien en pratique.
+
 ---
 
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*

@@ -90,8 +90,21 @@ class BrokerConnectionService
         $connection = $this->requireOwnedConnection($connectionId, $userId);
         $provider = $connection['provider'];
 
-        if (!$this->mapper->hasAnyField($provider, $body)) {
-            // An empty submit is a user error, not a silent status reset.
+        // An empty submit is a user error on a connection that works — a silent
+        // status reset nobody asked for. On a BROKEN one it is the opposite: the
+        // only way out of the circuit breaker.
+        //
+        // Three failures trip it, the row goes ERROR, and findDueForAutoSync()
+        // only ever picks ACTIVE rows — so nothing retries it again, ever, even
+        // once the broker-side cause is gone. Re-submitting the dialog unchanged
+        // is exactly the gesture that means "try again", and it was refused on
+        // both sides: canSubmit demanded a changed field, this demanded a
+        // non-empty body. The way round was to retype the secrets, which on
+        // cTrader re-issues the token and invalidates the account id we hold —
+        // so the only available cure broke something else (production,
+        // 2026-09-07: two connections stuck ERROR for two days).
+        $isBroken = $connection['status'] !== ConnectionStatus::ACTIVE->value;
+        if (!$isBroken && !$this->mapper->hasAnyField($provider, $body)) {
             throw new ValidationException('broker.error.no_credential_change', 'credentials');
         }
 
