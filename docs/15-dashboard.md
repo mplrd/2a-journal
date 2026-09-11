@@ -79,7 +79,7 @@ Retourne le P&L agrégé par jour (trades fermés uniquement).
 - 3 charts en grille responsive (lg:3 cols, mobile stack)
 - Dernière ligne en grille lg:3 cols :
   - Trades avec tabs (2/3 — `lg:col-span-2`) : onglet "En cours" (trades ouverts) et "Récents" (trades fermés)
-  - Calendrier P&L journalier (1/3) : grille mensuelle, jours colorés selon la perf (vert = gain, rouge = perte, jaune = BE), navigation mois précédent/suivant
+  - Calendrier P&L journalier (1/3) : grille mensuelle, jours colorés selon le P&L **arrondi à l'unité** (vert = gain, rouge = perte, orange = 0), navigation mois précédent/suivant
 
 ### Calendrier : des semaines complètes
 
@@ -91,6 +91,14 @@ Chaque ligne du calendrier est une semaine entière, du lundi au dimanche. Quand
 - L'infobulle d'un jour tradé (« 2 trade(s) : +120 ») passe par la clé `dashboard.trade_count` au lieu d'un texte en dur.
 
 Chaque case porte `data-date` et `data-outside`, ce que les tests exploitent.
+
+### Calendrier : la couleur suit le chiffre affiché
+
+Une case affiche le P&L du jour arrondi à l'unité. Sa couleur se lit **sur ce chiffre arrondi**, plus sur le montant exact : un jour à +0,30 ou à −0,30 affiche « 0 » et passe en orange, comme un zéro pile. Avant, le même « 0 » sortait vert à +0,30 et rouge à −0,30.
+
+- **Orange = le chiffre affiché vaut 0**, soit un résultat entre −0,49 et +0,49. Il s'affiche **sans signe** (« 0 », plus « +0 » ni « -0 »), infobulle comprise.
+- **Un seul arrondi pour le chiffre et la couleur** (`roundedPnl()`, via `toFixed(0)`, qui arrondit la demi-unité en s'éloignant de zéro). `Math.round` aurait fait de −0,50 un zéro alors que la case affiche « -1 ».
+- Le texte d'aide (`dashboard.daily_calendar_help`) disait « une case orange signale un résultat exactement nul » ; il précise désormais « nul une fois arrondi à l'unité (entre -0,49 et +0,49) ».
 
 ### Comportement au chargement
 
@@ -105,5 +113,5 @@ Chaque case porte `data-date` et `data-outside`, ce que les tests exploitent.
 | Unit | `StatsServiceTest.php` | 13 tests |
 | Integration | `StatsFlowTest.php` | 15 tests |
 | Frontend | `PnlBySymbolChart.spec.js` | 3 tests |
-| Frontend | `PnlCalendar.spec.js` | 9 tests — dont semaines complètes : 1re semaine ouverte sur le mois précédent (septembre 2026 → 31 août), dernière fermée sur le mois suivant (→ 1er-4 octobre), 35 cases sans case vide, rien avant un mois qui commence un lundi (juin 2026) ni après un mois qui finit un dimanche (mai 2026), P&L et infobulle d'un jour hors mois, recalcul à la navigation (août 2026 → 27 juillet … 6 septembre) |
+| Frontend | `PnlCalendar.spec.js` | 11 tests — dont couleur sur l'arrondi : +0,30 / −0,30 / 0 en orange affichés « 0 » (infobulle « 1 trade(s) : 0 »), ±0,50 affichés « +1 » / « -1 » en vert / rouge ; semaines complètes : 1re semaine ouverte sur le mois précédent (septembre 2026 → 31 août), dernière fermée sur le mois suivant (→ 1er-4 octobre), 35 cases sans case vide, rien avant un mois qui commence un lundi (juin 2026) ni après un mois qui finit un dimanche (mai 2026), P&L et infobulle d'un jour hors mois, recalcul à la navigation (août 2026 → 27 juillet … 6 septembre) |
 | Unit | `stats-store.spec.js` | 6 tests |
