@@ -98,17 +98,30 @@ function nextMonth() {
   }
 }
 
+// The figure a day shows: its P&L rounded to the unit. The colour is read off
+// this very figure, not the exact amount, so a day reading 0 is always amber
+// rather than green at +0.30 and red at -0.30. Both go through toFixed — the
+// label's rounding, half away from zero — because Math.round would call -0.5 a
+// zero while the label shows -1.
+function roundedPnl(pnl) {
+  if (pnl == null) return null
+  const rounded = Number(Number(pnl).toFixed(0))
+  // Number('-0') is -0: fold it into a plain zero, unsigned.
+  return rounded === 0 ? 0 : rounded
+}
+
 function cellClass(day) {
-  if (day.pnl == null) return ''
-  if (day.pnl > 0) return 'bg-green-500/80 text-white'
-  if (day.pnl < 0) return 'bg-red-500/80 text-white'
+  const rounded = roundedPnl(day.pnl)
+  if (rounded == null) return ''
+  if (rounded > 0) return 'bg-green-500/80 text-white'
+  if (rounded < 0) return 'bg-red-500/80 text-white'
   return 'bg-amber-500/80 text-white'
 }
 
 function formatDayPnl(pnl) {
-  if (pnl == null) return ''
-  const num = Number(pnl)
-  return (num >= 0 ? '+' : '') + num.toFixed(0)
+  const rounded = roundedPnl(pnl)
+  if (rounded == null) return ''
+  return rounded > 0 ? `+${rounded}` : String(rounded)
 }
 </script>
 
@@ -168,7 +181,7 @@ function formatDayPnl(pnl) {
         <span class="font-medium" :class="cell.pnl == null ? 'text-gray-400 dark:text-gray-600' : ''">
           {{ cell.day }}
         </span>
-        <span v-if="cell.pnl != null" class="text-[10px] leading-tight font-medium">
+        <span v-if="cell.pnl != null" data-testid="calendar-day-pnl" class="text-[10px] leading-tight font-medium">
           {{ formatDayPnl(cell.pnl) }}
         </span>
       </div>

@@ -132,6 +132,39 @@ describe('PnlCalendar — full weeks', () => {
     expect(cellOn(wrapper, '2026-10-02').text()).toContain('-35')
   })
 
+  it('colours a day amber when its P&L rounds to zero, whatever its sign', () => {
+    // The cell shows the P&L rounded to the unit: +0.30 and -0.30 both read 0,
+    // and used to come out green and red next to an amber exact zero.
+    const wrapper = mountOn(2026, 8, [
+      { date: '2026-09-03', trade_count: 1, total_pnl: 0.3 },
+      { date: '2026-09-04', trade_count: 1, total_pnl: -0.3 },
+      { date: '2026-09-07', trade_count: 1, total_pnl: 0 },
+    ])
+
+    for (const date of ['2026-09-03', '2026-09-04', '2026-09-07']) {
+      const cell = cellOn(wrapper, date)
+      expect(cell.classes(), date).toContain('bg-amber-500/80')
+      expect(cell.find('[data-testid="calendar-day-pnl"]').text(), date).toBe('0')
+    }
+    expect(cellOn(wrapper, '2026-09-04').attributes('title')).toBe('1 trade(s) : 0')
+  })
+
+  it('reads the colour off the rounded figure it shows', () => {
+    // Half a unit rounds away from zero on the label (+1 / -1): those days are
+    // a gain and a loss, not a zero. Math.round would have made -0.5 a zero.
+    const wrapper = mountOn(2026, 8, [
+      { date: '2026-09-08', trade_count: 1, total_pnl: 0.5 },
+      { date: '2026-09-09', trade_count: 1, total_pnl: -0.5 },
+    ])
+
+    const halfUp = cellOn(wrapper, '2026-09-08')
+    const halfDown = cellOn(wrapper, '2026-09-09')
+    expect(halfUp.find('[data-testid="calendar-day-pnl"]').text()).toBe('+1')
+    expect(halfUp.classes()).toContain('bg-green-500/80')
+    expect(halfDown.find('[data-testid="calendar-day-pnl"]').text()).toBe('-1')
+    expect(halfDown.classes()).toContain('bg-red-500/80')
+  })
+
   it('follows the month when navigating', async () => {
     const wrapper = mountOn(2026, 8)
 
