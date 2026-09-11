@@ -177,6 +177,7 @@ Clés ajoutées dans `fr.json` et `en.json` :
 ### Privacy audit
 - Ajout `$reset()` à tous les data stores (symbols, accounts, positions, orders, trades)
 - `auth.logout()` appelle `$reset()` sur les 5 stores → nettoyage complet au déconnexion
+- Depuis [110](110-deconnexion-vide-les-stores.md) : la liste couvre tous les stores de données utilisateur (`USER_STORES` dans `auth.js`), à la déconnexion comme à la suppression de compte, et un test garde-fou échoue sur tout store oublié
 
 ### i18n audit
 - Ajout clé globale `error.field_too_long` dans `fr.json` et `en.json`

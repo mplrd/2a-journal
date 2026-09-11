@@ -1470,7 +1470,13 @@ ne produit rien en pratique.
 
 ---
 
-## Le store `stats` survit à la déconnexion
+## ✅ TRAITÉ — Le store `stats` survit à la déconnexion
+
+> **Traité le 2026-09-11** : [110](110-deconnexion-vide-les-stores.md). L'inventaire
+> a montré plus grave que `stats` — `setups`, `customFields` et
+> `symbolAccountSettings`, mis en cache derrière `loaded`, étaient servis tels
+> quels à l'utilisateur suivant. Tous les stores de données utilisateur sont
+> désormais vidés, avec un test qui échoue sur tout store oublié.
 
 La déconnexion vide les stores comptes, symboles, positions, ordres, trades et
 facturation (`stores/auth.js:90-98`), **pas `stats`**. Or le retour à la page

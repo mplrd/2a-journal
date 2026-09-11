@@ -47,7 +47,7 @@ export const useBillingStore = defineStore('billing', () => {
     await fetchStatus()
   }
 
-  function reset() {
+  function $reset() {
     status.value = null
   }
 
@@ -63,6 +63,6 @@ export const useBillingStore = defineStore('billing', () => {
     openPortal,
     cancel,
     reactivate,
-    reset,
+    $reset,
   }
 })
