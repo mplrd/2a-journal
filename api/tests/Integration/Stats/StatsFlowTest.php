@@ -203,6 +203,28 @@ class StatsFlowTest extends TestCase
         $this->assertArrayHasKey('pnl_by_symbol', $body['data']);
     }
 
+    public function testChartsWinLossCarriesAverageAndLargestAmountsWithinTheFilters(): void
+    {
+        // Entry 18500, size 1: account 1 wins +100 and loses -100, account 2
+        // wins +200. Filtered on account 1, the other account's win must not
+        // lift the average.
+        $this->createAndCloseTrade($this->accountId, 18600, 'TP');
+        $this->createAndCloseTrade($this->accountId, 18400, 'SL');
+        $this->createAndCloseTrade($this->accountId2, 18700, 'TP');
+
+        $response = $this->router->dispatch(
+            $this->authRequest('GET', '/stats/charts', [], ['account_id' => $this->accountId])
+        );
+        $winLoss = $response->getBody()['data']['win_loss'];
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(1, $winLoss['win']);
+        $this->assertSame(100.0, $winLoss['avg_win']);
+        $this->assertSame(100.0, $winLoss['max_win']);
+        $this->assertSame(-100.0, $winLoss['avg_loss']);
+        $this->assertSame(-100.0, $winLoss['max_loss']);
+    }
+
     // ── Advanced filters ────────────────────────────────────────
 
     public function testOverviewFiltersDateRange(): void

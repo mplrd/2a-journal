@@ -380,6 +380,87 @@ class StatsRepositoryTest extends TestCase
         $this->assertSame(1, $dist['be']);
     }
 
+    // ── Average and largest amounts per bucket ──────────────────
+    // The detail of the win / loss pie carries how much a win and a loss weigh,
+    // on the very trades the pie counts: an amount only makes sense next to the
+    // count it was taken from.
+
+    public function testGetWinLossDistributionAveragesAndExtremesEachBucket(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(200.0, 'TP');
+        $this->createClosedTrade(50.0, 'TP');
+        $this->createClosedTrade(0.0, 'BE');
+        $this->createClosedTrade(-50.0, 'SL');
+        $this->createClosedTrade(-30.0, 'SL');
+
+        $dist = $this->repo->getWinLossDistribution($this->userId);
+
+        $this->assertSame(116.67, $dist['avg_win']);
+        $this->assertSame(200.0, $dist['max_win']);
+        $this->assertSame(-40.0, $dist['avg_loss']);
+        $this->assertSame(-50.0, $dist['max_loss']);
+    }
+
+    public function testGetWinLossDistributionAmountsLeaveBreakevenTradesOut(): void
+    {
+        // 0.02% band: the +1 and -2 trades are breakeven, and must not drag the
+        // average win or loss towards zero.
+        $this->createClosedTrade(1.0, 'MANUAL');
+        $this->createClosedTrade(-2.0, 'MANUAL');
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(-50.0, 'SL');
+
+        $dist = $this->repo->getWinLossDistribution($this->userId, ['be_threshold_percent' => 0.02]);
+
+        $this->assertSame(100.0, $dist['avg_win']);
+        $this->assertSame(100.0, $dist['max_win']);
+        $this->assertSame(-50.0, $dist['avg_loss']);
+        $this->assertSame(-50.0, $dist['max_loss']);
+    }
+
+    public function testGetWinLossDistributionAmountsCountTradesWithoutPercentage(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(300.0, 'TP', ['pnl_percent' => null]);
+        $this->createClosedTrade(-20.0, 'SL', ['pnl_percent' => null]);
+
+        $dist = $this->repo->getWinLossDistribution($this->userId);
+
+        $this->assertSame(200.0, $dist['avg_win']);
+        $this->assertSame(300.0, $dist['max_win']);
+        $this->assertSame(-20.0, $dist['avg_loss']);
+        $this->assertSame(-20.0, $dist['max_loss']);
+    }
+
+    public function testGetWinLossDistributionAmountsAreNullForAnEmptyBucket(): void
+    {
+        $this->createClosedTrade(100.0, 'TP');
+        $this->createClosedTrade(0.0, 'BE');
+
+        $dist = $this->repo->getWinLossDistribution($this->userId);
+
+        $this->assertSame(100.0, $dist['avg_win']);
+        $this->assertSame(100.0, $dist['max_win']);
+        $this->assertNull($dist['avg_loss']);
+        $this->assertNull($dist['max_loss']);
+    }
+
+    public function testGetWinLossDistributionAmountsAreNullWithoutAnyTrade(): void
+    {
+        $dist = $this->repo->getWinLossDistribution($this->userId);
+
+        $this->assertSame([
+            'win' => 0,
+            'loss' => 0,
+            'be' => 0,
+            'avg_win' => null,
+            'avg_loss' => null,
+            'max_win' => null,
+            'max_loss' => null,
+        ], $dist);
+    }
+
     // ── Trades carrying a P&L but no percentage ─────────────────
     // The BE threshold is a percentage of the entry value, so a trade whose
     // entry value is unknown has no percentage to compare it against. Such a

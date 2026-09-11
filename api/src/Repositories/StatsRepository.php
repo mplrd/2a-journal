@@ -237,14 +237,30 @@ class StatsRepository
         return $result;
     }
 
+    /**
+     * Counts of the win / loss / breakeven pie, with the average and largest
+     * amount of the win and loss buckets.
+     *
+     * The amounts are taken on the very trades each count is made of, so a
+     * breakeven trade weighs on neither the average win nor the average loss.
+     * A `CASE` without `ELSE` answers NULL outside its bucket, which AVG, MAX
+     * and MIN skip — and an empty bucket leaves the amount NULL rather than 0.
+     * Losses stay signed: the largest loss is the most negative P&L.
+     */
     public function getWinLossDistribution(int $userId, array $filters = []): array
     {
         [$where, $params] = $this->buildWhereClause($userId, $filters);
 
+        [$win, $loss] = [$this->isWin(), $this->isLoss()];
+
         $sql = "SELECT
-                    SUM(CASE WHEN {$this->isWin()} THEN 1 ELSE 0 END) AS win,
-                    SUM(CASE WHEN {$this->isLoss()} THEN 1 ELSE 0 END) AS loss,
-                    SUM(CASE WHEN {$this->isBreakeven()} THEN 1 ELSE 0 END) AS be
+                    SUM(CASE WHEN {$win} THEN 1 ELSE 0 END) AS win,
+                    SUM(CASE WHEN {$loss} THEN 1 ELSE 0 END) AS loss,
+                    SUM(CASE WHEN {$this->isBreakeven()} THEN 1 ELSE 0 END) AS be,
+                    ROUND(AVG(CASE WHEN {$win} THEN t.pnl END), 2) AS avg_win,
+                    ROUND(AVG(CASE WHEN {$loss} THEN t.pnl END), 2) AS avg_loss,
+                    MAX(CASE WHEN {$win} THEN t.pnl END) AS max_win,
+                    MIN(CASE WHEN {$loss} THEN t.pnl END) AS max_loss
                 FROM trades t
                 INNER JOIN positions p ON p.id = t.position_id
                 $where";
@@ -253,10 +269,16 @@ class StatsRepository
         $stmt->execute($params);
         $row = $stmt->fetch();
 
+        $amount = static fn($value): ?float => $value !== null ? (float) $value : null;
+
         return [
             'win' => (int) ($row['win'] ?? 0),
             'loss' => (int) ($row['loss'] ?? 0),
             'be' => (int) ($row['be'] ?? 0),
+            'avg_win' => $amount($row['avg_win']),
+            'avg_loss' => $amount($row['avg_loss']),
+            'max_win' => $amount($row['max_win']),
+            'max_loss' => $amount($row['max_loss']),
         ];
     }
 

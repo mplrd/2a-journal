@@ -1470,4 +1470,74 @@ ne produit rien en pratique.
 
 ---
 
+## Le store `stats` survit à la déconnexion
+
+La déconnexion vide les stores comptes, symboles, positions, ordres, trades et
+facturation (`stores/auth.js:90-98`), **pas `stats`**. Or le retour à la page
+de login est une navigation SPA (`AppLayout.vue:163`), sans rechargement : les
+agrégats de l'utilisateur précédent (vue d'ensemble, graphiques, ventilations,
+et depuis [109](109-gains-pertes-moyens-et-max.md) les gains / pertes moyens et
+max) restent en mémoire jusqu'au prochain chargement. Un autre utilisateur qui
+se connecte dans le même onglet peut les apercevoir le temps que ses propres
+données arrivent.
+
+`$reset()` existe déjà dans `stores/stats.js` et n'est appelé nulle part.
+
+**À faire** : appeler `useStatsStore().$reset()` aux deux endroits où
+`auth.js` réinitialise les stores (`logout()` et `deleteAccount()`), avec un test.
+Vérifier au passage les autres stores non vidés (setups, plans, carnet…).
+
+**Fichiers** : `frontend/src/stores/auth.js`, `frontend/src/stores/stats.js`.
+
+**Repéré le** : 2026-09-11 (audit confidentialité du ticket #40).
+**Priorité** : basse — même onglet, poste partagé, et les données sont
+remplacées dès le premier chargement.
+
+---
+
+## Formateurs P&L recopiés dans chaque composant
+
+`formatPnl()` existe en quatre copies locales, `pnlClass()` en trois, légèrement
+différentes : `KpiCards.vue`, `RecentTrades.vue`, `StatsDetailDialog.vue`,
+`WinLossAmounts.vue` (formatage seul). Les écarts sont réels : signe `+` ou non, classe
+dark mode ou non, un zéro vert ou neutre, une valeur nulle grise ou sans
+couleur. Deux écrans peuvent donc écrire le même montant différemment.
+
+**À faire** : un utilitaire partagé (`utils/formatPnl.js` ou composable), testé
+une fois, puis remplacer les quatre copies en décidant d'une écriture unique.
+
+**Repéré le** : 2026-09-11 (contrôle qualité du ticket #40).
+**Priorité** : basse — cosmétique.
+
+---
+
+## Thème sombre : les tableaux des modales de détail sont noirs sur fond marine
+
+**Constaté** (captures du 2026-09-11, page Performance) : en thème sombre, le
+`DataTable` de chaque modale « Voir le détail » — par direction, par symbole… —
+s'affiche en gris quasi noir, en-tête et lignes, dans une modale bleu marine
+(`surface-dark-2`, `main.css`). Le contraste de fond jure, et le bloc
+« Montant des gains et des pertes » ([109](109-gains-pertes-moyens-et-max.md)),
+qui suit la surface marine, le rend plus visible encore.
+
+**Cause probable, lue dans le code, non vérifiée** : le preset `Brand`
+(`main.js`) ne surcharge que la palette `primary`. La palette `surface` reste
+celle d'Aura (zinc), que le `DataTable` utilise en sombre ; seule la `.p-dialog`
+est ramenée sur le marine par `main.css`. Si c'est bien ça, tous les
+`DataTable` de l'application sont concernés en sombre, pas seulement ceux des
+modales.
+
+**À faire** : confirmer sur une page à tableau (Trades, Positions) en sombre,
+puis surcharger `semantic.colorScheme.dark.surface` du preset sur la rampe
+marine de la charte plutôt que de corriger composant par composant. Revoir
+ensuite les écrans sombres un par un : le changement touche tout ce qui lit la
+surface.
+
+**Fichiers** : `frontend/src/main.js`, `frontend/src/assets/main.css`.
+
+**Repéré le** : 2026-09-11 (reprise UI du ticket #40).
+**Priorité** : moyenne — visible sur tout écran à tableau en thème sombre.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
