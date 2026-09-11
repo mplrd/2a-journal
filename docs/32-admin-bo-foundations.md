@@ -77,6 +77,8 @@ Toutes les routes `/api/admin/*` sont protégées par `[AuthMiddleware, RequireA
 
 **Garde-fous** : un admin ne peut ni se suspendre, ni se supprimer lui-même (`admin.error.cannot_self_*`).
 
+**Sessions** : suspendre ou supprimer un utilisateur révoque tous ses refresh tokens, et le renouvellement refuse un compte suspendu ou supprimé — la session tombe au plus tard à l'expiration du token d'accès (15 min). Voir [111](111-suspension-coupe-les-sessions.md).
+
 **Sanitization** : la réponse exclut systématiquement `password_hash`, `refresh_tokens`, `stripe_customer_id` via une whitelist explicite dans `AdminUserService::sanitize()`.
 
 ### Settings

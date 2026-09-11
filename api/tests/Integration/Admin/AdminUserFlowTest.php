@@ -98,6 +98,35 @@ class AdminUserFlowTest extends TestCase
         return $response->getBody()['data']['access_token'];
     }
 
+    private function loginAndGetRefreshToken(string $email): string
+    {
+        $response = $this->router->dispatch(Request::create('POST', '/auth/login', [
+            'email' => $email,
+            'password' => 'Test1234',
+        ]));
+        preg_match('/refresh_token=([^;]+)/', (string) $response->getHeader('Set-Cookie'), $matches);
+        $this->assertNotEmpty($matches[1] ?? null, 'Expected a refresh token in the login cookie');
+        return $matches[1];
+    }
+
+    private function countRefreshTokens(int $userId): int
+    {
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM refresh_tokens WHERE user_id = :id');
+        $stmt->execute(['id' => $userId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function assertRefreshIsRefused(string $refreshToken): void
+    {
+        try {
+            $this->router->dispatch(Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $refreshToken]));
+            $this->fail('Expected the refresh to be refused');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+            $this->assertSame('REFRESH_TOKEN_INVALID', $e->getErrorCode());
+        }
+    }
+
     private function fetchUserId(string $email): int
     {
         $stmt = $this->pdo->prepare('SELECT id FROM users WHERE email = :e');
@@ -296,6 +325,19 @@ class AdminUserFlowTest extends TestCase
         $this->assertNotNull($body['data']['suspended_at']);
     }
 
+    public function testSuspendingAUserEndsTheirOpenSessions(): void
+    {
+        $refreshToken = $this->loginAndGetRefreshToken('user@test.com');
+        $this->assertGreaterThan(0, $this->countRefreshTokens($this->regularUserId));
+
+        $this->router->dispatch(
+            $this->adminRequest('POST', "/admin/users/{$this->regularUserId}/suspend")
+        );
+
+        $this->assertSame(0, $this->countRefreshTokens($this->regularUserId));
+        $this->assertRefreshIsRefused($refreshToken);
+    }
+
     public function testUnsuspendUser(): void
     {
         $this->router->dispatch(
@@ -348,6 +390,19 @@ class AdminUserFlowTest extends TestCase
         $stmt = $this->pdo->prepare('SELECT deleted_at FROM users WHERE id = :id');
         $stmt->execute(['id' => $this->regularUserId]);
         $this->assertNotNull($stmt->fetchColumn());
+    }
+
+    public function testDeletingAUserEndsTheirOpenSessions(): void
+    {
+        $refreshToken = $this->loginAndGetRefreshToken('user@test.com');
+        $this->assertGreaterThan(0, $this->countRefreshTokens($this->regularUserId));
+
+        $this->router->dispatch(
+            $this->adminRequest('DELETE', "/admin/users/{$this->regularUserId}")
+        );
+
+        $this->assertSame(0, $this->countRefreshTokens($this->regularUserId));
+        $this->assertRefreshIsRefused($refreshToken);
     }
 
     public function testCannotDeleteSelf(): void
