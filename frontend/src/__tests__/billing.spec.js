@@ -68,14 +68,14 @@ describe('billing store', () => {
     expect(store.gracePeriodEnd).toBe('2026-05-01 00:00:00')
   })
 
-  it('reset clears the status', async () => {
+  it('$reset clears the status', async () => {
     billingService.getStatus.mockResolvedValue({
       data: { has_access: true, reason: 'bypass', grace_period_end: null, subscription: null },
     })
     const store = useBillingStore()
     await store.fetchStatus()
     expect(store.hasAccess).toBe(true)
-    store.reset()
+    store.$reset()
     expect(store.status).toBeNull()
     expect(store.hasAccess).toBe(false)
   })

@@ -8,6 +8,38 @@ import { usePositionsStore } from '@/stores/positions'
 import { useOrdersStore } from '@/stores/orders'
 import { useTradesStore } from '@/stores/trades'
 import { useBillingStore } from '@/stores/billing'
+import { useStatsStore } from '@/stores/stats'
+import { useSetupsStore } from '@/stores/setups'
+import { useCustomFieldsStore } from '@/stores/customFields'
+import { useNotebookStore } from '@/stores/notebook'
+import { useSupportStore } from '@/stores/support'
+import { useSymbolAccountSettingsStore } from '@/stores/symbolAccountSettings'
+
+// Leaving the session is an SPA navigation, not a reload: whatever a store
+// still holds is served to the next user signing in from the same tab, and the
+// stores caching behind a `loaded` flag never refetch to replace it. Every
+// store holding user data is listed here — logout-resets-user-stores.spec.js
+// fails on any store left out. `features` is not: its flags are platform-wide.
+const USER_STORES = [
+  useAccountsStore,
+  useSymbolsStore,
+  usePositionsStore,
+  useOrdersStore,
+  useTradesStore,
+  useBillingStore,
+  useStatsStore,
+  useSetupsStore,
+  useCustomFieldsStore,
+  useNotebookStore,
+  useSupportStore,
+  useSymbolAccountSettingsStore,
+]
+
+function resetUserStores() {
+  for (const useStore of USER_STORES) {
+    useStore().$reset()
+  }
+}
 
 // Cross-tab channel: lets a tab that just verified its email tell the other
 // open tabs to refresh their cached profile, so the verification banner
@@ -90,12 +122,7 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       user.value = null
       api.clearTokens()
-      useAccountsStore().$reset()
-      useSymbolsStore().$reset()
-      usePositionsStore().$reset()
-      useOrdersStore().$reset()
-      useTradesStore().$reset()
-      useBillingStore().reset()
+      resetUserStores()
     }
   }
 
@@ -135,12 +162,7 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await authService.deleteAccount(data)
     user.value = null
     api.clearTokens()
-    useAccountsStore().$reset()
-    useSymbolsStore().$reset()
-    usePositionsStore().$reset()
-    useOrdersStore().$reset()
-    useTradesStore().$reset()
-    useBillingStore().reset()
+    resetUserStores()
     return response
   }
 

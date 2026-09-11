@@ -55,7 +55,7 @@ export const useSymbolAccountSettingsStore = defineStore('symbolAccountSettings'
     )
   }
 
-  function reset() {
+  function $reset() {
     settings.value = []
     loaded.value = false
     loading.value = false
@@ -70,6 +70,6 @@ export const useSymbolAccountSettingsStore = defineStore('symbolAccountSettings'
     getPointValue,
     save,
     clear,
-    reset,
+    $reset,
   }
 })
