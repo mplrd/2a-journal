@@ -12,6 +12,7 @@ import Button from 'primevue/button'
 import DashboardFilters from '@/components/dashboard/DashboardFilters.vue'
 import ChartCard from '@/components/performance/ChartCard.vue'
 import StatsDetailDialog from '@/components/performance/StatsDetailDialog.vue'
+import WinLossAmounts from '@/components/performance/WinLossAmounts.vue'
 import SetupCombinationDialog from '@/components/performance/SetupCombinationDialog.vue'
 import RrDistributionChart from '@/components/performance/RrDistributionChart.vue'
 import EquityCurveChart from '@/components/performance/EquityCurveChart.vue'
@@ -71,10 +72,14 @@ function formatPeriodLabel(periodValue) {
 // Dialog state
 const dialogVisible = ref(false)
 const dialogDimension = ref(null)
+// Only the win / loss chart adds its average and largest amounts under the
+// by-direction breakdown; any other detail opens without them.
+const dialogWithWinLossAmounts = ref(false)
 const setupComboDialogVisible = ref(false)
 
-function openDetail(dimension) {
+function openDetail(dimension, { withWinLossAmounts = false } = {}) {
   dialogDimension.value = dimension
+  dialogWithWinLossAmounts.value = withWinLossAmounts
   dialogVisible.value = true
 }
 
@@ -304,7 +309,7 @@ const winLossChartData = computed(() => {
           :data="winLossChartData"
           :options="doughnutChartOptions"
           detailable
-          @detail="openDetail('direction')"
+          @detail="openDetail('direction', { withWinLossAmounts: true })"
         />
         <RrDistributionChart :data="statsStore.rrDistribution" />
       </div>
@@ -402,7 +407,10 @@ const winLossChartData = computed(() => {
       v-model:visible="dialogVisible"
       :dimension="dialogDimension"
       :data="dialogData"
-    />
+      :header="dialogWithWinLossAmounts ? t('dashboard.win_loss_distribution') : null"
+    >
+      <WinLossAmounts v-if="dialogWithWinLossAmounts" :data="statsStore.charts?.win_loss" />
+    </StatsDetailDialog>
     <SetupCombinationDialog v-model:visible="setupComboDialogVisible" />
   </div>
 </template>

@@ -64,6 +64,8 @@ Conséquence : les filtres `date_from` / `date_to` appliqués à cette route fil
 
 Réutilisé depuis le dashboard : P&L cumulé, distribution W/L, P&L par symbole.
 
+Le bloc `win_loss` porte, en plus des comptes `win` / `loss` / `be`, le gain et la perte moyens et maximum : `avg_win`, `avg_loss`, `max_win`, `max_loss` (pertes signées, NULL pour une case vide). Calculés sur les mêmes trades que les comptes, breakeven exclus — cf. [109-gains-pertes-moyens-et-max.md](109-gains-pertes-moyens-et-max.md).
+
 ## Architecture backend
 
 | Couche | Fichier | Rôle |
@@ -83,7 +85,7 @@ La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voi
 **Graphiques** (10 charts) :
 1. P&L cumulé (ligne) — réutilise les données de `/stats/charts`
 2. Courbe d'equity (ligne) — capital initial + P&L cumulé, couleur violette
-3. Distribution W/L (doughnut) — bouton détail → DataTable par direction
+3. Distribution W/L (doughnut) — bouton détail → modale « Répartition gains / pertes » : DataTable par direction, puis graphique papillon « Montant des gains et des pertes » (moyenne et maximum, cf. 109)
 4. Distribution des R:R (barres) — histogramme par buckets (<-2, -2/-1, -1/0, 0/1, 1/2, 2/3, >3)
 5. P&L par symbole (barres vert/rouge) — bouton détail → DataTable par symbole
 6. Win Rate & R:R par symbole (double axe, barres groupées bleu/violet) — bouton détail → DataTable par symbole
@@ -96,7 +98,7 @@ La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voi
 
 **Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades. Les heures sont converties dans le fuseau du user via `CONVERT_TZ` côté backend. Les bandes de session sont calculées côté frontend à partir des vraies timezones (`Asia/Tokyo`, `Europe/Paris`, `America/New_York`) et converties dans le fuseau du user via `Intl.DateTimeFormat`, avec prise en charge automatique du DST.
 
-**Dialog** (modale PrimeVue) : DataTable dynamique selon la dimension sélectionnée, colonnes adaptées (avg_rr et profit_factor masqués pour la dimension période).
+**Dialog** (modale PrimeVue) : DataTable dynamique selon la dimension sélectionnée, colonnes adaptées (avg_rr et profit_factor masqués pour la dimension période). Un slot par défaut permet à un graphique d'ajouter du contenu sous le tableau, et la prop `header` de remplacer le titre de dimension : seul le camembert gains/pertes s'en sert, pour `WinLossAmounts` (cf. 109).
 
 ### Filtres
 

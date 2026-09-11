@@ -228,6 +228,7 @@ réussite restent les unités transverses.
 Si une sélection multi-comptes multi-devises devait un jour être gérée, les
 visuels concernés sont : equity/cumulé (une série par devise), calendrier, P&L par
 symbole, cartes KPI (`total_pnl`, `best`/`worst`, et surtout `profit_factor`, ratio
-de deux sommes qui ne survit pas au mélange), heatmap en P&L, et le `total_pnl` des
-agrégats par dimension. `WinLossChart`, la distribution de R et les stats par
-session ne bougent pas.
+de deux sommes qui ne survit pas au mélange), heatmap en P&L, le `total_pnl` des
+agrégats par dimension, et les gains / pertes moyens et max du détail du camembert
+([109](109-gains-pertes-moyens-et-max.md)). `WinLossChart` (ses comptes), la
+distribution de R et les stats par session ne bougent pas.
