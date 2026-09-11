@@ -81,6 +81,17 @@ Retourne le P&L agrégé par jour (trades fermés uniquement).
   - Trades avec tabs (2/3 — `lg:col-span-2`) : onglet "En cours" (trades ouverts) et "Récents" (trades fermés)
   - Calendrier P&L journalier (1/3) : grille mensuelle, jours colorés selon la perf (vert = gain, rouge = perte, jaune = BE), navigation mois précédent/suivant
 
+### Calendrier : des semaines complètes
+
+Chaque ligne du calendrier est une semaine entière, du lundi au dimanche. Quand le mois ne commence pas un lundi, la première ligne s'ouvre sur les derniers jours du mois précédent ; quand il ne finit pas un dimanche, la dernière ligne se termine sur les premiers jours du mois suivant. Plus de cases vides : une semaine à cheval sur deux mois se lit en entier.
+
+- **Jours hors mois atténués** (`opacity-40`), mais **avec leur P&L et leur couleur** : le dashboard charge le P&L journalier de tout l'historique (`/stats/daily-pnl` sans filtre de date), ces jours ont donc leurs données sans requête supplémentaire.
+- **Aucun jour ajouté** avant un mois qui commence un lundi, ni après un mois qui finit un dimanche.
+- Le calcul passe par le constructeur `Date` (`new Date(année, mois, 1 - n)`, `new Date(année, mois + 1, n)`), qui bascule de lui-même sur le mois et l'année voisins — janvier ouvre sur décembre de l'année précédente sans cas particulier.
+- L'infobulle d'un jour tradé (« 2 trade(s) : +120 ») passe par la clé `dashboard.trade_count` au lieu d'un texte en dur.
+
+Chaque case porte `data-date` et `data-outside`, ce que les tests exploitent.
+
 ### Comportement au chargement
 
 - **Reset des filtres** : les filtres du store sont remis à zéro (`setFilters({})`) au montage de la page. Ainsi, naviguer vers une autre page puis revenir affiche toujours les données non filtrées.
@@ -94,4 +105,5 @@ Retourne le P&L agrégé par jour (trades fermés uniquement).
 | Unit | `StatsServiceTest.php` | 13 tests |
 | Integration | `StatsFlowTest.php` | 15 tests |
 | Frontend | `PnlBySymbolChart.spec.js` | 3 tests |
+| Frontend | `PnlCalendar.spec.js` | 9 tests — dont semaines complètes : 1re semaine ouverte sur le mois précédent (septembre 2026 → 31 août), dernière fermée sur le mois suivant (→ 1er-4 octobre), 35 cases sans case vide, rien avant un mois qui commence un lundi (juin 2026) ni après un mois qui finit un dimanche (mai 2026), P&L et infobulle d'un jour hors mois, recalcul à la navigation (août 2026 → 27 juillet … 6 septembre) |
 | Unit | `stats-store.spec.js` | 6 tests |

@@ -35,32 +35,46 @@ const pnlMap = computed(() => {
   return map
 })
 
+// Monday = 0 … Sunday = 6
+function mondayIndex(date) {
+  return (date.getDay() + 6) % 7
+}
+
+function dayCell(date, outside) {
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const data = pnlMap.value[dateStr]
+  return {
+    day: date.getDate(),
+    date: dateStr,
+    outside,
+    pnl: data?.pnl ?? null,
+    count: data?.count ?? 0,
+  }
+}
+
+// Whole Monday-to-Sunday weeks: the first row opens with the last days of the
+// previous month and the last row closes with the first days of the next, so a
+// week reads whole. The daily P&L covers the full history, so those days carry
+// their figures too; they are only dimmed. Date arithmetic goes through the
+// Date constructor, which rolls day 0 or day 32 over to the adjacent month.
 const calendarDays = computed(() => {
   const year = currentYear.value
   const month = currentMonth.value
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
 
-  // Monday = 0, Sunday = 6
-  let startDow = firstDay.getDay() - 1
-  if (startDow < 0) startDow = 6
-
   const days = []
 
-  // Padding before first day
-  for (let i = 0; i < startDow; i++) {
-    days.push({ day: null })
+  for (let before = mondayIndex(firstDay); before > 0; before--) {
+    days.push(dayCell(new Date(year, month, 1 - before), true))
   }
 
   for (let d = 1; d <= lastDay.getDate(); d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    const data = pnlMap.value[dateStr]
-    days.push({
-      day: d,
-      date: dateStr,
-      pnl: data?.pnl ?? null,
-      count: data?.count ?? 0,
-    })
+    days.push(dayCell(new Date(year, month, d), false))
+  }
+
+  for (let after = 1; after <= 6 - mondayIndex(lastDay); after++) {
+    days.push(dayCell(new Date(year, month + 1, after), true))
   }
 
   return days
@@ -142,13 +156,16 @@ function formatDayPnl(pnl) {
 
       <!-- Days -->
       <div
-        v-for="(cell, idx) in calendarDays"
-        :key="idx"
+        v-for="cell in calendarDays"
+        :key="cell.date"
+        data-testid="calendar-day"
+        :data-date="cell.date"
+        :data-outside="cell.outside"
         class="aspect-square flex flex-col items-center justify-center rounded text-xs relative"
-        :class="cell.day ? cellClass(cell) : ''"
-        :title="cell.count ? `${cell.count} trade(s) : ${formatDayPnl(cell.pnl)}` : ''"
+        :class="[cellClass(cell), { 'opacity-40': cell.outside }]"
+        :title="cell.count ? `${t('dashboard.trade_count', { count: cell.count })} : ${formatDayPnl(cell.pnl)}` : ''"
       >
-        <span v-if="cell.day" class="font-medium" :class="cell.pnl == null ? 'text-gray-400 dark:text-gray-600' : ''">
+        <span class="font-medium" :class="cell.pnl == null ? 'text-gray-400 dark:text-gray-600' : ''">
           {{ cell.day }}
         </span>
         <span v-if="cell.pnl != null" class="text-[10px] leading-tight font-medium">
