@@ -339,6 +339,56 @@ class AuthFlowTest extends TestCase
         }
     }
 
+    // A user suspended or deleted while signed in -- including before suspension
+    // started revoking sessions -- still holds a refresh token. Rotating it must
+    // not keep the session alive.
+
+    public function testRefreshRefusesAUserSuspendedWhileSignedIn(): void
+    {
+        $response = $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'suspended-later@test.com',
+            'password' => 'Test1234',
+        ]));
+        $refreshToken = $this->extractRefreshToken($response);
+        $this->pdo->prepare("UPDATE users SET suspended_at = NOW() WHERE email = 'suspended-later@test.com'")->execute();
+
+        try {
+            $this->router->dispatch(Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $refreshToken]));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+            $this->assertSame('auth.error.suspended', $e->getMessageKey());
+        }
+
+        // The refusal revoked the token: it cannot be replayed once lifted either.
+        $this->pdo->prepare("UPDATE users SET suspended_at = NULL WHERE email = 'suspended-later@test.com'")->execute();
+        try {
+            $this->router->dispatch(Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $refreshToken]));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+            $this->assertSame('REFRESH_TOKEN_INVALID', $e->getErrorCode());
+        }
+    }
+
+    public function testRefreshRefusesAUserDeletedWhileSignedIn(): void
+    {
+        $response = $this->router->dispatch(Request::create('POST', '/auth/register', [
+            'email' => 'deleted-later@test.com',
+            'password' => 'Test1234',
+        ]));
+        $refreshToken = $this->extractRefreshToken($response);
+        $this->pdo->prepare("UPDATE users SET deleted_at = NOW() WHERE email = 'deleted-later@test.com'")->execute();
+
+        try {
+            $this->router->dispatch(Request::create('POST', '/auth/refresh', [], [], [], ['refresh_token' => $refreshToken]));
+            $this->fail('Expected HttpException');
+        } catch (HttpException $e) {
+            $this->assertSame(401, $e->getStatusCode());
+            $this->assertSame('REFRESH_TOKEN_INVALID', $e->getErrorCode());
+        }
+    }
+
     public function testRefreshMissingToken(): void
     {
         $request = Request::create('POST', '/auth/refresh', []);

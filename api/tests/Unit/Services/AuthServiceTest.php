@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Exceptions\ForbiddenException;
 use App\Exceptions\HttpException;
 use App\Exceptions\UnauthorizedException;
 use App\Exceptions\ValidationException;
@@ -273,6 +274,57 @@ class AuthServiceTest extends TestCase
         $this->assertArrayNotHasKey('refresh_token', $result);
         $this->assertStringContainsString('refresh_token=', $result['refresh_cookie']);
         $this->assertStringNotContainsString('refresh_token=valid-token', $result['refresh_cookie']);
+    }
+
+    // Suspension was only checked at sign-in: a suspended user already signed in
+    // kept rotating a valid refresh token, and with it an open session, forever.
+
+    public function testRefreshRefusesASuspendedUserAndRevokesTheirSessions(): void
+    {
+        $this->tokenRepo->method('findByToken')->willReturn([
+            'id' => 1,
+            'user_id' => 7,
+            'token' => 'valid-token',
+            'expires_at' => date('Y-m-d H:i:s', time() + 3600),
+        ]);
+        $this->userRepo->method('findById')->willReturn([
+            'id' => 7,
+            'email' => 'suspended@test.com',
+            'suspended_at' => '2026-09-11 10:00:00',
+        ]);
+        $this->tokenRepo->expects($this->once())->method('deleteAllByUserId')->with(7);
+        $this->tokenRepo->expects($this->never())->method('create');
+
+        $this->expectException(ForbiddenException::class);
+        $this->expectExceptionMessage('auth.error.suspended');
+
+        $this->service->refresh(['refresh_token' => 'valid-token']);
+    }
+
+    public function testRefreshRefusesAUserThatNoLongerExistsAndRevokesTheirSessions(): void
+    {
+        $this->tokenRepo->method('findByToken')->willReturn([
+            'id' => 1,
+            'user_id' => 7,
+            'token' => 'valid-token',
+            'expires_at' => date('Y-m-d H:i:s', time() + 3600),
+        ]);
+        // findById skips soft-deleted users.
+        $this->userRepo->method('findById')->willReturn(null);
+        $this->tokenRepo->expects($this->once())->method('deleteAllByUserId')->with(7);
+        $this->tokenRepo->expects($this->never())->method('create');
+
+        $this->expectException(UnauthorizedException::class);
+        $this->expectExceptionMessage('auth.error.refresh_token_invalid');
+
+        $this->service->refresh(['refresh_token' => 'valid-token']);
+    }
+
+    public function testRevokeSessionsDeletesEveryRefreshTokenOfTheUser(): void
+    {
+        $this->tokenRepo->expects($this->once())->method('deleteAllByUserId')->with(7);
+
+        $this->service->revokeSessions(7);
     }
 
     // ── Logout ───────────────────────────────────────────────────
