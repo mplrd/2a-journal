@@ -11,11 +11,15 @@ const props = defineProps({
   visible: { type: Boolean, required: true },
   dimension: { type: String, default: null },
   data: { type: Array, default: () => [] },
+  // Overrides the dimension title, for a chart whose detail holds more than
+  // the breakdown table.
+  header: { type: String, default: null },
 })
 
 defineEmits(['update:visible'])
 
 const title = computed(() => {
+  if (props.header) return props.header
   const titles = {
     symbol: t('performance.by_symbol'),
     direction: t('performance.by_direction'),
@@ -93,5 +97,7 @@ function pnlClass(value) {
         </Column>
       </template>
     </DataTable>
+    <!-- Extra content a chart adds under its breakdown (win / loss amounts) -->
+    <slot />
   </Dialog>
 </template>
