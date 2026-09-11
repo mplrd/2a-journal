@@ -207,10 +207,27 @@ class AuthService
             throw new UnauthorizedException('auth.error.refresh_token_invalid', 'REFRESH_TOKEN_INVALID');
         }
 
+        $userId = (int)$stored['user_id'];
+
+        // A refresh token outlives the account state it was issued under: the
+        // suspension is only checked at sign-in, so without this a user suspended
+        // -- or deleted -- while signed in kept rotating a valid token, and an
+        // open session with it, indefinitely. Refusing revokes every session of
+        // the user, which also covers tokens issued before suspension started
+        // revoking them.
+        $user = $this->userRepo->findById($userId);
+        if (!$user) {
+            $this->revokeSessions($userId);
+            throw new UnauthorizedException('auth.error.refresh_token_invalid', 'REFRESH_TOKEN_INVALID');
+        }
+        if (!empty($user['suspended_at'])) {
+            $this->revokeSessions($userId);
+            throw new ForbiddenException('auth.error.suspended');
+        }
+
         // Rotate: delete old, create new
         $this->tokenRepo->deleteByToken($data['refresh_token']);
 
-        $userId = (int)$stored['user_id'];
         $accessToken = $this->generateAccessToken($userId);
         $refreshToken = $this->generateRefreshToken($userId);
 
@@ -222,11 +239,21 @@ class AuthService
 
     public function logout(int $userId): array
     {
-        $this->tokenRepo->deleteAllByUserId($userId);
+        $this->revokeSessions($userId);
 
         return [
             'refresh_cookie' => $this->buildClearCookie(),
         ];
+    }
+
+    /**
+     * End every open session of a user, on every device: no refresh token of
+     * theirs can be rotated afterwards. The access tokens already issued stay
+     * valid until they expire (access_token_ttl) -- they are stateless JWTs.
+     */
+    public function revokeSessions(int $userId): void
+    {
+        $this->tokenRepo->deleteAllByUserId($userId);
     }
 
     public function getProfile(int $userId): array

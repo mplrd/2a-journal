@@ -107,6 +107,9 @@ class AdminUserService
         }
 
         $this->userRepo->setSuspendedAt($userId);
+        // Sign-in refuses a suspended user, but a session already open would
+        // otherwise survive the suspension.
+        $this->authService->revokeSessions($userId);
 
         return $this->sanitize($this->userRepo->findById($userId));
     }
@@ -147,6 +150,8 @@ class AdminUserService
         }
 
         $this->userRepo->softDelete($userId);
+        // Same as a user deleting their own account (AuthService::deleteAccount).
+        $this->authService->revokeSessions($userId);
     }
 
     /**

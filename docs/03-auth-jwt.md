@@ -158,4 +158,5 @@ La locale est persistée dans la colonne `users.locale` :
 - Le `findByEmail` retourne le `password` (nécessaire pour la vérification lors du login)
 - La rotation de refresh token supprime l'ancien avant de créer le nouveau
 - Le logout supprime **tous** les refresh tokens du user (déconnexion globale)
+- Le refresh relit l'utilisateur : un compte suspendu (`403 auth.error.suspended`) ou supprimé (`401`) est refusé et toutes ses sessions sont révoquées — cf. [111](111-suspension-coupe-les-sessions.md)
 - La base MariaDB tourne sur le port **3307** (configuration WAMP locale)
