@@ -47,6 +47,13 @@ $existing = $stmt->fetch();
 if ($existing) {
     $state = $existing['deleted_at'] ? 'soft-deleted' : 'active';
     echo "Demo user already exists (id={$existing['id']}, {$state}). Cleaning up...\n";
+    // Trading plans first: `fk_plan_symbol` is ON DELETE RESTRICT, and the demo
+    // account owns both a symbol and a plan pointing at it. Leaving that to the
+    // cascade from `users` is engine-dependent — MariaDB 11.4 and MySQL 8.4
+    // allow it, the MySQL 9.7 that Railway runs refuses it with error 1451,
+    // which looped the API on boot (2026-09-24). Order it here rather than
+    // trust the engine.
+    $pdo->prepare('DELETE FROM trading_plans WHERE user_id = :id')->execute(['id' => $existing['id']]);
     // Delete cascades take care of accounts, positions, trades, etc.
     $pdo->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $existing['id']]);
 }

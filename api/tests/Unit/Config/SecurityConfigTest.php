@@ -47,6 +47,21 @@ class SecurityConfigTest extends TestCase
         $this->assertIsArray($this->config['rate_limits']);
     }
 
+    public function testRefreshAllowsSixtyCallsPerQuarterHour(): void
+    {
+        // Every full page load calls /auth/refresh, journal and admin alike,
+        // and both draw on the same per-IP counter. At 10, ten reloads in a
+        // quarter of an hour logged a user out on the eleventh (production,
+        // 2026-09-21), and everyone behind one address (office, mobile
+        // carrier) shares those calls. The refresh token carries 256 random
+        // bits, so there is nothing to brute-force: this limit only guards
+        // server load.
+        $this->assertSame(
+            ['max_attempts' => 60, 'window_seconds' => 900],
+            $this->config['rate_limits']['refresh'],
+        );
+    }
+
     // ── Trusted proxies ─────────────────────────────────────────────
     //
     // The one setting that decides whether a forwarded header is believed, so

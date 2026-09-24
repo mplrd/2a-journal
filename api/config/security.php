@@ -34,7 +34,9 @@ return [
     'rate_limits' => [
         'login' => ['max_attempts' => 10, 'window_seconds' => 900],
         'register' => ['max_attempts' => 5, 'window_seconds' => 900],
-        'refresh' => ['max_attempts' => 10, 'window_seconds' => 900],
+        // Called on every full page load, journal and admin alike, on one
+        // per-IP counter. The token carries 256 random bits: this only guards load.
+        'refresh' => ['max_attempts' => 60, 'window_seconds' => 900],
         'forgot_password' => ['max_attempts' => 3, 'window_seconds' => 900],
         // SSO: prevent flood-of-codes DoS on issuance and brute-force probing
         // on exchange. Per-IP, both share the standard middleware.

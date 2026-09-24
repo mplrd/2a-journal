@@ -60,6 +60,9 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
   const error = ref(null)
   const initialized = ref(false)
+  // Why the startup restore left the user signed out, when it is worth saying:
+  // a rate-limited /auth/refresh looks exactly like "no session" otherwise.
+  const restoreErrorKey = ref(null)
 
   const isAuthenticated = computed(() => !!api.getAccessToken())
   const fullName = computed(() => {
@@ -69,6 +72,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setAuthData(data) {
     api.setTokens(data.access_token)
+    restoreErrorKey.value = null
     if (data.user) {
       user.value = data.user
     }
@@ -191,10 +195,13 @@ export const useAuthStore = defineStore('auth', () => {
       if (response) {
         await fetchProfile()
       }
-    } catch {
+    } catch (err) {
       // No valid session — user stays unauthenticated
       user.value = null
       api.clearTokens()
+      if (err.code === 'TOO_MANY_REQUESTS') {
+        restoreErrorKey.value = err.messageKey
+      }
     } finally {
       initialized.value = true
     }
@@ -205,6 +212,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     error,
     initialized,
+    restoreErrorKey,
     isAuthenticated,
     fullName,
     register,

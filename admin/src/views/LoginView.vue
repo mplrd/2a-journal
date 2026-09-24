@@ -38,6 +38,10 @@ async function submit() {
 // the code for tokens and skip the manual login. Strip the code from the URL
 // after exchange so it doesn't linger in browser history.
 onMounted(async () => {
+  if (auth.restoreErrorKey) {
+    toast.add({ severity: 'error', summary: t('error.internal'), detail: t(auth.restoreErrorKey), life: 5000 })
+  }
+
   const code = route.query.code
   if (typeof code !== 'string' || code.length === 0) return
 

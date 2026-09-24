@@ -82,7 +82,7 @@ Clé unique sur `(ip, endpoint)` avec UPSERT pour les incréments.
 |----------|---------------|---------|
 | `/auth/login` | 10 | 15 minutes |
 | `/auth/register` | 5 | 15 minutes |
-| `/auth/refresh` | 10 | 15 minutes |
+| `/auth/refresh` | 60 | 15 minutes — relevé de 10 à 60 le 2026-09-21, voir [112](112-quota-de-renouvellement-de-session.md) |
 
 #### Composants
 

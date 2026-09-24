@@ -14,6 +14,11 @@ vi.mock('@/services/auth', () => ({
   },
 }))
 
+// Shaped like the errors api.js throws from an API envelope.
+function apiError(status, code, messageKey) {
+  return Object.assign(new Error(messageKey), { status, code, messageKey })
+}
+
 describe('auth store', () => {
   let store
 
@@ -153,6 +158,34 @@ describe('auth store', () => {
     expect(store.initialized).toBe(true)
     expect(store.user).toBeNull()
     expect(api.getAccessToken()).toBeNull()
+  })
+
+  it('initSession keeps the rate-limit message for the login page', async () => {
+    vi.spyOn(api, 'refreshAccessToken').mockRejectedValue(apiError(429, 'TOO_MANY_REQUESTS', 'error.rate_limit_exceeded'))
+
+    await store.initSession()
+
+    expect(store.restoreErrorKey).toBe('error.rate_limit_exceeded')
+    expect(store.user).toBeNull()
+    expect(store.initialized).toBe(true)
+  })
+
+  it('initSession has nothing to say when there is simply no session', async () => {
+    vi.spyOn(api, 'refreshAccessToken').mockRejectedValue(apiError(401, 'REFRESH_TOKEN_INVALID', 'auth.error.refresh_token_invalid'))
+
+    await store.initSession()
+
+    expect(store.restoreErrorKey).toBeNull()
+  })
+
+  it('a successful login drops the rate-limit message', async () => {
+    vi.spyOn(api, 'refreshAccessToken').mockRejectedValue(apiError(429, 'TOO_MANY_REQUESTS', 'error.rate_limit_exceeded'))
+    await store.initSession()
+    authService.login.mockResolvedValue({ success: true, data: { access_token: 'token-123' } })
+
+    await store.login({ email: 'test@test.com', password: 'Password1!' })
+
+    expect(store.restoreErrorKey).toBeNull()
   })
 
   it('updateProfile updates user data', async () => {
