@@ -1571,4 +1571,46 @@ ensuite qu'une 404 sur `/assets/inexistant.js` ne porte plus de `max-age`.
 
 ---
 
+## Le compte de démonstration est seedé en production
+
+**Constaté le 2026-09-24** en corrigeant [113](113-le-seeder-de-demo-ne-tue-plus-le-demarrage.md) :
+`docker/entrypoint.sh` joue `seed-demo.php` à **chaque démarrage, dans tous les
+environnements**. La base de prod contient donc un compte `demo@2a.journal`
+(id=99, `bypass_subscription=1`), recréé de zéro à chaque boot, avec ses comptes,
+ses trades et son plan.
+
+Ce n'est pas anodin : un compte exempté de paiement, au mot de passe connu et
+écrit dans le dépôt, vit en production. Et jusqu'à ce correctif, ce même seeder
+pouvait empêcher l'API de démarrer.
+
+**À faire** : décider si le seeder doit tourner ailleurs qu'en test — le plus
+simple étant de le conditionner à une variable d'environnement posée sur le seul
+service de test. Si le compte démo doit rester en prod, alors au minimum changer
+son mot de passe et le documenter comme un compte de service.
+
+**Fichiers** : `api/docker/entrypoint.sh`, `api/database/seed-demo.php`.
+
+**Repéré le** : 2026-09-24.
+**Priorité** : haute — surface d'authentification en production.
+
+---
+
+## Test flaky — `ProcOpenProcessPoolTest::testChildrenRunConcurrentlyNotOneAfterTheOther`
+
+**Constaté le 2026-09-24** : le test borne à 1,4 s trois `usleep(500000)` lancés
+en parallèle. Sur trois exécutions isolées d'affilée : vert, **2,73 s**, vert. Il
+avait aussi fait échouer une suite complète à 1,53 s. La borne se veut généreuse
+(commentaire du test), mais le démarrage de trois PHP sous Windows coûte parfois
+bien plus que 0,9 s.
+
+**À faire** : mesurer le parallélisme sans dépendre du temps de démarrage —
+comparer au temps d'un seul enfant mesuré dans le même test, plutôt qu'à une
+constante. À défaut, relever la borne.
+
+**Fichier** : `api/tests/Unit/Services/Process/ProcOpenProcessPoolTest.php:65`.
+
+**Repéré le** : 2026-09-24. **Priorité** : basse, mais un faux rouge coûte cher en confiance.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
