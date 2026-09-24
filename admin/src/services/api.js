@@ -31,7 +31,12 @@ async function refreshAccessToken() {
 
   if (!response.ok) {
     clearTokens()
-    throw new Error('Refresh failed')
+    const errorData = await response.json().catch(() => null)
+    const error = new Error(errorData?.error?.message_key || 'error.internal')
+    error.status = response.status
+    error.code = errorData?.error?.code
+    error.messageKey = errorData?.error?.message_key
+    throw error
   }
 
   const data = await response.json()

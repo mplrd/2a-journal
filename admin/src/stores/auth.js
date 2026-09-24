@@ -22,6 +22,9 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
   const error = ref(null)
   const initialized = ref(false)
+  // Why the startup restore left the user signed out, when it is worth saying:
+  // a rate-limited /auth/refresh looks exactly like "no session" otherwise.
+  const restoreErrorKey = ref(null)
 
   const isAuthenticated = computed(() => !!accessToken.value)
   const isAdmin = computed(() => role.value === 'ADMIN')
@@ -29,6 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
   function applyTokenAndDecodeRole(token) {
     api.setTokens(token)
     accessToken.value = token
+    restoreErrorKey.value = null
     const payload = decodeJwtPayload(token)
     role.value = payload?.role ?? null
   }
@@ -126,9 +130,12 @@ export const useAuthStore = defineStore('auth', () => {
           await fetchProfile()
         }
       }
-    } catch {
+    } catch (err) {
       user.value = null
       clearAuthState()
+      if (err.code === 'TOO_MANY_REQUESTS') {
+        restoreErrorKey.value = err.messageKey
+      }
     } finally {
       initialized.value = true
     }
@@ -140,6 +147,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     error,
     initialized,
+    restoreErrorKey,
     isAuthenticated,
     isAdmin,
     login,

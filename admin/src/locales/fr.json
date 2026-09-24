@@ -193,6 +193,7 @@
   },
   "error": {
     "internal": "Une erreur est survenue",
-    "network": "Erreur de connexion au serveur"
+    "network": "Erreur de connexion au serveur",
+    "rate_limit_exceeded": "Trop de tentatives, veuillez réessayer plus tard"
   }
 }

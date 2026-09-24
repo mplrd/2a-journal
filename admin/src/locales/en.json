@@ -193,6 +193,7 @@
   },
   "error": {
     "internal": "An error occurred",
-    "network": "Connection error"
+    "network": "Connection error",
+    "rate_limit_exceeded": "Too many attempts, please try again later"
   }
 }

@@ -1546,4 +1546,29 @@ surface.
 
 ---
 
+## Cloudflare — une 404 sur un fichier JS reste 4 h dans le navigateur
+
+**Constaté le 2026-09-21** : sur `journal.2a-trading-tools.com`, une 404 d'un
+fichier `.js` revient avec `Cache-Control: max-age=14400`. Ce n'est pas nginx,
+qui n'en pose pas sur une 404 (`expires` ne s'applique qu'aux 2xx/3xx). C'est le
+réglage **Browser Cache TTL** de Cloudflare, appliqué aux extensions statiques
+quand l'origine ne dit rien. Les vrais assets ne sont pas concernés : ils
+envoient leur propre `max-age=31536000, immutable`.
+
+**Hypothèse, non vérifiée dans les logs** : le même jour, après une panne Railway
+(404 de l'edge, services redémarrés à la main), le journal restait en écran blanc
+avec des requêtes « 404 (from disk cache) », jusqu'à ce que les données du site
+soient vidées. Une 404 sur le bundle principal, gardée 4 h par le navigateur,
+produit exactement ça. Aucune trace dans les logs HTTP du service frontend : la
+404 a dû être servie en amont.
+
+**À faire** : Cloudflare → Caching → Configuration → Browser Cache TTL =
+**Respect Existing Headers**. Réglage du tableau de bord, aucun code. Vérifier
+ensuite qu'une 404 sur `/assets/inexistant.js` ne porte plus de `max-age`.
+
+**Repéré le** : 2026-09-21 (diagnostic de [112](112-quota-de-renouvellement-de-session.md)).
+**Priorité** : moyenne — un écran blanc de 4 h après la moindre panne.
+
+---
+
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
