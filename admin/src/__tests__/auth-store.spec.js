@@ -22,6 +22,11 @@ vi.mock('@/services/api', () => ({
 import { authService } from '@/services/auth'
 import { api } from '@/services/api'
 
+// Shaped like the errors api.js throws from an API envelope.
+function apiError(status, code, messageKey) {
+  return Object.assign(new Error(messageKey), { status, code, messageKey })
+}
+
 function buildJwtWithRole(role) {
   const payload = btoa(JSON.stringify({ sub: 1, role }))
   return `header.${payload}.sig`
@@ -74,5 +79,41 @@ describe('auth store', () => {
     expect(store.user).toBeNull()
     expect(store.role).toBeNull()
     expect(api.clearTokens).toHaveBeenCalled()
+  })
+
+  // The admin restores its session through the same /auth/refresh as the
+  // journal, on the same per-IP counter.
+  it('initSession keeps the rate-limit message for the login page', async () => {
+    api.refreshAccessToken.mockRejectedValueOnce(apiError(429, 'TOO_MANY_REQUESTS', 'error.rate_limit_exceeded'))
+
+    const store = useAuthStore()
+    await store.initSession()
+
+    expect(store.restoreErrorKey).toBe('error.rate_limit_exceeded')
+    expect(store.isAuthenticated).toBe(false)
+    expect(store.initialized).toBe(true)
+  })
+
+  it('initSession has nothing to say when there is simply no session', async () => {
+    api.refreshAccessToken.mockRejectedValueOnce(apiError(401, 'REFRESH_TOKEN_INVALID', 'auth.error.refresh_token_invalid'))
+
+    const store = useAuthStore()
+    await store.initSession()
+
+    expect(store.restoreErrorKey).toBeNull()
+  })
+
+  it('a successful login drops the rate-limit message', async () => {
+    api.refreshAccessToken.mockRejectedValueOnce(apiError(429, 'TOO_MANY_REQUESTS', 'error.rate_limit_exceeded'))
+    const token = buildJwtWithRole('ADMIN')
+    authService.login.mockResolvedValueOnce({
+      data: { access_token: token, user: { id: 1, email: 'a@b.com', role: 'ADMIN' } },
+    })
+
+    const store = useAuthStore()
+    await store.initSession()
+    await store.login({ email: 'a@b.com', password: 'pwd' })
+
+    expect(store.restoreErrorKey).toBeNull()
   })
 })

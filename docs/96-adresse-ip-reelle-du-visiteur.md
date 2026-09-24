@@ -80,10 +80,12 @@ C'est le point à connaître : **les quotas deviennent réellement individuels, 
 
 Un utilisateur qui enchaîne des connexions ratées touchera donc une limite qu'il ne touchait pas auparavant. Les valeurs restent larges pour un humain — 10 connexions par quart d'heure — mais le cas peut se produire.
 
-**Si quelqu'un se retrouve bloqué** : la limite est une fenêtre glissante de 15 minutes, elle se libère seule. Pour débloquer immédiatement, supprimer la ligne correspondante :
+**Ça s'est produit, sur `/auth/refresh`** : le 2026-09-21, dix rechargements de page en un quart d'heure ont suffi à éjecter un utilisateur, puisque chaque chargement appelle `/auth/refresh`. Le quota a été relevé à 60 et la page de login dit désormais pourquoi, voir [112](112-quota-de-renouvellement-de-session.md).
+
+**Si quelqu'un se retrouve bloqué** : la limite est une fenêtre **fixe** de 15 minutes, qui démarre au premier appel. Elle se libère seule, et les appels refusés ne la prolongent pas. Pour débloquer immédiatement, supprimer la ligne correspondante (l'endpoint est stocké avec son chemin complet) :
 
 ```sql
-DELETE FROM rate_limits WHERE ip = '<son adresse>' AND endpoint = 'login';
+DELETE FROM rate_limits WHERE ip = '<son adresse>' AND endpoint = '/auth/login';
 ```
 
 Les quotas eux-mêmes se règlent dans `api/config/security.php`, section `rate_limits`.

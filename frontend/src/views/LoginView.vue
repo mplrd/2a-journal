@@ -13,7 +13,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const form = ref({ email: '', password: '' })
-const errorKey = ref(null)
+const errorKey = ref(authStore.restoreErrorKey)
 
 async function handleLogin() {
   errorKey.value = null
