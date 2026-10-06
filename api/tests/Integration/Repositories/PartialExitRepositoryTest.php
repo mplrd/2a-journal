@@ -159,4 +159,33 @@ class PartialExitRepositoryTest extends TestCase
 
         $this->assertCount(0, $exits);
     }
+
+    public function testFindByTradeIds_groupsExitsPerTradeInTimeOrder(): void
+    {
+        $first = $this->createTrade();
+        $second = $this->createTrade();
+        $untouched = $this->createTrade();
+        foreach ([
+            [$first, '2026-01-15 14:00:00', 'TP'],
+            [$first, '2026-01-15 12:00:00', 'BE'],
+            [$second, '2026-01-16 09:00:00', 'SL'],
+            [$untouched, '2026-01-16 10:00:00', 'TP'],
+        ] as [$trade, $at, $type]) {
+            $this->repo->create([
+                'trade_id' => (int) $trade['id'], 'exited_at' => $at, 'exit_price' => 18600.0,
+                'size' => 1.0, 'exit_type' => $type, 'pnl' => 10.0,
+            ]);
+        }
+
+        $exits = $this->repo->findByTradeIds([(int) $first['id'], (int) $second['id']]);
+
+        $this->assertSame([(int) $first['id'], (int) $second['id']], array_keys($exits));
+        $this->assertSame(['BE', 'TP'], array_column($exits[(int) $first['id']], 'exit_type'));
+        $this->assertSame(['SL'], array_column($exits[(int) $second['id']], 'exit_type'));
+    }
+
+    public function testFindByTradeIds_withNoIds_returnsNothing(): void
+    {
+        $this->assertSame([], $this->repo->findByTradeIds([]));
+    }
 }

@@ -8,6 +8,8 @@ class Response
     /** @var array{success: bool, data?: array|null, error?: array, meta?: array} */
     private array $body;
     private array $headers = [];
+    /** Bytes sent as-is instead of the JSON envelope — set by download() only. */
+    private ?string $rawBody = null;
 
     private function __construct(int $statusCode, array $body)
     {
@@ -52,6 +54,29 @@ class Response
         return $response;
     }
 
+    /**
+     * A file the browser saves rather than JSON. Built here, not with
+     * header() + exit in the controller, so a test can read what was sent.
+     */
+    public static function download(string $bytes, string $mimeType, string $filename): self
+    {
+        // The name lands in a header: strip quotes and line breaks (injection guard).
+        $safeName = preg_replace('/["\r\n]+/', '', $filename);
+
+        $response = new self(200, []);
+        $response->rawBody = $bytes;
+        $response->headers['Content-Type'] = $mimeType;
+        $response->headers['Content-Disposition'] = 'attachment; filename="' . $safeName . '"';
+        $response->headers['Content-Length'] = (string) strlen($bytes);
+        $response->headers['X-Content-Type-Options'] = 'nosniff';
+        return $response;
+    }
+
+    public function getRawBody(): ?string
+    {
+        return $this->rawBody;
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $this->headers[$name] = $value;
@@ -83,6 +108,10 @@ class Response
         http_response_code($this->statusCode);
         foreach ($this->headers as $name => $value) {
             header("$name: $value");
+        }
+        if ($this->rawBody !== null) {
+            echo $this->rawBody;
+            return;
         }
         if (!isset($this->headers['Location'])) {
             header('Content-Type: application/json; charset=utf-8');

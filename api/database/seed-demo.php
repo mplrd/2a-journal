@@ -54,6 +54,9 @@ if ($existing) {
     // which looped the API on boot (2026-09-24). Order it here rather than
     // trust the engine.
     $pdo->prepare('DELETE FROM trading_plans WHERE user_id = :id')->execute(['id' => $existing['id']]);
+    // status_history only sets user_id to NULL on delete: clear the demo's own
+    // rows, or every reseed leaves them behind.
+    $pdo->prepare('DELETE FROM status_history WHERE user_id = :id')->execute(['id' => $existing['id']]);
     // Delete cascades take care of accounts, positions, trades, etc.
     $pdo->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $existing['id']]);
 }
@@ -463,6 +466,138 @@ foreach ($securedTrades as [$symbol, $direction, $entry, $slPoints, $beSize, $se
 
     $securedCount++;
 }
+
+// ── 6b2. Trades scaled out over several targets ────────────
+// Taken off in pieces, as real trading goes: targets hit or not, the rest at
+// break-even, a stop on what was left, a manual close days later. Each exit
+// names the target it filled. Sizes add up to the position, P&L to the trade.
+$scaledTrades = [
+    [
+        'direction' => 'BUY', 'entry' => 18400, 'sl' => 50, 'be_points' => 30, 'be_size' => 0.6,
+        'setup' => ['Breakout', 'Trend Follow'], 'opened' => '2026-03-10 09:05:00', 'secured' => '2026-03-10 10:20:00',
+        'targets' => [['tp1', 60, 0.1], ['tp2', 120, 0.1], ['tp3', 300, 0.1]],
+        // [exited_at, price, size, type, target id]
+        'exits' => [
+            ['2026-03-10 09:40:00', 18460, 0.1, 'TP', 'tp1'],
+            ['2026-03-10 09:55:00', 18520, 0.1, 'TP', 'tp2'],
+            ['2026-03-10 10:20:00', 18430, 0.6, 'BE', null],
+            ['2026-03-12 16:00:00', 18580, 0.2, 'MANUAL', null],
+        ],
+    ],
+    [
+        'direction' => 'SELL', 'entry' => 18800, 'sl' => 40, 'be_points' => null, 'be_size' => null,
+        'setup' => 'Range', 'opened' => '2026-03-11 08:30:00', 'secured' => null,
+        'targets' => [['tp1', 50, 0.5], ['tp2', 100, 0.5]],
+        'exits' => [
+            ['2026-03-11 09:10:00', 18750, 0.5, 'TP', 'tp1'],
+            ['2026-03-11 10:05:00', 18700, 0.5, 'TP', 'tp2'],
+        ],
+    ],
+    [
+        'direction' => 'BUY', 'entry' => 18600, 'sl' => 40, 'be_points' => null, 'be_size' => null,
+        'setup' => 'Pullback', 'opened' => '2026-03-13 08:15:00', 'secured' => null,
+        'targets' => [['tp1', 40, 0.5], ['tp2', 100, 0.5]],
+        'exits' => [
+            ['2026-03-13 08:40:00', 18640, 0.5, 'TP', 'tp1'],
+            ['2026-03-13 09:30:00', 18560, 0.5, 'SL', null],
+        ],
+    ],
+];
+
+foreach ($scaledTrades as $st) {
+    $sign = $st['direction'] === 'BUY' ? 1 : -1;
+    $size = round(array_sum(array_column($st['exits'], 2)), 5);
+    $targets = [];
+    foreach ($st['targets'] as $i => [$tid, $points, $tSize]) {
+        $targets[] = ['id' => $tid, 'label' => 'TP' . ($i + 1), 'price' => $st['entry'] + $sign * $points, 'points' => $points, 'size' => $tSize];
+    }
+    $closedAt = end($st['exits'])[0];
+    $setupArray = array_merge(
+        [pickTimeframe('DAX', (int) ((strtotime($closedAt) - strtotime($st['opened'])) / 60))],
+        is_array($st['setup']) ? $st['setup'] : [$st['setup']]
+    );
+
+    [$planPid, $planAdh, $planReason] = $planAdherenceFor('DAX', $st['direction'], (float) $st['entry']);
+    $pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, plan_id, plan_adherence, plan_adherence_reason, sl_points, sl_price, be_points, be_price, be_size, targets, position_type)
+        VALUES (:uid, :aid, :dir, 'DAX', :entry, :size, :setup, :plan_id, :plan_adh, :plan_reason, :sl_pts, :sl_price, :be_pts, :be_price, :be_size, :targets, 'TRADE')")
+        ->execute([
+            'uid' => $userId,
+            'aid' => $accountId,
+            'dir' => $st['direction'],
+            'entry' => $st['entry'],
+            'size' => $size,
+            'setup' => json_encode($setupArray),
+            'plan_id' => $planPid,
+            'plan_adh' => $planAdh,
+            'plan_reason' => $planReason,
+            'sl_pts' => $st['sl'],
+            'sl_price' => $st['entry'] - $sign * $st['sl'],
+            'be_pts' => $st['be_points'],
+            'be_price' => $st['be_points'] === null ? null : $st['entry'] + $sign * $st['be_points'],
+            'be_size' => $st['be_size'],
+            'targets' => json_encode($targets),
+        ]);
+    $positionId = (int) $pdo->lastInsertId();
+
+    $legs = [];
+    foreach ($st['exits'] as [$at, $price, $exitSize, $type, $targetId]) {
+        $legs[] = [$at, $price, $exitSize, $type, $targetId, round(($price - $st['entry']) * $sign * $exitSize, 2)];
+    }
+    $pnl = round(array_sum(array_column($legs, 5)), 2);
+    $avgExit = round(array_sum(array_map(fn ($l) => $l[1] * $l[2], $legs)) / $size, 5);
+
+    $pdo->prepare("INSERT INTO trades (position_id, opened_at, closed_at, remaining_size, status, exit_type, pnl, pnl_percent, risk_reward, duration_minutes, avg_exit_price, be_reached)
+        VALUES (:pid, :opened, :closed, 0, 'CLOSED', :exit_type, :pnl, :pnl_percent, :rr, :dur, :avg, :be)")
+        ->execute([
+            'pid' => $positionId,
+            'opened' => $st['opened'],
+            'closed' => $closedAt,
+            'exit_type' => end($legs)[3],
+            'pnl' => $pnl,
+            'pnl_percent' => round($pnl / ($st['entry'] * $size) * 100, 4),
+            'rr' => round($pnl / ($st['sl'] * $size), 4),
+            'dur' => (int) ((strtotime($closedAt) - strtotime($st['opened'])) / 60),
+            'avg' => $avgExit,
+            'be' => $st['secured'] !== null ? 1 : 0,
+        ]);
+    $tradeId = (int) $pdo->lastInsertId();
+
+    foreach ($legs as [$at, $price, $exitSize, $type, $targetId, $legPnl]) {
+        $pdo->prepare("INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, target_id, pnl)
+            VALUES (:tid, :at, :price, :size, :type, :target, :pnl)")
+            ->execute(['tid' => $tradeId, 'at' => $at, 'price' => $price, 'size' => $exitSize, 'type' => $type, 'target' => $targetId, 'pnl' => $legPnl]);
+    }
+
+    // The status trail the app writes: opened, secured at break-even, closed.
+    $history = [[null, 'OPEN', $st['opened']]];
+    if ($st['secured'] !== null) {
+        $history[] = ['OPEN', 'SECURED', $st['secured']];
+    }
+    $history[] = [$st['secured'] !== null ? 'SECURED' : 'OPEN', 'CLOSED', $closedAt];
+    foreach ($history as [$from, $to, $at]) {
+        $pdo->prepare("INSERT INTO status_history (entity_type, entity_id, previous_status, new_status, user_id, changed_at)
+            VALUES ('TRADE', :tid, :from, :to, :uid, :at)")
+            ->execute(['tid' => $tradeId, 'from' => $from, 'to' => $to, 'uid' => $userId, 'at' => $at]);
+    }
+
+    $tradeCount++;
+}
+
+// A pending order already carrying its targets.
+$pdo->prepare("INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, targets, position_type)
+    VALUES (:uid, :aid, 'BUY', 'DAX', 18300, 1, :setup, 40, 18260, :targets, 'ORDER')")
+    ->execute([
+        'uid' => $userId,
+        'aid' => $accountId,
+        'setup' => json_encode(['M15', 'Pullback']),
+        'targets' => json_encode([
+            ['id' => 'tp1', 'label' => 'TP1', 'price' => 18360, 'points' => 60, 'size' => 0.5],
+            ['id' => 'tp2', 'label' => 'TP2', 'price' => 18450, 'points' => 150, 'size' => 0.5],
+        ]),
+    ]);
+$pdo->prepare("INSERT INTO orders (position_id, created_at, expires_at, status)
+    VALUES (:pid, '2026-03-16 07:30:00', '2026-03-20 22:00:00', 'PENDING')")
+    ->execute(['pid' => (int) $pdo->lastInsertId()]);
 
 // ── 6c. Create orders (one per status) ─────────────────────
 // Orders extend positions just like trades, but live on the orders table.

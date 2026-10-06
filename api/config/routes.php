@@ -68,6 +68,8 @@ use App\Services\AdminUserService;
 use App\Services\BillingService;
 use App\Services\PlatformSettingsService;
 use App\Services\DrawdownService;
+use App\Services\Export\AccountExportService;
+use App\Services\Export\AccountExportXlsxWriter;
 use App\Services\EmailService;
 use App\Services\OrderService;
 use App\Services\PositionService;
@@ -324,13 +326,23 @@ $partialExitRepo = new PartialExitRepository($pdo);
 $accountAdjustmentRepo = new AccountAdjustmentRepository($pdo);
 $accountService = new AccountService($accountRepo, $accountAdjustmentRepo);
 $drawdownService = new DrawdownService($accountRepo, $tradeRepo, $userRepo, $emailService);
-$accountController = new AccountController($accountService, $drawdownService);
+$accountExportService = new AccountExportService(
+    $accountService,
+    $positionRepo,
+    $partialExitRepo,
+    $customFieldRepo,
+    $customFieldValueRepo,
+    $setupRepo,
+    $userRepo
+);
+$accountController = new AccountController($accountService, $drawdownService, $accountExportService, new AccountExportXlsxWriter());
 $accountAdjustmentController = new AccountAdjustmentController($accountService);
 
 $router->get('/accounts', [$accountController, 'index'], [$authMiddleware, $requireSubscription]);
 $router->post('/accounts', [$accountController, 'store'], [$authMiddleware, $requireSubscription]);
 $router->get('/accounts/dd-status', [$accountController, 'ddStatus'], [$authMiddleware, $requireSubscription]);
 $router->get('/accounts/{id}', [$accountController, 'show'], [$authMiddleware, $requireSubscription]);
+$router->get('/accounts/{id}/export', [$accountController, 'export'], [$authMiddleware, $requireSubscription]);
 $router->put('/accounts/{id}', [$accountController, 'update'], [$authMiddleware, $requireSubscription]);
 $router->delete('/accounts/{id}', [$accountController, 'destroy'], [$authMiddleware, $requireSubscription]);
 $router->get('/accounts/{id}/adjustments', [$accountAdjustmentController, 'index'], [$authMiddleware, $requireSubscription]);
