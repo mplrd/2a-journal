@@ -1614,3 +1614,16 @@ constante. À défaut, relever la borne.
 ---
 
 *À chaque nouvelle évolution repérée mais non traitée immédiatement : l'ajouter ici avec contexte + fichiers + à-faire + priorité.*
+
+---
+
+## Export Excel d'un compte — taille de l'historique
+
+**Contexte** : `GET /accounts/{id}/export` (doc 114) construit tout le fichier en mémoire avec PhpSpreadsheet. Mesuré le 2026-10-06 sur le writer seul : 1 000 lignes → 39 Mo / 1,4 s ; 5 000 → 99 Mo / 7,7 s ; 10 000 → 166 Mo / 22 s. Avec le `memory_limit` par défaut (128 Mo), l'export casse vers ~7 500 lignes sur un compte (une ligne par jambe de trade).
+
+**État** : le plus gros compte en prod a 147 trades clos (2026-10-06), ordres en plus. Aucun risque à court terme.
+
+**Pistes si ça devient réel** : retirer l'auto-ajustement des colonnes (le plus coûteux en temps), cache de cellules PhpSpreadsheet sur disque, filtre de dates (les filtres `date_from`/`date_to` existent déjà sur la liste des trades), ou écriture en flux (bibliothèque dédiée).
+
+**Repéré le** : 2026-10-06.
+**Priorité** : basse.

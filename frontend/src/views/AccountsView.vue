@@ -6,6 +6,7 @@ import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useAccountsStore } from '@/stores/accounts'
 import { useFeaturesStore } from '@/stores/features'
+import { accountsService } from '@/services/accounts'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -71,6 +72,14 @@ async function handleDeleteAdjustment(adjustmentId) {
     toast.add({ severity: 'success', summary: t('common.success'), detail: t('accounts.success.adjustment_deleted'), life: 3000 })
     await Promise.all([store.fetchAdjustments(adjustAccount.value.id), store.fetchAccounts()])
     adjustAccount.value = store.accounts.find((a) => a.id === adjustAccount.value.id) || adjustAccount.value
+  } catch (err) {
+    toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
+  }
+}
+
+async function handleExport(account) {
+  try {
+    await accountsService.exportXlsx(account)
   } catch (err) {
     toast.add({ severity: 'error', summary: t('common.error'), detail: t(err.messageKey || 'error.internal'), life: 5000 })
   }
@@ -238,6 +247,11 @@ const actionMenuItems = computed(() => {
     })
   }
   items.push({
+    label: t('accounts.export_xlsx'),
+    icon: 'pi pi-download',
+    command: () => handleExport(menuAccount.value),
+  })
+  items.push({
     label: t('common.delete'),
     icon: 'pi pi-trash',
     class: 'text-danger',
@@ -321,6 +335,7 @@ function openActionMenu(event, account) {
           <div class="flex gap-2">
             <Button v-if="features.brokerAutoSync" icon="pi pi-sync" severity="success" size="small" text v-tooltip.top="t('broker.sync_now')" @click="openBrokerSync(data)" />
             <Button icon="pi pi-upload" severity="info" size="small" text v-tooltip.top="t('import.title')" @click="openImport(data)" />
+            <Button icon="pi pi-download" severity="secondary" size="small" text v-tooltip.top="t('accounts.export_xlsx')" :aria-label="t('accounts.export_xlsx')" :data-testid="`export-account-${data.id}`" @click="handleExport(data)" />
             <Button v-if="!isBrokerSynced(data)" icon="pi pi-sliders-h" severity="secondary" size="small" text v-tooltip.top="t('accounts.adjust_balance')" @click="openAdjust(data)" />
             <Button icon="pi pi-pencil" severity="secondary" size="small" text v-tooltip.top="t('common.edit')" @click="openEdit(data)" />
             <Button icon="pi pi-trash" severity="danger" size="small" text v-tooltip.top="t('common.delete')" @click="handleDelete(data)" />
