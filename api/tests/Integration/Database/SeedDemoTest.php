@@ -82,6 +82,37 @@ class SeedDemoTest extends TestCase
         $this->assertGreaterThan(0, (int) $stmt->fetchColumn());
     }
 
+    public function testSeedsTradesScaledOutOverSeveralTargets(): void
+    {
+        // The demo must show a trade taken off in pieces — targets hit or not,
+        // a break-even exit, the rest closed later — or the account export and
+        // the trade detail can't be seen on anything but production data.
+        $this->runSeeder();
+        $pdo = Database::getConnection();
+
+        $stmt = $pdo->prepare(
+            "SELECT t.id, JSON_LENGTH(p.targets) AS targets,
+                    (SELECT COUNT(*) FROM partial_exits pe WHERE pe.trade_id = t.id) AS exits,
+                    (SELECT COUNT(*) FROM partial_exits pe WHERE pe.trade_id = t.id AND pe.target_id IS NOT NULL) AS on_target,
+                    (SELECT COUNT(*) FROM status_history sh WHERE sh.entity_type = 'TRADE' AND sh.entity_id = t.id AND sh.new_status = 'SECURED') AS secured
+             FROM trades t JOIN positions p ON p.id = t.position_id JOIN users u ON u.id = p.user_id
+             WHERE u.email = :email AND t.status = 'CLOSED' AND JSON_LENGTH(p.targets) >= 2"
+        );
+        $stmt->execute(['email' => self::EMAIL]);
+        $trades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $this->assertGreaterThanOrEqual(3, count($trades));
+        $scaledOut = array_filter($trades, fn ($t) => $t['exits'] >= 3 && $t['on_target'] >= 1 && $t['secured'] >= 1);
+        $this->assertNotEmpty($scaledOut, 'Expected a trade with several exits, some on targets, secured at break-even');
+
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM orders o JOIN positions p ON p.id = o.position_id JOIN users u ON u.id = p.user_id
+             WHERE u.email = :email AND o.status = 'PENDING' AND JSON_LENGTH(p.targets) >= 2"
+        );
+        $stmt->execute(['email' => self::EMAIL]);
+        $this->assertGreaterThan(0, (int) $stmt->fetchColumn(), 'Expected a pending order with several targets');
+    }
+
     /**
      * @return array{code: int, output: string}
      */

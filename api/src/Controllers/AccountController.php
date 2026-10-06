@@ -7,16 +7,26 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Services\AccountService;
 use App\Services\DrawdownService;
+use App\Services\Export\AccountExportService;
+use App\Services\Export\AccountExportXlsxWriter;
 
 class AccountController extends Controller
 {
     private AccountService $accountService;
     private ?DrawdownService $drawdownService;
+    private ?AccountExportService $exportService;
+    private ?AccountExportXlsxWriter $xlsxWriter;
 
-    public function __construct(AccountService $accountService, ?DrawdownService $drawdownService = null)
-    {
+    public function __construct(
+        AccountService $accountService,
+        ?DrawdownService $drawdownService = null,
+        ?AccountExportService $exportService = null,
+        ?AccountExportXlsxWriter $xlsxWriter = null,
+    ) {
         $this->accountService = $accountService;
         $this->drawdownService = $drawdownService;
+        $this->exportService = $exportService;
+        $this->xlsxWriter = $xlsxWriter;
     }
 
     public function index(Request $request): Response
@@ -82,5 +92,22 @@ class AccountController extends Controller
             : [];
 
         return $this->jsonSuccess($statuses);
+    }
+
+    /**
+     * GET /accounts/{id}/export — the account and its closed trades as an
+     * .xlsx file (tabs "Account" and "Trades").
+     */
+    public function export(Request $request): Response
+    {
+        $userId = $request->getAttribute('user_id');
+        $accountId = (int)$request->getRouteParam('id');
+        $export = $this->exportService->build($userId, $accountId);
+
+        return Response::download(
+            $this->xlsxWriter->write($export['sheets']),
+            AccountExportXlsxWriter::MIME_TYPE,
+            $export['filename']
+        );
     }
 }

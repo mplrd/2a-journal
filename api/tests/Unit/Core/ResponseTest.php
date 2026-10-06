@@ -80,4 +80,29 @@ class ResponseTest extends TestCase
 
         $this->assertSame(400, $response->getStatusCode());
     }
+
+    public function testDownload_withBytes_carriesThemRawWithFileHeaders(): void
+    {
+        $response = Response::download('PK-bytes', 'application/vnd.ms-excel', 'export.xlsx');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('PK-bytes', $response->getRawBody());
+        $this->assertSame('application/vnd.ms-excel', $response->getHeader('Content-Type'));
+        $this->assertSame('attachment; filename="export.xlsx"', $response->getHeader('Content-Disposition'));
+        $this->assertSame('8', $response->getHeader('Content-Length'));
+        $this->assertSame('nosniff', $response->getHeader('X-Content-Type-Options'));
+    }
+
+    public function testDownload_withQuotesOrNewlinesInName_stripsThemFromTheHeader(): void
+    {
+        // Header-injection guard: the file name ends up in Content-Disposition.
+        $response = Response::download('x', 'text/plain', "a\"b\r\nSet-Cookie: x.xlsx");
+
+        $this->assertSame('attachment; filename="abSet-Cookie: x.xlsx"', $response->getHeader('Content-Disposition'));
+    }
+
+    public function testRawBody_onAJsonResponse_isNull(): void
+    {
+        $this->assertNull(Response::success(['a' => 1])->getRawBody());
+    }
 }

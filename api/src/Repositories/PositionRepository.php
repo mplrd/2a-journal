@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Enums\EntityType;
 use App\Enums\OrderStatus;
 use App\Enums\TradeStatus;
 use PDO;
@@ -114,6 +115,44 @@ class PositionRepository
         $row = $stmt->fetch();
 
         return $row ?: null;
+    }
+
+    /**
+     * The account's whole history for the export: every position, order or
+     * trade, whatever its status, with its order, its trade, the moment it was
+     * secured and its plan. Oldest first — by opening, else by placement.
+     * A soft-deleted account exports nothing, like everywhere else.
+     */
+    public function findForAccountExport(int $userId, int $accountId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT p.id AS position_id, t.id AS trade_id, p.position_type,
+                    o.status AS order_status, o.created_at AS order_created_at, o.expires_at AS order_expires_at,
+                    t.status AS trade_status, t.opened_at,
+                    (SELECT MIN(sh.changed_at) FROM status_history sh
+                      WHERE sh.entity_type = :trade_entity AND sh.entity_id = t.id
+                        AND sh.new_status = :secured_status) AS secured_at,
+                    t.closed_at, p.symbol, p.direction, p.size, t.remaining_size, p.point_value, p.entry_price,
+                    p.sl_price, p.sl_points, p.be_price, p.be_points, p.be_size, t.be_reached, p.targets,
+                    t.avg_exit_price, t.exit_type, t.risk_reward, t.pnl, t.pnl_percent,
+                    tp.name AS plan_name, p.plan_adherence, p.plan_adherence_reason, p.setup, p.notes
+             FROM positions p
+             LEFT JOIN trades t ON t.position_id = p.id
+             LEFT JOIN orders o ON o.position_id = p.id
+             LEFT JOIN trading_plans tp ON tp.id = p.plan_id
+             WHERE p.user_id = :user_id
+               AND p.account_id = :account_id
+               AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = p.account_id AND a.deleted_at IS NULL)
+             ORDER BY COALESCE(t.opened_at, o.created_at, p.created_at) ASC, p.id ASC'
+        );
+        $stmt->execute([
+            'trade_entity' => EntityType::TRADE->value,
+            'secured_status' => TradeStatus::SECURED->value,
+            'user_id' => $userId,
+            'account_id' => $accountId,
+        ]);
+
+        return $stmt->fetchAll();
     }
 
     public function update(int $id, array $data): ?array

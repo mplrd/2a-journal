@@ -52,6 +52,33 @@ class PartialExitRepository
     }
 
     /**
+     * Exits of several trades in one query, grouped by trade id, each list in
+     * time order — the account export reads a whole history at once.
+     *
+     * @return array<int, list<array>>
+     */
+    public function findByTradeIds(array $tradeIds): array
+    {
+        if (empty($tradeIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($tradeIds), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT id, trade_id, exited_at, exit_price, size, exit_type, target_id, pnl
+             FROM partial_exits WHERE trade_id IN ($placeholders) ORDER BY trade_id ASC, exited_at ASC, id ASC"
+        );
+        $stmt->execute(array_values(array_map('intval', $tradeIds)));
+
+        $result = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $result[(int) $row['trade_id']][] = $row;
+        }
+
+        return $result;
+    }
+
+    /**
      * Set of `external_id` values already recorded for this trade. The
      * broker sync uses this to dedup across runs — re-syncing the same
      * open position would otherwise re-insert every partial fill on
