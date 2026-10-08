@@ -11,6 +11,8 @@ defineProps({
   data: { type: Object, default: null },
   options: { type: Object, required: true },
   detailable: { type: Boolean, default: false },
+  // Chart.js plugins for this chart alone, never registered globally.
+  plugins: { type: Array, default: () => [] },
 })
 
 defineEmits(['detail'])
@@ -34,7 +36,7 @@ defineEmits(['detail'])
       </div>
     </div>
     <div v-if="data" class="h-64">
-      <Chart :type="type" :data="data" :options="options" class="h-full" />
+      <Chart :type="type" :data="data" :options="options" :plugins="plugins" class="h-full" />
     </div>
     <p v-else class="text-gray-400 text-sm py-8 text-center">{{ t('performance.no_data') }}</p>
   </div>

@@ -65,7 +65,7 @@ Retourne le P&L agrégé par jour (trades fermés uniquement).
 | Composant | Rôle |
 |-----------|------|
 | `KpiCards.vue` | Grille de 6 cartes avec les métriques clés |
-| `CumulativePnlChart.vue` | Graphique en courbe (Chart.js via PrimeVue) |
+| `CumulativePnlChart.vue` | Graphique en courbe (Chart.js via PrimeVue), zoomable sur l'axe du temps |
 | `WinLossChart.vue` | Graphique doughnut gains/pertes/BE |
 | `PnlBySymbolChart.vue` | Graphique en barres P&L par symbole (vert/rouge) |
 | `RecentTrades.vue` | Tabs "En cours" / "Récents" — trades ouverts et 5 derniers trades fermés |
@@ -91,6 +91,24 @@ Chaque ligne du calendrier est une semaine entière, du lundi au dimanche. Quand
 - L'infobulle d'un jour tradé (« 2 trade(s) : +120 ») passe par la clé `dashboard.trade_count` au lieu d'un texte en dur.
 
 Chaque case porte `data-date` et `data-outside`, ce que les tests exploitent.
+
+### P&L cumulé : zoom sur une période
+
+Le graphique du P&L cumulé se zoome sur l'axe du temps, via `chartjs-plugin-zoom` (enregistré **sur ce graphique seulement**, par la prop `plugins` de `ChartCard`, pas globalement).
+
+| Geste | Effet |
+|---|---|
+| Cliquer-glisser sur une zone | Zoome sur la zone sélectionnée |
+| Ctrl + molette | Zoome / dézoome autour du curseur |
+| Pincer (tactile) | Zoome / dézoome |
+| Maj + glisser | Se déplace dans le temps une fois zoomé |
+
+- **La molette seule ne zoome pas** : elle reste au défilement de la page.
+- **Le déplacement demande Maj**, le glisser simple étant la sélection de zone.
+- **Jamais au-delà de tout l'historique** (`limits.x` à `original`).
+- **Une fois zoomé, l'axe vertical s'ajuste à la période** (`beginAtZero` coupé) : sur une portion d'historique loin de zéro, garder le zéro écraserait la courbe qu'on vient agrandir. Le réglage est posé sur l'instance Chart.js vivante et pas dans les options : toute modification des options reconstruit le graphique (PrimeVue les surveille) et perdrait le zoom.
+- Un bouton **« Réinitialiser le zoom »** (`dashboard.reset_zoom`) apparaît dans l'en-tête dès qu'on a zoomé ou déplacé, et ramène tout l'historique. Il disparaît aussi quand de nouvelles données redessinent le graphique (changement de compte).
+- Une icône d'aide (`dashboard.cumulative_pnl_zoom_help`) rappelle les gestes.
 
 ### Calendrier : le total de la semaine en bout de ligne
 
