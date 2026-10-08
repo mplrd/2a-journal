@@ -69,12 +69,13 @@ async function applyFilters() {
       <!-- Row 2: pinned notebook reminders (self-hides when nothing is pinned) -->
       <PinnedNotesCard class="mb-6" />
 
-      <!-- Row 3: recent trades + P&L calendar -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div class="lg:col-span-2">
+      <!-- Row 3: recent trades + P&L calendar, a bit wider than a third so the
+           weekly total column fits without shrinking the days -->
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div class="lg:col-span-3">
           <RecentTrades :trades="statsStore.recentTrades" :openTrades="statsStore.openTrades" />
         </div>
-        <PnlCalendar :dailyPnl="statsStore.dailyPnl" />
+        <PnlCalendar class="lg:col-span-2" :dailyPnl="statsStore.dailyPnl" />
       </div>
     </div>
   </div>
