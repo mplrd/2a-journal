@@ -94,6 +94,14 @@ La page affiche uniquement les graphiques. Chaque chart dispose d'un bouton "Voi
 9. Win Rate & R:R par session (double axe) — bouton détail → DataTable par session
 10. Win Rate & R:R par type de compte (double axe) — bouton détail → DataTable par type de compte
 
+#### P&L cumulé et courbe d'equity sur une période filtrée
+
+Ces deux courbes tracent un point par **sortie** (`partial_exits`), à sa propre date. Sur une période filtrée, elles retiennent les **sorties datées dans la période** (`pe.exited_at`), pas les trades clôturés dans la période — la règle du calendrier journalier de la home.
+
+Avant, la période choisissait les trades par leur date de clôture, puis la courbe dessinait toutes leurs sorties : un trade swing clôturé le 1er octobre avec des partiels le 1er et le 9 septembre faisait apparaître deux points de septembre sous « Ce mois » ; à l'inverse, ces partiels disparaissaient de septembre.
+
+**Limite assumée** : les KPI et les autres graphiques raisonnent par trade (date de clôture, P&L du trade entier). Pour un trade à cheval sur le début de la période, la fin de la courbe diffère donc du « P&L total » : dans l'exemple, la courbe d'octobre finit à +852 (la sortie d'octobre) quand le KPI compte le trade entier (+1 556). Sans filtre de dates, les deux coïncident.
+
 **Choix de visualisation** : les dimensions d'efficacité (symbole, setup, session, type de compte) utilisent un chart double axe (win rate % à gauche, R:R moyen à droite) plutôt que du P&L brut. Le P&L reste affiché pour le symbole (utile en absolu) et la période (évolution temporelle). Le composable `useChartOptions` expose `dualAxisChartOptions` pour ces charts.
 
 **Heatmap** (pleine largeur) : grille CSS jour de semaine × heure, couleur verte (P&L positif) ou rouge (P&L négatif), intensité proportionnelle au nombre de trades. Les heures sont converties dans le fuseau du user via `CONVERT_TZ` côté backend. Les bandes de session sont calculées côté frontend à partir des vraies timezones (`Asia/Tokyo`, `Europe/Paris`, `America/New_York`) et converties dans le fuseau du user via `Intl.DateTimeFormat`, avec prise en charge automatique du DST.
