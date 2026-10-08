@@ -1627,3 +1627,16 @@ constante. À défaut, relever la borne.
 
 **Repéré le** : 2026-10-06.
 **Priorité** : basse.
+
+---
+
+## Courbe de P&L cumulé — part du P&L non couverte par les sorties
+
+**Contexte** : `StatsRepository::getCumulativePnl()` ne lit que `partial_exits`. `getDailyPnl()` (calendrier) ajoute en plus, au jour de clôture, la part du `trades.pnl` que les sorties ne couvrent pas (swap, commission, total annoncé par le broker), et couvre une clôture simple qui n'aurait enregistré aucune sortie. Si ce cas se présente, la courbe et le calendrier divergent.
+
+**État** : mesuré en prod le 2026-10-08 : 0 trade clôturé sans sortie, 0 écart entre `trades.pnl` et la somme de ses sorties, sur tous les comptes. Écart théorique seulement.
+
+**À faire si ça devient réel** : ajouter à la courbe le reliquat à la date de clôture, comme `getDailyPnl()`.
+
+**Repéré le** : 2026-10-08.
+**Priorité** : basse.

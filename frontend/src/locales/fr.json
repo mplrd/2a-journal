@@ -146,6 +146,8 @@
     "best_trade": "Meilleur trade",
     "worst_trade": "Pire trade",
     "cumulative_pnl": "P&L cumulé",
+    "cumulative_pnl_zoom_help": "Cliquer-glisser sur une zone pour zoomer dessus, Ctrl + molette pour zoomer ou dézoomer, Maj + glisser pour se déplacer une fois zoomé.",
+    "reset_zoom": "Réinitialiser le zoom",
     "win_loss_distribution": "Répartition gains / pertes",
     "win_loss_be_help": "Le seuil de BE se règle dans Mon compte › Préférences. Les trades dont le résultat est compris dans ce seuil sont comptés comme breakeven.",
     "wins": "Gains",

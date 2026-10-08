@@ -99,7 +99,13 @@ const presets = computed(() => [
   { key: 'year_to_date', label: t('common.range.year_to_date'), build: ytdRange },
 ])
 
+// The preset last clicked. Two presets can cover the very same days — from 1
+// to 8 October, this month and this quarter are one range — so the range alone
+// cannot tell which one was chosen.
+const appliedPresetKey = ref(null)
+
 function applyPreset(preset) {
+  appliedPresetKey.value = preset.key
   range.value = preset.build()
   popoverRef.value?.hide()
 }
@@ -113,14 +119,17 @@ function togglePopover(e) {
   popoverRef.value?.toggle(e)
 }
 
+// The preset the current range stands for: the one clicked while the range
+// still matches it, else the first one covering the same days.
 const matchedPresetLabel = computed(() => {
   const [s, e] = range.value || [null, null]
   if (!s || !e) return null
-  for (const p of presets.value) {
+  const matches = presets.value.filter((p) => {
     const [ps, pe] = p.build()
-    if (sameDay(s, ps) && sameDay(e, pe)) return p.label
-  }
-  return null
+    return sameDay(s, ps) && sameDay(e, pe)
+  })
+  const applied = matches.find((p) => p.key === appliedPresetKey.value)
+  return (applied ?? matches[0])?.label ?? null
 })
 
 const dayFormatter = computed(() => new Intl.DateTimeFormat(locale.value, { day: 'numeric', month: 'short' }))

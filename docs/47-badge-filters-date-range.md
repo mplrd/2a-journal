@@ -86,6 +86,8 @@ Refonte complète : plus l'input texte natif de PrimeVue DatePicker, mais un tri
 
 Presets disponibles : 7 derniers jours / 30 derniers jours / Ce mois / Ce trimestre / Depuis le 1er janvier / Effacer.
 
+**Deux presets peuvent couvrir les mêmes jours.** Le premier mois d'un trimestre, « Ce mois » et « Ce trimestre » vont tous deux du 1er du mois à aujourd'hui (le 8 octobre : du 1er au 8 octobre pour les deux). La plage seule ne dit donc pas lequel a été choisi : le composant retient le **dernier preset cliqué** (`appliedPresetKey`) et c'est lui que le bouton nomme et que la colonne surligne, tant que la plage lui correspond. Avant, le premier preset de la liste gagnait : cliquer « Ce trimestre » affichait « Ce mois », ce qui brouillait la lecture. (Les points de septembre qu'on voyait sous « Ce mois » sur la courbe de P&L cumulé étaient, eux, un vrai bug de filtrage, distinct : voir `18-performance.md`.) Si la plage est modifiée à la main dans le calendrier et retombe sur un preset, c'est le premier de la liste qui la nomme.
+
 API publique inchangée : `v-model:from` + `v-model:to`.
 
 Détail technique : quand from et to sont tous deux `null`, le `range` interne vaut `null` (pas `[null, null]`). Sans cette nuance, PrimeVue range mode considère les deux slots comme remplis et n'autorise plus une sélection fraîche au clic.

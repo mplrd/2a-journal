@@ -39,7 +39,8 @@ class StatsRepository
      * exactly means "no exit ever taken".
      * @param string|null $dateColumn SQL expression used for date_from/date_to filtering.
      *                                Defaults to {@see effectiveDate()} (exit-based). Pass
-     *                                't.opened_at' for entry-based filtering (heatmap).
+     *                                't.opened_at' for entry-based filtering (heatmap), or
+     *                                'pe.exited_at' to pick the exits themselves (cumulative P&L).
      * @return array{0: string, 1: array}
      */
     private function buildWhereClause(int $userId, array $filters = [], ?string $dateColumn = null): array
@@ -208,7 +209,11 @@ class StatsRepository
 
     public function getCumulativePnl(int $userId, array $filters = []): array
     {
-        [$where, $params] = $this->buildWhereClause($userId, $filters);
+        // One point per exit, at its own date: the period picks exits by that
+        // same date, not trades by their close. Otherwise a trade closed in the
+        // period drew the legs it banked before it, and a period cut short of
+        // a trade's close lost the legs it did bank — the daily calendar's rule.
+        [$where, $params] = $this->buildWhereClause($userId, $filters, 'pe.exited_at');
 
         // Use partial_exits for granular chronological P&L (not trade-level which groups partial exits)
         $sql = "SELECT pe.exited_at AS closed_at, pe.pnl, p.symbol
