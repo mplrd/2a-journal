@@ -146,6 +146,8 @@
     "best_trade": "Best trade",
     "worst_trade": "Worst trade",
     "cumulative_pnl": "Cumulative P&L",
+    "cumulative_pnl_zoom_help": "Click and drag over an area to zoom in on it, Ctrl + mouse wheel to zoom in or out, Shift + drag to move around once zoomed.",
+    "reset_zoom": "Reset zoom",
     "win_loss_distribution": "Win / Loss Distribution",
     "win_loss_be_help": "The BE threshold is set in My account › Preferences. Trades whose result falls within this threshold are counted as breakeven.",
     "wins": "Wins",

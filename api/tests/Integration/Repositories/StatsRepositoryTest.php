@@ -648,6 +648,61 @@ class StatsRepositoryTest extends TestCase
         $this->assertEquals(-30.0, (float) $series[0]['pnl']);
     }
 
+    /**
+     * A swing trade straddling the start of the period: two partial exits in
+     * September, closed on 1 October. Filtered on October, the curve used to
+     * pick the trade by its close date and then draw its September legs too.
+     */
+    private function createSwingTradeIntoOctober(): array
+    {
+        $trade = $this->createTradeWithPartial(202.0, [
+            'status' => 'CLOSED',
+            'opened_at' => '2026-08-28 09:00:00',
+            'exited_at' => '2026-09-01 08:52:32',
+        ]);
+        $insert = $this->pdo->prepare(
+            "INSERT INTO partial_exits (trade_id, exited_at, exit_price, size, exit_type, pnl)
+             VALUES (:t, :at, 18700.00, 1.0, 'TP', :pnl)"
+        );
+        $insert->execute(['t' => (int) $trade['id'], 'at' => '2026-09-09 14:00:29', 'pnl' => 502.0]);
+        $insert->execute(['t' => (int) $trade['id'], 'at' => '2026-10-01 09:32:29', 'pnl' => 852.0]);
+        $this->tradeRepo->update((int) $trade['id'], ['pnl' => 1556.0, 'closed_at' => '2026-10-01 09:32:29']);
+
+        return $trade;
+    }
+
+    public function testGetCumulativePnlDrawsOnlyTheExitsOfThePeriod(): void
+    {
+        $this->createSwingTradeIntoOctober();
+
+        $series = $this->repo->getCumulativePnl($this->userId, [
+            'date_from' => '2026-10-01',
+            'date_to' => '2026-10-08',
+        ]);
+
+        $this->assertCount(1, $series);
+        $this->assertSame('2026-10-01 09:32:29', $series[0]['closed_at']);
+        $this->assertEquals(852.0, (float) $series[0]['cumulative_pnl']);
+    }
+
+    public function testGetCumulativePnlKeepsTheExitsOfThePeriodOfATradeClosedAfterIt(): void
+    {
+        // The other side of the boundary: on September, the same trade shows
+        // the two legs it banked in September, though it closed in October.
+        $this->createSwingTradeIntoOctober();
+
+        $series = $this->repo->getCumulativePnl($this->userId, [
+            'date_from' => '2026-09-01',
+            'date_to' => '2026-09-30',
+        ]);
+
+        $this->assertSame(
+            ['2026-09-01 08:52:32', '2026-09-09 14:00:29'],
+            array_column($series, 'closed_at')
+        );
+        $this->assertEquals(704.0, (float) $series[1]['cumulative_pnl']);
+    }
+
     public function testGetPnlBySymbolFiltersDirection(): void
     {
         $this->createClosedTrade(100.0, 'TP', ['symbol' => 'NASDAQ', 'direction' => 'BUY']);

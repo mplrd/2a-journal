@@ -80,6 +80,24 @@ const calendarDays = computed(() => {
   return days
 })
 
+// The rows of the grid, each closed by the result of its week: the exact sum
+// of the seven days it shows — days of the adjacent month included, a week
+// being a week whatever month it straddles — rounded only once summed. null
+// when none of its days traded.
+const calendarWeeks = computed(() => {
+  const weeks = []
+  for (let i = 0; i < calendarDays.value.length; i += 7) {
+    const days = calendarDays.value.slice(i, i + 7)
+    const traded = days.filter((day) => day.pnl != null)
+    weeks.push({
+      key: days[0].date,
+      days,
+      pnl: traded.length ? traded.reduce((sum, day) => sum + day.pnl, 0) : null,
+    })
+  }
+  return weeks
+})
+
 function prevMonth() {
   if (currentMonth.value === 0) {
     currentMonth.value = 11
@@ -110,15 +128,15 @@ function roundedPnl(pnl) {
   return rounded === 0 ? 0 : rounded
 }
 
-function cellClass(day) {
-  const rounded = roundedPnl(day.pnl)
+function cellClass(cell) {
+  const rounded = roundedPnl(cell.pnl)
   if (rounded == null) return ''
   if (rounded > 0) return 'bg-green-500/80 text-white'
   if (rounded < 0) return 'bg-red-500/80 text-white'
   return 'bg-amber-500/80 text-white'
 }
 
-function formatDayPnl(pnl) {
+function formatPnl(pnl) {
   const rounded = roundedPnl(pnl)
   if (rounded == null) return ''
   return rounded > 0 ? `+${rounded}` : String(rounded)
@@ -157,8 +175,8 @@ function formatDayPnl(pnl) {
       </div>
     </div>
 
-    <div class="grid grid-cols-7 gap-px text-center text-xs">
-      <!-- Header -->
+    <div class="grid grid-cols-8 gap-px text-center text-xs">
+      <!-- Header; the weekly total column needs none, holding no date -->
       <div
         v-for="wd in weekDays"
         :key="wd"
@@ -166,25 +184,37 @@ function formatDayPnl(pnl) {
       >
         {{ wd }}
       </div>
+      <div></div>
 
-      <!-- Days -->
-      <div
-        v-for="cell in calendarDays"
-        :key="cell.date"
-        data-testid="calendar-day"
-        :data-date="cell.date"
-        :data-outside="cell.outside"
-        class="aspect-square flex flex-col items-center justify-center rounded text-xs relative"
-        :class="[cellClass(cell), { 'opacity-40': cell.outside }]"
-        :title="cell.count ? `${t('dashboard.trade_count', { count: cell.count })} : ${formatDayPnl(cell.pnl)}` : ''"
-      >
-        <span class="font-medium" :class="cell.pnl == null ? 'text-gray-400 dark:text-gray-600' : ''">
-          {{ cell.day }}
-        </span>
-        <span v-if="cell.pnl != null" data-testid="calendar-day-pnl" class="text-[10px] leading-tight font-medium">
-          {{ formatDayPnl(cell.pnl) }}
-        </span>
-      </div>
+      <template v-for="week in calendarWeeks" :key="week.key">
+        <!-- Days -->
+        <div
+          v-for="cell in week.days"
+          :key="cell.date"
+          data-testid="calendar-day"
+          :data-date="cell.date"
+          :data-outside="cell.outside"
+          class="aspect-square flex flex-col items-center justify-center rounded text-xs relative"
+          :class="[cellClass(cell), { 'opacity-40': cell.outside }]"
+          :title="cell.count ? `${t('dashboard.trade_count', { count: cell.count })} : ${formatPnl(cell.pnl)}` : ''"
+        >
+          <span class="font-medium" :class="cell.pnl == null ? 'text-gray-400 dark:text-gray-600' : ''">
+            {{ cell.day }}
+          </span>
+          <span v-if="cell.pnl != null" data-testid="calendar-day-pnl" class="text-[10px] leading-tight font-medium">
+            {{ formatPnl(cell.pnl) }}
+          </span>
+        </div>
+
+        <!-- Weekly total -->
+        <div
+          data-testid="calendar-week-total"
+          class="aspect-square flex items-center justify-center rounded text-xs font-bold ml-1"
+          :class="week.pnl == null ? 'text-gray-400 dark:text-gray-600' : cellClass(week)"
+        >
+          {{ week.pnl == null ? '-' : formatPnl(week.pnl) }}
+        </div>
+      </template>
     </div>
   </div>
 </template>

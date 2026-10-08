@@ -176,3 +176,77 @@ describe('PnlCalendar — full weeks', () => {
     expect(isOutside(cellOn(wrapper, '2026-09-01'))).toBe(true)
   })
 })
+
+// Each row ends with the result of its week: the sum of the seven days it
+// shows, days of the adjacent month included, since a week is a week whatever
+// month it straddles.
+describe('PnlCalendar — weekly total', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function mountOn(year, monthIndex, dailyPnl = []) {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(year, monthIndex, 15, 12))
+    return mountCalendar(dailyPnl)
+  }
+
+  const totals = (wrapper) => wrapper.findAll('[data-testid="calendar-week-total"]')
+
+  it('ends every week with its total', () => {
+    // September 2026 lays out five weeks.
+    expect(totals(mountOn(2026, 8))).toHaveLength(5)
+  })
+
+  it('places the total right after the sunday of its week', () => {
+    const wrapper = mountOn(2026, 8)
+    const grid = wrapper.findAll('[data-testid="calendar-day"], [data-testid="calendar-week-total"]')
+
+    expect(grid[7].attributes('data-testid')).toBe('calendar-week-total')
+    expect(grid[6].attributes('data-date')).toBe('2026-09-06')
+  })
+
+  it('sums the days of the week, those of the adjacent month included', () => {
+    // First week of September 2026: Monday 31 August to Sunday 6 September.
+    const wrapper = mountOn(2026, 8, [
+      { date: '2026-08-31', trade_count: 2, total_pnl: 120.4 },
+      { date: '2026-09-02', trade_count: 1, total_pnl: -35.2 },
+      { date: '2026-09-07', trade_count: 1, total_pnl: 999 },
+    ])
+
+    expect(totals(wrapper)[0].text()).toBe('+85')
+    expect(totals(wrapper)[0].classes()).toContain('bg-green-500/80')
+    expect(totals(wrapper)[1].text()).toBe('+999')
+  })
+
+  it('rounds the exact sum, not the sum of the rounded days', () => {
+    // Three days each reading 0 add up to +1.2: the week is a gain.
+    const wrapper = mountOn(2026, 8, [
+      { date: '2026-09-01', trade_count: 1, total_pnl: 0.4 },
+      { date: '2026-09-02', trade_count: 1, total_pnl: 0.4 },
+      { date: '2026-09-03', trade_count: 1, total_pnl: 0.4 },
+    ])
+
+    expect(totals(wrapper)[0].text()).toBe('+1')
+  })
+
+  it('colours a losing week red and a week reading zero amber', () => {
+    const wrapper = mountOn(2026, 8, [
+      { date: '2026-09-08', trade_count: 1, total_pnl: -50 },
+      { date: '2026-09-15', trade_count: 1, total_pnl: 40 },
+      { date: '2026-09-16', trade_count: 1, total_pnl: -40.2 },
+    ])
+
+    expect(totals(wrapper)[1].text()).toBe('-50')
+    expect(totals(wrapper)[1].classes()).toContain('bg-red-500/80')
+    expect(totals(wrapper)[2].text()).toBe('0')
+    expect(totals(wrapper)[2].classes()).toContain('bg-amber-500/80')
+  })
+
+  it('shows a dash for a week without any trade', () => {
+    const total = totals(mountOn(2026, 8))[0]
+
+    expect(total.text()).toBe('-')
+    expect(total.classes()).not.toContain('bg-amber-500/80')
+  })
+})
