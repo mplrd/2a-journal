@@ -44,7 +44,24 @@ $bootstrapDsn = sprintf(
     $dbConfig['port'],
     $dbConfig['charset']
 );
-$bootstrap = new PDO($bootstrapDsn, $dbConfig['user'], $dbConfig['password'], $dbConfig['options']);
+$maxAttempts = 30;
+$delay = 1;
+$bootstrap = null;
+for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+    try {
+        $bootstrap = new PDO($bootstrapDsn, $dbConfig['user'], $dbConfig['password'], $dbConfig['options']);
+        break;
+    } catch (\PDOException $e) {
+        if ($attempt === $maxAttempts) {
+            echo "ERROR: Could not connect to database after {$maxAttempts} attempts: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        $sleepSeconds = min($delay, 30);
+        echo "Attempt {$attempt}/{$maxAttempts}: Database not ready ({$e->getMessage()}). Retrying in {$sleepSeconds}s...\n";
+        sleep($sleepSeconds);
+        $delay *= 2;
+    }
+}
 $bootstrap->exec(sprintf(
     'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
     str_replace('`', '', $dbConfig['name'])
