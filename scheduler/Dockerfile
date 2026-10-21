@@ -27,7 +27,7 @@ COPY api/ .
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 # --- Stage 2: Runtime image with supercronic ---
-FROM php:8.4-cli
+FROM php:8.4.27-cli
 
 # PHP extensions needed by the CLI jobs (must match api/Dockerfile so the code runs)
 # Plus the Debian cron daemon (cron -f runs in foreground, stdout/stderr go to
