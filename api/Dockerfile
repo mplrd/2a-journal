@@ -19,7 +19,7 @@ COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 # --- Stage 2: Production image ---
-FROM php:8.4-cli
+FROM php:8.4.27-cli
 
 # Install PHP extension dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

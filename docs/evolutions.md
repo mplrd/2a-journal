@@ -28,7 +28,7 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 
 ## Code / conventions
 
-### PHP2Shell — passer l'image API en php:8.4.27-cli et retirer la parade
+### ~~PHP2Shell — passer l'image API en php:8.4.27-cli et retirer la parade~~ ✅
 
 **Contexte** : CVE-2026-109618 / CVE-2026-109619 (RCE PHP, corrigées en 8.4.27). Au 2026-10-21, le tag `php:8.4.27-cli` existe sur Docker Hub mais sans image, et `php:8.4-cli` est encore en 8.4.26. Parade transitoire posée dans `api/docker/php.ini` : `memory_limit = -1` (CVE-2026-109618, déclenchée en atteignant la limite mémoire ; c'est le plafond du conteneur Railway qui borne en attendant) et `session.upload_progress.enabled = Off` (CVE-2026-109619, sans impact, l'API n'utilise pas les sessions PHP).
 
@@ -40,7 +40,7 @@ Liste des améliorations identifiées en cours de route mais sortant du scope d'
 Le scheduler n'a pas reçu la parade : il ne lance que des scripts CLI et ne traite aucune requête HTTP.
 
 **Repéré le** : 2026-10-21.
-**Priorité** : haute.
+**Statut** : livré — `FROM php:8.4.27-cli` dans les deux Dockerfiles, lignes transitoires retirées, `php.ini` revenu à l'identique d'avant la parade.
 
 ---
 
