@@ -6,6 +6,38 @@ function num(value) {
   return parseFloat(parseFloat(value).toFixed(10)).toString()
 }
 
+/**
+ * Size-weighted mean R across the target ladder (ticket #41). Each target
+ * contributes its reward distance weighted by the size exited there, so a
+ * scale-out plan reads its blended R:R rather than the nearest TP alone. BE is
+ * a risk-reduction move, not a profit target, so it never enters here. Falls
+ * back to the plain mean when no target carries a usable size, and returns null
+ * when the risk is not measurable (no SL distance). Mirrors ShareService.php.
+ */
+function weightedRiskReward(targets, slPoints) {
+  if (!(slPoints > 0)) return null
+
+  let totalSize = 0
+  let weightedPoints = 0
+  for (const t of targets) {
+    const size = Number(t.size) || 0
+    if (size > 0) {
+      totalSize += size
+      weightedPoints += Number(t.points) * size
+    }
+  }
+
+  let meanRewardPoints
+  if (totalSize > 0) {
+    meanRewardPoints = weightedPoints / totalSize
+  } else {
+    const sumPoints = targets.reduce((acc, t) => acc + Number(t.points), 0)
+    meanRewardPoints = sumPoints / targets.length
+  }
+
+  return meanRewardPoints / slPoints
+}
+
 export function useSharePreview(form, calculatedTargets, calculatedSlPrice, calculatedBePrice) {
   const sharePreviewText = computed(() => {
     const f = form.value
@@ -44,10 +76,12 @@ export function useSharePreview(form, calculatedTargets, calculatedSlPrice, calc
       lines.push(`\u{1F6D1} SL: ${slPrice} (-${slPoints} pts)`)
     }
 
-    // R/R
-    if (targets && targets.length > 0 && f.sl_points) {
-      const rr = num(targets[0].points / f.sl_points)
-      lines.push(`\u{2696}\u{FE0F} R/R: ${rr}`)
+    // R/R — size-weighted mean R across the whole target ladder (ticket #41).
+    if (targets && targets.length > 0) {
+      const rr = weightedRiskReward(targets, Number(f.sl_points))
+      if (rr !== null) {
+        lines.push(`\u{2696}\u{FE0F} R/R: ${num(rr)}`)
+      }
     }
 
     // Setup
