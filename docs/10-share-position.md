@@ -86,7 +86,7 @@ Touchette haut de zone weekly
 - **PnL positif** : ✅, **PnL négatif** : ❌
 - **Targets multiples** : TP1, TP2... (TP seul si un seul target)
 - **BE** : ligne 🔒 BE si renseigné
-- **R/R** : calculé depuis le 1er target / sl_points (ordres), ou depuis `risk_reward` (trades clôturés)
+- **R/R** (ordres / trades ouverts) : moyenne des R de chaque objectif **pondérée par la quantité** sortie à ce TP — `Σ(points × size) / Σ(size) / sl_points` (voir `116-rr-de-partage-pondere.md`, ticket #41). Un seul objectif ⇒ `points / sl_points`, comme avant. Repli sur la moyenne simple si aucun objectif n'a de quantité ; ligne omise s'il n'y a pas de SL. Trades clôturés : depuis `risk_reward` (P&L réalisé pondéré ÷ risque initial), inchangé.
 - **Durée** : `45min`, `2h30`, `2h` (sans zéro inutile)
 - **Prix** : trailing zeros supprimés (18240 au lieu de 18240.00000)
 

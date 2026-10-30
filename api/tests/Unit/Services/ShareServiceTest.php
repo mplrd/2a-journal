@@ -117,6 +117,68 @@ class ShareServiceTest extends TestCase
 
         $this->assertStringContainsString('🎯 TP1: 18290 (+50 pts)', $text);
         $this->assertStringContainsString('🎯 TP2: 18350 (+110 pts)', $text);
+        // R/R is the size-weighted mean R across the whole ladder, not the
+        // nearest TP alone: (50×0.5 + 110×0.5) / 1.0 / 50 = 1.6
+        $this->assertStringContainsString('⚖️ R/R: 1.6', $text);
+    }
+
+    public function testRiskRewardIsSizeWeightedAcrossTheWholeLadder(): void
+    {
+        // A scale-out plan must weight every target by the size exited there,
+        // not read the first TP alone (ticket #41, Robin's GER40):
+        // (400×0.08 + 910×0.05 + 1713×0.05 + 5713×0.02) / 0.20 / 567 = 2.4462962963
+        $position = $this->fakePosition([
+            'direction' => 'SELL',
+            'symbol' => 'GER40',
+            'entry_price' => '25713.00000',
+            'size' => '0.20000',
+            'sl_points' => '567.00',
+            'sl_price' => '26280.00000',
+            'targets' => json_encode([
+                ['points' => 400, 'size' => 0.08, 'price' => 25313],
+                ['points' => 910, 'size' => 0.05, 'price' => 24803],
+                ['points' => 1713, 'size' => 0.05, 'price' => 24000],
+                ['points' => 5713, 'size' => 0.02, 'price' => 20000],
+            ]),
+        ]);
+        $this->positionRepo->method('findById')->willReturn($position);
+
+        $text = $this->service->generateText(1, 10);
+
+        $this->assertStringContainsString('⚖️ R/R: 2.4462962963', $text);
+    }
+
+    public function testRiskRewardFallsBackToUnweightedMeanWhenTargetsHaveNoSize(): void
+    {
+        // Defensive: targets without a usable size (never seen in prod data)
+        // fall back to the plain mean of the R-multiples: (40 + 120) / 2 / 40 = 2
+        $position = $this->fakePosition([
+            'sl_points' => '40.00',
+            'targets' => json_encode([
+                ['points' => 40, 'price' => 18280],
+                ['points' => 120, 'price' => 18360],
+            ]),
+        ]);
+        $this->positionRepo->method('findById')->willReturn($position);
+
+        $text = $this->service->generateText(1, 10);
+
+        $this->assertStringContainsString('⚖️ R/R: 2', $text);
+    }
+
+    public function testRiskRewardOmittedWhenNoStopLoss(): void
+    {
+        // No SL distance → R/R is not calculable; the line is omitted rather
+        // than dividing by zero.
+        $position = $this->fakePosition([
+            'sl_points' => '0.00',
+            'sl_price' => '18240.00000',
+        ]);
+        $this->positionRepo->method('findById')->willReturn($position);
+
+        $text = $this->service->generateText(1, 10);
+
+        $this->assertStringNotContainsString('R/R', $text);
     }
 
     public function testGenerateTextForOrderWithoutTargets(): void

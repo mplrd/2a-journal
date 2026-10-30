@@ -103,12 +103,16 @@ class ShareService
             ? "🛑 SL: {$slPrice} (-{$slPoints} pts)"
             : "SL: {$slPrice} (-{$slPoints} pts)";
 
-        // R/R (from first target)
+        // R/R — size-weighted mean R across the whole target ladder (ticket
+        // #41), omitted when the risk is not measurable (no SL distance).
         if ($targets) {
-            $rr = $this->num((float) $targets[0]['points'] / (float) $position['sl_points']);
-            $lines[] = $withEmojis
-                ? "⚖️ R/R: {$rr}"
-                : "R/R: {$rr}";
+            $riskReward = $this->calculateRiskReward($targets, (float) $position['sl_points']);
+            if ($riskReward !== null) {
+                $rr = $this->num($riskReward);
+                $lines[] = $withEmojis
+                    ? "⚖️ R/R: {$rr}"
+                    : "R/R: {$rr}";
+            }
         }
 
         // Setup
@@ -200,6 +204,48 @@ class ShareService
         }
 
         return $lines;
+    }
+
+    /**
+     * Size-weighted mean R across the target ladder (ticket #41). Each target
+     * contributes its reward distance weighted by the size exited there, so a
+     * scale-out plan reads its blended R:R rather than the nearest TP alone.
+     * BE is a risk-reduction move, not a profit target, so it never enters here.
+     *
+     * Falls back to the plain mean of the reward distances when no target
+     * carries a usable size (defensive — every target in prod data has one).
+     * Returns null when the risk is not measurable (no SL distance), so the
+     * caller omits the line instead of dividing by zero.
+     *
+     * @param array<int,array<string,mixed>> $targets
+     */
+    private function calculateRiskReward(array $targets, float $slPoints): ?float
+    {
+        if ($slPoints <= 0) {
+            return null;
+        }
+
+        $totalSize = 0.0;
+        $weightedPoints = 0.0;
+        foreach ($targets as $target) {
+            $size = (float) ($target['size'] ?? 0);
+            if ($size > 0) {
+                $totalSize += $size;
+                $weightedPoints += (float) $target['points'] * $size;
+            }
+        }
+
+        if ($totalSize > 0) {
+            $meanRewardPoints = $weightedPoints / $totalSize;
+        } else {
+            $sumPoints = 0.0;
+            foreach ($targets as $target) {
+                $sumPoints += (float) $target['points'];
+            }
+            $meanRewardPoints = $sumPoints / count($targets);
+        }
+
+        return $meanRewardPoints / $slPoints;
     }
 
     private function formatSetup(string $setup): string
