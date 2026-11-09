@@ -4,13 +4,14 @@
 
 La colonne `current_capital` de la table `accounts` existait déjà mais n'était jamais mise à jour après la création du compte (zombie field). Résultat : chaque compte apparaissait comme dormant côté UI, peu importe l'activité de trading.
 
-Cette évolution transforme `current_capital` en valeur calculée **à la lecture**, à partir du capital initial et de la somme des P&L des trades clôturés (status = `CLOSED`). Zéro changement de schéma, zéro duplication de concept, zéro nouveau chemin d'écriture. La colonne s'affiche côté UI sous le libellé « Balance / Solde ».
+Cette évolution transforme `current_capital` en valeur calculée **à la lecture**, à partir du capital initial et de la somme du P&L **réalisé** des trades (`pnl` renseigné, sorties partielles comprises — voir « Ticket #42 » plus bas). Zéro changement de schéma, zéro duplication de concept, zéro nouveau chemin d'écriture. La colonne s'affiche côté UI sous le libellé « Balance / Solde ».
 
 ## Fonctionnalités
 
 - Dans la liste « Mes Comptes » et dans le détail d'un compte, la valeur retournée par l'API pour `current_capital` correspond à :
-  `initial_capital + Σ(pnl)` sur les trades où `status = 'CLOSED'` rattachés au compte via la position.
-- Les trades `OPEN` sont ignorés (pas d'estimation de P&L latent).
+  `initial_capital + Σ(pnl) + Σ(ajustements)` sur les trades où `pnl IS NOT NULL` rattachés au compte via la position (sauf compte synchronisé : le solde broker prime).
+- Un trade encore ouvert compte pour ce qu'il a **déjà encaissé** : un TP partiel pris sur une position toujours en cours entre dans le solde dès sa sortie, quel que soit le statut (`OPEN` ou `SECURED`).
+- Un trade ouvert sans aucune sortie (`pnl` NULL) ne bouge pas le solde : pas d'estimation de P&L latent.
 - Affichage côté UI : colonne « Balance » entre « Capital initial » et « Broker ». Coloration verte si `current_capital > initial_capital`, rouge si inférieur, neutre si égal.
 
 ## Choix d'implémentation
@@ -37,7 +38,7 @@ LEFT JOIN (
     SELECT p.account_id, SUM(t.pnl) AS total
     FROM trades t
     INNER JOIN positions p ON p.id = t.position_id
-    WHERE t.status = 'CLOSED'
+    WHERE t.pnl IS NOT NULL
     GROUP BY p.account_id
 ) pnl ON pnl.account_id = a.id
 ```
@@ -46,13 +47,22 @@ Le `COALESCE(pnl.total, 0)` garantit que les comptes sans trade retournent bien 
 
 Appliqué à la fois dans `findById` et `findAllByUserId`.
 
+### Ticket #42 — les sorties partielles comptent (2026-11-09)
+Le filtre d'origine était `t.status = 'CLOSED'`. Or un TP partiel écrit le `pnl` réalisé du trade **sans le clôturer** : il reste `OPEN` (seule une sortie au BE le passe `SECURED`). Le solde ignorait donc de l'argent déjà encaissé, alors que le « P&L total » du tableau de bord (`StatsRepository`, `t.pnl IS NOT NULL`) et le drawdown (`TradeRepository::sumRealizedPnlForAccount`, même règle) le comptaient. Les deux chiffres divergeaient tant qu'une position n'était pas entièrement fermée.
+
+Le solde suit désormais la même règle que ces deux calculs : `t.pnl IS NOT NULL`. La justification « pas de P&L latent » reste vraie — un partiel n'est pas latent, il est réalisé, et le broker l'a déjà crédité. Aucun changement front : l'UI affiche la valeur renvoyée par l'API.
+
+Effet de bord voulu : les consommateurs de `current_capital` (calcul du risque en % d'un signal — `SignalRiskCalculator`, export Excel, dialogue d'ajustement de solde) voient le solde réel, partiels compris.
+
 ## Couverture des tests
 
 | Test | Scénario | Attendu |
 |------|----------|---------|
 | `testCurrentCapitalEqualsInitialCapitalWhenNoTrades` | Compte créé, aucun trade | `current_capital == initial_capital` |
 | `testCurrentCapitalSumsClosedTradesPnl` | 3 trades clôturés (+250, -100, +50) sur capital 10000 | `current_capital == 10200` |
-| `testCurrentCapitalIgnoresOpenTrades` | 1 CLOSED (+300) + 1 OPEN sur capital 5000 | `current_capital == 5300` |
+| `testCurrentCapitalIgnoresOpenTradesWithoutExit` | 1 CLOSED (+300) + 1 OPEN sans sortie (pnl NULL) sur capital 5000 | `current_capital == 5300` |
+| `testCurrentCapitalIncludesPartialExitsOfOpenTradeInList` | 1 CLOSED (+300) + 1 OPEN avec TP partiel (+120), liste | `current_capital == 5420` |
+| `testCurrentCapitalIncludesPartialExitsOfSecuredTradeInFindById` | 1 CLOSED (−100) + 1 SECURED avec partiel (+80), détail | `current_capital == 4980` |
 | `testCurrentCapitalIsScopedPerAccount` | 2 comptes avec trades distincts | chaque compte a son propre solde |
 | `testFindByIdReturnsComputedCurrentCapital` | findById sur un compte avec trade clôturé | champ calculé présent dans la réponse |
 
