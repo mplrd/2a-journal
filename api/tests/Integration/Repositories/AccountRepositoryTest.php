@@ -3,6 +3,7 @@
 namespace Tests\Integration\Repositories;
 
 use App\Core\Database;
+use App\Enums\TradeStatus;
 use App\Repositories\AccountRepository;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -91,6 +92,25 @@ class AccountRepositoryTest extends TestCase
             "INSERT INTO trades (position_id, opened_at, remaining_size, status)
              VALUES (:pid, '2026-01-15 10:00:00', 1, 'OPEN')"
         )->execute(['pid' => $positionId]);
+    }
+
+    /**
+     * A trade still running with part of its size already taken off: the
+     * partial exits wrote a realized pnl, the status stays OPEN (TP partial)
+     * or SECURED (BE exit).
+     */
+    private function insertPartiallyExitedTradeOnAccount(int $accountId, TradeStatus $status, float $pnl): void
+    {
+        $this->pdo->prepare(
+            "INSERT INTO positions (user_id, account_id, direction, symbol, entry_price, size, setup, sl_points, sl_price, position_type)
+             VALUES (:uid, :aid, 'BUY', 'NASDAQ', 18500, 1, '[\"Breakout\"]', 50, 18450, 'TRADE')"
+        )->execute(['uid' => $this->userId, 'aid' => $accountId]);
+        $positionId = (int) $this->pdo->lastInsertId();
+
+        $this->pdo->prepare(
+            "INSERT INTO trades (position_id, opened_at, remaining_size, status, pnl)
+             VALUES (:pid, '2026-01-15 10:00:00', 0.5, :status, :pnl)"
+        )->execute(['pid' => $positionId, 'status' => $status->value, 'pnl' => $pnl]);
     }
 
     private function validData(array $overrides = []): array
@@ -238,18 +258,48 @@ class AccountRepositoryTest extends TestCase
         $this->assertEquals(10200, (float) $result['items'][0]['current_capital']);
     }
 
-    public function testCurrentCapitalIgnoresOpenTrades(): void
+    public function testCurrentCapitalIgnoresOpenTradesWithoutExit(): void
     {
         $created = $this->repo->create($this->validData(['initial_capital' => 5000]));
         $accountId = (int) $created['id'];
 
         $this->insertClosedTradeOnAccount($accountId, 300);
-        $this->insertOpenTradeOnAccount($accountId); // status OPEN → ignored
+        $this->insertOpenTradeOnAccount($accountId); // nothing exited, pnl NULL → nothing realized
 
         $result = $this->repo->findAllByUserId($this->userId);
 
-        // Only the closed trade counts: 5000 + 300 = 5300
+        // 5000 + 300 = 5300
         $this->assertEquals(5300, (float) $result['items'][0]['current_capital']);
+    }
+
+    // ── ticket #42: partial exits on a running trade are realized money ──
+
+    public function testCurrentCapitalIncludesPartialExitsOfOpenTradeInList(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 5000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, 300);
+        $this->insertPartiallyExitedTradeOnAccount($accountId, TradeStatus::OPEN, 120);
+
+        $result = $this->repo->findAllByUserId($this->userId);
+
+        // 5000 + 300 + 120 (TP partial already taken) = 5420
+        $this->assertEquals(5420, (float) $result['items'][0]['current_capital']);
+    }
+
+    public function testCurrentCapitalIncludesPartialExitsOfSecuredTradeInFindById(): void
+    {
+        $created = $this->repo->create($this->validData(['initial_capital' => 5000]));
+        $accountId = (int) $created['id'];
+
+        $this->insertClosedTradeOnAccount($accountId, -100);
+        $this->insertPartiallyExitedTradeOnAccount($accountId, TradeStatus::SECURED, 80);
+
+        $row = $this->repo->findById($accountId);
+
+        // 5000 - 100 + 80 = 4980
+        $this->assertEquals(4980, (float) $row['current_capital']);
     }
 
     public function testCurrentCapitalIsScopedPerAccount(): void

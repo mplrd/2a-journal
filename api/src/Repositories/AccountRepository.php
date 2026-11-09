@@ -2,7 +2,6 @@
 
 namespace App\Repositories;
 
-use App\Enums\TradeStatus;
 use PDO;
 
 class AccountRepository
@@ -70,7 +69,9 @@ class AccountRepository
                  SELECT p.account_id, SUM(t.pnl) AS total
                  FROM trades t
                  INNER JOIN positions p ON p.id = t.position_id
-                 WHERE t.status = :closed_status
+                 -- Realized money, partial exits of a running trade included (ticket #42):
+                 -- same rule as the dashboard total and the drawdown.
+                 WHERE t.pnl IS NOT NULL
                  GROUP BY p.account_id
              ) pnl ON pnl.account_id = a.id
              LEFT JOIN (
@@ -82,7 +83,6 @@ class AccountRepository
         );
         $stmt->execute([
             'id' => $id,
-            'closed_status' => TradeStatus::CLOSED->value,
         ]);
         $row = $stmt->fetch();
 
@@ -123,7 +123,9 @@ class AccountRepository
                  SELECT p.account_id, SUM(t.pnl) AS total
                  FROM trades t
                  INNER JOIN positions p ON p.id = t.position_id
-                 WHERE t.status = :closed_status
+                 -- Realized money, partial exits of a running trade included (ticket #42):
+                 -- same rule as the dashboard total and the drawdown.
+                 WHERE t.pnl IS NOT NULL
                  GROUP BY p.account_id
              ) pnl ON pnl.account_id = a.id
              LEFT JOIN (
@@ -136,7 +138,6 @@ class AccountRepository
              LIMIT :limit OFFSET :offset'
         );
         $stmt->bindValue('user_id', $userId, PDO::PARAM_INT);
-        $stmt->bindValue('closed_status', TradeStatus::CLOSED->value, PDO::PARAM_STR);
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
         $stmt->bindValue('offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
